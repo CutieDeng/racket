@@ -1463,13 +1463,15 @@ static double s_pow(double x, double y) {
   } else
     return pow(x, y);
 }
-#elif defined(MACOSX)
-/* intel macosx delivers precise results for integer inputs, e.g.,
- * 10.0^21.0, only with long double version of pow */
+#elif (machine_type == machine_type_i3osx || machine_type == machine_type_ti3osx)
+/* intel macosx delivers accurate results for integer inputs, e.g.,
+ * 10.0^21.0, only with long double version of pow; it's not clear
+ * whether that has been true for x86_64 as opposed to i386, but as
+ * of macOS 10.15 (Catalina), pow seems ok for x86_64 */
 static double s_pow(double x, double y) { return powl(x, y); }
-#else /* i3fb/ti3fb */
+#else /* i3fb/ti3fb/i3osx/ti3osx */
 static double s_pow(double x, double y) { return pow(x, y); }
-#endif /* i3fb/ti3fb */
+#endif /* i3fb/ti3fb/i3osx/ti3osx */
 
 #ifdef __MINGW32__
 /* asinh() and atanh() sometimes get zero sign wrong */
@@ -1826,6 +1828,7 @@ void S_prim5_init(void) {
     Sforeign_symbol("(cs)put_byte", (void*)S_put_byte);
     Sforeign_symbol("(cs)get_fd_pos", (void*)S_get_fd_pos);
     Sforeign_symbol("(cs)set_fd_pos", (void*)S_set_fd_pos);
+    Sforeign_symbol("(cs)fd_can_set_position", (void*)S_fd_can_set_pos);
     Sforeign_symbol("(cs)get_fd_non_blocking", (void*)S_get_fd_non_blocking);
     Sforeign_symbol("(cs)set_fd_non_blocking", (void*)S_set_fd_non_blocking);
     Sforeign_symbol("(cs)get_fd_length", (void*)S_get_fd_length);

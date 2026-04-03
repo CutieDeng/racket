@@ -403,7 +403,9 @@
   (if (eq? 'chez-scheme (system-type 'vm))
       (test-equal-reduction/only-eqv #\a)
       (test-equal-reduction #\a))
-  (test-equal-reduction/only-eqv #\u100)
+  (if (eq? 'chez-scheme (system-type 'vm))
+      (test-equal-reduction/only-eqv #\u100)
+      (test-equal-reduction #\u100))
   (test-equal-reduction ''a)
   (test-equal-reduction ''#:a)
   (unless (eq? 'chez-scheme (system-type 'vm))
@@ -2730,7 +2732,7 @@
   (test-implies 'k:list-pair? 'pair?)
   (test-implies 'k:list-pair? 'list?)
   (test-implies 'list? 'pair? '?)
-  (test-implies 'k:interned-char? 'char? (if (eq? 'chez-scheme (system-type 'vm)) '= '=>))
+  (test-implies 'k:interned-char? 'char? '=)
   (test-implies 'not 'boolean?)
   (test-implies 'k:true-object? 'boolean?)
 )
@@ -4197,6 +4199,50 @@
 
               #t
               (lambda (x) (set-a-x! x 5))))
+
+;; check that property guards do not contaminate anaylsis of value expressions for other properties
+(test-comp #:except 'racket
+           '(module m racket/base
+              (define-values (p:a a? a-ref) (make-struct-type-property 'a))
+              (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+              (struct s (x y) #:omit-define-syntaxes
+                #:property p:a (lambda () s-x)
+                #:property p:b (lambda () 'ok))
+              (s? (s 1 2)))
+           '(module m racket/base
+              (define-values (p:a a? a-ref) (make-struct-type-property 'a))
+              (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+              (struct s (x y) #:omit-define-syntaxes
+                #:property p:a (lambda () s-x)
+                #:property p:b (lambda () 'ok))
+              #t))
+
+(module uses-constructor-too-early-via-property-guard racket/base
+  (define-values (p:a a? a-ref) (make-struct-type-property 'a))
+  (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+  (struct s (x y) #:omit-define-syntaxes
+    #:property p:b (lambda () (s? (s 1 2)))
+    #:property p:a (lambda () 'ok))
+  (s? (s 1 2)))
+(err/rt-test/once (dynamic-require ''uses-constructor-too-early-via-property-guard #f))
+(module uses-constructor-too-early-via-property-guard2 racket/base
+  (define-values (p:a a? a-ref) (make-struct-type-property 'a))
+  (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+  (struct s (x y) #:omit-define-syntaxes
+    #:property p:a (lambda () 'ok)
+    #:property p:b (lambda () (s? (s 1 2))))
+  (s? (s 1 2)))
+(err/rt-test/once (dynamic-require ''uses-constructor-too-early-via-property-guard2 #f))
+
+(test-comp '(module m racket/base
+              (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+              (struct s (x y) #:omit-define-syntaxes
+                #:property p:b (lambda () (s? (s 1 2)))))
+           '(module m racket/base
+              (define-values (p:b b? b-ref) (make-struct-type-property 'b (lambda (v i) (v))))
+              (struct s (x y) #:omit-define-syntaxes
+                #:property p:b (lambda () #t)))
+           #f)
 
 (test-comp #:except 'chez-scheme ; not able to remove pure `make-struct-type`
            '(lambda ()
@@ -6151,6 +6197,30 @@
 (unless (eq? 'cgc (system-type 'gc))
   (void (dynamic-require ''uses-too-much-memory-for-shift #f)))
 
+(module uses-too-much-memory-for-expt racket/base
+  (define c (make-custodian))
+  (custodian-limit-memory c (* 1024 1024 10))
+  (parameterize ([current-custodian c])
+    (sync
+     (thread
+      (lambda ()
+        (with-handlers ([exn:fail:out-of-memory? void])
+          (expt 2 (expt -19 11))))))))
+(unless (eq? 'cgc (system-type 'gc))
+  (void (dynamic-require ''uses-too-much-memory-for-expt #f)))
+
+(module uses-too-much-memory-for-fraction-expt racket/base
+  (define c (make-custodian))
+  (custodian-limit-memory c (* 1024 1024 10))
+  (parameterize ([current-custodian c])
+    (sync
+     (thread
+      (lambda ()
+        (with-handlers ([exn:fail:out-of-memory? void])
+          (expt 1/2 (expt -19 11))))))))
+(unless (eq? 'cgc (system-type 'gc))
+  (void (dynamic-require ''uses-too-much-memory-for-fraction-expt #f)))
+
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Make sure that closure fields are correctly type-tagged
 ;; when a function has an unused rest arg:
@@ -6930,7 +7000,16 @@
                   [(define (equal-proc x y recursive-equal?) pie-type #t)
                    (define (hash-code x hc) 1)
                    (define hash-proc  hash-code)
-                   (define hash2-proc hash-code)]))])
+                   (define hash2-proc hash-code)])
+               '(begin
+                  (require racket/unsafe/struct-type-property)
+                  (define-values (prop:p p? p-ref)
+                    (unsafe-make-struct-type-property/guard-calls-no-arguments
+                     'p
+                     (lambda (v si)
+                       (hash-set (hash) 'ok v))))
+                  (struct pie (type)
+                    #:property prop:p (lambda () pie-type))))])
     (test #t
           list?
           (let loop ([tries 3])
@@ -7092,6 +7171,74 @@
               (require 'module-that-provides-unsafe-curried-function)
               do-add
               3))
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; #%foreign-inline should not get in the way of backend optimizations
+
+(test-comp 5 '(if (#%foreign-inline #f #:pure) (cons 1 2) 5))
+(test-comp 5 '(if ((#%foreign-inline (lambda () #f) #:pure*)) (cons 1 2) 5))
+(test-comp '(list 7 7) '(let ([x (#%foreign-inline 7 #:copy)])
+                          (list x x)))
+(test-comp '(list 7 7) '(let ([x (#%foreign-inline (lambda () 7) #:copy*)])
+                          (list (x) (x))))
+
+(register-top-level-module
+ (module module-that-provides-foreign-inline racket/base
+   (provide seven)
+   (define seven (#%foreign-inline 7 #:copy))))
+
+(test-comp `(module m racket/base
+              (require 'module-that-provides-foreign-inline)
+              (list seven seven seven))
+           `(module m racket/base
+              (require 'module-that-provides-foreign-inline)
+              (list 7 7 seven)))
+
+(register-top-level-module
+ (module module-that-provides-foreign-inline-pure racket/base
+   (provide seven)
+   (define seven (#%foreign-inline 7 #:pure))))
+
+(test-comp `(module m racket/base
+              (require 'module-that-provides-foreign-inline-pure)
+              (list seven seven seven))
+           `(module m racket/base
+              (require 'module-that-provides-foreign-inline-pure)
+              (list 7 7 seven))
+           ;; BC effectively ignores `#:pure` for the purpose of
+           ;; exporting constant
+           (eq? 'racket (system-type 'vm)))
+
+(register-top-level-module
+ (module module-that-provides-foreign-inline-effect racket/base
+   (provide seven)
+   (define seven (#%foreign-inline 7 #:effect))))
+
+(test-comp `(module m racket/base
+              (require 'module-that-provides-foreign-inline-effect)
+              (list seven seven seven))
+           `(module m racket/base
+              (require 'module-that-provides-foreign-inline-effect)
+              (list 7 7 seven))
+           ;; BC effectively ignores `#:effect` for the purpose of
+           ;; exporting constants
+           (eq? 'racket (system-type 'vm)))
+
+(register-top-level-module
+ (module module-that-provides-foreign-inline racket/base
+   (provide seven)
+   (define seven (#%foreign-inline (/ 7 0) #:copy))))
+
+(test-comp `(module m racket/base
+              (require 'module-that-provides-foreign-inline)
+              (list seven seven))
+           `(module m racket/base
+              (require 'module-that-provides-foreign-inline)
+              (list (/ 7 0) seven))
+           ;; CS (really, schemify) believes the `#:copy` annotation,
+           ;; while BC ignores it and makes its own inference that
+           ;; `(/ 7 0)` should not be copied
+           (eq? 'chez-scheme (system-type 'vm)))
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Try a program that triggers lots of inlining, which at one point
@@ -7600,6 +7747,88 @@
   (define f (quad add1))
 
   (f 0))
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(test 5 black-box 5)
+
+(module does-not-do-the-work-at-run-time racket/base
+  (#%declare #:unsafe)
+  (provide f)
+  (define (f N)
+    (lambda ()
+      (let ([to-power (black-box 100)])
+        (let loop ([i 1000])
+          (unless (zero? i)
+            (expt 2 to-power)
+            (loop (sub1 i))))))))
+
+(when (run-unreliable-tests? 'timing)
+  (define (plain-loop N)
+    (let loop ([i N])
+      (unless (zero? i)
+        (loop (sub1 i)))))
+  
+  (define N (let loop ([N 1000])
+              (define-values (plain-r plain-cpu plain-real plain-gc) (time-apply plain-loop (list N)))
+              (if (zero? plain-cpu)
+                  (loop (* N 2))
+                  (* N 2))))
+  
+  (define (does-the-work-at-run-time? thunk)
+    (let loop ([tries 5] [fast-n 0] [slow-n 0])
+      (cond
+        [(zero? tries)
+         (slow-n . > . fast-n)]
+        [else
+         (define-values (plain-r plain-cpu plain-real plain-gc) (time-apply plain-loop (list N)))
+         (define-values (r cpu real gc) (time-apply thunk null))
+         (if (cpu . <= . (* 2 plain-cpu))
+             (loop (sub1 tries) (add1 fast-n) slow-n)
+             (loop (sub1 tries) fast-n (add1 slow-n)))])))
+         
+  (test #f does-the-work-at-run-time?
+        (lambda ()
+          (let ([to-power 100])
+            (let loop ([i N])
+              (unless (zero? i)
+                ;; call to `expt` is optimized away entirely, since there's
+                ;; no effect and the result is unused:
+                (expt 2 to-power)
+                (loop (sub1 i)))))))
+
+  (test #f does-the-work-at-run-time?
+        (lambda ()
+          (let ([to-power 100])
+            (let loop ([i N])
+              (unless (zero? i)
+                ;; optimize to just returning a folded constant, instead of
+                ;; calling `expt` each iteration:
+                (black-box (expt 2 to-power))
+                (loop (sub1 i)))))))
+
+  (test #t does-the-work-at-run-time?
+        (lambda ()
+          (let ([to-power (black-box 100)])
+            (let loop ([i N])
+              (unless (zero? i)
+                ;; in safe mode, calls `expt`, because `to-power` is not known
+                ;; to be a number, but likely optimized away in unsafe mode:
+                (expt 2 to-power)
+                (loop (sub1 i)))))))
+
+  (test #f does-the-work-at-run-time?
+        ((dynamic-require ''does-not-do-the-work-at-run-time 'f) N))
+
+  (test #t does-the-work-at-run-time?
+        (lambda ()
+          (let ([to-power (black-box 100)])
+            (let loop ([i N])
+              (unless (zero? i)
+                ;; arithmetic really performed every iteration, since `to-power` value
+                ;; is assumed unknown, and `expt` result is assumed to be used
+                (black-box (expt 2 to-power))
+                (loop (sub1 i))))))))
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -311,6 +311,7 @@
 
 (define orig-eval (current-eval))
 (define orig-compile (current-compile))
+(define orig-code-inspector (current-code-inspector))
 
 (define linklet-compile-to-s-expr (make-parameter #f #f 'linklet-compile-to-s-expr))
 
@@ -324,7 +325,8 @@
        (define plain-c (desugar-linklet c))
        (parameterize ([current-namespace cu-namespace]
                       [current-eval orig-eval]
-                      [current-compile orig-compile])
+                      [current-compile orig-compile]
+                      [current-code-inspector orig-code-inspector])
          ;; Use a vector to list the exported variables
          ;; with the compiled bytecode
          (compiled-linklet (compile plain-c)
@@ -344,6 +346,9 @@
 (define (linklet-add-target-machine-info linklet other-linklet)
   linklet)
 
+(define (linklet-summarize-target-machine-info linklet)
+  (hash))
+
 ;; Intended for JIT preparation
 ;; (and we could compile to a function here)
 (define (eval-linklet c)
@@ -352,10 +357,13 @@
 (define (linklet-virtual-machine-bytes)
   #"exp")
 
+(define (linklet-cross-machine-type ht)
+  #f)
+
 (define (write-linklet-bundle-hash ld in)
   (write ld in))
 
-(define (read-linklet-bundle-hash in)
+(define (read-linklet-bundle-hash in cross-machine)
   (read in))
 
 ;; Convert linklet to a procedure

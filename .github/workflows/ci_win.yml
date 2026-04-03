@@ -15,7 +15,7 @@ jobs:
 # These jobs build each Racket component separately and tests on the component start as soon as each
 # component finishes building.
   buildtest-win:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     strategy:
       fail-fast: false
@@ -28,7 +28,7 @@ jobs:
     #   Version: VisualStudio/16.3.6+29418.71
     #   Location: C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Build 3m
       if: matrix.mode == '3m'
       shell: cmd

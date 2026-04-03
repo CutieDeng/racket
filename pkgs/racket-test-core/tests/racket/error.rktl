@@ -7,6 +7,22 @@
 (test #f (current-error-message-adjuster) 'i-just-made-up-this-new-mode)
 (err/rt-test ((current-error-message-adjuster) "oops"))
 
+(err/rt-test (error "message")
+             exn:fail?
+             #rx"message")
+(err/rt-test (error "message" 'argument)
+             exn:fail?
+             #rx"message 'argument")
+(err/rt-test (error 'who "message: ~a" "argument")
+             exn:fail?
+             #rx"who: message: argument")
+(err/rt-test (error 'who "message: ~s" "argument")
+             exn:fail?
+             #rx"who: message: \"argument\"")
+(err/rt-test (error 'who "message: ~v" 'argument)
+             exn:fail?
+             #rx"who: message: 'argument")
+
 (define-syntax-rule (test-error-match rx e)
   (test #t
         regexp-match?
@@ -162,5 +178,27 @@
                     [else #f]))])
   (test-error-match #rx"^function call: bad call" (1 2))
   (test-error-match #rx"^function call: bad call" (1 #:x 2)))
-  
+
+(err/rt-test (exn-classify-errno (cons 0.5 'posix)))
+(err/rt-test (exn-classify-errno (cons 1 'x)))
+(err/rt-test (exn-classify-errno (seconds->date 0)))
+(define ENOENT-exn
+  (let ([exn (with-handlers ([void values])
+               (open-input-file "surely-this-file-does-not-exist"))])
+    (and (exn:fail:filesystem:errno? exn)
+         exn)))
+(define ENOENT-errno
+  (and ENOENT-exn
+       (exn:fail:filesystem:errno-errno ENOENT-exn)))
+(test #t exn? ENOENT-exn)
+(test #t pair? ENOENT-errno)
+(test 'ENOENT exn-classify-errno ENOENT-errno)
+(test 'ENOENT exn-classify-errno ENOENT-exn)
+(test 'ENOENT exn-classify-errno (exn:fail:network:errno "oops"
+                                                         (current-continuation-marks)
+                                                         ENOENT-errno))
+(test #f (exn-classify-errno (cons (expt 2 100) 'posix)))
+(test #f (exn-classify-errno (cons (expt 2 100) 'windows)))
+(test #f (exn-classify-errno (cons (expt 2 100) 'gai)))
+
 (report-errs)

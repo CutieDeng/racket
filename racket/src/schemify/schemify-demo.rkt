@@ -88,7 +88,10 @@
                                   (unsafe-fx+ 4 5) (unsafe-fx+ 4 (expt 2 40))
                                   (integer->char 48)
                                   (char->integer '#\1)
-                                  (void (void) eof-object null)))
+                                  (void (void) eof-object null)
+                                  (#%foreign-inline (void) unique)))
+                          (let-values ([(i) (#%foreign-inline (get i) copy)])
+                            (list i i))
                           (define-values (adds-unsafe) (lambda (x)
                                                          (list (unsafe-fx+ x 1)
                                                                (unsafe-fx+ x 2))))
@@ -103,17 +106,18 @@
                           (define-values (c1 c2) (call)))))
                     #;
                     (call-with-input-file "regexp.rktl" read)
-                    #t ; serializable
-                    #t ; datum-intern?
-                    #f ; for-jitify?
-                    #f ; allow-set!-undefined?
-                    #f ; unsafe-mode?
-                    #t ; enforce-constant?
-                    #t ; allow-inline?
-                    #f ; no-prompt?
-                    prim-knowns
-                    primitives
-                    #f
+                    #t          ; serializable
+                    #t          ; datum-intern?
+                    #f          ; target 
+                    #f          ; allow-set!-undefined?
+                    #f          ; unsafe-mode?
+                    #t          ; enforce-constant?
+                    #t          ; allow-inline?
+                    #f          ; no-prompt?
+                    prim-knowns ; hasheq : symbol -> known-procedure (see "known.rkt") 
+                    primitives  ; hasheq : symbol -> actual primitive
+                    #f          ; compiler-query
+                    #f          ; get-import-knowns
                     #f))
 
 (pretty-print (unwrap schemified))

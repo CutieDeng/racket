@@ -24,7 +24,8 @@ The @racket[for] iteration forms are based on SRFI-42
                            (code:line #:unless guard-expr)
                            (code:line #:do [do-body ...])
                            break-clause
-                           (code:line #:splice (splicing-id . form))]
+                           (code:line #:splice (splicing-id . form))
+                           (code:line #:on-length-mismatch mismatch-expr)]
                [break-clause (code:line #:break guard-expr)
                              (code:line #:final guard-expr)]
                [body-or-break body
@@ -44,8 +45,9 @@ left-to-right, and each must produce a sequence value (see
 @secref["sequences"]).
 
 The @racket[for] form iterates by drawing an element from each
-sequence; if any sequence is empty, then the iteration stops, and
-@|void-const| is the result of the @racket[for] expression. Otherwise
+sequence; if any sequence is empty, then the iteration stops
+(but see @racket[#:on-length-mismatch] below), and
+@|void-const| is the result of the @racket[for] expression. Otherwise,
 a location is created for each @racket[id] to hold the values of each
 element; the sequence produced by a @racket[seq-expr] must return as
 many values for each iteration as corresponding @racket[id]s.
@@ -111,6 +113,15 @@ binding and expansion. Support for @racket[#:splice] clauses is
 intended less for direct use in source @racket[for] forms than for
 building new forms that expand to @racket[for].
 
+An @racket[#:on-length-mismatch mismatch-expr] clause is similar to
+@racket[#:when #t], but if one of the sequences in the immediately
+preceding clauses ends before the others, then @racket[mismatch-expr]
+is evaluated for its effect (such as throwing an exception). If
+@racket[mismatch-expr] produces a value, it is ignored, and the
+iteration layer terminates. When @racket[#:on-length-mismatch] is present,
+all sequences in a group are checked for termination in a potential
+iteration, even if a mismatch is found earlier.
+
 In the case of @tech{list} and @tech{stream} sequences, the
 @racket[for] form itself does not keep each element reachable. If a
 list or stream produced by a @racket[seq-expr] is otherwise
@@ -158,12 +169,21 @@ property; in most cases this improves performance.
   (display "here"))
 (for ([i '()])
   (error "doesn't get here"))
+(for ([i (in-range 2)]
+      [j (in-range 3)])
+  (display i))
+(eval:error
+ (for ([i (in-range 2)]
+       [j (in-range 3)]
+       #:on-length-mismatch (error "different"))
+   (display i)))
 ]
 
 @history[#:changed "6.7.0.4" @elem{Added support for the optional second result.}
          #:changed "7.8.0.11" @elem{Added support for implicit optimization.}
          #:changed "8.4.0.2" @elem{Added @racket[#:do].}
-         #:changed "8.4.0.3" @elem{Added @racket[#:splice].}]}
+         #:changed "8.4.0.3" @elem{Added @racket[#:splice].}
+         #:changed "9.0.0.2" @elem{Added @racket[#:on-length-mismatch].}]}
 
 @defform[(for/list (for-clause ...) body-or-break ... body)]{ Iterates like
 @racket[for], but that the last expression in the @racket[body]s must
@@ -877,12 +897,14 @@ sequence of forms, and the forms are spliced in place of the
 
 @note-lib-only[racket/for-clause]
 
-@defproc[(syntax-local-splicing-clause-introduce [stx syntax?]) syntax?]{
+@defproc[(syntax-local-splicing-for-clause-introduce [stx syntax?]) syntax?]{
 
-Analogous to @racket[syntax-local-introduce], but for use in an
+Equivalent to @racket[syntax-local-introduce], intended for use in an
 expander bound with @racket[define-splicing-for-clause-syntax].
 
-@history[#:added "8.11.1.4"]}
+@history[#:added "8.11.1.4"
+         #:changed "9.0.0.2" @elem{Changed to be equivalent to
+                                   @racket[syntax-local-introduce].}]}
 
 @;------------------------------------------------------------------------
 @section{Do Loops}

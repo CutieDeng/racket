@@ -1951,60 +1951,33 @@
       ; opnd has already been visited
       (lambda (maybe-src id opnd ctxt sc wd name moi)
         (let ((rhs (result-exp (operand-value opnd))))
+          (define (copy-e e)
+            (residualize-ref maybe-src
+              (nanopass-case (Lsrc Expr) e
+                [(ref ,maybe-src ,x)
+                 (guard (not (prelex-was-assigned x))
+                        ;; protect against (letrec ([x x]) ---)
+                        (not (eq? x id)))
+                 (when (prelex-was-multiply-referenced id)
+                   (set-prelex-was-multiply-referenced! x #t))
+                 x]
+                [else id])
+              sc))
           (nanopass-case (Lsrc Expr) rhs
             [(quote ,d) rhs]
             [(record-type ,rtd ,e)
-             `(record-type ,rtd
-                ,(residualize-ref maybe-src
-                   (nanopass-case (Lsrc Expr) e
-                     [(ref ,maybe-src ,x)
-                      (guard (not (prelex-was-assigned x))
-                        ; protect against (letrec ([x x]) ---)
-                        (not (eq? x id)))
-                      (when (prelex-was-multiply-referenced id)
-                        (set-prelex-was-multiply-referenced! x #t))
-                      x]
-                     [else id])
-                   sc))]
+             `(record-type ,rtd ,(copy-e e))]
             [(record-cd ,rcd ,rtd-expr ,e)
-             `(record-cd ,rcd ,rtd-expr
-                ,(residualize-ref maybe-src
-                   (nanopass-case (Lsrc Expr) e
-                     [(ref ,maybe-src ,x)
-                      (guard (not (prelex-was-assigned x))
-                        ; protect against (letrec ([x x]) ---)
-                        (not (eq? x id)))
-                      (when (prelex-was-multiply-referenced id)
-                        (set-prelex-was-multiply-referenced! x #t))
-                      x]
-                     [else id])
-                   sc))]
+             `(record-cd ,rcd ,rtd-expr ,(copy-e e))]
             [(immutable-list (,e* ...) ,e)
-             `(immutable-list (,e* ...)
-                ,(residualize-ref maybe-src
-                   (nanopass-case (Lsrc Expr) e
-                     [(ref ,maybe-src ,x)
-                      (guard (not (prelex-was-assigned x))
-                        ; protect against (letrec ([x x]) ---)
-                        (not (eq? x id)))
-                      (when (prelex-was-multiply-referenced id)
-                        (set-prelex-was-multiply-referenced! x #t))
-                      x]
-                     [else id])
-                   sc))]
+             `(immutable-list (,e* ...) ,(copy-e e))]
             [(immutable-vector (,e* ...) ,e)
-             `(immutable-vector (,e* ...)
-                ,(residualize-ref maybe-src
-                   (nanopass-case (Lsrc Expr) e
-                     [(ref ,maybe-src ,x)
-                      (guard (not (prelex-was-assigned x))
-                        ; protect against (letrec ([x x]) ---)
-                        (not (eq? x id)))
-                      (when (prelex-was-multiply-referenced id)
-                        (set-prelex-was-multiply-referenced! x #t))
-                      x]
-                     [else id])
-                   sc))]
+             `(immutable-vector (,e* ...) ,(copy-e e))]
+            [(foreign (,conv* ...) ,name ,e (,arg-type* ...) ,result-type)
+             ;; use site of an atomic foreign procedure is always a call, so it's
+             ;; always worth inlining to expose the atomic call
+             (guard (memq 'atomic conv*))
+             `(foreign (,conv* ...) ,name ,(copy-e e) (,arg-type* ...) ,result-type)]
             [(ref ,maybe-src1 ,x)
              (cond
                [(and (not (prelex-was-assigned x))
@@ -2259,10 +2232,6 @@
                                     body)))))
                      ($sputprop 'prim 'key (foo 'prim)) ...)))))))
 
-      (define generic-nan?
-        (lambda (x)
-          (and (flonum? x) ($nan? x))))
-
       (define fl-nan?
         (lambda (x)
           ($nan? x)))
@@ -2270,6 +2239,10 @@
       (define cfl-nan?
         (lambda (z)
           (and ($nan? (cfl-real-part z)) ($nan? (cfl-imag-part z)))))
+
+      (define generic-cfl-nan?
+        (lambda (x)
+          (and (cflonum? x) (cfl-nan? x))))
 
       (define exact-zero?
         (lambda (x)
@@ -2459,6 +2432,24 @@
           [(who e) (visit-and-maybe-extract* addr-int?  ([de e])
                      (residualize-seq '() (list who e) ctxt)
                      true-rec)]))
+
+      (let ()
+        (define null-fptr-constant?
+          (lambda (e1)
+            (cp0-constant? (lambda (d)
+                             (and ($ftype-pointer? d)
+                                  (eqv? 0 (ftype-pointer-address d))))
+                           e1)))
+        (define-inline 2 ftype-pointer-address
+          [(e) (let ([xval (value-visit-operand! e)])
+                 (nanopass-case (Lsrc Expr) (result-exp xval)
+                   [(call ,preinfo ,pr ,e1 ,e2 ,e3)
+                    (guard (and (eq? (primref-name pr) '$fptr-&ref)
+                                (all-set? (prim-mask unsafe) (primref-flags pr))
+                                (null-fptr-constant? e1)))
+                    (residualize-seq '() (list e) ctxt)
+                    e2]
+                   [else #f]))]))
 
       (define-inline 2 (memq memv member assq assv assoc)
         [(x ls)
@@ -3071,12 +3062,19 @@
             (nanopass-case (Lsrc Expr) e
               [(quote ,d) (flonum? d)]
               [(call ,preinfo ,pr ,e* ...) (eq? 'flonum ($sgetprop (primref-name pr) '*result-type* #f))]
+              [(call ,preinfo (foreign (,conv* ...) ,name ,e (,arg-type* ...) ,result-type) ,e* ...)
+               (safe-assert (memq 'atomic conv*))
+               (nanopass-case (Ltype Type) result-type
+                 [(fp-double-float) #t]
+                 [(fp-single-float) #t]
+                 [else #f])]
               [else #f])))
 
         ; handling nans here using the support for handling exact zero in
         ; the multiply case.  maybe shouldn't bother with nans anyway.
-        (partial-folder plus + + 0 generic-nan?)
+        (partial-folder plus + + 0 generic-cfl-nan?)
         (partial-folder plus fx+ + 0 (lambda (x) #f) 3)
+        (partial-folder plus $fxx+ + 0 (lambda (x) #f))
         (r6rs-fixnum-partial-folder plus r6rs:fx+ fx+ + 0 (lambda (x) #f) 3)
         (r6rs-fixnum-partial-folder plus fx+/wraparound fx+/wraparound + 0 (lambda (x) #f) 3)
         (partial-folder plus fl+ fl+ -0.0 fl-nan? #f obviously-fl?)
@@ -3094,6 +3092,7 @@
         ; to 0, but (/ 0 n) is only 0 if divisor turns out not to be 0.
         (partial-folder minus - - 0)
         (partial-folder minus fx- - 0)
+        (partial-folder minus $fxx- - 0)
         (r6rs-fixnum-partial-folder minus r6rs:fx- fx- - 0)
         (r6rs-fixnum-partial-folder minus fx-/wraparound fx-/wraparound - 0)
         (partial-folder minus fl- fl- -0.0)

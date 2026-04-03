@@ -142,7 +142,13 @@
        (provide ,@(apply
                    append
                    (for/list ([(phase ht) (in-hash provides)])
-                     (phase-wrap phase (hash-keys ht)))))
+                     (phase-wrap phase (for/list ([(k v) (in-hash ht)])
+                                         (define b (if (provided? v) (provided-binding v) v))
+                                         (match (binding-content b)
+                                           [`(,_ ,name . ,_) (if (eq? name k)
+                                                                 k
+                                                                 `(rename-out [,name ,k]))]
+                                           [_ k]))))))
        ,@(let loop ([phases phases] [depth (apply min 0 phases)])
            (cond
              [(null? phases) '()]
@@ -239,7 +245,9 @@
         body-l])]
     [(? linklet?)
      (case (system-type 'vm)
-       [(chez-scheme)
+       [(racket linklet)
+        `(....)]
+       [else
         (define-values (fmt code literals) ((vm-primitive 'linklet-fasled-code+arguments) l))
         (cond
           [code

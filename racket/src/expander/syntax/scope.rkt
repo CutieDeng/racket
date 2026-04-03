@@ -314,10 +314,14 @@
 
 ;; Each new scope increments the counter, so we can check whether one
 ;; scope is newer than another.
-(define-place-local id-counter 0)
+(define-place-local id-counter (box 0))
 (define (new-scope-id!)
-  (set! id-counter (add1 id-counter))
-  id-counter)
+  (define c (unbox* id-counter))
+  (cond
+    [(box-cas! id-counter c (add1 c))
+     (add1 c)]
+    [else
+     (new-scope-id!)]))
 
 (define (new-deserialize-scope-id!)
   ;; negative scope ensures that new scopes are recognized as such by
@@ -339,36 +343,47 @@
 (define (new-scope kind)
   (scope (new-scope-id!) kind empty-binding-table))
 
-;; The intern table used for interned scopes. Access to the table must be
-;; atomic so that the table is not left locked if the expansion thread is
-;; killed.
+;; The intern table used for interned scopes. A lock is needed for
+;; updates to enable `hash-keys` and `in-hash-values. Furthermore,
+;; locked access to the table must be uninterruptible so that the
+;; table is not left locked if the expansion thread is killed.
 (define-place-local interned-scopes-table (make-ephemeron-hasheq))
+(define-place-local interned-scopes-table-lock (make-uninterruptible-lock))
 
 (define (interned-scope-symbols)
-  (call-as-atomic
-   (lambda ()
-     (hash-keys interned-scopes-table))))
+  (uninterruptible-lock-acquire interned-scopes-table-lock)
+  (define keys (hash-keys interned-scopes-table))
+  (uninterruptible-lock-release interned-scopes-table-lock)
+  keys)
 
 (define (interned-scopes)
-  (call-as-atomic
-   (lambda ()
-     (for/seteq ([s (in-hash-values interned-scopes-table)])
-       s))))
+  (uninterruptible-lock-acquire interned-scopes-table-lock)
+  (define scs (for/seteq ([s (in-hash-values interned-scopes-table)])
+                s))
+  (uninterruptible-lock-release interned-scopes-table-lock)
+  scs)
 
 (define (scope-place-init!)
-  (set! interned-scopes-table (make-ephemeron-hasheq)))
+  (set! interned-scopes-table (make-ephemeron-hasheq))
+  (set! interned-scopes-table-lock (make-uninterruptible-lock)))
 
 (define (make-interned-scope sym)
   (define (make)
     ;; since interned scopes are reused by unmarshalled code, and because they’re generally unlikely
     ;; to be a good target for bindings, always create them with a negative id
     (interned-scope (- (new-scope-id!)) 'interned empty-binding-table sym))
-  (call-as-atomic
-   (lambda ()
-     (or (hash-ref! interned-scopes-table sym #f)
-         (let ([new (make)])
-           (hash-set! interned-scopes-table sym new)
-           new)))))
+  (cond
+    [(hash-ref interned-scopes-table sym #f)
+     => (lambda (s) s)]
+    [else
+     (define new (make))
+     (uninterruptible-lock-acquire interned-scopes-table-lock)
+     (define s (or (hash-ref interned-scopes-table sym #f)
+                   (begin
+                     (hash-set! interned-scopes-table sym new)
+                     new)))
+     (uninterruptible-lock-release interned-scopes-table-lock)
+     s]))
 
 (define (syntax-has-interned-scope? s)
   (for/or ([sc (in-set (syntax-scopes s))])
@@ -801,8 +816,10 @@
       (intern-shifted-multi-scope (shifted-to-label-phase (phase- 0 (shifted-multi-scope-phase sms)))
                                   (shifted-multi-scope-multi-scope sms))])]
    [(shifted-to-label-phase? (shifted-multi-scope-phase sms))
-    ;; Numeric shift has no effect on bindings in phase #f
-    sms]
+    ;; Numeric shift on bindings in phase #f
+    (define from (shifted-to-label-phase-from (shifted-multi-scope-phase sms)))
+    (intern-shifted-multi-scope (shifted-to-label-phase (phase+ delta from))
+                                (shifted-multi-scope-multi-scope sms))]
    [else
     ;; Numeric shift added to an existing numeric shift
     (intern-shifted-multi-scope (phase+ delta (shifted-multi-scope-phase sms))

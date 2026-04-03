@@ -8,7 +8,7 @@
         (#%$app/no-return do-raise v))]))
 
 (define (do-raise/barrier v)
-  (assert-not-in-uninterrupted 'raise)
+  (assert-not-in-engine-uninterrupted 'raise)
   (call-with-continuation-barrier
    (lambda ()
      (do-raise v))))
@@ -89,8 +89,22 @@
                   'error-syntax->name-handler
                   primitive-realm))
 
+(define/who error-module-path->string-handler
+  (make-parameter (lambda (v len)
+                    (#%format "~s" v))
+                  (lambda (v)
+                    (check who (procedure-arity-includes/c 2) v)
+                    v)
+                  'error-module-path->string-handler
+                  primitive-realm))
+
 (define/who error-print-context-length
-  (make-parameter 16
+  (make-parameter (let ([s (getenv "PLT_ERROR_PRINT_CONTEXT_LENGTH")])
+                    (or (and s
+                             (let ([n (string->number s)])
+                               (and (exact-nonnegative-integer? n)
+                                    n)))
+                        16))
                   (lambda (v)
                     (check who exact-nonnegative-integer? v)
                     v)
@@ -204,7 +218,7 @@
   (#%$app/no-return do-raise-arguments-error who who-in realm what exn:fail:contract more))
   
 (define (do-raise-arguments-error e-who who realm what exn:fail:contract more)
-  (assert-not-in-uninterrupted 'do-raise-arguments-error)
+  (assert-not-in-engine-uninterrupted 'do-raise-arguments-error)
   (check e-who symbol? who)
   (check e-who symbol? realm)
   (check e-who string? what)
@@ -279,7 +293,7 @@
      (#%$app/no-return do-raise-argument-error who "result" who-in realm what pos arg args)]))
 
 (define (do-raise-argument-error e-who tag who realm what pos arg args)
-  (assert-not-in-uninterrupted 'do-raise-argument-error)
+  (assert-not-in-engine-uninterrupted 'do-raise-argument-error)
   (check e-who symbol? who)
   (check e-who symbol? realm)
   (check e-who string? what)
@@ -864,29 +878,65 @@
 (define (install-primitives-table! primitives)
   (set! primitive-names primitives))
 
+(define future-trace-extra-depth
+  (or (let ([s (getenv "PLT_FUTURE_TRACE_DEPTH")])
+        (and s (let ([n (string->number s)])
+                 (and (integer? n) (exact? n) (positive? n)
+                      (sub1 n)))))
+      0))
+
 ;; Simplified variant of `continuation->trace` that can be called to
-;; get a likely primitive to blame for a blocking future.
-(define (continuation-current-primitive k exclusions)
-  (let loop ([k (if (full-continuation? k) (full-continuation-k k) k)])
-    (cond
-     [(or (not (#%$continuation? k))
-          (eq? k #%$null-continuation))
-      #f]
-     [else
-      (let* ([name (or (let ([n #f])
-                         (and n
-                              (string->symbol (format "body of ~a" n))))
-                       (let* ([c (#%$continuation-return-code k)]
-                              [n (#%$code-name c)])
-                         (and n (string->symbol n))))])
-        (cond
-         [(and name
-               (hash-ref primitive-names name #f)
-               (not (#%memq name exclusions)))
-          name]
-         [else
-          (#%$split-continuation k 0)
-          (loop (#%$continuation-link k))]))])))
+;; get blame for a blocking future.
+(define (continuation-current-primitive k exclusions inclusions)
+  (let ([k (if (#%procedure? k)
+               ;; as a convenience for the futures scheduler, find a
+               (let loop ([len (#%$closure-length k)])
+                 (cond
+                   [(fx= len 0) #f]
+                   [else (let ([v (#%$closure-ref k (fx- len 1))])
+                           (or (and (full-continuation? v)
+                                    v)
+                               (loop (fx- len 1))))]))
+               k)])
+    (let loop ([k (if (full-continuation? k) (full-continuation-k k) k)]
+               [mc (if (full-continuation? k) (continuation-mc k) null)]
+               [fallback #f]
+               [more future-trace-extra-depth])
+      (cond
+        [(or (not (#%$continuation? k))
+             (eq? k #%$null-continuation))
+         (cond
+           [(null? mc)
+            fallback]
+           [else
+            (loop (metacontinuation-frame-resume-k (car mc))
+                  (cdr mc)
+                  fallback
+                  more)])]
+        [else
+         (let* ([c (#%$continuation-return-code k)]
+                [n (#%$code-name c)]
+                [name (let ([s (and n
+                                    (procedure-name-string->visible-name-string n))])
+                        (if (string? s)
+                            (string->symbol s)
+                            s))])
+           (cond
+             [(and name
+                   (not (#%memq name exclusions)))
+              (let ([next (and (positive? more)
+                               (begin
+                                 (#%$split-continuation k 0)
+                                 (loop (#%$continuation-link k) mc #f (sub1 more))))])
+                (if next
+                    (string->symbol (format "~a via ~a"  name next))
+                    name))]
+             [else
+              (#%$split-continuation k 0)
+              (loop (#%$continuation-link k)
+                    mc
+                    (or fallback (cons name (#%$continuation-link k)))
+                    more)]))]))))
 
 (define (traces->context ls realms?)
   (let loop ([l '()] [ls ls])
@@ -1172,7 +1222,7 @@
   (current-exception-state (create-exception-state))
   (base-exception-handler
    (lambda (v)
-     #;(#%printf "~s\n" (exn->string v))
+     #;(#%printf "~s\n" (parameterize () (exn->string v)))
      #;(#%printf "~s\n" (continuation-mark-set-traces (current-continuation-marks)))
      (cond
       [(and (warning? v)

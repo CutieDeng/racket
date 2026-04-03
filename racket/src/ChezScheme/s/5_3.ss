@@ -60,19 +60,19 @@
 
 (define cflop1
    (lambda (x)
-      (foreign-procedure x (double-float) double-float)))
+      (foreign-procedure __atomic x (double-float) double-float)))
 
 (define cflop2
    (lambda (x)
-      (foreign-procedure x (double-float double-float) double-float)))
+      (foreign-procedure __atomic x (double-float double-float) double-float)))
 
 (define schemeop1
    (lambda (x)
-      (foreign-procedure x (scheme-object) scheme-object)))
+      (foreign-procedure __atomic __alloc x (scheme-object) scheme-object)))
 
 (define schemeop2
    (lambda (x)
-      (foreign-procedure x (scheme-object scheme-object) scheme-object)))
+      (foreign-procedure __atomic __alloc x (scheme-object scheme-object) scheme-object)))
 
 (let ()
 
@@ -81,10 +81,10 @@
 (define float (schemeop1 "(cs)s_float"))
 
 (define big=
-  (foreign-procedure "(cs)s_big_eq" (scheme-object scheme-object)
+  (foreign-procedure __atomic "(cs)s_big_eq" (scheme-object scheme-object)
     boolean))
 (define big<
-  (foreign-procedure "(cs)s_big_lt" (scheme-object scheme-object)
+  (foreign-procedure __atomic "(cs)s_big_lt" (scheme-object scheme-object)
     boolean))
 (define big-negate (schemeop1 "(cs)s_big_negate"))
 (define integer-ash (schemeop2 "(cs)s_ash"))
@@ -268,7 +268,7 @@
        (schoolbook-intremainder n d)])))
 
 (define integer-gcd
-  (let ([$bignum-trailing-zero-bits (foreign-procedure "(cs)s_big_trailing_zero_bits" (ptr) ptr)])
+  (let ([$bignum-trailing-zero-bits (foreign-procedure __atomic "(cs)s_big_trailing_zero_bits" (ptr) ptr)])
     (lambda (n d)
       (cond
         [(and (bignum? n) (bignum? d))
@@ -1445,13 +1445,17 @@
   (set-who! inexact (lambda (z) (convert-to-inexact z who)))
   (set-who! exact->inexact (lambda (z) (convert-to-inexact z who))))
 
+(set! $real->flonum/slow
+  ; slow path for bignum or ratnum
+  (lambda (x) (float x)))
+
 (let ()
   (define convert-to-exact
-    (lambda (z who)
+    (lambda (who z)
       (type-case z
         [(flonum?)
          (when (exceptional-flonum? z)
-           ($oops 'exact "no exact representation for ~s" z))
+           ($oops who "no exact representation for ~s" z))
          (let ([dx (decode-float z)])
            (let ([mantissa (* (vector-ref dx 0) (vector-ref dx 2))]
                  [exponent (vector-ref dx 1)])
@@ -1460,12 +1464,13 @@
                  (* mantissa (ash 1 exponent)))))]
         [($inexactnum?)
          (make-rectangular
-           (exact ($inexactnum-real-part z))
-           (exact ($inexactnum-imag-part z)))]
+           (convert-to-exact who ($inexactnum-real-part z))
+           (convert-to-exact who ($inexactnum-imag-part z)))]
         [(fixnum? bignum? ratnum? $exactnum?) z]
         [else (nonnumber-error who z)])))
-  (set-who! exact (lambda (z) (convert-to-exact z who)))
-  (set-who! inexact->exact (lambda (z) (convert-to-exact z who))))
+  (set-who! exact (lambda (z) (convert-to-exact who z)))
+  (set-who! inexact->exact (lambda (z) (convert-to-exact who z)))
+)
 
 (set! rationalize
    ; Alan Bawden's algorithm
@@ -1705,8 +1710,55 @@
                  ($impoops 'expt "undefined for values ~s and ~s" x y)
                  0)]
             [(eq? x 1) 1]
-            [(eq? x 2) (if (< y 0) (/ (ash 1 (- y))) (ash 1 y))]
-            [(and (flonum? x) (exact-integer-fits-float? y)) ($flexpt x (inexact y))]
+            [(eq? x -1) (if (odd? y) -1 1)]
+            [(eq? x 2)
+             (let ([abs-y (if (< y 0) (- y) y)])
+               (when (> abs-y (* (constant maximum-bignum-length) (constant bigit-bits)))
+                 ($oops 'expt "out of memory"))
+               (if (< y 0) (/ (ash 1 (- y))) (ash 1 y)))]
+            [(flonum? x)
+             ;; By Bradley Lucier (@gambiteer) for Gambit, relies
+             ;; on some special cases already handled by the time
+             ;; we get here:
+             (cond
+               [(exact-integer-fits-float? y) ($flexpt x (inexact y))]
+               ;; singular cases
+               [($nan? x) x]
+               [(flzero? x) (if (positive? y)
+                                (if (odd? y) x 0.)
+                                (if (odd? y) (fl/ x) +inf.0))]
+               [(fl= (flabs x) 1.) (if (odd? y) x 1.)]
+               ;; extremely large exponents
+               [(or (<= y (- (expt 2 63)))
+                    (<= (expt 2 63) y))
+                ;; Only extreme values (+/- 0, infty) are possible
+                ;; in IEEE double precision.
+                ;; for future reference
+                ;; (nextafter 1. +inf.0) => 1.0000000000000002
+                ;; (nextafter 1. +.0   ) =>  .9999999999999999
+                (if (eq? (fl< 1. (flabs x)) (positive? y))
+                    ;; result is an infinity
+                    (if (and (odd? y) (flnegative? x)) -inf.0 +inf.0)
+                    ;; result is a zero
+                    (if (and (odd? y) (flnegative? x)) -0. +0.))]
+               [else
+                (let* ((abs-big-y
+                        ;; remove the lowest 12 bits of (abs y)
+                        (bitwise-arithmetic-shift-left (bitwise-arithmetic-shift-right (abs y) 12) 12))
+                       (big-part-of-y
+                        (if (negative? y)
+                            (- abs-big-y)
+                            abs-big-y))
+                       (rest-of-y
+                        (- y big-part-of-y)))
+                  ;; y = big-part-of-y + rest-of-y, both terms on right are nonzero
+                  ;; because (abs y) <= 2^63 and it can't be converted exactly to a flonum,
+                  ;; so there are more than 53 upper bits of y.
+                  ;; big-part-of-y and rest-of-y can be converted to flonum without roundoff error.
+                  ;; y, big-part-of-y, and rest-of-y have the same sign, so the following
+                  ;; product is not an infinity times a zero.
+                  (fl* ($flexpt x (inexact big-part-of-y))
+                       ($flexpt x (inexact rest-of-y))))])]
             [(and ($inexactnum? x) (exact-integer-fits-float? y)) (exp (* y (log x)))]
             [(not (number? x)) (nonnumber-error 'expt x)]
             [(ratnum? x)
@@ -1714,6 +1766,10 @@
                  (let ([y (- y)])
                    (/ (expt (denominator x) y) (expt (numerator x) y)))
                  (/ (expt (numerator x) y) (expt (denominator x) y)))]
+            [(and (or (fixnum? x) (bignum? x))
+                  (> (* (if (< y 0) (- y) y) (integer-length x))
+                     (* (constant maximum-bignum-length) (constant bigit-bits))))
+             ($oops 'expt "out of memory")]
             [else
              (let ()
                (define (f x n)
@@ -2198,13 +2254,15 @@
         [(fixnum?)
          (when (fx= y 0) (domain-error who y))
          (cond
-           [(or (fx= y 1) (fx= y -1)) (unless (integer? x) (noninteger-error who x)) 0]
+           [(or (fx= y 1) (fx= y -1))
+            (unless (integer? x) (noninteger-error who x))
+            (if (flonum? x) 0.0 0)]
            [else
              (type-case x
                [(fixnum?) (fxremainder x y)]
                [(bignum?) (intremainder x y)]
                [else
-                 (unless (integer? x) (noninteger-error who x))
+                (unless (integer? x) (noninteger-error who x))
                  (f x y)])])]
         [(bignum?)
          (type-case x
@@ -2216,7 +2274,13 @@
           (unless (integer? y) (noninteger-error who y))
           (unless (integer? x) (noninteger-error who x))
           (when (= y 0) (domain-error who y))
-          (f x y)]))))
+          (cond
+            [(and (flonum? y) (not (flonum? x)))
+             (if (eqv? x 0)
+                 0
+                 (inexact (remainder x (exact y))))]
+            [else
+             (f x y)])]))))
 
 (set-who! even?
    (lambda (x)
@@ -2337,7 +2401,12 @@
              [(fixnum?) (if (fixnum-floatable-wlop? y) (fl< x (fixnum->flonum y)) (exact-inexact-compare? > y x))]
              [(bignum? ratnum?) (exact-inexact-compare? > y x)]
              [else (nonreal-error who y)])]
-         [else (nonreal-error who x)])))
+         [else (when (and (eq? who '>)
+                          ;; arguments were reversed; call in other order to
+                          ;; check original first argument first
+                          (not (real? y)))
+                 (nonreal-error who y))
+               (nonreal-error who x)])))
 
 (set! $<=
    (lambda (who x y)
@@ -2373,7 +2442,12 @@
              [(fixnum?) (if (fixnum-floatable-wlop? y) (fl<= x (fixnum->flonum y)) (exact-inexact-compare? >= y x))]
              [(bignum? ratnum?) (exact-inexact-compare? >= y x)]
              [else (nonreal-error who y)])]
-         [else (nonreal-error who x)])))
+         [else (when (and (eq? who '>=)
+                          ;; arguments were reversed; call in other order to
+                          ;; check original first argument first
+                          (not (real? y)))
+                 (nonreal-error who y))
+               (nonreal-error who x)])))
 
 (set! $+
   (lambda (who x y)
@@ -2444,7 +2518,7 @@
           [else (nonnumber-error who x)])])))
 
 (set! $*
-  (let ([$bignum-trailing-zero-bits (foreign-procedure "(cs)s_big_trailing_zero_bits" (ptr) ptr)])
+  (let ([$bignum-trailing-zero-bits (foreign-procedure __atomic "(cs)s_big_trailing_zero_bits" (ptr) ptr)])
    (lambda (who x y)
     (cond
       [(and (fixnum? y) ($fxu< (fx+/wraparound y 1) 3))
@@ -3033,7 +3107,7 @@
 (set-who! bitwise-first-bit-set
   (let ()
     (define $big-first-bit-set
-      (foreign-procedure "(cs)s_big_first_bit_set" (ptr) ptr))
+      (foreign-procedure __atomic "(cs)s_big_first_bit_set" (ptr) ptr))
     (lambda (n)
       (cond
         [(fixnum? n) (fxfirst-bit-set n)]
@@ -3045,7 +3119,7 @@
    ; big-positive-bit-field assumes n is a positive bignum, start and
    ; end are nonnegative fixnums, and end > start
     (define big-positive-bit-field
-      (foreign-procedure "(cs)s_big_positive_bit_field" (ptr ptr ptr) ptr))
+      (foreign-procedure __atomic __alloc "(cs)s_big_positive_bit_field" (ptr ptr ptr) ptr))
     (define (generic-bit-field n start end)
       (bitwise-and
         ($sra who n start)
@@ -3134,7 +3208,7 @@
   (set! pseudo-random-generator?
         (lambda (x) (is-pseudo-random-generator? x)))
 
-  (let ([init! (foreign-procedure "(cs)s_random_state_init" (scheme-object unsigned) void)])
+  (let ([init! (foreign-procedure __atomic "(cs)s_random_state_init" (scheme-object unsigned) void)])
     (set! make-pseudo-random-generator
           (lambda ()
             (let ([s (create-pseudo-random-generator 0.0 0.0 0.0 0.0 0.0 0.0)]
@@ -3151,9 +3225,9 @@
         (init! s (bitwise-and n #xFFFFFFFF)))))
 
   (set-who! pseudo-random-generator-next!
-     (let ([random-double (foreign-procedure "(cs)s_random_state_next_double"
+     (let ([random-double (foreign-procedure __atomic "(cs)s_random_state_next_double"
                             (scheme-object) double)]
-           [random-int (foreign-procedure "(cs)s_random_state_next_integer"
+           [random-int (foreign-procedure __atomic "(cs)s_random_state_next_integer"
                             (scheme-object uptr) uptr)])
        (case-lambda
         [(s)
@@ -3206,12 +3280,12 @@
               (inexact->exact (pseudo-random-generator-x22 s)))))
 
   (let ([vector->prgen
-         (let ([ok? (foreign-procedure "(cs)s_random_state_check" (double double double double double double) boolean)])
+         (let ([ok? (foreign-procedure __atomic "(cs)s_random_state_check" (double double double double double double) boolean)])
            (lambda (who s v)
              (define (bad-vector)
                ($oops who "not a valid pseudo-random generator state vector ~s" v))
              (define (int->double i)
-               (unless (and (exact? i) (integer? i)) (bad-vector))
+               (unless (and (integer? i) (exact? i)) (bad-vector))
                (exact->inexact i))
              (unless (and (vector? v) (= 6 (vector-length v))) (bad-vector))
              (let ([x10 (int->double (vector-ref v 0))]
@@ -3240,9 +3314,9 @@
         (vector->prgen who s vec)))))
 
 (set! random
-   (let ([fxrandom (foreign-procedure "(cs)s_fxrandom"
+   (let ([fxrandom (foreign-procedure __atomic __alloc "(cs)s_fxrandom"
                       (scheme-object) scheme-object)]
-         [flrandom (foreign-procedure "(cs)s_flrandom"
+         [flrandom (foreign-procedure __atomic __alloc "(cs)s_flrandom"
                       (scheme-object) scheme-object)])
       (lambda (x)
          (cond
@@ -3257,9 +3331,9 @@
 
 (set! random-seed ; must follow \#-
    (let ([limit #xFFFFFFFF]
-         [get-seed (foreign-procedure "(cs)s_random_seed"
+         [get-seed (foreign-procedure __atomic "(cs)s_random_seed"
                       () unsigned-32)]
-         [set-seed (foreign-procedure "(cs)s_set_random_seed"
+         [set-seed (foreign-procedure __atomic "(cs)s_set_random_seed"
                       (unsigned-32) void)])
       (case-lambda
          [() (get-seed)]
@@ -3391,7 +3465,7 @@
     (let ()
       (define (fxextract n start end)
         (fxand (fxsrl n start)
-               (fx- (fxsll 1 (fx- end start)) 1)))
+               (fx-/wraparound (fxsll/wraparound 1 (fx- end start)) 1)))
       (cond
         [(fx<= end (constant positive-fixnum-bits))
          (fxextract (flbit-field x 0 (constant positive-fixnum-bits)) start end)]

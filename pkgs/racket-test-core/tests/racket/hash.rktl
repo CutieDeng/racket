@@ -206,10 +206,14 @@
       (λ (k v) (and (eqv? k 3.14) (string=? v "pi"))))
 
 ;; Filtering by key-value pairs in an ephemeron hash table with equal-always?
-(test (make-ephemeron-hashalw (list (cons (list 'a) "list-a")))
-      hash-filter
-      (make-ephemeron-hashalw (list (cons (list 'a) "list-a") (cons (list 'b) "list-b")))
-      (λ (k v) (and (equal? k (list 'a)) (string=? v "list-a"))))
+(let ([al1 (list 'a)]
+      [al2 (list 'a)])
+  (test (make-ephemeron-hashalw (list (cons al1 "list-a")))
+        hash-filter
+        (make-ephemeron-hashalw (list (cons al2 "list-a") (cons (list 'b) "list-b")))
+        (λ (k v) (and (equal? k (list 'a)) (string=? v "list-a"))))
+  (black-box al1)
+  (black-box al2))
 
 ;; Weak hashes with equal comparator
 (test (make-weak-hash (list (cons 'melon "fruit")))
@@ -1127,6 +1131,64 @@
   ;; allow some collisions, at worst 2 collisions per key; at the time of
   ;; writing, we expect collisions with chars, but not other collisions
   (test #t > (hash-count ht) 200000))
+
+;; ----------------------------------------
+;; Check that no keys are lost during mutating traversal
+;; that doesn't add keys
+
+(for* ([remove-via-map? (in-list '(#f #t))]
+       [ht (in-list (list (make-hasheq)
+                          (make-hash)
+                          (make-weak-hasheq)
+                          (make-weak-hash)))])
+  (define N 100000)
+  (test 0 hash-count ht)
+  (for ([i (in-range N)])
+    (hash-set! ht i i))
+  (test N
+        'mutate-half
+        (cond
+          [remove-via-map?
+           (hash-map ht (lambda (i v)
+                          (when (even? i)
+                            (hash-remove! ht i))))
+           (* 2 (hash-count ht))]
+          [else
+           (for/sum ([i (in-hash-keys ht)])
+             (when (even? i)
+               (hash-remove! ht i))
+             1)]))
+  (test (/ N 2)
+        'mutate-later
+        (for/sum ([i (in-hash-keys ht)])
+          (when (i . > . (/ N 2))
+            (hash-set! ht i (add1 i)))
+          1)))
+
+(let ()
+  (define ht (make-hasheqv))
+  (for ([idx (in-range 32)])
+    (hash-set! ht idx 1))
+  (test 32 length (hash-values ht))
+  (hash-clear! ht)
+  (for ([idx (in-range 64)])
+    (hash-set! ht idx 1))
+  (test 64 length (hash-values ht)))
+
+;; ----------------------------------------
+;; check that various functions work ok with disappearing keys
+
+(for ([i (in-range 10000)])
+  (black-box
+   (equal? (make-ephemeron-hashalw (list (cons (list 'a) "list-a")))
+           (hash-filter
+            (make-ephemeron-hashalw (list (cons (list 'a) "list-a") (cons (list 'b) "list-b")))
+            (λ (k v) (and (equal? k (list 'a)) (string=? v "list-a")))))))
+
+(for ([i (in-range 10000)])
+  (black-box
+   (hash-union! (make-ephemeron-hashalw (list (cons (list 'c) "list-a")))
+                (make-ephemeron-hashalw (list (cons (list 'a) "list-a") (cons (list 'b) "list-b"))))))
 
 ;; ----------------------------------------
 

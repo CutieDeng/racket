@@ -51,7 +51,7 @@ char *binary_type_hack = "bINARy tYPe:ezic";
 
 /* This path list is used instead of the one in the Racket/GRacket
    binary. That way, the same Racket/GRacket binary can be shared
-   among embedding exectuables that have different collection
+   among embedding executables that have different collection
    paths. */
 PRESERVE_IN_EXECUTABLE
 char *_coldir = "coLLECTs dIRECTORy:" /* <- this tag stays, so we can find it again */
@@ -266,7 +266,7 @@ int main(int argc, char **argv)
   char *exe_path, *lib_path, *dll_path;
   int start, decl_end, prog_end, end, count, fd, v, en, x11;
   int argpos, inpos, collcount = 1, fix_argv;
-  int bufsize = 127;
+  size_t bufsize = 127;
 
   if (config[7] == '[') {
     write_str(2, argv[0]);

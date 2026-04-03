@@ -407,10 +407,10 @@ Returns the @as-index{greatest common divisor} (a non-negative
 @mz-examples[(gcd 10) (gcd 12 81.0) (gcd 1/2 1/3)]}
 
 
-@defproc[(lcm [n rational?] ...) rational?]{
+@defproc[(lcm [n rational?] ...) (or/c rational? +inf.0)]{
 
 Returns the @as-index{least common multiple} (a non-negative number)
- of the @racket[n]s; non-integer @racket[n]s, the result is
+ of the @racket[n]s. For two non-integer @racket[n]s, the result is
  the absolute value of the product divided by the
  @racket[gcd]. If no arguments are provided, the result is
  @racket[1]. If any argument is zero, the result is zero; furthermore,
@@ -864,6 +864,18 @@ This operation is equivalent to
 but it is faster and runs in constant time when @racket[n] is positive.
 
 @mz-examples[(bitwise-bit-set? 5 0) (bitwise-bit-set? 5 2) (bitwise-bit-set? -5 (expt 2 700))]}
+
+
+@defproc[(bitwise-first-bit-set [n exact-integer?])
+         exact-integer?]{
+
+Returns @racket[-1] if @racket[n] is @racket[0], otherwise returns the
+smallest @racket[_m] for which @racket[(bitwise-bit-set? n _m)]
+produces @racket[#t].
+
+@mz-examples[(bitwise-first-bit-set 128)]
+
+@history[#:added "8.16.0.4"]}
 
 
 @defproc[(bitwise-bit-field [n exact-integer?]

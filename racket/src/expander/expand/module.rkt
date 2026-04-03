@@ -429,9 +429,12 @@
      (define is-cross-phase-persistent? (hash-ref declared-keywords '#:cross-phase-persistent #f))
      (when is-cross-phase-persistent?
        (unless (requires+provides-can-cross-phase-persistent? requires+provides)
-         (raise-syntax-error #f "cannot be cross-phase persistent due to required modules"
+         (raise-syntax-error #f "cannot be cross-phase persistent because some required module isn't"
                              rebuild-s
-                             (hash-ref declared-keywords '#:cross-phase-persistent)))
+                             (hash-ref declared-keywords '#:cross-phase-persistent)
+                             null
+                             (format "~n  required module: ~a"
+                                     (requires+provides-why-not-cross-phase-persistent requires+provides))))
        (check-cross-phase-persistent-form fully-expanded-bodys-except-post-submodules self))
 
      (define realm (let ([realm-stx (hash-ref declared-keywords '#:realm #f)])
@@ -985,7 +988,7 @@
               (unless (keyword? (syntax-e kw))
                 (raise-syntax-error #f "expected a keyword" exp-body kw))
               (unless (memq (syntax-e kw) '(#:cross-phase-persistent #:empty-namespace #:unsafe
-                                            #:unlimited-require #:realm
+                                            #:unlimited-compile #:realm
                                             #:require=define #:flatten-requires))
                 (raise-syntax-error #f "not an allowed declaration keyword" exp-body kw))
               (define has-arg? (eq? (syntax-e kw) '#:realm))

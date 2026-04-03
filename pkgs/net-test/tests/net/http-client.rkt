@@ -1,12 +1,18 @@
 #lang racket/base
 (module+ test
-  (require rackunit
-           racket/tcp
-           racket/port
-           (for-syntax racket/base)
-           racket/list
+  (require (for-syntax racket/base)
            (prefix-in hc: net/http-client)
-           (prefix-in u: net/url))
+           (prefix-in u: net/url)
+           racket/list
+           racket/match
+           racket/port
+           racket/runtime-path
+           racket/system
+           racket/tcp
+           rackunit)
+
+  (define-runtime-path rst-server.rkt
+    "http-client/rst-server.rkt")
 
   (define-syntax regexp-replace**
     (syntax-rules ()
@@ -387,6 +393,55 @@
         (abandon-p from)))
     "MONKEYS")
 
+  ;; Test http-conn-CONNECT-tunnel with proxy authentication
+  ;; This test creates a simple server that captures the request and verifies
+  ;; that the Proxy-Authorization header is sent correctly
+  (let ()
+    (local-require (prefix-in gs: "http-proxy/generic-server.rkt")
+                   net/base64)
+    (define captured-request #f)
+    (define-values (auth-proxy-port auth-proxy-thread auth-proxy-kill)
+      (gs:serve
+       (lambda (inp outp)
+         ;; Read and capture the CONNECT request
+         (set! captured-request
+               (for/list ((l (in-lines inp 'return-linefeed))
+                          #:break (string=? l ""))
+                 l))
+         ;; Send a 200 response to establish the tunnel
+         (display "HTTP/1.1 200 Connection Established\r\n\r\n" outp)
+         (flush-output outp)
+         ;; Echo back whatever is sent through the tunnel
+         (define line (read-line inp))
+         (unless (eof-object? line)
+           (displayln line outp)
+           (flush-output outp)))))
+
+    (define test-credentials "testuser:testpassword")
+    (define expected-auth-header
+      (format "Proxy-Authorization: Basic ~a"
+              (bytes->string/utf-8 (base64-encode (string->bytes/utf-8 test-credentials) #""))))
+
+    (define-values (ssl-ctx from to abandon-p)
+      (hc:http-conn-CONNECT-tunnel "localhost" auth-proxy-port
+                                   "targethost" 443
+                                   #:ssl? #f
+                                   #:proxy-auth test-credentials))
+
+    ;; Send something through the tunnel and read it back
+    (fprintf to "TEST\n")
+    (flush-output to)
+    (define response (read-line from))
+    (abandon-p to)
+    (abandon-p from)
+    (auth-proxy-kill)
+
+    ;; Verify the CONNECT request included the Proxy-Authorization header
+    (check-true (list? captured-request))
+    (check-not-false (member expected-auth-header captured-request)
+                     (format "Expected Proxy-Authorization header not found. Got: ~a" captured-request))
+    (check-equal? response "TEST"))
+
   (let ([c (hc:http-conn)])
     (check-false (hc:http-conn-live? c))
     (check-false (hc:http-conn-liveable? c))
@@ -451,4 +506,68 @@
 
     (for ([raw (in-list cases)])
       (with-check-info (['response-raw raw])
-        (test-colon-field-lws raw)))))
+        (test-colon-field-lws raw))))
+
+  ;; Ensure decoding errors are raised in the http-conn-recv!ing thread.
+  ;; xref: https://github.com/Bogdanp/racket-http-easy/issues/35
+  (let ()
+    (for ([coding (in-list '(deflate gzip))]
+          [exn-re (in-list '(#rx"inflate: error in compressed data"
+                             #rx"gnu-unzip: bad header"))])
+      (local-require (prefix-in gs: "http-proxy/generic-server.rkt"))
+      (define-values (gs:port _gs:thread gs:kill)
+        (gs:serve
+         (lambda (in out)
+           (void (read-request in))
+           (fprintf out "HTTP/1.1 200 OK\r\n")
+           (fprintf out "Content-Encoding: ~a\r\n" coding)
+           (fprintf out "\r\n")
+           (fprintf out "abc123")
+           (flush-output out))))
+      (define c (hc:http-conn-open "localhost" #:port gs:port))
+      (check-exn
+       exn-re
+       (lambda ()
+         (define-values (status _headers in)
+           (hc:http-conn-sendrecv! c ""))
+         (check-equal? status #"HTTP/1.1 200 OK")
+         (read-line in)))
+      (gs:kill)))
+
+  ;; Test that a RST from a client during body transfer doesn't deadlock.
+  (when (memq (system-type 'os) '(unix macosx))
+    (for ([chunked? (in-list '(#f #t))])
+      (match-define (list stdout stdin _pid stderr control)
+        (parameterize ([current-subprocess-custodian-mode 'kill]
+                       [subprocess-group-enabled #t])
+          (define mode (if chunked? "chunked" "full"))
+          (process* (find-system-path 'exec-file) rst-server.rkt mode)))
+      (dynamic-wind
+        void
+        (lambda ()
+          (define stderr-thd (thread (lambda () (copy-port stderr (current-error-port)))))
+          (match-define (regexp #rx"PORT: (.+)" (list _ (app string->number port)))
+            (read-line stdout))
+          (define stdout-thd (thread (lambda () (copy-port stdout (current-output-port)))))
+          (define c (hc:http-conn))
+          (hc:http-conn-open! c "127.0.0.1" #:port port)
+          (check-true (hc:http-conn-live? c))
+          (define-values (_status _headers in)
+            (hc:http-conn-sendrecv! c "/"))
+          (check-exn
+           #rx"Connection reset by peer"
+           (lambda ()
+             (println (read-line in))))
+          ;; Ensure the port stays in an errored state.
+          (check-exn
+           #rx"Connection reset by peer"
+           (lambda ()
+             (println (read-line in))))
+          (kill-thread stdout-thd)
+          (kill-thread stderr-thd))
+        (lambda ()
+          (control 'interrupt)
+          (control 'wait)
+          (close-input-port stdout)
+          (close-input-port stderr)
+          (close-output-port stdin))))))

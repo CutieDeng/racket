@@ -33,7 +33,8 @@
          "prefetch.rkt"
          "checkout-credentials.rkt"
          "network.rkt"
-         "github-url.rkt")
+         "github-url.rkt"
+         "timeout.rkt")
 
 (provide (struct-out install-info)
          remote-package-checksum
@@ -563,9 +564,12 @@
     (define actual-checksum
       (with-input-from-file pkg-path
         (λ ()
-           (sha1 (current-input-port)))))
-    (check-checksum expected-checksum actual-checksum "mismatched" pkg-path
-                    (and use-cache? cached-url))
+          (sha1 (current-input-port)))))
+    (if expected-checksum
+        (check-checksum expected-checksum actual-checksum "mismatched" pkg-path
+                        (and use-cache? cached-url))
+        (when check-sums?
+          (check-checksum given-checksum actual-checksum "unexpected" pkg-path #f)))
     (define checksum
       actual-checksum)
     (define pkg-format (filename-extension pkg-path))
@@ -805,27 +809,29 @@
               ;; Supplying `#:dest-dir #f` means that we just resolve `branch`
               ;; to an ID:
               (define checksum
-                (git-checkout host #:port port repo
-                              #:dest-dir #f
-                              #:ref branch
-                              #:status-printf
-                              (lambda (fmt . args)
-                                (define (strip-ending-newline s)
-                                  (regexp-replace #rx"\n$" s ""))
-                                (log-pkg-debug
-                                 (strip-ending-newline (apply format fmt args))))
-                              #:initial-error
-                              (lambda ()
-                                (raise
-                                 ;; This is a git error so that
-                                 ;; call-with-git-checkout-credentials will retry
-                                 (exn:fail:git
-                                  (~a "pkg: Git checkout initial protocol failed;\n"
-                                      " the given URL might not refer to a Git repository\n"
-                                      "  given URL: "
-                                      pkg-url-str)
-                                  (current-continuation-marks))))
-                              #:transport transport))
+                (call-in-pkg-timeout-sandbox
+                 (lambda ()
+                   (git-checkout host #:port port repo
+                                 #:dest-dir #f
+                                 #:ref branch
+                                 #:status-printf
+                                 (lambda (fmt . args)
+                                   (define (strip-ending-newline s)
+                                     (regexp-replace #rx"\n$" s ""))
+                                   (log-pkg-debug
+                                    (strip-ending-newline (apply format fmt args))))
+                                 #:initial-error
+                                 (lambda ()
+                                   (raise
+                                    ;; This is a git error so that
+                                    ;; call-with-git-checkout-credentials will retry
+                                    (exn:fail:git
+                                     (~a "pkg: Git checkout initial protocol failed;\n"
+                                         " the given URL might not refer to a Git repository\n"
+                                         "  given URL: "
+                                         pkg-url-str)
+                                     (current-continuation-marks))))
+                                 #:transport transport))))
               (when cache
                 (hash-set! cache key checksum))
               checksum])))))]
@@ -891,10 +897,13 @@
        [else
         (download-printf "Downloading checksum for ~a\n" pkg-name)
         (log-pkg-debug "Downloading checksum as ~a" u)
-        (define checksum
+        (define downloaded-checksum
           (call/input-url+200 (string->url u)
                               port->string
                               #:who 'download-checksum))
+        (define checksum
+          (or downloaded-checksum
+              (get-package-checksum-by-download 'download-checksum pkg-url)))
         (when cache (hash-set! cache key checksum))
         checksum])]))
 
@@ -911,6 +920,45 @@
                pkg-src
                given-checksum
                checksum)))
+
+;; caches checksums based on etags server
+(define (get-package-checksum-by-download who pkg-url)
+  ;; Get etag associated with a cached checksum, which lets us potentially avoid downloading the package
+  (define pkg-url-str (url->string pkg-url))
+  (define cache-dir (find-system-path 'cache-dir))
+  (define etag-checksum-cache (build-path cache-dir "pkg-etag-checksum.rktd"))
+  (define (get-cache-content)
+    (define ht (and (file-exists? etag-checksum-cache)
+                    (call-with-default-reading-parameterization
+                     (lambda ()
+                       (with-handlers ([exn:fail:read? (lambda (exn) #f)])
+                         (call-with-input-file etag-checksum-cache read))))))
+    (or (and (hash? ht) ht)
+        #hash()))
+  (define cache-content (get-cache-content))
+  (define old-etag+checksum (hash-ref cache-content pkg-url-str #f))
+  ;; Get checksum and (maybe) etag
+  (define etag+checksum
+    (call/input-url+200 pkg-url
+                        #:get-etag? #t
+                        (lambda (in etag) (cons etag (sha1 in)))
+                        #:who who
+                        #:if-none-match-etag (and old-etag+checksum (car old-etag+checksum))
+                        #:if-none-match-handler (lambda () old-etag+checksum)))
+  ;; Myabe cache the result
+  (unless (or (equal? old-etag+checksum etag+checksum)
+              (not etag+checksum)
+              (not (car etag+checksum)))
+    (make-directory* cache-dir)
+    (define cache-content (get-cache-content)) ; refetch to minimize loss from concurrent updates
+    (call-with-atomic-output-file
+     etag-checksum-cache
+     (lambda (op path)
+       (write (hash-set cache-content pkg-url-str etag+checksum) op)
+       (newline op))))
+  ;; Return the checksum
+  (and etag+checksum
+       (cdr etag+checksum)))
 
 ;; ----------------------------------------
 

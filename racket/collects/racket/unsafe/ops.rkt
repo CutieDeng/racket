@@ -16,6 +16,11 @@
                      unsafe-start-atomic unsafe-end-atomic
                      unsafe-start-breakable-atomic unsafe-end-breakable-atomic
                      unsafe-in-atomic?
+                     unsafe-start-uninterruptible unsafe-end-uninterruptible
+                     unsafe-make-uninterruptible-lock
+                     unsafe-uninterruptible-lock-acquire unsafe-uninterruptible-lock-release
+                     unsafe-uninterruptible-custodian-lock-acquire
+                     unsafe-uninterruptible-custodian-lock-release
                      unsafe-poller
                      unsafe-poll-ctx-fd-wakeup
                      unsafe-poll-ctx-eventmask-wakeup
@@ -49,7 +54,8 @@
                      unsafe-remove-collect-callbacks
                      unsafe-make-place-local
                      unsafe-place-local-ref
-                     unsafe-place-local-set!)
+                     unsafe-place-local-set!
+                     unsafe-make-struct-type-property/guard-calls-no-arguments)
          (rename-out [new:unsafe-impersonate-procedure unsafe-impersonate-procedure]
                      [new:unsafe-chaperone-procedure unsafe-chaperone-procedure])
          (prefix-out unsafe-

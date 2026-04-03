@@ -64,9 +64,12 @@ Each @tech{package} has associated @deftech{package metadata}:
  @item{a @deftech{package name} --- a string made of the characters @|package-name-chars|.}
  @item{a @deftech{checksum} --- a string that identifies different releases of a package. A
                                 package can be updated when its @tech{checksum} changes,
-                                whether or not its @tech{version} changes. The checksum normally
-                                can be computed as the SHA1 (see @racketmodname[openssl/sha1])
-                                of the package's content.}
+                                whether or not its @tech{version} changes. The checksum must
+                                be computed as the SHA-1 hash (see @racketmodname[openssl/sha1])
+                                of the package's archive when the package is distributed in
+                                archive form. A package can be installed in a way that it has
+                                no checksum, but then the package installation does not support
+                                updating.}
  @item{a @deftech{version} --- a string of the form @nonterm{maj}@litchar{.}@nonterm{min},
                      @nonterm{maj}@litchar{.}@nonterm{min}@litchar{.}@nonterm{sub}, or
                      @nonterm{maj}@litchar{.}@nonterm{min}@litchar{.}@nonterm{sub}@litchar{.}@nonterm{rel},
@@ -130,7 +133,9 @@ The @tech{package source} types are:
 @item{a local file path naming an archive (as a plain path or @litchar{file://} URL)
 --- The name of the package
 is the basename of the archive file. The @tech{checksum} for archive
-@filepath{f.@nonterm{ext}} is given by the file @filepath{f.@nonterm{ext}.CHECKSUM}.
+@filepath{f.@nonterm{ext}} is the archive's SHA-1 hash (see @racketmodname[openssl/sha1]),
+which is optionally recorded in the file @filepath{f.@nonterm{ext}.CHECKSUM}
+(but ultimately checked again the file's actual hash).
 The valid archive formats
 are (currently) @filepath{.zip}, @filepath{.tar}, @filepath{.tgz},
 @filepath{.tar.gz}, and
@@ -139,7 +144,7 @@ Other than a @litchar{type} query, which affects inference as described below,
 any query or fragments parts of a @litchar{file://} URL are ignored.
 
 For example, @filepath{~/tic-tac-toe.zip} is an archive package
-source, and its @tech{checksum} would be inside
+source, and its @tech{checksum} would be optionally recorded inside
 @filepath{~/tic-tac-toe.zip.CHECKSUM}.
 
 An archive represents package content analogous to a directory, but if
@@ -199,13 +204,14 @@ then the package is installed as directory link, the same as if
                URL, recognize a @litchar{type} query, and ignore any
                other query or fragment.}]}
 
+@; ----------------------------------------
 @item{a remote URL naming an archive --- This type follows the same
 rules as a local file path, but the archive and @tech{checksum} files are
 accessed via HTTP(S).
 
 For example,
 @filepath{http://game.com/tic-tac-toe.zip} is a remote URL package
-source whose @tech{checksum} is found at
+source whose @tech{checksum} is optionally recorded at
 @filepath{http://game.com/tic-tac-toe.zip.CHECKSUM}.
 
 A package source is inferred to be a URL only when it
@@ -213,7 +219,22 @@ starts with @litchar{http://} or @litchar{https://}, and it
 is inferred to be a file URL when the URL ends with a path element
 that could be inferred as a file archive.
 The inferred package name is from the URL's file name in the same
-way as for a file package source.}
+way as for a file package source.
+
+When a @filepath{.CHECKSUM} file for a remote archive is not
+available, then the archive is downloaded to compute its
+checksum. If the remote server provides an @tt{ETag} header for the
+downloaded file and recognizes @tt{If-None-Match} headers, then
+the @tt{ETag} value can be used as a shortcut to determine that
+the file's checksum has not changed. An @tt{ETag}-to-checksum mapping
+is cached in
+@racket[(build-path (find-system-path 'cache-dir) "pkg-etag-checksum.rktd")].
+
+@history[#:changed "8.16.0.4"
+         @elem{Changed the checksum for a remote archive to download
+               and use the archive content when a @filepath{.CHECKSUM}
+               file is not available, instead of treating the package
+               as having no checksum.}]}
 
 @; ----------------------------------------
 @item{a remote URL naming a directory --- The remote directory must
@@ -221,7 +242,8 @@ contain a file named @filepath{MANIFEST} that lists all the contingent
 files. These are downloaded into a local directory and then the rules
 for local directory paths are followed. However, if the remote
 directory contains a file named @filepath{.CHECKSUM}, then it is used
-to determine the @tech{checksum}.
+to determine the @tech{checksum} for the purposes of detecting updates,
+and there is no constraint on how that checksum is computed.
 
 For example,
 @filepath{http://game.com/tic-tac-toe/} is a directory URL package
@@ -583,7 +605,10 @@ sub-commands.
 
   @item{@DFlag{force} --- Ignores module conflicts, including conflicts due to installing a single
         package in multiple scopes. Forcing an installation may leave package content in an
-        inconsistent state.}
+        inconsistent state. Implies @DFlag{force-strip}.}
+
+  @item{@DFlag{force-strip} --- When using @DFlag{source}, @DFlag{binary}, or @DFlag{binary-lib},
+        ignore a mismatch between the package's state and the requested state.}
 
   @item{@DFlag{ignore-checksums} --- Ignores errors verifying package @tech{checksums} (unsafe).}
 
@@ -649,6 +674,9 @@ sub-commands.
         are properly built), but if a compilation error is reported, it will be after the package
         is installed.}
 
+  @item{@DFlag{recompile-cache} @nonterm{dir} --- cache module recompilations (from machine-independent
+       format to machine-dependent format) in @nonterm{dir}.}
+
   @item{@DFlag{jobs} @nonterm{n} or @Flag{j} @nonterm{n} --- Installs and runs @exec{raco setup} with @nonterm{n} parallel jobs.}
 
   @item{@DFlag{batch} --- Disables @deftech{interactive mode}, suppressing potential prompts for a user
@@ -668,7 +696,9 @@ sub-commands.
          #:changed "7.2.0.8" @elem{Added the @DFlag{recompile-only} flag.}
          #:changed "7.4.0.4" @elem{Added the @DFlag{no-docs}, @Flag{D} flags.}
          #:changed "7.6.0.14" @elem{Allowed multiple @DFlag{catalog} flags.}
-         #:changed "8.0.0.13" @elem{Added @litchar{git-url} as a @DFlag{type} option.}]}
+         #:changed "8.0.0.13" @elem{Added @litchar{git-url} as a @DFlag{type} option.}
+         #:changed "8.17.0.2" @elem{Added the @DFlag{recompile-cache} flag.}
+         #:changed "8.18.0.7" @elem{Added the @DFlag{force-strip} flag.}]}
 
 
 @subcommand{@command/toc{update} @nonterm{option} ... @nonterm{pkg-source} ...
@@ -770,6 +800,7 @@ the given @nonterm{pkg-source}s.
  @item{@DFlag{skip-uninstalled} --- Ignores any @nonterm{pkg-source} that does not correspond to an installed package.}
  @item{@DFlag{all-platforms} --- Same as for @command-ref{install}.}
  @item{@DFlag{force} --- Same as for @command-ref{install}.}
+ @item{@DFlag{force-strip} --- Same as for @command-ref{install}.}
  @item{@DFlag{ignore-checksums} --- Same as for @command-ref{install}.}
  @item{@DFlag{strict-doc-conflicts} --- Same as for @command-ref{install}.}
  @item{@DFlag{no-cache} --- Same as for @command-ref{install}.}
@@ -785,6 +816,7 @@ the given @nonterm{pkg-source}s.
  @item{@DFlag{no-setup} --- Same as for @command-ref{install}.}
  @item{@DFlag{no-docs} or @Flag{D} --- Same as for @command-ref{install}.}
  @item{@DFlag{recompile-only} --- Same as for @command-ref{install}.}
+ @item{@DFlag{recompile-cache} @nonterm{dir} --- Same as for @command-ref{install}.}
  @item{@DFlag{jobs} @nonterm{n} or @Flag{j} @nonterm{n} --- Same as for @command-ref{install}.}
  @item{@DFlag{batch} --- Same as for @command-ref{install}.}
  @item{@DFlag{no-trash} --- Same as for @command-ref{install}.}
@@ -801,7 +833,9 @@ the given @nonterm{pkg-source}s.
          #:changed "6.90.0.27" @elem{Added the @DFlag{unclone} flag.}
          #:changed "7.2.0.8" @elem{Added the @DFlag{recompile-only} flag.}
          #:changed "7.4.0.4" @elem{Added the @DFlag{no-docs}, @Flag{D} flags.}
-         #:changed "7.6.0.14" @elem{Allowed multiple @DFlag{catalog} flags.}]}
+         #:changed "7.6.0.14" @elem{Allowed multiple @DFlag{catalog} flags.}
+         #:changed "8.17.0.2" @elem{Added the @DFlag{recompile-cache} flag.}
+         #:changed "8.18.0.7" @elem{Added the @DFlag{force-strip} flag.}]}
 
 @subcommand{@command/toc{uninstall} @nonterm{option} ... @nonterm{pkg} ...
 --- Attempts to uninstall the given packages. By default, if a package is the dependency
@@ -831,6 +865,7 @@ the given @nonterm{pkg}s.
  @item{@DFlag{no-setup} --- Same as for @command-ref{install}.}
  @item{@DFlag{no-docs} or @Flag{D} --- Same as for @command-ref{install}.}
  @item{@DFlag{recompile-only} --- Same as for @command-ref{install}.}
+ @item{@DFlag{recompile-cache} @nonterm{dir} --- Same as for @command-ref{install}.}
  @item{@DFlag{jobs} @nonterm{n} or @Flag{j} @nonterm{n} --- Same as for @command-ref{install}.}
  @item{@DFlag{batch} --- Same as for @command-ref{install}.}
  @item{@DFlag{no-trash} --- Same as for @command-ref{install}.}
@@ -841,7 +876,8 @@ the given @nonterm{pkg}s.
          #:changed "6.4.0.14" @elem{Added the @DFlag{dry-run} flag.}
          #:changed "7.2.0.8" @elem{Added the @DFlag{recompile-only} flag.}
          #:changed "7.4.0.4" @elem{Added the @DFlag{no-docs}, @Flag{D} flags.}
-         #:changed "8.14.0.2" @elem{Renamed from @command-ref{remove} to @command-ref{uninstall}.}]}
+         #:changed "8.14.0.2" @elem{Renamed from @command-ref{remove} to @command-ref{uninstall}.}
+         #:changed "8.17.0.2" @elem{Added the @litchar{recompile-cache} flag.}]}
 
 @subcommand{@command/toc{remove} --- A synonym for @command-ref{uninstall}.
 
@@ -924,6 +960,7 @@ package is created.
   @item{@DFlag{catalog} @nonterm{catalog} --- Same as for @command-ref{install}.}
   @item{@DFlag{all-platforms} --- Same as for @command-ref{install}.}
   @item{@DFlag{force} --- Same as for @command-ref{install}.}
+  @item{@DFlag{force-strip} --- Same as for @command-ref{install}.}
   @item{@DFlag{ignore-checksums} --- Same as for @command-ref{install}.}
   @item{@DFlag{strict-doc-conflicts} --- Same as for @command-ref{install}.}
   @item{@DFlag{no-cache} --- Same as for @command-ref{install}.}
@@ -931,13 +968,16 @@ package is created.
   @item{@DFlag{no-setup} --- Same as for @command-ref{install}.}
   @item{@DFlag{no-docs} or @Flag{D} --- Same as for @command-ref{install}.}
   @item{@DFlag{recompile-only} --- Same as for @command-ref{install}.}
+ @item{@DFlag{recompile-cache} @nonterm{dir} --- Same as for @command-ref{install}.}
   @item{@DFlag{jobs} @nonterm{n} or @Flag{j} @nonterm{n} --- Same as for @command-ref{install}.}
  ]
 
 @history[#:changed "6.4.0.14" @elem{Added the @DFlag{dry-run} flag.}
          #:changed "7.2.0.8" @elem{Added the @DFlag{recompile-only} flag.}
          #:changed "7.4.0.4" @elem{Added the @DFlag{no-docs}, @Flag{D} flags.}
-         #:changed "7.6.0.14" @elem{Allowed multiple @DFlag{catalog} flags.}]}
+         #:changed "7.6.0.14" @elem{Allowed multiple @DFlag{catalog} flags.}
+         #:changed "8.17.0.2" @elem{Added the @DFlag{recompile-cache} flag.}
+         #:changed "8.18.0.7" @elem{Added the @DFlag{force-strip} flag.}]}
 
 @subcommand{@command/toc{create} @nonterm{option} ... @nonterm{directory-or-package}
 --- Bundles a package into an archive. Bundling
@@ -1040,11 +1080,14 @@ for @nonterm{key}.
         to the trash folder or @command-ref{empty-trash} is used.}
   @item{@exec{network-retries} --- The number of times to retry a network communication that
         fails due to a connection error.}
+  @item{@exec{network-timeout} --- The maximum number of seconds to wait for a
+        network communication to complete, such as a download or a checksum fetch.}
  ]
 
 @history[#:changed "6.1.1.6" @elem{Added @exec{trash-max-packages} and @exec{trash-max-seconds}.}
          #:changed "6.3" @elem{Added @exec{network-retries}.}
-         #:changed "6.6.0.5" @elem{Added @exec{git-checkout-credentials}.}]}
+         #:changed "6.6.0.5" @elem{Added @exec{git-checkout-credentials}.}
+         #:changed "9.0.0.2" @elem{Added @exec{network-timeout}.}]}
 
 
 @subcommand{@command/toc{catalog-show} @nonterm{option} ... @nonterm{package-name} ...
@@ -1146,7 +1189,7 @@ for @nonterm{key}.
  @item{@DFlag{include-deps-platform} @nonterm{sys} @nonterm{subpath} --- Modifies @DFlag{include-deps}
        to imply only dependencies that match the platform @nonterm{sys}, which should be
        a possible result of @racket[(system-type)], and @nonterm{subpath}, which should be
-       a possible result of @racket[(system-library-subpath #f)]}
+       a possible result of @racket[(system-type 'platform)]}
  @item{@DFlag{exclude} @nonterm{pkg} --- Can be specified multiple times. Removes @nonterm{pkg}
        from the set of packages in the archive and generated catalog. If @DFlag{include} is
        used for the same @nonterm{pkg}, then @DFlag{exclude} takes
@@ -1284,8 +1327,7 @@ The following @filepath{info.rkt} fields are used by the package manager:
                A @racket[_platform-spec] indicates that the dependency
                applies only for platforms with a matching result from
                @racket[(system-type)] when @racket[_platforms-spec] is
-               a symbol or @racket[(path->string
-               (system-library-subpath #f))] when
+               a symbol or @racket[(system-type 'platform)] when
                @racket[_platform-spec] is a string or regular expression.
                See also @racket[matching-platform?]. For
                example, platform-specific binaries can be placed into

@@ -16,6 +16,7 @@
 (define-constant RKTIO_OPEN_INIT (<< 1 13))
 (define-constant RKTIO_OPEN_OWN (<< 1 14))
 (define-constant RKTIO_OPEN_REPLACE_PERMS (<< 1 15))
+(define-constant RKTIO_OPEN_TRACK_TERMINAL_OUTPUT (<< 1 16))
 (define-constant RKTIO_DEFAULT_PERM_BITS 438)
 (define-constant RKTIO_STDIN 0)
 (define-constant RKTIO_STDOUT 1)
@@ -169,6 +170,9 @@
 (define-struct-type
  rktio_length_and_addrinfo_t
  ((intptr_t len) ((ref (ref char)) address)))
+(define-struct-type
+ rktio_length_and_addr_bytes_t
+ ((intptr_t len) (intptr_t addr_len) ((ref char) addr_bytes)))
 (define-struct-type
  rktio_process_result_t
  (((ref rktio_process_t) process)
@@ -400,6 +404,38 @@
   (intptr_t len)
   ((*ref char) is_converted)
   (intptr_t converted_start)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_read_in_r
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) fd)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t end)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_read_converted_in_r
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) fd)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t len)
+  ((*ref char) is_converted)
+  (intptr_t converted_start)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_write_in_r
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) fd)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t end)))
 (define-function
  ()
  intptr_t
@@ -422,6 +458,24 @@
  ()
  rktio_tri_t
  rktio_poll_write_flushed
+ (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_poll_read_ready_r
+ (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_poll_write_ready_r
+ (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd)))
+(define-function/result_t
+ rktio_result_integer
+ ()
+ (ref rktio_result_t)
+ rktio_poll_write_flushed_r
  (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd)))
 (define-function/errno
  RKTIO_LOCK_ERROR
@@ -471,6 +525,7 @@
  void
  rktio_fd_close_transfer
  (((ref rktio_fd_transfer_t) rfdt)))
+(define-function () uintptr_t rktio_current_terminal_position ())
 (define-function/errno
  NULL
  ()
@@ -581,6 +636,12 @@
  rktio_tcp_nodelay
  (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd) (rktio_bool_t enable)))
 (define-function/errno
+ #f
+ ()
+ rktio_ok_t
+ rktio_tcp_keepalive
+ (((ref rktio_t) rktio) ((ref rktio_fd_t) rfd) (rktio_bool_t enable)))
+(define-function/errno
  NULL
  ()
  (ref rktio_fd_t)
@@ -629,6 +690,18 @@
   (intptr_t start)
   (intptr_t end)))
 (define-function/errno
+ RKTIO_WRITE_ERROR
+ ()
+ intptr_t
+ rktio_udp_sendto_addr_bytes
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) rfd)
+  ((*ref char) addr)
+  (intptr_t addr_len)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t end)))
+(define-function/errno
  NULL
  ()
  (ref rktio_length_and_addrinfo_t)
@@ -642,6 +715,16 @@
  ()
  (ref rktio_length_and_addrinfo_t)
  rktio_udp_recvfrom_in
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) rfd)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t end)))
+(define-function/errno
+ NULL
+ ()
+ (ref rktio_length_and_addr_bytes_t)
+ rktio_udp_recvfrom_addr_bytes
  (((ref rktio_t) rktio)
   ((ref rktio_fd_t) rfd)
   ((*ref char) buffer)
@@ -731,6 +814,12 @@
  (ref (ref char))
  rktio_listener_address
  (((ref rktio_t) rktio) ((ref rktio_listener_t) lnr)))
+(define-function/errno
+ NULL
+ ()
+ (ref (ref char))
+ rktio_addr_bytes_address
+ (((ref rktio_t) rktio) ((*ref char) addr) (intptr_t len)))
 (define-function
  ()
  rktio_bool_t
@@ -1188,6 +1277,18 @@
  (ref char)
  rktio_directory_list_step
  (((ref rktio_t) rktio) ((ref rktio_directory_list_t) dl)))
+(define-function/alloc_result_t
+ rktio_result_directory_list
+ ()
+ (ref rktio_result_t)
+ rktio_directory_list_start_r
+ (((ref rktio_t) rktio) (rktio_const_string_t dirname)))
+(define-function/result_t
+ rktio_result_string
+ ()
+ (ref rktio_result_t)
+ rktio_directory_list_step_r
+ (((ref rktio_t) rktio) ((ref rktio_directory_list_t) dl)))
 (define-function
  ()
  void
@@ -1343,6 +1444,24 @@
   (rktio_const_string_t name)
   (rktio_const_string_t msg)
   (rktio_const_string_t exec_name)))
+(define-function
+ ()
+ void
+ rktio_syslog_best_effort
+ (((ref rktio_t) rktio)
+  (int level)
+  (rktio_const_string_t name)
+  (rktio_const_string_t msg)
+  (rktio_const_string_t exec_name)))
+(define-function
+ ()
+ void
+ rktio_std_write_in_best_effort
+ (((ref rktio_t) rktio)
+  (int which)
+  ((*ref char) buffer)
+  (intptr_t start)
+  (intptr_t end)))
 (define-function () int rktio_convert_properties (((ref rktio_t) rktio)))
 (define-function/errno
  NULL
@@ -1511,8 +1630,11 @@
   (dll_find_object_proc dll_find_object)
   (dll_close_proc dll_close)))
 (define-function () int rktio_get_last_error_kind (((ref rktio_t) rktio)))
+(define-function () int rktio_get_error_kind (((ref rktio_result_t) res)))
 (define-function () int rktio_get_last_error (((ref rktio_t) rktio)))
+(define-function () int rktio_get_error (((ref rktio_result_t) res)))
 (define-function () int rktio_get_last_error_step (((ref rktio_t) rktio)))
+(define-function () int rktio_get_error_step (((ref rktio_result_t) res)))
 (define-function
  ()
  void
@@ -1524,6 +1646,7 @@
  rktio_set_last_error_step
  (((ref rktio_t) rktio) (int step)))
 (define-function () void rktio_remap_last_error (((ref rktio_t) rktio)))
+(define-function () void rktio_remap_error (((ref rktio_result_t) res)))
 (define-function
  ()
  (ref char)
@@ -1534,4 +1657,25 @@
  (ref char)
  rktio_get_error_string
  (((ref rktio_t) rktio) (int kind) (int errid)))
+(define-function
+ ()
+ rktio_const_string_t
+ rktio_classify_error
+ ((int errkind) (int errid)))
+(define-function
+ ()
+ rktio_bool_t
+ rktio_result_is_success
+ (((ref rktio_result_t) res)))
+(define-function () intptr_t rktio_result_integer (((ref rktio_result_t) res)))
+(define-function
+ ()
+ (ref char)
+ rktio_result_string
+ (((ref rktio_result_t) res)))
+(define-function
+ ()
+ (ref rktio_directory_list_t)
+ rktio_result_directory_list
+ (((ref rktio_result_t) res)))
 )

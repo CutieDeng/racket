@@ -14,7 +14,10 @@
 (arity-test thread 1 1)
 (err/rt-test (thread 5) type?)
 (err/rt-test (thread (lambda (x) 8)) type?)
+(err/rt-test (thread 5 #:keep 8) type?)
 (arity-test thread? 1 1)
+
+(test-values (list '() '(#:keep #:pool)) (lambda () (procedure-keywords thread)))
 
 (test #f struct-predicate-procedure? thread?)
 (test #f struct-predicate-procedure? evt?)
@@ -293,8 +296,52 @@
   (test #t values ex?)
   (set! ex? #f))
 
-(arity-test thread-wait 1 1)
+(arity-test thread-wait 1 2)
 (err/rt-test (thread-wait 5) type?)
+
+(let ([fail (lambda (keep)
+              (thread (parameterize ([current-error-port (open-output-bytes)])
+                        (lambda ()
+                          (error "fail")))
+                      #:keep keep))])
+  (test (void) thread-wait (fail #f))
+  (test 'no thread-wait (fail #f) (lambda () 'no))
+  (test 'no thread-wait (fail 'results) (lambda () 'no))
+  (test (void) thread-wait (thread (lambda () 'ok)))
+  (test 'ok thread-wait (thread (lambda () 'ok) #:keep 'results))
+  (test-values '(ok more) (lambda () (thread-wait (thread (lambda () (values 'ok 'more)) #:keep 'results)))))
+
+(let ()
+  (define t (parameterize ([current-error-port (open-output-bytes)])
+              (thread #:keep 'results
+                      (λ ()
+                        (sync (system-idle-evt))
+                        1))))
+  ;; may be before `t` gets to run at all
+  (break-thread t)
+  (test 'none thread-wait t (λ () 'none)))
+
+(let ()
+  (for ([keep (in-list '(results #f))])
+    (define t (thread #:keep keep (lambda () (kill-thread (current-thread)))))
+    (test 'ok thread-wait t (lambda () 'ok)))
+  (for ([keep (in-list '(results #f))])
+    (define t (thread #:keep keep (lambda () (semaphore-wait (make-semaphore)))))
+    (sync (system-idle-evt))
+    (kill-thread t)
+    (test 'ok thread-wait t (lambda () 'ok)))
+  (for ([keep (in-list '(results #f))])
+    (define c (make-custodian))
+    (define t (parameterize ([current-custodian c])
+                (thread #:keep keep (lambda () (custodian-shutdown-all c)))))
+    (test 'ok thread-wait t (lambda () 'ok)))
+  (for ([keep (in-list '(results #f))])
+    (define c (make-custodian))
+    (define t (parameterize ([current-custodian c])
+                (thread #:keep keep (lambda () (semaphore-wait (make-semaphore))))))
+    (sync (system-idle-evt))
+    (custodian-shutdown-all c)
+    (test 'ok thread-wait t (lambda () 'ok))))
 
 (test #t thread-running? (current-thread))
 (arity-test thread-running? 1 1)
@@ -541,7 +588,6 @@
   (define c1 (make-custodian))
   (define c2 (make-custodian))
   (define c3 (make-custodian))
-
 
   (set! output-stream null)
   

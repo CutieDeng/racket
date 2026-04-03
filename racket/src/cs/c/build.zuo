@@ -322,7 +322,7 @@
     (when signed-exe?
       (restore-signature* cross? bootstrap-racket dest)))
   (define entitlements
-    (if (and mac? signed-exe?)
+    (if signed-exe?  ; wanted for XOX, too, so no `mac?` check
         (list (at-source "../../mac/entitlements.plist"))
         '()))
 
@@ -340,6 +340,7 @@
     (strip-signature dest)
     (unless mac-fw?
       (bootstrap-racket (at-source "embed-boot.rkt")
+                        "--target" m
                         boot-compress-flags
                         ""
                         dest
@@ -974,7 +975,8 @@
                        m (lookup 'KERNEL_TARGET_MACH m)
                        (lookup 'CROSS_COMPILE_TARGET_KIND "machine")
                        (at-source ".")
-                       (lookup 'PLT_CS_SLSP_SUFFIX))
+                       (lookup 'PLT_CS_SLSP_SUFFIX)
+                       (if mac? "macosx" "other"))
        
        (icp* (at-source "api.h") (build-path includepltdir "racketcs.h"))
        (icp* (at-source "boot.h") (build-path includepltdir "racketcsboot.h"))
@@ -1003,8 +1005,10 @@
 
        (cond
          [mac?
-          (define dest-framework-dir (build-path (shell-subst (lookup 'FRAMEWORK_INSTALL_DIR) config)
-                                                 "Racket.framework"))
+          (define dest-framework-dir (at-destdir
+                                      config
+                                      (build-path (shell-subst (lookup 'FRAMEWORK_INSTALL_DIR) config)
+                                                  "Racket.framework")))
           (define fw-vers-dir (build-path dest-framework-dir "Versions" (~a version "_CS")))
           (define dest-racket (build-path bindir (cs-suffix "racket")))
           (define (get-framework-prefix gui?)
@@ -1047,7 +1051,11 @@
                              (~a (get-framework-prefix #t) "Racket.framework/Versions/" version "_CS/Racket")
                              dest-gracket)
           (strip-signature dest-gracket)
-          (set-collects-path dest-gracket "../../../../collects" "../../../../etc")
+          (cond
+            [(equal? (lookup 'INSTALL_ORIG_TREE) "yes")
+             (set-collects-path dest-gracket "../../../../collects" "../../../../etc")]
+            [else
+             (set-collects-path dest-gracket collects-path configdir)])
           (strip-debug config dest-gracket)
           (restore-signature dest-gracket)
 
@@ -1120,7 +1128,7 @@
        (run-raco-setup config dest-racket copytree-racket
                        ;; this can be redundant if it's also supplied via `SETUP_MACHINE_FLAGS`,
                        ;; but redundant should be ok:
-                       (list "-MCR" (~a (at-dir "compiled") ":")
+                       (list "-MCR" (~a (path->complete-path (at-dir "compiled")) ":")
                              "--cross-compiler" m (at-dir ".")))
        (maybe-libzo-move config dest-racket copytree-racket at-dir)
        (maybe-destdir-fix config dest-racket copytree-racket at-dir)

@@ -409,8 +409,6 @@
   (unless (and (eq? 'windows (system-type)) (= 4 (compiler-sizeof '(* void))))
     (let ([v (for/list ([i 7]) i)])
       ;; pass array as pointer:
-      ;; FIXME: these tests wrap the result pointer as non-GCable,
-      ;; but _c7_list allocates the argument array as GCable.
       (t (for/list ([i 7]) (add1 i)) 'increment_c_array (_fun _c7_list -> (_list o _byte 7)) v)
       (t (for/list ([i 7]) (add1 i)) 'increment_c_array (_fun _c7_list -> _c7_list) v)
       (let ([r ((ffi 'increment_c_array (_fun _c7_list -> (_array _byte 7))) v)])
@@ -784,6 +782,14 @@
         (cpointer-gcable? (cast (bytes 1 2 3 4)
                                 _bytes
                                 _pointer))))
+
+;; test immobile cells
+(for ([free-via-non-gcable? (in-list '(#f #t))])
+  (let ([b (malloc-immobile-cell 'hello)])
+    (test 'hello ptr-ref b _racket)
+    (define b/non-gcable (cast (cast b _pointer _intptr) _intptr _pointer))
+    (test 'hello ptr-ref b/non-gcable _racket)
+    (free-immobile-cell (if free-via-non-gcable? b/non-gcable b))))
 
 ;; test 'interior allocation mode
 (let ()

@@ -113,6 +113,7 @@ static Scheme_Object *extract_one_cc_mark (int argc, Scheme_Object *argv[]);
 static Scheme_Object *call_with_immediate_cc_mark (int argc, Scheme_Object *argv[]);
 static Scheme_Object *void_func (int argc, Scheme_Object *argv[]);
 static Scheme_Object *void_p (int argc, Scheme_Object *argv[]);
+static Scheme_Object *black_box (int argc, Scheme_Object *argv[]);
 static Scheme_Object *dynamic_wind (int argc, Scheme_Object *argv[]);
 static Scheme_Object *time_apply(int argc, Scheme_Object *argv[]);
 static Scheme_Object *current_milliseconds(int argc, Scheme_Object **argv);
@@ -466,7 +467,10 @@ scheme_init_fun (Scheme_Startup_Env *env)
   SCHEME_PRIM_PROC_FLAGS(scheme_void_proc) |= scheme_intern_prim_opt_flags(SCHEME_PRIM_IS_OMITABLE);
   scheme_addto_prim_instance("void", scheme_void_proc, env);
 
-  
+  scheme_addto_prim_instance("black-box",
+                             scheme_make_noncm_prim(black_box, "black-box", 1, 1),
+                             env);
+
   REGISTER_SO(scheme_void_p_proc);
   scheme_void_p_proc = scheme_make_folding_prim(void_p, "void?", 1, 1, 1);
   SCHEME_PRIM_PROC_FLAGS(scheme_void_p_proc) |= scheme_intern_prim_opt_flags(SCHEME_PRIM_IS_UNARY_INLINED
@@ -759,6 +763,10 @@ scheme_init_unsafe_fun (Scheme_Startup_Env *env)
   ADD_PRIM_W_ARITY("unsafe-call-with-composable-continuation/no-wind", unsafe_call_with_control_no_dws, 2, 2, env);
 
   ADD_PRIM_W_ARITY("unsafe-root-continuation-prompt-tag", unsafe_root_continuation_prompt_tag, 0, 0, env);
+
+  scheme_addto_prim_instance("unsafe-make-struct-type-property/guard-calls-no-arguments",
+                             scheme_unsafe_make_struct_type_property_proc,
+                             env);
 }
 
 void
@@ -2383,6 +2391,12 @@ void_p (int argc, Scheme_Object *argv[])
   return SAME_OBJ(argv[0], scheme_void) ? scheme_true : scheme_false;
 }
 
+static Scheme_Object *
+black_box (int argc, Scheme_Object *argv[])
+{
+  return argv[0];
+}
+
 Scheme_Object *
 scheme_check_not_undefined (int argc, Scheme_Object *argv[])
 {
@@ -3370,6 +3384,7 @@ static Scheme_Object *procedure_reduce_arity_mask(int argc, Scheme_Object *argv[
 static Scheme_Object *procedure_rename(int argc, Scheme_Object *argv[])
 {
   Scheme_Object *p, *mask, *realm;
+  int is_method;
 
   if (!SCHEME_PROCP(argv[0]))
     scheme_wrong_contract("procedure-rename", "procedure?", 0, argc, argv);
@@ -3386,8 +3401,9 @@ static Scheme_Object *procedure_rename(int argc, Scheme_Object *argv[])
   if (p) return p;
 
   mask = get_or_check_arity(argv[0], -4, NULL, 1);
+  is_method = proc_is_method(argv[0]);
 
-  return make_reduced_proc(argv[0], mask, argv[1], realm, NULL);
+  return make_reduced_proc(argv[0], mask, argv[1], realm, is_method ? scheme_true : scheme_false);
 }
 
 static Scheme_Object *procedure_to_method(int argc, Scheme_Object *argv[])

@@ -132,6 +132,8 @@
                      [sub1 fx1-]
                      [add1 1+]
                      [sub1 1-]
+                     [+ $fxx+]
+                     [- $fxx-]
                      [fxand fxlogand]
                      [fxior fxlogor]
                      [fxior fxlogior]
@@ -213,6 +215,7 @@
          bytevector-u64-ref
          $integer-64?
          $integer-32?
+         cflonum?
          $flonum->digits
          $flonum-sign
          syntax-error
@@ -347,6 +350,7 @@
          priminfo-libraries
          $c-bufsiz
          $foreign-procedure
+         $foreign-entry
          $separator-character
          make-guardian
          $lambda/lift-barrier)
@@ -927,6 +931,12 @@
 (define ($integer-32? x)
   (<= (- (expt 2 31)) (sub1 (expt 2 32))))
 
+(define (cflonum? n)
+  (and (number? n)
+       (flonum? (real-part n))
+       (or (real? n)
+           (flonum? (imag-part n)))))
+
 (define ($flonum->digits . args)
   (error '$flonum->digits "not ready"))
    
@@ -1388,6 +1398,10 @@
 (define-syntax ($foreign-procedure stx)
   (syntax-case stx ()
     [(_ _ name . _) #'name]))
+
+(define-syntax ($foreign-entry stx)
+  (syntax-case stx ()
+    [(_ name) #'name]))
 
 (define ($separator-character)
   (if (eq? (system-type) 'windows)

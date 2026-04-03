@@ -109,10 +109,10 @@
   (ctest #t trust/not-stronger? (and/c real? positive?) (>/c 0))
   (ctest #t trust/not-stronger? (</c 0) (and/c real? negative?))
   (ctest #t trust/not-stronger? (and/c real? negative?) (</c 0))
-  (ctest #t trust/not-stronger? (<=/c 0) (and/c real? (not/c positive?)))
-  (ctest #t trust/not-stronger? (and/c real? (not/c positive?)) (<=/c 0))
-  (ctest #t trust/not-stronger? (>=/c 0) (and/c real? (not/c negative?)))
-  (ctest #t trust/not-stronger? (and/c real? (not/c negative?)) (>=/c 0))
+  (ctest #f trust/not-stronger? (<=/c 0) (and/c real? (not/c positive?)))
+  (ctest #f trust/not-stronger? (and/c real? (not/c positive?)) (<=/c 0))
+  (ctest #f trust/not-stronger? (>=/c 0) (and/c real? (not/c negative?)))
+  (ctest #f trust/not-stronger? (and/c real? (not/c negative?)) (>=/c 0))
 
   (ctest #t trust/not-stronger? (recursive-contract (<=/c 2)) (recursive-contract (<=/c 3)))
   (ctest #f trust/not-stronger? (recursive-contract (<=/c 3)) (recursive-contract (<=/c 2)))
@@ -513,7 +513,7 @@
   (ctest #t trust/not-stronger?
          (object/c (field (f (<=/c 4))))
          (object/c (field (f (<=/c 4)))))
-  (ctest #t trust/not-stronger?
+  (ctest #f trust/not-stronger?
          (object/c (field (f (<=/c 4))))
          (object/c))
   (ctest #t trust/not-stronger?
@@ -536,6 +536,24 @@
          (object/c (m (-> any/c (<=/c 4))))
          (object/c (m (-> any/c (<=/c 3)))
                    (n (-> any/c any/c))))
+  (ctest #t trust/not-stronger?
+         (object/c [m1 (-> any/c integer? integer?)] #:opaque #t  #:opaque-fields #f)
+         (object/c [m1 (-> any/c integer? integer?)]))
+  (ctest #f trust/not-stronger?
+         (object/c [m1 (-> any/c integer? integer?)])
+         (object/c [m1 (-> any/c integer? integer?)] #:opaque #t))
+  (ctest #t trust/not-stronger?
+         (object/c #:opaque #t #:opaque-fields #f)
+         (object/c [m1 (-> any/c integer? integer?)]))
+  (ctest #f trust/not-stronger?
+         (object/c [m1 (-> any/c integer? integer?)])
+         (object/c #:opaque #t))
+  (ctest #f trust/not-stronger?
+         (object/c [m1 (-> any/c integer? integer?)] #:opaque #t)
+         (object/c #:opaque #t))
+  (ctest #t trust/not-stronger?
+         (object/c #:opaque #t)
+         (object/c [m1 (-> any/c integer? integer?)] #:opaque #t))
 
   (ctest #t trust/not-stronger? (is-a?/c object%) (is-a?/c object%))
   (ctest #t trust/not-stronger? (is-a?/c (class object% (super-new))) (is-a?/c object%))

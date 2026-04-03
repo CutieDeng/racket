@@ -32,6 +32,7 @@
          prop:contracted prop:blame
          impersonator-prop:contracted
          impersonator-prop:blame
+         get-impersonator-prop:blame
 
          has-contract? value-contract
          has-blame? value-blame
@@ -782,7 +783,8 @@
    #:trusted trust-me
    #:stronger predicate-contract-equivalent
    #:equivalent predicate-contract-equivalent
-   #:name (λ (ctc) (predicate-contract-name ctc))
+   #:name (λ (ctc)
+            (predicate-contract-name ctc))
    #:first-order (λ (ctc) (predicate-contract-pred ctc))
    #:late-neg-projection
    (λ (ctc)
@@ -880,14 +882,15 @@
 (define (get/build-late-neg-projection ctc)
   (cond
     [(contract-struct-late-neg-projection ctc) => values]
+    [(contract-struct-collapsible-late-neg-projection ctc)
+     =>
+     (lambda (f)
+       (lambda (blame)
+         (define-values (proj _) (f blame))
+         proj))]
     [else
      (log-racket/contract-info "no late-neg-projection for ~s" ctc)
      (cond
-       [(contract-struct-collapsible-late-neg-projection ctc) =>
-        (lambda (f)
-          (lambda (blame)
-            (define-values (proj _) (f blame))
-            proj))]
        [(contract-struct-projection ctc)
         =>
         (λ (projection)

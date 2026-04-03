@@ -552,7 +552,9 @@ collection for testing purposes. Since @filepath{test.pem} is public,
 such a test configuration obviously provides no security.
 
 @history[#:changed "8.4.0.5" @elem{Added @racket[(list 'macosx-keychain #f)]
-                             variant.}]}
+                             variant.}
+         #:changed "9.0.0.4" @elem{Exposed the @racket[#:try?] argument, which
+                             was documented but previously available only internally.}]}
 
 @defparam[ssl-default-verify-sources srcs
           (let ([source/c (or/c path-string?
@@ -1113,3 +1115,16 @@ Either @racket[#f] when @racket[libssl] is non-@racket[#f], or a
 string when @racket[libssl] is @racket[#f]. In the latter case, the
 string provides an error message for the attempt to load
 @filepath{libssl}.}
+
+@; ----------------------------------------------------------------------
+
+@section[#:tag "legacy"]{Legacy Providers}
+
+@defmodule[openssl/legacy]{The @racketmodname[openssl/legacy] library
+does not provide any definitions, but when the module is instantiated,
+it attempts to load OpenSSL legacy algorithms. It also creates a
+dependency on a legacy-provider shared library, if one is installed
+as part of the Racket installation, to be included with a stand-alone
+executable distribution.}
+
+@history[#:added "9.0.0.4"]

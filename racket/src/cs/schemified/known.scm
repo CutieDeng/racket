@@ -412,6 +412,75 @@
          0
          s
          'value))))))
+(define finish_2091
+  (make-struct-type-install-properties
+   '(known-foreign-inline)
+   1
+   0
+   (if (struct-type? struct:known-consistent)
+     struct:known-consistent
+     (check-struct-type 'struct struct:known-consistent))
+   null
+   'prefab
+   #f
+   '(0)
+   #f
+   'known-foreign-inline))
+(define struct:known-foreign-inline
+  (make-record-type-descriptor
+   'known-foreign-inline
+   (if (struct-type? struct:known-consistent)
+     struct:known-consistent
+     (check-struct-type 'struct struct:known-consistent))
+   (structure-type-lookup-prefab-uid
+    'known-foreign-inline
+    (if (struct-type? struct:known-consistent)
+      struct:known-consistent
+      (check-struct-type 'struct struct:known-consistent))
+    1
+    0
+    #f
+    '(0))
+   #f
+   #f
+   '(1 . 1)))
+(define effect_2697 (finish_2091 struct:known-foreign-inline))
+(define known-foreign-inline
+  (|#%name|
+   known-foreign-inline
+   (record-constructor
+    (make-record-constructor-descriptor struct:known-foreign-inline #f #f))))
+(define known-foreign-inline?_2580
+  (|#%name|
+   known-foreign-inline?
+   (record-predicate struct:known-foreign-inline)))
+(define known-foreign-inline?
+  (|#%name|
+   known-foreign-inline?
+   (lambda (v)
+     (if (known-foreign-inline?_2580 v)
+       #t
+       ($value
+        (if (impersonator? v)
+          (known-foreign-inline?_2580 (impersonator-val v))
+          #f))))))
+(define known-foreign-inline-expr_2708
+  (|#%name|
+   known-foreign-inline-expr
+   (record-accessor struct:known-foreign-inline 0)))
+(define known-foreign-inline-expr
+  (|#%name|
+   known-foreign-inline-expr
+   (lambda (s)
+     (if (known-foreign-inline?_2580 s)
+       (known-foreign-inline-expr_2708 s)
+       ($value
+        (impersonate-ref
+         known-foreign-inline-expr_2708
+         struct:known-foreign-inline
+         0
+         s
+         'expr))))))
 (define finish_1929
   (make-struct-type-install-properties
    '(known-ctype)
@@ -702,6 +771,78 @@
         (if (impersonator? v)
           (known-procedure/no-prompt/multi?_2394 (impersonator-val v))
           #f))))))
+(define finish_2412
+  (make-struct-type-install-properties
+   '(known-procedure/no-prompt-up-to)
+   1
+   0
+   (if (struct-type? struct:known-procedure)
+     struct:known-procedure
+     (check-struct-type 'struct struct:known-procedure))
+   null
+   'prefab
+   #f
+   '(0)
+   #f
+   'known-procedure/no-prompt-up-to))
+(define struct:known-procedure/no-prompt-up-to
+  (make-record-type-descriptor
+   'known-procedure/no-prompt-up-to
+   (if (struct-type? struct:known-procedure)
+     struct:known-procedure
+     (check-struct-type 'struct struct:known-procedure))
+   (structure-type-lookup-prefab-uid
+    'known-procedure/no-prompt-up-to
+    (if (struct-type? struct:known-procedure)
+      struct:known-procedure
+      (check-struct-type 'struct struct:known-procedure))
+    1
+    0
+    #f
+    '(0))
+   #f
+   #f
+   '(1 . 1)))
+(define effect_2754 (finish_2412 struct:known-procedure/no-prompt-up-to))
+(define known-procedure/no-prompt-up-to
+  (|#%name|
+   known-procedure/no-prompt-up-to
+   (record-constructor
+    (make-record-constructor-descriptor
+     struct:known-procedure/no-prompt-up-to
+     #f
+     #f))))
+(define known-procedure/no-prompt-up-to?_2279
+  (|#%name|
+   known-procedure/no-prompt-up-to?
+   (record-predicate struct:known-procedure/no-prompt-up-to)))
+(define known-procedure/no-prompt-up-to?
+  (|#%name|
+   known-procedure/no-prompt-up-to?
+   (lambda (v)
+     (if (known-procedure/no-prompt-up-to?_2279 v)
+       #t
+       ($value
+        (if (impersonator? v)
+          (known-procedure/no-prompt-up-to?_2279 (impersonator-val v))
+          #f))))))
+(define known-procedure/no-prompt-up-to-n_2628
+  (|#%name|
+   known-procedure/no-prompt-up-to-n
+   (record-accessor struct:known-procedure/no-prompt-up-to 0)))
+(define known-procedure/no-prompt-up-to-n
+  (|#%name|
+   known-procedure/no-prompt-up-to-n
+   (lambda (s)
+     (if (known-procedure/no-prompt-up-to?_2279 s)
+       (known-procedure/no-prompt-up-to-n_2628 s)
+       ($value
+        (impersonate-ref
+         known-procedure/no-prompt-up-to-n_2628
+         struct:known-procedure/no-prompt-up-to
+         0
+         s
+         'n))))))
 (define finish_2574
   (make-struct-type-install-properties
    '(known-procedure/no-return)

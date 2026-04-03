@@ -330,7 +330,6 @@
 (test 'a append '() 'a)
 (test 1 append 1)
 (test '(1 . 2) append '(1) 2)
-(test '(1 . 2) append '(1) 2)
 (err/rt-test (append '(1 2 . 3) 1))
 (err/rt-test (append '(1 2 3) 1 '(4 5 6)))
 
@@ -671,7 +670,7 @@
   (test #t k:interned-char? #\()
   (test #t k:interned-char? #\ )
   (test #t k:interned-char? '#\newline)
-  (test (eq? 'chez-scheme (system-type 'vm)) k:interned-char? #\u100)
+  (test #t k:interned-char? #\u100)
   (test #f k:interned-char? 7)
   (test #f k:interned-char? #t)
   (test #f k:interned-char? #t)
@@ -907,6 +906,12 @@
   (err/rt-test (integer->char #xD800) exn:fail:contract? rx)
   (err/rt-test (integer->char #xDFFF) exn:fail:contract? rx))
 (err/rt-test (char->integer 5) exn:fail:contract? #rx"char[?]")
+
+(test #t
+      (for/and ([i (in-range 1000)])
+        (define c (random #x110000))
+        (or (<= #xD800 c #xDFFF)
+            (eq? (integer->char c) (integer->char c)))))
 
 (define (test-up/down case case-name members memassoc)
   (let loop ([n 0])
@@ -1837,6 +1842,37 @@
 (test 7 apply (lambda (a b) (+ a b)) (list 3 4))
 (test 17 apply + 10 (list 3 4))
 (test '() apply list '())
+;; Ensure `(apply apply ...)` routes the second `apply` to kernel `apply`.
+(test '(0 1 2 3)
+      (lambda ()
+        (apply apply append '((0 1) ((2) (3))))))
+(test "abcd"
+      (lambda ()
+        (apply apply string-append '("ab" ("cd")))))
+;; Ensure `(apply apply ...)` expands with kernel `apply` in argument position.
+(test #t
+      (lambda ()
+        (let* ([expanded (expand #'(apply apply append '((0 1) ((2) (3)))))]
+               [parts (syntax->list expanded)])
+          (and parts
+               (identifier? (list-ref parts 2))
+               (let-values ([(b) (identifier-binding (list-ref parts 2))])
+                 (and b
+                      (eq? (cadr b) 'apply)
+                      (eq? (cadddr b) 'apply)
+                      (eq? (resolved-module-path-name
+                            (module-path-index-resolve (caddr b)))
+                           '#%kernel)))))))
+;; But preserve lexical shadowing when `apply` is locally bound.
+(let ([kernel-apply apply])
+  (test '(shadow a)
+        (lambda ()
+          (let ([apply (lambda (x) (list 'shadow x))])
+            (kernel-apply apply '(a)))))
+  (test "shadow:abc"
+        (lambda ()
+          (let ([apply (lambda (s) (string-append "shadow:" s))])
+            (kernel-apply apply '("abc"))))))
 (define compose (lambda (f g) (lambda args (f (apply g args)))))
 (test 30 (compose sqrt *) 12 75)
 (err/rt-test (apply) exn:application:arity?)
@@ -3643,8 +3679,11 @@
 (test #t symbol? (system-type 'link))
 (test #t symbol? (system-type 'os*))
 (test #t symbol? (system-type 'arch))
+(test #t symbol? (system-type 'so-find))
+(test #t string? (system-type 'platform))
 (test #t relative-path? (system-library-subpath))
 (test #t relative-path? (system-library-subpath #f))
+(test (system-type 'platform) (path->string (system-library-subpath #f)))
 
 (test #t pair? (memv (system-type 'word) '(32 64)))
 (test (fixnum? (expt 2 32)) = (system-type 'word) 64)

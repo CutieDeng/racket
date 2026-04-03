@@ -2,7 +2,7 @@
 var key_handler, toggle_panel, hide_prefs, new_query, refine_query,
     set_ctx_query, set_context_query, set_show_manuals, set_show_manual_titles,
     set_results_num, set_type_delay, set_highlight_color, status_line,
-    saved_status = false, ctx_query_label_line;
+    saved_status = false, ctx_query_label_line, language_family;
 
 var descriptions = new Array();
 
@@ -76,13 +76,25 @@ function MakeContextQueryItem(qry, desc) {
 }
 
 function MakeLanguageFamilySuggestions() {
+    var all_families = false;
+
     if (plt_language_families.length == 1) {
         return "";
     }
     accum = ""
-    for (i = 0; i < plt_language_families.length; i++) {
-        accum += MakeContextQueryItem("F:" + plt_language_families[i],
-                                      plt_language_families[i] + " language family");
+
+    if (all_families) {
+        for (i = 0; i < plt_language_families.length; i++) {
+            accum += MakeContextQueryItem("F:" + plt_language_families[i],
+                                          plt_language_families[i] + " language family");
+        }
+    } else {
+        accum += MakeContextQueryItem("F:" + language_family,
+                                      language_family + " language family");
+        if (language_family != plt_main_language_family) {
+            accum += MakeContextQueryItem("F:" + plt_main_language_family,
+                                          plt_main_language_family + " language family");
+        }
     }
     return accum;
 }
@@ -109,6 +121,8 @@ function MakePageIcon(img,label) {
 
 function InitializeSearch() {
   var n;
+  language_family = GetPageArg("fam",false);
+  if (!language_family) language_family = plt_main_language_family
   n = document.getElementById("plt_search_container");
   // hack the dom widgets in
   var panelbgcolor = "background-color: #f0f0f0;";
@@ -156,6 +170,9 @@ function InitializeSearch() {
            +' &ldquo;<kbd><i>str</i></kbd>&rdquo; should match the module name'
            +' exactly; &ldquo;<kbd>L:</kbd>&rdquo; by'
            +' itself will restrict results to module names only.</li>'
+        +'<li>&ldquo;<kbd>K:<i>str</i></kbd>&rdquo; restricts results to ones who'
+           +' kind is &ldquo;<kbd><i>str</i></kbd>&rdquo;. Use double quotes'
+           +' around &ldquo;<kbd><i>str</i></kbd>&rdquo; to include spaces.</li>'
         +'<li>&ldquo;<kbd>T:<i>str</i></kbd>&rdquo; restricts results to ones in'
            +' the &ldquo;<kbd><i>str</i></kbd>&rdquo; manual (naming the'
            +' directory where the manual is found).</li>'
@@ -263,10 +280,22 @@ function InitializeSearch() {
   // get search string
   var init_q = GetPageArg("q",false);
   if (init_q && init_q != "") query.value = init_q;
+  AdjustMainLink(GetPageArg("famroot",false));
   ContextFilter();
   DoSearch();
   query.focus();
   query.select();
+}
+
+function AdjustMainLink(famroot) {
+    if (!famroot) return;
+    var s = document.getElementById("start-link");
+    if (!s) return;
+    var c = s.firstChild
+    if (!c) return;
+    if (c.innerHTML == "Racket Documentation") { // sanity check
+        c.innerHTML = language_family + " Documentation"
+    }
 }
 
 function makeProtoSearchResult() {
@@ -428,6 +457,29 @@ function UrlToManual(url) {
             .replace(/^(.*\/|>)/, ""); // and directory.
 }
 
+
+// Index array entry constants:
+const IDX_KEY = 0;
+const IDX_URL = 1;
+const IDX_KEY_HTML = 2;
+const IDX_LIBS_SEXP = 3;
+const IDX_PACKAGE = 4;
+const IDX_SORT_ORDER = 5;
+const IDX_LANG_FAMILY = 6;
+const IDX_LIBS_HTML = 7;
+const IDX_LIBS_TEXT = 8;
+const IDX_KIND = 9;
+const IDX_LONG_KEY = 10;
+
+function CompareKey(term, x){
+    var c = Compare(term, x[IDX_KEY]);
+    if (x[IDX_LONG_KEY]) {
+        var c2 = Compare(term, x[IDX_LONG_KEY]);
+        if (c2 > c) return c2;
+    }
+    return c;
+}
+    
 // Tests for matches and highlights:
 //   "append"
 //   "L:racket append"
@@ -443,7 +495,7 @@ function UrlToManual(url) {
 // mostly for context queries.
 
 function CompileTerm(term) {
-  var op = ((term.search(/^[NFLMHRTQ]:/) == 0) && term.substring(0,1));
+  var op = ((term.search(/^[NFLMHRTQK]:/) == 0) && term.substring(0,1));
   if (op) term = term.substring(2);
   term = term.toLowerCase();
   switch (op) {
@@ -453,55 +505,60 @@ function CompileTerm(term) {
     return function(x) { return (op(x) >= C_match) ? C_fail : C_exact; };
   case "F":
     return function(x) {
-        fams = x[6].map((x) => x.toLowerCase())
+        fams = x[IDX_LANG_FAMILY].map((x) => x.toLowerCase())
         if (!fams) return C_fail;
         return (MaxCompares(term,fams) >= C_exact) ? C_exact : C_fail;
     };
   case "L":
     return function(x) {
-      if (!x[3]) return C_fail;
-      if (x[3] == "module" || x[3] == "language" || x[3] == "reader") // rexact allowed, show partial module matches
-        return Compare(term,x[0]);
-      return (MaxCompares(term,x[3]) >= C_exact) ? C_exact : C_fail;
+      if (!x[IDX_LIBS_SEXP]) return C_fail;
+      if (x[IDX_LIBS_SEXP] == "module" || x[IDX_LIBS_SEXP] == "language" || x[IDX_LIBS_SEXP] == "reader") // rexact allowed, show partial module matches
+        return CompareKey(term, x);
+      return (MaxCompares(term,x[IDX_LIBS_SEXP]) >= C_exact) ? C_exact : C_fail;
     };
   case "M":
     return function(x) {
-      if (!x[3]) return C_fail;
-      if (x[3] == "module" || x[3] == "language" || x[3] == "reader") return Compare(term,x[0]); // rexact allowed
-        return (MaxCompares(term,x[8]?x[8]:x[3]) >= C_match) ? C_exact : C_fail;
+      if (!x[IDX_LIBS_SEXP]) return C_fail;
+      if (x[IDX_LIBS_SEXP] == "module" || x[IDX_LIBS_SEXP] == "language" || x[IDX_LIBS_SEXP] == "reader") return CompareKey(term, x); // rexact allowed
+      return (MaxCompares(term,x[IDX_LIBS_TEXT]?x[IDX_LIBS_TEXT]:x[IDX_LIBS_SEXP]) >= C_match) ? C_exact : C_fail;
     };
   case "H":
     return function(x) {
-      if (!x[3]) return C_fail;
-      if (x[3] == "language") return Compare(term,x[0]);
-        return (MaxCompares(term,x[8]?x[8]:x[3]) >= C_exact) ? C_exact : C_fail;
+      if (!x[IDX_LIBS_SEXP]) return C_fail;
+      if (x[IDX_LIBS_SEXP] == "language") return CompareKey(term, x);
+      return (MaxCompares(term,x[IDX_LIBS_TEXT]?x[IDX_LIBS_TEXT]:x[IDX_LIBS_SEXP]) >= C_exact) ? C_exact : C_fail;
     };
   case "R":
     return function(x) {
-      if (!x[3]) return C_fail;
-      if (x[3] == "reader") return Compare(term,x[0]);
-      return (MaxCompares(term,x[8]?x[8]:x[3]) >= C_exact) ? C_exact : C_fail;
+      if (!x[IDX_LIBS_SEXP]) return C_fail;
+      if (x[IDX_LIBS_SEXP] == "reader") return CompareKey(term, x);
+      return (MaxCompares(term,x[IDX_LIBS_TEXT]?x[IDX_LIBS_TEXT]:x[IDX_LIBS_SEXP]) >= C_exact) ? C_exact : C_fail;
     };
   case "T":
     return function(x) {
-      if (Compare(term,UrlToManual(x[1])) < C_exact) return C_fail;
-      else if (x[1].search(/\/index\.html$/) > 0) return C_rexact;
+      if (Compare(term,UrlToManual(x[IDX_URL])) < C_exact) return C_fail;
+      else if (x[IDX_URL].search(/\/index\.html$/) > 0) return C_rexact;
       else return C_exact;
+    };
+  case "K":
+    return function(x) {
+      if (!x[IDX_KIND]) return C_fail;
+      return Compare(term,x[IDX_KIND]);
     };
   /* a case for "Q" is not needed -- same as the default case below */
   default:
     var compare_words = CompileWordCompare(term);
     return CompileOrTerms([
       function(x) {
-        var r = Compare(term,x[0]);
+        var r = CompareKey(term, x);
         // only bindings can be used for rexact matches
-        if (r >= C_rexact) return (x[3] ? r : C_exact);
+        if (r >= C_rexact) return (x[IDX_LIBS_SEXP] ? r : C_exact);
         if (r > C_words3) return r;
-        else return compare_words(x[0]);
+        else return compare_words(x[IDX_KEY]);
       },
       function(x) {
-        if (x[1].search(/\/index\.html$/) > 0) {
-          return Compare(term,UrlToManual(x[1]));
+        if (x[IDX_URL].search(/\/index\.html$/) > 0) {
+          return Compare(term,UrlToManual(x[IDX_URL]));
         } else {
           return C_fail;
         }
@@ -584,25 +641,52 @@ function MakeShowProgress() {
 }
 
 function packageAndOrderCompare(a, b) {
-  var a_is_base = plt_base_pkgs.indexOf(a[4]) >= 0;
-  var b_is_base = plt_base_pkgs.indexOf(b[4]) >= 0;
+  var a_is_lang = (a[IDX_LANG_FAMILY].indexOf(language_family) >= 0);
+  var b_is_lang = (b[IDX_LANG_FAMILY].indexOf(language_family) >= 0);
+  if (a_is_lang != b_is_lang) {
+      if (a_is_lang) return -1;
+      if (b_is_lang) return 1;
+  }
+
+  var a_is_base = plt_base_pkgs.indexOf(a[IDX_PACKAGE]) >= 0;
+  var b_is_base = plt_base_pkgs.indexOf(b[IDX_PACKAGE]) >= 0;
   if (a_is_base && b_is_base) return 0;
   if (a_is_base) return -1;
   if (b_is_base) return 1;
 
-  var a_in_main = plt_main_dist_pkgs.indexOf(a[4]) >= 0;
-  var b_in_main = plt_main_dist_pkgs.indexOf(b[4]) >= 0;
+  var a_in_main = plt_main_dist_pkgs.indexOf(a[IDX_PACKAGE]) >= 0;
+  var b_in_main = plt_main_dist_pkgs.indexOf(b[IDX_PACKAGE]) >= 0;
   if (a_in_main && b_in_main) return 0;
   if (a_in_main) return -1;
   if (b_in_main) return 1;
 
   // Same name: sort using `sort-order`
-  if (a[0] == b[0]) {
-      if (a[5] < b[5]) return -1;
-      if (b[5] < a[5]) return 1;
+  if (a[IDX_KEY] == b[IDX_KEY]) {
+      if (a[IDX_SORT_ORDER] < b[IDX_SORT_ORDER]) return -1;
+      if (b[IDX_SORT_ORDER] < a[IDX_SORT_ORDER]) return 1;
   }
 
   return 0;
+}
+
+// intended to refine an existing sort, relying on a stable stort
+function languageFamilyCompare(a, b) {
+  if (a[0] == (C_max - C_rexact) || b[0] == (C_max - C_rexact)) {
+    return a[0] - b[0];
+  }
+  var a_is_lang = (a[1][IDX_LANG_FAMILY].indexOf(language_family) >= 0);
+  var b_is_lang = (b[1][IDX_LANG_FAMILY].indexOf(language_family) >= 0);
+  if (a_is_lang != b_is_lang) {
+      if (a_is_lang) return -1;
+      if (b_is_lang) return 1;
+  }
+  return 0;
+}
+
+function splitWithQuotes(input) {
+  return input.match(/(?:[^\s"]|"[^"]*")+/g).map(token =>
+    token.replace(/"([^"]*)"/g, "$1")
+  );
 }
 
 function Search(data, term, is_pre, K) {
@@ -611,7 +695,7 @@ function Search(data, term, is_pre, K) {
   var t = false;
   function Killer() { if (t) clearTimeout(t); };
   // term comes with normalized spaces (trimmed, and no double spaces)
-  var preds = (term=="") ? [] : CompileTerms(term.split(/ /), false);
+  var preds = (term=="") ? [] : CompileTerms(splitWithQuotes(term), false);
   if (preds.length == 0) {
     var ret = is_pre ? [0,data] : [0,[]];
     if (K) { K(ret); return Killer; }
@@ -620,7 +704,7 @@ function Search(data, term, is_pre, K) {
   var i = 0;
   var matches = new Array(C_max-C_min);
   for (i=0; i<matches.length; i++) matches[i] = new Array();
-  var chunk_fuel = K ? Math.round(data.length/10) : data.length;
+  var chunk_fuel = K ? Math.ceil(data.length/10) : data.length;
   var progress = K ? MakeShowProgress() : Id;
   i = 0;
   function DoChunk() {
@@ -647,7 +731,17 @@ function Search(data, term, is_pre, K) {
         matches[i].sort(packageAndOrderCompare);
       }
 
-      r = [matches[0].length, [].concat.apply([],matches)];
+      // matches per C_x are sorted nicely, be we want to
+      // elevate language-fail matches above C_x matching
+      var all_matches = []
+      for (i = 0; i < matches.length; i++) {
+        for (j = 0; j < matches[i].length; j++) {
+          all_matches.push([i, matches[i][j]]);
+        }
+      }
+      all_matches.sort(languageFamilyCompare);
+
+      r = [matches[0].length, all_matches.map(function (l) { return l[1]; })];
       if (K) K(r); else return r;
     }
   };
@@ -775,18 +869,32 @@ function UpdateResults() {
   new_url.searchParams.set("q", term);
   window.history.replaceState({}, "", new_url);
 
+  // Also update the "navigating as <Family>" link
+  var es = document.getElementsByClassName("navfamily");
+  for (var i=0; i < es.length; i++) {
+    var e = es[i];
+    if (e.dataset.fam != undefined) {
+      var nav_as = e.children[0];
+      var link = nav_as.children[0];
+      var url = new URL(link.href);
+      url.searchParams.delete("qfrom");
+      url.searchParams.set("qfrom", new_url);
+      link.href = url;
+    }
+  }
+
   if (first_search_result < 0 ||
       first_search_result >= search_results.length)
     first_search_result = 0;
   var link_args = GetPageQueryString() && StripQArg("?" + GetPageQueryString());
-  var show_family = (plt_language_families.length > 1) && !(ctx_query.includes("F:"))
+  var show_family = ((plt_language_families.length > 1) && !(ctx_query.includes("F:"))) || (language_family != plt_main_language_family)
   for (var i=0; i<result_links.length; i++) {
     var n = i + first_search_result;
     if (n < search_results.length) {
-        var note = false, res = search_results[n], desc = res[3], lang_fams = res[6];
+        var note = false, res = search_results[n], desc = res[IDX_LIBS_SEXP], lang_fams = res[IDX_LANG_FAMILY];
       if ((desc instanceof Array) && (desc.length > 0)) {
-        var desc_key = res[8] ? res[8] : desc;
-        var desc_display = res[7];
+        var desc_key = res[IDX_LIBS_TEXT] ? res[IDX_LIBS_TEXT] : desc;
+        var desc_display = res[IDX_LIBS_HTML];
         note = '<span class="smaller">provided from</span> ';
         for (var j=0; j<desc.length; j++)
           note +=
@@ -805,7 +913,7 @@ function UpdateResults() {
         note = '<span class="smaller">language</span>';
       }
       if (show_manuals == 2 || (show_manuals == 1 && !desc)) {
-        var manual = UrlToManual(res[1]),
+        var manual = UrlToManual(res[IDX_URL]),
             idx = (show_manual_titles && plt_manual_ptrs[manual]);
         note = (note ? (note + " ") : "");
         note += '<span class="smaller">in</span> '
@@ -816,15 +924,15 @@ function UpdateResults() {
                    +' onclick="return new_query(this,\'\');"'
                    +' oncontextmenu="return refine_query(this);">'
                 + ((typeof idx == "number")
-                   ? ('<i>'+UncompactHtml(search_data[idx][2])+'</i>')
+                   ? ('<i>'+UncompactHtml(search_data[idx][IDX_KEY_HTML])+'</i>')
                    : manual)
                 + '</a>';
       }
       if (note)
         note = '&nbsp;&nbsp;<span class="smaller">' + note + '</span>';
-      if (show_family && (lang_fams[0] != plt_main_language_family))
+      if (show_family && (lang_fams[0] != language_family))
         note = '<div class="language-family">' + lang_fams[0] + "</div>" + note;
-      var href = UncompactUrl(res[1]);
+      var href = UncompactUrl(res[IDX_URL]);
       if (link_args) {
         var hash = href.indexOf("#");
         if (hash >= 0)
@@ -836,17 +944,21 @@ function UpdateResults() {
       result_links[i].innerHTML =
         '<div title="" class="search-result-row"><a href="' + href
         + '" class="indexlink" tabIndex="2">'
-        + UncompactHtml(res[2]) + '</a>' + (note || "") + '</div>';
+        + UncompactHtml(res[IDX_KEY_HTML]) + '</a>' + (note || "") + '</div>';
       result_links[i].classList.remove(
         'search-result-wrapper-pkg-base',
         'search-result-wrapper-pkg-main-dist'
       );
-      if (plt_base_pkgs.indexOf(res[4]) >= 0) {
-        result_links[i].classList.add('search-result-wrapper-pkg-base');
-        result_links[i].title = "from base language's official documentation";
-      } else if (plt_main_dist_pkgs.indexOf(res[4]) >= 0) {
-        result_links[i].classList.add('search-result-wrapper-pkg-main-dist');
-        result_links[i].title = "from distribution's official documentation";
+      if (language_family == plt_main_language_family) {
+        if (plt_base_pkgs.indexOf(res[IDX_PACKAGE]) >= 0) {
+          result_links[i].classList.add('search-result-wrapper-pkg-base');
+          result_links[i].title = "from base language's official documentation";
+        } else if (plt_main_dist_pkgs.indexOf(res[IDX_PACKAGE]) >= 0) {
+          result_links[i].classList.add('search-result-wrapper-pkg-main-dist');
+          result_links[i].title = "from distribution's official documentation";
+        } else {
+          result_links[i].title = '';
+        }
       } else {
         result_links[i].title = '';
       }
@@ -1090,3 +1202,12 @@ set_highlight_color = SetHighlightColor;
 AddOnLoad(InitializeSearch);
 
 })();
+
+
+function GotoDocIndex(ver, name) {
+  if (plt_base_pkgs.indexOf("racket-index") >= 0) {
+    location = MergePageArgsIntoUrl(plt_main_url + name + "/index.html");
+    return false;
+  }
+  return true;
+}

@@ -8,11 +8,13 @@
          known-authentic known-authentic?
          known-copy? known-copy known-copy-id
          known-literal known-literal? known-literal-value
+         known-foreign-inline known-foreign-inline? known-foreign-inline-expr
          known-ctype known-ctype? known-ctype-rep
          known-procedure known-procedure? known-procedure-arity-mask
          known-procedure/single-valued known-procedure/single-valued?
          known-procedure/no-prompt known-procedure/no-prompt?
          known-procedure/no-prompt/multi known-procedure/no-prompt/multi?
+         known-procedure/no-prompt-up-to known-procedure/no-prompt-up-to? known-procedure/no-prompt-up-to-n
          known-procedure/no-return known-procedure/no-return?
          known-procedure/parameter known-procedure/parameter?
          known-procedure/folding known-procedure/folding?
@@ -70,6 +72,9 @@
 ;; literal for constant propagation:
 (struct known-literal (value) #:prefab #:omit-define-syntaxes #:super struct:known-consistent)
 
+;; foreign-inline for constant propagation:
+(struct known-foreign-inline (expr) #:prefab #:omit-define-syntaxes #:super struct:known-consistent)
+
 ;; ctype for constant propagation:
 (struct known-ctype (rep) #:prefab #:omit-define-syntaxes #:super struct:known-constant)
 
@@ -87,6 +92,9 @@
 
 ;; like known-procedure/no-prompt, but not single-valued
 (struct known-procedure/no-prompt/multi () #:prefab #:omit-define-syntaxes #:super struct:known-procedure)
+
+;; like known-procedure/no-prompt, but only if the number of arguments is small enough
+(struct known-procedure/no-prompt-up-to (n) #:prefab #:omit-define-syntaxes #:super struct:known-procedure)
 
 ;; procedure that does not return, because it always escapes
 (struct known-procedure/no-return () #:prefab #:omit-define-syntaxes #:super struct:known-procedure/single-valued)
@@ -112,7 +120,7 @@
 
 ;; procedure that always succeeds, has no side effect, and would return the same value anytime later,
 ;; so can be reordered with later things, but can't be reordered before things that might raise an
-;; exception; used for unsafe accessors
+;; exception; used for unsafe accessors of immutable fields
 (struct known-procedure/then-pure () #:prefab #:omit-define-syntaxes #:super struct:known-procedure/succeeds)
 (struct known-procedure/then-pure/folding-unsafe (safe) #:prefab #:omit-define-syntaxes #:super struct:known-procedure/then-pure)
 

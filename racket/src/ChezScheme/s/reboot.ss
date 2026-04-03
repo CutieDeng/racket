@@ -145,7 +145,9 @@
  [else
   (define path-build
     (lambda (a b)
-      (let ([sep (if (eqv? (string-ref a (sub1 (string-length a))) #\/) "" "/")])
+      (let ([sep (if (or (string=? a "")
+                         (eqv? (string-ref a (sub1 (string-length a))) #\/))
+                     "" "/")])
         (string-append a sep b))))])
 
 (let ([machine.def (path-build xc-dir "machine.def")])
@@ -308,6 +310,12 @@
 (define-primitive $integer-32? #%$integer-32?)
 (define-primitive $integer-64? #%$integer-64?)
 (define-primitive $fxu< #%$fxu<)
+(define-primitive $fxx+ (lambda args (if (andmap fixnum? args)
+                                         (apply + args)
+                                         (error '$fxx+ "not a fixnum in ~s" args))))
+(define-primitive $fxx- (lambda args (if (andmap fixnum? args)
+                                         (apply - args)
+                                         (error '$fxx- "not a fixnum in ~s" args))))
 (define-primitive $stencil-vector? (lambda (v) #f))
 (define-primitive $system-stencil-vector? (lambda (v) #f))
 (define-primitive $symbol-name #%$symbol-name)
@@ -407,6 +415,7 @@
 (define-primitive $ftd-pair? (lambda (x) (and (pair? x) (#%$ftd? (car x)))))
 (define-primitive $fptd? #%$ftd?)
 (define-primitive $filter-foreign-type #%$filter-foreign-type)
+(define-primitive $ftype-pointer? #%$ftype-pointer?)
 
 (define-primitive $make-fmt->expr #%$make-fmt->expr)
 (define-primitive $parse-format-string (lambda args #f))
@@ -525,6 +534,8 @@
   (syntax-case stx ()
     [(_ _ name . _)
      #'(lambda args (error 'reboot "expander not expected to call foreign procedure ~s" name))]))
+(define-primitive ($foreign-entry name)
+  (list 'foreign name))
 
 (define-primitive ($oops . args)
   (apply error args))

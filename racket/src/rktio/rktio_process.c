@@ -868,7 +868,7 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
 
     /* Don't allow group checking, because we don't want to wait
        on a group if we haven't already: */
-    if (centralized_get_child_status(sp->pid, 0, 0, &status)) {
+    if (centralized_get_child_status(sp->pid, sp->in_group, 0, &status)) {
       sp->status = status;
       sp->done = 1;
       centralized_wait_resume();
@@ -896,6 +896,16 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
         centralized_wait_resume();
         return 1;
       }
+# ifdef RKTIO_KILLPG_EPERM_FOR_ZOMBIE
+      if ((errno == EPERM) && sp->in_group) {
+        /* Maybe all processes in the group have exited. In that case, Mac OS incorrectly reports EPERM:
+           https://stackoverflow.com/questions/22334761/how-to-kill-all-processes-with-the-same-name-using-os-x-terminal
+           It doesn't seem to work to try polling with waitpid to see if the main process exited,
+           so no workaround is obvious. We just discard the error. */
+        centralized_wait_resume();
+        return 1;
+      }
+# endif
     } else {
       if (!kill(sp->pid, as_kill ? SIGKILL : SIGINT)) {
         centralized_wait_resume();
@@ -1167,6 +1177,7 @@ typedef void (*rktio_DeleteProcThreadAttributeList_t)(void *lpAttributeList);
 static rktio_DeleteProcThreadAttributeList_t rktio_DeleteProcThreadAttributeList;
 static void init_thread_attr_procs()
 {
+  WaitForSingleObject(rktio_global_lock, INFINITE);
   if (!rktio_InitializeProcThreadAttributeList
       || !rktio_UpdateProcThreadAttribute) {
     HMODULE hm;
@@ -1179,6 +1190,7 @@ static void init_thread_attr_procs()
 
     FreeLibrary(hm);
   }
+  ReleaseSemaphore(rktio_global_lock, 1, NULL);
 }
 
 static intptr_t do_spawnv(rktio_t *rktio,
@@ -1259,10 +1271,10 @@ static intptr_t do_spawnv(rktio_t *rktio,
     cr_flag |= CREATE_NEW_PROCESS_GROUP;
   cr_flag |= CREATE_UNICODE_ENVIRONMENT;
 
-  cmdline_w = WIDE_PATH_copy(cmdline);
+  cmdline_w = WIDE_PATH_copy(cmdline, &rktio->err);
   if (!exact_cmdline)
     free(cmdline);
-  wd_w = WIDE_PATH_copy(wd);
+  wd_w = WIDE_PATH_copy(wd, &rktio->err);
   command_w = WIDE_PATH_temp(command);
 
   if (disable_inherit) {

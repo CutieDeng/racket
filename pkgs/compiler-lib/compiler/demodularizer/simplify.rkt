@@ -78,7 +78,8 @@
               ;; don't bother keeping track
               (hash-set! mutated id #t)
               (loop rhs)]
-             [`(quote . _) (void)]
+             [`(quote . ,_) (void)]
+             [`(#%foreign-inline . ,_) (void)]
              [`(with-continuation-mark ,key ,val ,body)
               (loop key)
               (loop val)
@@ -109,6 +110,11 @@
       (let ([rhs (unwrap rhs)])
         (match rhs
           [`(quote ,_) #t]
+          [`(#%foreign-inline ,_ ,mode) (memq mode '(copy pure copy* pure*))]
+          [`((#%foreign-inline ,_ ,mode) ,args ...)
+           (and (memq mode '(copy* pure*))
+                (for/and ([arg (in-list args)])
+                  (immediate? arg)))]
           [`(lambda . ,_) #t]
           [`(case-lambda ., _) #t]
           [`(let-values ([,ids ,rhs] ...)
@@ -121,7 +127,7 @@
             (and (or (memq rator
                            ;; primitives that don't immediately call any
                            ;; function that they are given:
-                           '(make-struct-type-property
+                           '(unsafe-make-struct-type-property/guard-calls-no-arguments
                              make-struct-type
                              make-struct-field-accessor
                              make-struct-field-mutator
@@ -130,6 +136,10 @@
                              cons
                              current-inspector
                              check-inspector))
+                     (and (eq? rator 'make-struct-type-property)
+                          (or ((length args) . <= . 1)
+                              (and (not (cadr args))
+                                   ((length args) . <= . 2))))
                      (eq? (hash-ref defined-ready rator #f) 'constructor))
                  (for/and ([arg (in-list args)])
                    (immediate? arg)))
@@ -266,6 +276,7 @@
                [`(set! ,id ,rhs)
                 `(set! ,id ,(loop rhs))]
                [`(quote . ,_) b]
+               [`(#%foreign-inline . ,_) b]
                [`(with-continuation-mark ,key ,val ,body)
                 `(with-continuation-mark ,(loop key) ,(loop val) ,(loop body))]
                [`(#%variable-reference ,id) b]

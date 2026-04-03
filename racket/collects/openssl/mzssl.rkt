@@ -103,8 +103,8 @@ TO DO:
         path-string?
         void?)]
   [ssl-load-verify-source!
-   (c-> ssl-context?
-        verify-source/c
+   (->* (ssl-context? verify-source/c)
+        (#:try? any/c)
         void?)]
   [ssl-load-suggested-certificate-authorities!
    (c-> (or/c ssl-context? ssl-listener?)
@@ -268,7 +268,7 @@ TO DO:
 
 (define ssl-default-verify-sources*
   (make-parameter
-   (delay
+   (delay/sync
      (case (system-type 'os*)
        [(windows)
         ;; On Windows, x509-root-sources produces paths like "/usr/local/ssl/certs", which
@@ -289,7 +289,7 @@ TO DO:
 (define ssl-default-verify-sources
   (make-derived-parameter
    ssl-default-verify-sources*
-   (λ (p) (delay p))
+   (λ (p) (delay/sync p))
    force))
 
 (define ssl-dh4096-param-bytes #"")

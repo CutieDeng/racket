@@ -16,7 +16,6 @@
                          "define-et-al.rkt"
                          "cond.rkt"
                          "stxcase-scheme.rkt"
-                         "member.rkt"
                          "name.rkt"
                          "norm-define.rkt"
                          "qqstx.rkt"
@@ -839,14 +838,11 @@
                        [mk-with-kws
                         (lambda ()
                           ;; entry point with keywords:
-                          (if (and (null? opts)
-                                   (null? #'new-rest))
-                              #'core
-                              (annotate-method
-                               (syntax/loc stx
-                                 (opt-cases (unpack) ([opt-id opt-arg opt-not-supplied] ...) (given-kws given-args plain-id ...) 
-                                            () ()
-                                            (rest-empty rest-id . rest) ())))))]
+                          (annotate-method
+                           (syntax/loc stx
+                             (opt-cases (unpack) ([opt-id opt-arg opt-not-supplied] ...) (given-kws given-args plain-id ...)
+                                        () ()
+                                        (rest-empty rest-id . rest) ()))))]
                        [mk-kw-arity-stub
                         (lambda ()
                           ;; struct-type entry point for no keywords when a keyword is required

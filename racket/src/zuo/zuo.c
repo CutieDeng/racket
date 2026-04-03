@@ -3,7 +3,7 @@
    declarations. */
 
 #define ZUO_VERSION 1
-#define ZUO_MINOR_VERSION 11
+#define ZUO_MINOR_VERSION 13
 
 #if defined(_MSC_VER) || defined(__MINGW32__)
 # define ZUO_WINDOWS
@@ -790,7 +790,7 @@ static void zuo_fasl_int32(zuo_int32_t *_i, zuo_fasl_stream_t *_stream) {
   }
 }
 
-#define BUILD_INT(lo, hi) (((zuo_int_t)(hi) << 32) | ((zuo_int_t)(lo) & 0xFFFFFFFF))
+#define BUILD_INT(lo, hi) ((zuo_int_t)(((zuo_uint_t)(hi) << 32) | ((zuo_uint_t)(lo) & 0xFFFFFFFF)))
 
 static void zuo_fasl_int(zuo_int_t *_i, zuo_fasl_stream_t *_stream) {
   zuo_int32_t lo, hi;
@@ -5088,15 +5088,15 @@ static zuo_t *zuo_stat(zuo_t *path, zuo_t *follow_links, zuo_t *false_on_error) 
     result = zuo_hash_set(result, zuo_symbol("access-time-nanoseconds"), zuo_integer(0));
     result = zuo_hash_set(result, zuo_symbol("modify-time-seconds"), zuo_integer(stat_buf.st_mtime));
     result = zuo_hash_set(result, zuo_symbol("modify-time-nanoseconds"), zuo_integer(0));
-    result = zuo_hash_set(result, zuo_symbol("creation-time-seconds"), zuo_integer(stat_buf.st_ctime));
-    result = zuo_hash_set(result, zuo_symbol("creation-time-nanoseconds"), zuo_integer(0));
+    result = zuo_hash_set(result, zuo_symbol("change-time-seconds"), zuo_integer(stat_buf.st_ctime));
+    result = zuo_hash_set(result, zuo_symbol("change-time-nanoseconds"), zuo_integer(0));
 # else
     result = zuo_hash_set(result, zuo_symbol("access-time-seconds"), zuo_integer(stat_buf.zuo_st_atim.tv_sec));
     result = zuo_hash_set(result, zuo_symbol("access-time-nanoseconds"), zuo_integer(stat_buf.zuo_st_atim.tv_nsec));
     result = zuo_hash_set(result, zuo_symbol("modify-time-seconds"), zuo_integer(stat_buf.zuo_st_mtim.tv_sec));
     result = zuo_hash_set(result, zuo_symbol("modify-time-nanoseconds"), zuo_integer(stat_buf.zuo_st_mtim.tv_nsec));
-    result = zuo_hash_set(result, zuo_symbol("creation-time-seconds"), zuo_integer(stat_buf.zuo_st_ctim.tv_sec));
-    result = zuo_hash_set(result, zuo_symbol("creation-time-nanoseconds"), zuo_integer(stat_buf.zuo_st_ctim.tv_nsec));
+    result = zuo_hash_set(result, zuo_symbol("change-time-seconds"), zuo_integer(stat_buf.zuo_st_ctim.tv_sec));
+    result = zuo_hash_set(result, zuo_symbol("change-time-nanoseconds"), zuo_integer(stat_buf.zuo_st_ctim.tv_nsec));
 # endif
   }
 #endif

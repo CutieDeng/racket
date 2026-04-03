@@ -754,8 +754,10 @@ typedef struct Scheme_Offset_Cptr
 #define scheme_general_category(x) ((scheme_uchar_find(scheme_uchar_cats_table, x)) & 0x1F)
 /* Note: 3 bits available in the cats table */
 
-#define scheme_grapheme_cluster_break(x) (scheme_uchar_find(scheme_uchar_graphbreaks_table, x))
+#define scheme_grapheme_cluster_break(x) (scheme_uchar_find(scheme_uchar_graphbreaks_table, x) & MZ_GRAPHBREAK_MASK)
 #define scheme_isextend(x) ((scheme_grapheme_cluster_break(x)) == MZ_GRAPHBREAK_EXTEND)
+
+#define scheme_indic_conjunct_break(x) (scheme_uchar_find(scheme_uchar_graphbreaks_table, x) >> MZ_INDIC_CONJUNCT_SHIFT)
 
 /*========================================================================*/
 /*                          procedure values                              */
@@ -1176,6 +1178,8 @@ typedef struct Scheme_Thread {
   Scheme_Object *running_box;   /* contains pointer to thread when it's running */
   Scheme_Object *sync_box;      /* semaphore used for NACK events */
 
+  Scheme_Object *results; /* list of results, if kept */
+
   struct Scheme_Thread *gc_prep_chain;
 
   struct Scheme_Thread *nester, *nestee;
@@ -1343,6 +1347,7 @@ enum {
   MZCONFIG_ERROR_PRINT_VALUE_HANDLER,
   MZCONFIG_ERROR_PRINT_SYNTAX_HANDLER,
   MZCONFIG_ERROR_NAME_SYNTAX_HANDLER,
+  MZCONFIG_ERROR_PRINT_MODULE_PATH_HANDLER,
   MZCONFIG_ERROR_MESSAGE_ADJUSTER,
 
   MZCONFIG_EXIT_HANDLER,
@@ -1507,6 +1512,7 @@ struct Scheme_Input_Port
   Scheme_Object *name;
   Scheme_Object *peeked_read, *peeked_write;
   Scheme_Object *progress_evt, *input_lock, *input_giveup, *input_extras, *input_extras_ready;
+  int direct_read_waiting;
   unsigned char ungotten[24];
   int ungotten_count;
   Scheme_Object *special, *ungotten_special;
@@ -1949,6 +1955,7 @@ MZ_EXTERN void scheme_set_collects_path(Scheme_Object *p);
 MZ_EXTERN void scheme_set_config_path(Scheme_Object *p);
 MZ_EXTERN void scheme_set_host_collects_path(Scheme_Object *p);
 MZ_EXTERN void scheme_set_host_config_path(Scheme_Object *p);
+MZ_EXTERN void scheme_set_host_addon_dir(Scheme_Object *p);
 MZ_EXTERN void scheme_set_original_dir(Scheme_Object *d);
 MZ_EXTERN void scheme_set_addon_dir(Scheme_Object *p);
 MZ_EXTERN void scheme_set_command_line_arguments(Scheme_Object *vec);

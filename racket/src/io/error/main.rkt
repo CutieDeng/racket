@@ -1,5 +1,6 @@
 #lang racket/base
-(require "../print/parameter.rkt"
+(require "../host/rktio.rkt"
+         "../print/parameter.rkt"
          "../port/string-port.rkt"
          (submod "../print/main.rkt" internal)
          "../format/printf.rkt"
@@ -8,7 +9,8 @@
 
 (provide error
          raise-user-error
-         error-print-source-location)
+         error-print-source-location
+         exn-classify-errno)
 
 (define (error init . args)
   (raise
@@ -60,6 +62,40 @@
   (do-global-print 'default-error-value->string-handler v o 0 len)
   (get-output-string o))
 
+(define (default-error-module-path->string-handler v len)
+  (unless (exact-nonnegative-integer? len)
+    (raise-argument-error 'default-error-module-path->string-handler
+                          "exact-nonnegative-integer?"
+                          len))
+  (define o (open-output-string))
+  (do-write 'default-error-value->string-handler v o len)
+  (get-output-string o))
+
+(define (exn-classify-errno errno/exn)
+  (unless (or (exn? errno/exn)
+              (and (pair? errno/exn)
+                   (exact-integer? (car errno/exn))
+                   (memq (cdr errno/exn) '(posix windows gai))))
+    (raise-argument-error 'exn-classify-errno
+                          "(or/c exn? (cons/c exact-integer? (or/c 'posix 'windows 'gai)))"
+                          errno/exn))
+  (define errno
+    (cond
+      [(pair? errno/exn) errno/exn]
+      [(exn:fail:filesystem:errno? errno/exn)
+       (exn:fail:filesystem:errno-errno errno/exn)]
+      [(exn:fail:network:errno? errno/exn)
+       (exn:fail:network:errno-errno errno/exn)]
+      [else '(#f . #f)]))
+  (and (fixnum? (car errno))
+       (let ([bstr (rktio_classify_error (case (cdr errno)
+                                           [(posix) RKTIO_ERROR_KIND_POSIX]
+                                           [(windows) RKTIO_ERROR_KIND_WINDOWS]
+                                           [else RKTIO_ERROR_KIND_GAI])
+                                         (car errno))])
+         (and bstr
+              (string->symbol (bytes->string/latin-1 bstr))))))
+
 ;; Install the default error-value->string handler,
 ;; replacing the non-working primitive placeholder
 (define (install-error-value->string-handler!)
@@ -79,7 +115,8 @@
          [else "..."]))
      (if ((string-length str) . > . len)
          (substring str 0 len)
-         str))))
+         str)))
+  (error-module-path->string-handler default-error-module-path->string-handler))
 
 (void (install-error-value->string-handler!))
 

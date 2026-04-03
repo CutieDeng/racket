@@ -1,6 +1,5 @@
 (module namespace "pre-base.rkt"
   (require (for-syntax '#%kernel "define.rkt"
-                       "member.rkt"
                        "stx.rkt" "stxcase-scheme.rkt" "define-et-al.rkt" "qq-and-or.rkt"
                        "stxloc.rkt"))
 
@@ -19,9 +18,12 @@
     (let* ([this-ns (variable-reference->empty-namespace orig-varref)]
            [ns (parameterize ([current-namespace this-ns]) ; ensures correct phase
                  (make-empty-namespace))])
-      (namespace-attach-module this-ns
-                               'racket/base 
-                               ns)
+      (namespace-call-with-registry-lock
+       this-ns
+       (lambda ()
+         (namespace-attach-module this-ns
+                                  'racket/base 
+                                  ns)))
       ns))
 
   (define (make-base-namespace)

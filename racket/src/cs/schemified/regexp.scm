@@ -1305,9 +1305,9 @@
                     (if (eq? rx_0 'unicode-grapheme) #t #f)))))))))))
 (define rx-range
   (lambda (range_0 limit-c_0)
-    (let ((c1_0 (range-singleton range_0)))
-      (if c1_0
-        c1_0
+    (let ((cond-val_0 (range-singleton range_0)))
+      (if cond-val_0
+        cond-val_0
         (if (range-includes? range_0 0 limit-c_0)
           'any
           (rx:range11.1 range_0))))))
@@ -1604,120 +1604,111 @@
             (let ((r_4 (range-add r_3 13))) r_4)))))))
 (define parse-posix-char-class
   (lambda (s_0 pos_0)
-    (let ((pos_1 pos_0))
-      (let ((tmp_0
-             (if (= pos_1 (chytes-length$1 s_0))
-               'eos
-               (chytes-ref/char s_0 pos_1))))
-        (if (eqv? tmp_0 '#\x3a)
-          (let ((class_0
-                 (letrec*
-                  ((loop_0
-                    (|#%name|
-                     loop
-                     (lambda (accum_0 pos_2)
-                       (if (= pos_2 (chytes-length$1 s_0))
-                         #f
-                         (let ((c_0 (chytes-ref$1 s_0 pos_2)))
-                           (if (if (>= c_0 97) (<= c_0 122) #f)
-                             (let ((app_0 (cons c_0 accum_0)))
-                               (loop_0 app_0 (add1 pos_2)))
-                             (if (if (= c_0 58)
-                                   (if (let ((app_0 (add1 pos_2)))
-                                         (< app_0 (chytes-length$1 s_0)))
-                                     (= (chytes-ref$1 s_0 (add1 pos_2)) 93)
-                                     #f)
+    (let ((tmp_0
+           (if (= pos_0 (chytes-length$1 s_0))
+             'eos
+             (chytes-ref/char s_0 pos_0))))
+      (if (eqv? tmp_0 '#\x3a)
+        (let ((class_0
+               (letrec*
+                ((loop_0
+                  (|#%name|
+                   loop
+                   (lambda (accum_0 pos_1)
+                     (if (= pos_1 (chytes-length$1 s_0))
+                       #f
+                       (let ((c_0 (chytes-ref$1 s_0 pos_1)))
+                         (if (if (>= c_0 97) (<= c_0 122) #f)
+                           (let ((app_0 (cons c_0 accum_0)))
+                             (loop_0 app_0 (add1 pos_1)))
+                           (if (if (= c_0 58)
+                                 (if (let ((app_0 (add1 pos_1)))
+                                       (< app_0 (chytes-length$1 s_0)))
+                                   (= (chytes-ref$1 s_0 (add1 pos_1)) 93)
                                    #f)
-                               (list->bytes (reverse$1 accum_0))
-                               #f))))))))
-                  (loop_0 null (add1 pos_0)))))
-            (let ((range_0
-                   (let ((index_0 (hash-ref hash1688 class_0 (lambda () 0))))
-                     (if (unsafe-fx< index_0 6)
-                       (if (unsafe-fx< index_0 2)
-                         (if (unsafe-fx< index_0 1)
-                           #f
-                           (let ((range_0
-                                  (range-union null (list (cons 97 122)))))
-                             (range-union range_0 (list (cons 65 90)))))
-                         (if (unsafe-fx< index_0 3)
-                           (range-union null (list (cons 65 90)))
-                           (if (unsafe-fx< index_0 4)
-                             (range-union null (list (cons 97 122)))
-                             (if (unsafe-fx< index_0 5)
-                               (range-union null (list (cons 48 57)))
-                               (let ((range_0
-                                      (let ((range_0
-                                             (range-union
-                                              null
-                                              (list (cons 48 57)))))
-                                        (range-union
-                                         range_0
-                                         (list (cons 97 102))))))
-                                 (range-union range_0 (list (cons 65 70))))))))
-                       (if (unsafe-fx< index_0 9)
-                         (if (unsafe-fx< index_0 7)
-                           (let ((range_0
-                                  (let ((range_0
-                                         (range-union
-                                          null
-                                          (list (cons 48 57)))))
-                                    (range-union
-                                     range_0
-                                     (list (cons 97 122))))))
-                             (range-union range_0 (list (cons 65 90))))
-                           (if (unsafe-fx< index_0 8)
-                             (range-add
-                              (let ((range_0
-                                     (let ((range_0
-                                            (range-union
-                                             null
-                                             (list (cons 48 57)))))
-                                       (range-union
-                                        range_0
-                                        (list (cons 97 122))))))
-                                (range-union range_0 (list (cons 65 90))))
-                              95)
-                             (range-add (range-add null 32) 9)))
-                         (if (unsafe-fx< index_0 10)
-                           (range:s)
-                           (if (unsafe-fx< index_0 11)
+                                 #f)
+                             (list->bytes (reverse$1 accum_0))
+                             #f))))))))
+                (loop_0 null (add1 pos_0)))))
+          (let ((range_0
+                 (let ((index_0 (hash-ref hash1688 class_0 (lambda () 0))))
+                   (if (unsafe-fx< index_0 6)
+                     (if (unsafe-fx< index_0 2)
+                       (if (unsafe-fx< index_0 1)
+                         #f
+                         (let ((range_0
+                                (range-union null (list (cons 97 122)))))
+                           (range-union range_0 (list (cons 65 90)))))
+                       (if (unsafe-fx< index_0 3)
+                         (range-union null (list (cons 65 90)))
+                         (if (unsafe-fx< index_0 4)
+                           (range-union null (list (cons 97 122)))
+                           (if (unsafe-fx< index_0 5)
+                             (range-union null (list (cons 48 57)))
                              (let ((range_0
-                                    (letrec*
-                                     ((for-loop_0
-                                       (|#%name|
-                                        for-loop
-                                        (lambda (range_0 pos_2)
-                                          (if (unsafe-fx< pos_2 128)
-                                            (let ((range_1
-                                                   (let ((range_1
-                                                          (if (char-graphic?
-                                                               (integer->char
-                                                                pos_2))
-                                                            (range-add
-                                                             range_0
-                                                             pos_2)
-                                                            range_0)))
-                                                     (values range_1))))
-                                              (for-loop_0
-                                               range_1
-                                               (unsafe-fx+ pos_2 1)))
-                                            range_0)))))
-                                     (for-loop_0 null 0))))
-                               (if (equal? class_0 #vu8(112 114 105 110 116))
-                                 (range-add (range-add range_0 32) 9)
-                                 range_0))
-                             (if (unsafe-fx< index_0 12)
-                               (range-union null (list (cons 0 31)))
-                               (range-union null (list (cons 0 127)))))))))))
-              (if range_0
-                (values
-                 #t
-                 range_0
-                 (let ((app_0 pos_0))
-                   (+ app_0 3 (unsafe-bytes-length class_0))))
-                (values #f #f #f))))
-          (values #f #f #f))))))
+                                    (let ((range_0
+                                           (range-union
+                                            null
+                                            (list (cons 48 57)))))
+                                      (range-union
+                                       range_0
+                                       (list (cons 97 102))))))
+                               (range-union range_0 (list (cons 65 70))))))))
+                     (if (unsafe-fx< index_0 9)
+                       (if (unsafe-fx< index_0 7)
+                         (let ((range_0
+                                (let ((range_0
+                                       (range-union null (list (cons 48 57)))))
+                                  (range-union range_0 (list (cons 97 122))))))
+                           (range-union range_0 (list (cons 65 90))))
+                         (if (unsafe-fx< index_0 8)
+                           (range-add
+                            (let ((range_0
+                                   (let ((range_0
+                                          (range-union
+                                           null
+                                           (list (cons 48 57)))))
+                                     (range-union
+                                      range_0
+                                      (list (cons 97 122))))))
+                              (range-union range_0 (list (cons 65 90))))
+                            95)
+                           (range-add (range-add null 32) 9)))
+                       (if (unsafe-fx< index_0 10)
+                         (range:s)
+                         (if (unsafe-fx< index_0 11)
+                           (let ((range_0
+                                  (letrec*
+                                   ((for-loop_0
+                                     (|#%name|
+                                      for-loop
+                                      (lambda (range_0 pos_1)
+                                        (if (unsafe-fx< pos_1 128)
+                                          (let ((range_1
+                                                 (let ((range_1
+                                                        (if (char-graphic?
+                                                             (integer->char
+                                                              pos_1))
+                                                          (range-add
+                                                           range_0
+                                                           pos_1)
+                                                          range_0)))
+                                                   (values range_1))))
+                                            (for-loop_0
+                                             range_1
+                                             (unsafe-fx+ pos_1 1)))
+                                          range_0)))))
+                                   (for-loop_0 null 0))))
+                             (if (equal? class_0 #vu8(112 114 105 110 116))
+                               (range-add (range-add range_0 32) 9)
+                               range_0))
+                           (if (unsafe-fx< index_0 12)
+                             (range-union null (list (cons 0 31)))
+                             (range-union null (list (cons 0 127)))))))))))
+            (if range_0
+              (values #t range_0 (+ pos_0 3 (unsafe-bytes-length class_0)))
+              (values #f #f #f))))
+        (values #f #f #f)))))
 (define xor (lambda (a_0 b_0) (if a_0 (if b_0 #f a_0) b_0)))
 (define parse-unicode-categories
   (lambda (p-c_0 s_0 pos_0 config_0)
@@ -2130,18 +2121,17 @@
        (call-with-values
         (lambda () (parse-regexp.1 unsafe-undefined p3_0 0 config_0))
         (lambda (rx_0 pos_0)
-          (let ((pos_1 pos_0))
-            (let ((tmp_0
-                   (if (let ((app_0 pos_1)) (= app_0 (chytes-length$1 p3_0)))
-                     'eos
-                     (chytes-ref/char p3_0 pos_1))))
-              (if (eqv? tmp_0 '#\x29)
-                (parse-error p3_0 pos_0 config_0 "unmatched `)` in pattern")
-                (let ((app_0 (unbox (parse-config-group-number-box config_0))))
-                  (values
-                   rx_0
-                   app_0
-                   (unbox (parse-config-references?-box config_0)))))))))))))
+          (let ((tmp_0
+                 (if (= pos_0 (chytes-length$1 p3_0))
+                   'eos
+                   (chytes-ref/char p3_0 pos_0))))
+            (if (eqv? tmp_0 '#\x29)
+              (parse-error p3_0 pos_0 config_0 "unmatched `)` in pattern")
+              (let ((app_0 (unbox (parse-config-group-number-box config_0))))
+                (values
+                 rx_0
+                 app_0
+                 (unbox (parse-config-references?-box config_0))))))))))))
 (define parse-regexp.1
   (|#%name|
    parse-regexp
@@ -3034,10 +3024,12 @@
                                                            (regexp-error
                                                             "backreference number is larger than the highest-numbered cluster"))
                                                          (let ((min-size_0
-                                                                (hash-ref
-                                                                 group-sizes_0
-                                                                 n_0
-                                                                 #f)))
+                                                                (let ((app_0
+                                                                       group-sizes_0))
+                                                                  (hash-ref
+                                                                   app_0
+                                                                   (sub1 n_0)
+                                                                   #f))))
                                                            (if min-size_0
                                                              (values
                                                               min-size_0
@@ -3787,16 +3779,14 @@
         (if (if (lazy-bytes? s_0) (not (lazy-bytes-peek? s_0)) #f)
           (let ((discarded-count_0 (lazy-bytes-discarded-count s_0)))
             (let ((unneeded_0
-                   (let ((app_0 pos_0))
-                     (-
-                      app_0
-                      discarded-count_0
-                      (lazy-bytes-max-lookbehind s_0)))))
+                   (-
+                    pos_0
+                    discarded-count_0
+                    (lazy-bytes-max-lookbehind s_0))))
               (if (if force?_0 force?_0 (> unneeded_0 4096))
                 (let ((amt_0
                        (if force?_0
-                         (let ((app_0 pos_0))
-                           (- app_0 (lazy-bytes-discarded-count s_0)))
+                         (- pos_0 (lazy-bytes-discarded-count s_0))
                          4096)))
                   (let ((bstr_0 (lazy-bytes-bstr s_0)))
                     (let ((out_0 (lazy-bytes-out s_0)))
@@ -5288,10 +5278,18 @@
                       stack_0)))
                 (if or-part_0
                   or-part_0
-                  (restore-groups state_0 old-state_0 n-start_0 num-n_0)))
+                  (begin
+                    (if old-state_0
+                      (vector-copy! state_0 n-start_0 old-state_0)
+                      (void))
+                    #f)))
               #f)
             (if pos2_0
-              (restore-groups state_0 old-state_0 n-start_0 num-n_0)
+              (begin
+                (if old-state_0
+                  (vector-copy! state_0 n-start_0 old-state_0)
+                  (void))
+                #f)
               (|#%app|
                next-m_0
                s_0
@@ -5347,14 +5345,18 @@
                                 stack_0)))
                           (if or-part_0
                             or-part_0
-                            (restore-groups
-                             state_0
-                             old-state_0
-                             n-start_0
-                             num-n_0)))
+                            (begin
+                              (if old-state_0
+                                (vector-copy! state_0 n-start_0 old-state_0)
+                                (void))
+                              #f)))
                         (loop_0 (sub1 lb-pos_0)))
                       (if pos2_0
-                        (restore-groups state_0 old-state_0 n-start_0 num-n_0)
+                        (begin
+                          (if old-state_0
+                            (vector-copy! state_0 n-start_0 old-state_0)
+                            (void))
+                          #f)
                         (|#%app|
                          next-m_0
                          s_0
@@ -5397,7 +5399,11 @@
                   stack_0))))
           (if or-part_0
             or-part_0
-            (restore-groups state_0 old-state_0 n-start_0 num-n_0)))))))
+            (begin
+              (if old-state_0
+                (vector-copy! state_0 n-start_0 old-state_0)
+                (void))
+              #f)))))))
 (define cut-matcher
   (lambda (sub-m_0 n-start_0 num-n_0 next-m_0)
     (lambda (s_0 pos_0 start_0 limit_0 end_0 state_0 stack_0)
@@ -5417,7 +5423,11 @@
                     stack_0)))
               (if or-part_0
                 or-part_0
-                (restore-groups state_0 old-state_0 n-start_0 num-n_0)))
+                (begin
+                  (if old-state_0
+                    (vector-copy! state_0 n-start_0 old-state_0)
+                    (void))
+                  #f)))
             #f))))))
 (define save-groups
   (lambda (state_0 n-start_0 num-n_0)

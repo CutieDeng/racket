@@ -57,7 +57,16 @@ The @racket[racket-to-c] function takes any value and, if it is a
 valid representation of the new type, converts it to a representation
 of @racket[type]. The @racket[c-to-racket] function takes a
 representation of @racket[type] and produces a representation of the
-new type.}
+new type.
+
+When the result type is used for an argument in a foreign call, beware
+that only the original argument value is specifically retained for the
+call, and not a result of @racket[racket-to-c]. If the foreign call
+leads to a Racket callback, a garbage collection during the callback
+may move or reclaim an argument value that is otherwise unreferenced.
+Consider registering a mapping from the argument to result of
+@racket[racket-to-c] in an ephemeron hash table so that the result
+remains reachable as long as the argument is reachable.}
 
 
 @defproc[(ctype? [v any/c]) boolean?]{
@@ -622,10 +631,13 @@ For @tech{callouts} to foreign functions with the generated type:
 
  @item{If @racket[in-original-place?] is true, then when a foreign
        @tech{callout} procedure with the generated type is called in
-       any Racket @tech-place[], the procedure
-       is called from the original Racket place. Use this mode for a
+       a Racket @tech-place[] other than the original Racket place
+       or in a Racket @tech[#:doc reference.scrbl]{parallel thread},
+       the procedure is called in the original Racket place in an
+       @elemref["unspecified thread"]{unspecified coroutine thread}.
+       Use this mode for a
        foreign function that is not thread-safe at the C level, which
-       means that it is not place-safe at the Racket
+       means that it is not place-safe or parallel-thread-safe at the Racket
        level. @tech{Callbacks} from place-unsafe code back into Racket
        at a non-original place typically will not work, since the
        place of the Racket code may have a different allocator than
@@ -671,7 +683,13 @@ For @tech{callouts} to foreign functions with the generated type:
        garbage collector until the called foreign function returns. If
        the foreign function invokes Racket callbacks, however, beware
        that values managed by the Racket garbage collector might be
-       moved in memory by the garbage collector.}
+       moved in memory by the garbage collector. Also, beware that each
+       argument is retained only as supplied, and not as potentially
+       converted to a different representation based the argument's type
+       (via layers of @racket[_racket-to-c] procedures for @racket[make-ctype]);
+       a converter procedure associated with a type may need to create
+       a reference connection between the original and converted values
+       using an ephemeron hash table.}
 
  @item{A @tech{callout} object is finalized internally. Beware
        of trying to use a @tech{callout} object that is reachable
@@ -750,7 +768,7 @@ the generated type:
  @item{If @racket[atomic?] is true or when using the @CS[] implementation of
        Racket, then when a Racket procedure is given this type and
        called as a @tech{callback} from foreign code, then the Racket
-       process is put into atomic mode while evaluating the Racket
+       process is put into @tech{atomic mode} while evaluating the Racket
        procedure body.
 
        In atomic mode, other Racket threads do not run, so the Racket
@@ -765,8 +783,7 @@ the generated type:
        non-tail recursion must be minimal to avoid C-level stack
        overflow; otherwise, the process may crash or misbehave.
 
-       Callbacks are always atomic in the @CS[] implementation of Racket,
-       because Racket threads do not capture C-stack context. Even on
+       Callbacks are always atomic in the @CS[] implementation of Racket. Even on
        the @BC[] implementation of Racket, atomic mode is
        typically needed for callbacks, because capturing by copying a
        portion of the C stack is often incompatible with C libraries.
@@ -782,9 +799,10 @@ the generated type:
        than the one used to run Racket).
 
        If @racket[async-apply] is a procedure, the call in the foreign
-       thread is transferred to the OS-level thread that runs Racket,
-       but the Racket-level thread (in the sense of @racket[thread])
-       is unspecified; the job of the provided @racket[async-apply]
+       thread is transferred to the OS-level thread that runs Racket
+       @tech[#:doc reference.scrbl]{coroutine threads} and to
+       an @elemref["unspecified thread"]{unspecified coroutine thread};
+       the job of the provided @racket[async-apply]
        procedure is to arrange for the callback procedure to be run in
        a suitable Racket thread.
 
@@ -794,7 +812,7 @@ the generated type:
        until the thunk is called and completes; the thunk must be
        called exactly once, and the callback invocation must return
        normally. The given @racket[async-apply] procedure itself is
-       called in atomic mode (see @racket[atomic?] above). 
+       called in @tech{atomic mode}.
 
        If the callback is known to complete quickly, requires no
        synchronization, and works independent of the Racket thread in

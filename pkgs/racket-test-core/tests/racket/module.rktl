@@ -167,6 +167,14 @@
 (syntax-test #'(module m racket/base (#%require (for-syntax racket/base)) (#%declare #:require=define) (define-syntax car 5) (require racket/base)))
 (syntax-test #'(module m racket/base (#%require (for-syntax racket/base)) (#%declare #:require=define) (define-syntax car 5) (require (only-in racket/base car))))
 
+(test car dynamic-require 'racket/base 'car 'error)
+(test car dynamic-require 'racket/base 'car (lambda () 'not-used-error))
+(test 'not-available dynamic-require 'racket/base 'no-such-car (lambda () 'not-available))
+(test car dynamic-require 'racket/base 'car 'error 'eval)
+(test car dynamic-require 'racket/base 'car (lambda () 'not-used-error) (lambda () 'not-used-eval))
+(test car dynamic-require 'racket/base 'car (lambda () 'not-used-error) (lambda () 'not-used-eval))
+(test 'used-eval dynamic-require 'racket/base 'lambda (lambda () 'not-used-error) (lambda () 'used-eval))
+
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (let ()
@@ -604,6 +612,19 @@
 (module should-be-an-ok-provide-for-default-space racket/base
   (provide (for-space #f x))
   (define x "ok"))
+
+;; make sure `for-space #f` works right for `require`, too
+
+(module provide-x-at-phase-0-default-space racket
+  (define x 1)
+  (provide x))
+(module reprovide-x-at-phase-0-space-s racket
+  (require (for-space s 'provide-x-at-phase-0-default-space))
+  (provide (for-space s x)))
+(module require-x-at-phase-0-default-space racket
+  (require (for-space #false 'reprovide-x-at-phase-0-space-s))
+  (void x))
+(dynamic-require ''require-x-at-phase-0-default-space #f)
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test proper bindings for `#%module-begin'
@@ -2332,6 +2353,36 @@ case of module-leve bindings; it doesn't cover local bindings.
                (regexp-match? #rx" already" (exn-message exn))))
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Check that multiple imports of a name are allowed
+;; when they have different binding scopes, even if the
+;; same name is provided by the module language
+
+(module ok-module-with-two-lambdas racket/base
+  (provide result)
+  (define-syntax-rule (in)
+    (require (only-in racket/base lambda)))
+  (in)
+  (module lam racket/base
+    (define lambda 5)
+    (provide lambda))
+  (require 'lam)
+  (define result lambda))
+
+(module ok-module-with-two-lambdas/bulk racket/base
+  (provide result)
+  (define-syntax-rule (in)
+    (require (only-in racket/base)))
+  (in)
+  (module lam racket/base
+    (define lambda 6)
+    (provide lambda))
+  (require 'lam)
+  (define result lambda))
+
+(test 5 dynamic-require ''ok-module-with-two-lambdas 'result)
+(test 6 dynamic-require ''ok-module-with-two-lambdas/bulk 'result)
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Check re-export of an identifier from `#%kernel`
 ;; through a rename transformer:
 
@@ -3561,11 +3612,11 @@ case of module-leve bindings; it doesn't cover local bindings.
 
   (define re-o (open-output-bytes))
   (write re-m re-o)
-  (check-vm (get-output-bytes re-o) (system-type 'vm))
+  (check-vm (get-output-bytes re-o) (system-type 'target-machine))
 
   (define re-o2 (open-output-bytes))
   (write re-m2 re-o2)
-  (check-vm (get-output-bytes re-o2) (system-type 'vm))
+  (check-vm (get-output-bytes re-o2) (system-type 'target-machine))
 
   ;; Check top-level compilation:
   (define tl-o (open-output-bytes))
@@ -4398,6 +4449,35 @@ case of module-leve bindings; it doesn't cover local bindings.
            (require 'exports-local-expand-as-inlinable)
            (define (go) (get-my-local-expand))))
   (namespace-require ''uses-local-expand-as-inlinable))
+
+;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; regression test to make sure print parameters do not
+;; break compilation marshaling
+
+(let ()
+  (define mods
+    '((module to-be-required-for-compilation-test racket/base
+        (require syntax/parse/pre)
+        (provide arguments+rest)
+        (define-syntax-class arguments+rest
+          (pattern (arg:id ...))))
+      (module also-to-be-required-for-compilation-test racket/base
+        (require (for-syntax 'to-be-required-for-compilation-test
+                             racket/base
+                             syntax/parse/pre))
+        (provide foo)
+        (define-syntax (foo stx)
+          (syntax-parse stx
+            [(_ args:arguments+rest) #'"hi"])))
+      (module m racket/base
+        (require 'also-to-be-required-for-compilation-test))))
+  (for ([mod (in-list mods)])
+    (parameterize ([print-reader-abbreviations #t])
+      (define o (open-output-bytes))
+      (write (compile mod) o)
+      (eval
+       (parameterize ([read-accept-compiled #t])
+         (read (open-input-bytes (get-output-bytes o))))))))
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

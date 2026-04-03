@@ -551,7 +551,17 @@
       [(op (x ur) (y ur) (w signed16) (old ur) (new ur))
        (addr-reg x y w (lambda (u)
                          ;; signals on successful swap
-                         `(asm ,info ,asm-cas! ,u ,old ,new)))]))
+                         `(asm ,info ,asm-cas! ,u ,old ,new)))]
+      [(op (x ur) (y ur) (w ur) (old ur) (new ur))
+       (let ([zero-imm (with-output-language (L15d Triv) `(immediate 0))])
+         (cond
+           [(eq? y %zero)
+            (addr-reg x w zero-imm (lambda (u) `(asm ,info ,asm-cas! ,u ,old ,new)))]
+           [else
+            (let ([u0 (make-tmp 'u)])
+              (seq
+               `(set! ,(make-live-info) ,u0 (asm ,null-info ,(asm-add #f) ,y ,w))
+               (addr-reg x u0 zero-imm (lambda (u) `(asm ,info ,asm-cas! ,u ,old ,new)))))]))]))
 
   (define-instruction effect (store-store-fence)
     [(op)
@@ -1603,6 +1613,11 @@
         (memq 'adjust-active (info-foreign-conv* info))
         #f))
 
+    (define (save-errno? info)
+      (memq 'save-errno (info-foreign-conv* info)))
+    (define (save-last-error? info)
+      (memq 'save-last-error (info-foreign-conv* info)))
+
     (define (make-type-desc-literal info args-enc res-enc)
       (let ([result-as-arg? (is-result-as-arg? info)]
             [varargs-after (ormap (lambda (conv)
@@ -1613,7 +1628,11 @@
                             (cons* #f
                                    (constant ffi-default-abi)
                                    (or varargs-after 0)
-                                   (adjust-active? info)
+                                   (and (adjust-active? info) #t)
+                                   (cond
+                                     [(save-errno? info) 1]
+                                     [(save-last-error? info) 2]
+                                     [else #f])
                                    (car res-enc)
                                    result-as-arg?
                                    (if result-as-arg?
@@ -1871,7 +1890,7 @@
                                      [(fp-scheme-object) 'uptr]
                                      [(fp-fixnum) 'uptr]
                                      [(fp-u8*) 'void*]
-                                     [(fp-fptd ,fptd) 'void*]
+                                     [(fp-ftd ,fptd) 'void*]
                                      [(fp-void) 'void]
                                      [else (if (eq? (subset-mode) 'system)
                                                (sorry! who "unhandled type in prototype ~s" type)
@@ -1888,6 +1907,8 @@
             (let* ([arg-type* (info-foreign-arg-type* info)]
                    [result-type (info-foreign-result-type info)])
               (let ([prototype (and (not (adjust-active? info))
+                                    (not (save-errno? info))
+                                    (not (save-last-error? info))
                                     (not (ormap (lambda (conv)
                                                   (and (pair? conv) (eq? (car conv) 'varargs) (cdr conv)))
                                                 (info-foreign-conv* info)))
@@ -1899,7 +1920,7 @@
                      (values
                       (lambda () `(nop))
                       (reverse locs)
-                      (lambda (t0 not-varargs?)
+                      (lambda (t0 atomic? not-errno-lvalue)
                         (let ([info (make-info-kill*-live* (add-caller-save-registers result-live*) arg-live*)])
                           `(inline ,info ,%c-call ,t0 (immediate ,prototype))))
                       get-result
@@ -1910,10 +1931,22 @@
                      (values
                       (lambda () `(nop))
                       locs
-                      (lambda (t0 not-varargs?)
-                        `(seq
-                          (set! ,%Carg1 (literal ,(make-type-desc-literal info args-enc res-enc)))
-                            (inline ,null-info ,%c-stack-call ,t0 ,%Carg1)))
+                      (lambda (t0 atomic? maybe-errno-lvalue)
+                        (let ([call (%seq
+                                      (set! ,%Carg1 (literal ,(make-type-desc-literal info args-enc res-enc)))
+                                      (inline ,null-info ,%c-stack-call ,t0 ,%Carg1)
+                                      ,(if maybe-errno-lvalue
+                                           `(set! ,maybe-errno-lvalue ,(%tc-ref U))
+                                           `(nop)))])
+                          (cond
+                            [atomic?
+                             ;; libffi-based call may need to allocate, but `%ap` has not
+                             ;; been moved to `tc` for an atomic call, so move to and from `tc` here
+                             (%seq
+                              (set! ,(%mref ,%tc ,%zero ,(reg-tc-disp %ap)) ,%ap)
+                              ,call
+                              (set! ,%ap ,(%mref ,%tc ,%zero ,(reg-tc-disp %ap))))]
+                            [call])))
                       (car res-locs)
                       (lambda () `(nop))))])))))))
 

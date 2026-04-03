@@ -25,7 +25,7 @@ jobs:
       RACKET_EXTRA_CONFIGURE_ARGS: ""
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 100
     - name: Setup cify if enabled1
@@ -60,7 +60,7 @@ jobs:
     - name: Tarballing
       working-directory: ${{ github.workspace }}
       run: tar -cvjf racketcgc-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}.tar.bz2 racketcgc
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: racketcgc-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}
         path: ${{ github.workspace }}/racketcgc-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}.tar.bz2
@@ -79,7 +79,7 @@ jobs:
       RACKET_EXTRA_CONFIGURE_ARGS: ""
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 100
     - name: Setup cify if enabled
@@ -88,7 +88,7 @@ jobs:
     - name: Setup cify if disabled
       if: matrix.cify == 'nocify'
       run: echo "CIFY_OPTION=--disable-cify" >> $GITHUB_ENV
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: racketcgc-macos-nocify-aarch64_git${{ github.sha }}
         path: ${{ runner.temp }}
@@ -124,7 +124,7 @@ jobs:
     - name: Tarballing
       working-directory: ${{ github.workspace }}
       run: tar -cvjf racket3m-macos-${{ matrix.cify }}-aarch64_git${{ github.sha}}.tar.bz2 racket3m
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: racket3m-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}
         path: ${{ github.workspace }}/racket3m-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}.tar.bz2
@@ -134,10 +134,10 @@ jobs:
     needs: build-racketcgc
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
       with:
         fetch-depth: 100
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         name: racketcgc-macos-nocify-aarch64_git${{ github.sha }}
         path: ${{ runner.temp }}
@@ -171,7 +171,7 @@ jobs:
     - name: Tarballing
       working-directory: ${{ github.workspace }}
       run: tar -cvjf racketcs-macos-aarch64_git${{ github.sha}}.tar.bz2 racketcs
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: racketcs-macos-aarch64_git${{ github.sha }}
         path: ${{ github.workspace }}/racketcs-macos-aarch64_git${{ github.sha }}.tar.bz2
@@ -180,8 +180,8 @@ jobs:
     runs-on: macos-14
     needs: build-racketcs
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: racketcs-macos-aarch64_git${{ github.sha }}
           path: ${{ github.workspace }}
@@ -216,8 +216,8 @@ jobs:
     needs: build-racketcgc
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: racketcgc-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}
           path: ${{ github.workspace }}
@@ -247,8 +247,8 @@ jobs:
     needs: build-racket3m
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: racket3m-macos-${{ matrix.cify }}-aarch64_git${{ github.sha }}
           path: ${{ github.workspace }}
@@ -273,8 +273,8 @@ jobs:
     needs: build-racketcs
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v8
         with:
           name: racketcs-macos-aarch64_git${{ github.sha }}
           path: ${{ github.workspace }}

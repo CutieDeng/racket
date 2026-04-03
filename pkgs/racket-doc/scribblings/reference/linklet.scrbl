@@ -24,7 +24,9 @@ Information in a @tech{linklet bundle} is keyed by either a symbol or
 a @tech{fixnum}. A @tech{linklet bundle} containing
 @tech{linklet}s can be marshaled to and from a byte stream by
 @racket[write] and (with @racket[read-accept-compiled] is enabled)
-@racket[read].
+@racket[read]. A compiled form in the sense of
+@racket[compiled-expression?] (such as the result from
+@racket[compile]) may be a linklet bundle.
 
 When a Racket module has submodules, the @tech{linklet bundles} for
 the module and the submodules are grouped together in a
@@ -38,6 +40,8 @@ equivalently viewed as a mapping from a lists of symbols to a
 directory} can be marshaled to and from a byte stream by
 @racket[write] and @racket[read]; the marshaled form allows individual
 @tech{linklet bundles} to be loaded independently.
+A compiled form in the sense of @racket[compiled-expression?] (such as
+the result from @racket[compile]) may be a linklet directory.
 
 A linklet consists of a set of variable definitions and expressions,
 an exported subset of the defined variable names, a set of variables to export
@@ -91,7 +95,8 @@ with some exceptions: @racket[quote-syntax] and @racket[#%top] are not allowed;
 @racket[lambda], @racket[case-lambda], @racket[let-values], and
 @racket[letrec-values] can have only a single body expression;
 @racket[begin-unsafe] is like @racket[begin] in an expression position,
-but its body is compiled in @tech{unsafe mode}; and
+but its body is compiled in @tech{unsafe mode}; @racket[#%foreign-inline]
+uses a symbol instead of a keyword for its mode; and
 numbers, booleans, strings, and byte strings are self-quoting.
 Primitives are accessed directly by name, and shadowing is not allowed
 within a @racketidfont{linklet} form for primitive names (see
@@ -334,7 +339,7 @@ corresponds to a variable that is made available by the linklet in its
 instance.}
 
 @defproc[(linklet-add-target-machine-info [linklet linklet?]
-                                          [from-linklet linklet?])
+                                          [from-linklet (or linklet? hash?)])
          linklet?]{
 
 When @racket[compile-linklet] or @racket[recompile-linklet] requests a
@@ -351,7 +356,35 @@ within a linklet, in which case
 sources, but @racket[linklet-add-target-machine-info] might perform
 only a sanity check for compatibility.
 
-@history[#:added "8.12.0.3"]}
+The @racket[from-linklet] can be a linklet or a summary of a linklet's
+information as produced by @racket[linklet-summarize-target-machine-info].
+
+@history[#:added "8.12.0.3"
+         #:changed "8.17.0.3" @elem{Added support for @racket[from-linklet]
+                                    as a summary.}]}
+
+
+@defproc[(linklet-summarize-target-machine-info [from-linklet linklet?])
+         hash?]{
+
+Returns a value that has the same information as @racket[from-linklet]
+for @racket[linklet-add-target-machine-info], but in a form that can be
+portably serialized via @racketmodname[racket/fasl].
+
+@history[#:added "8.17.0.3"]}
+
+
+@defproc[(decompile-linklet [linklet linklet?]) (or/c #f correlated? any/c)]{
+
+Attempts to recompile a linklet back into the S-expression form that
+@racket[compile-linklet] expects. If the linklet cannot be decompiled,
+the result is @racket[#f]. A linklet that is generated via
+@racket[compile] with @racket[current-compile-target-machine] set to
+@racket[#f] (for machine-independent bytecode) always can be
+decompiled.
+
+@history[#:added "8.18.0.19"]}
+
 
 @defproc[(linklet-directory? [v any/c]) boolean?]{
 
@@ -507,7 +540,7 @@ variable. If a variable for @racket[name] exists as constant, the
           void?]{
 
 Registers information about @racket[name] in @racket[instance] that
-may be useful for compiling linklets where the instance is return via
+may be useful for compiling linklets where the instance is returned via
 the @racket[_get-import] callback to @racket[compile-linklet]. The
 @racket[desc-v] description can be any value; the recognized
 descriptions depend on virtual machine, but may include the following:

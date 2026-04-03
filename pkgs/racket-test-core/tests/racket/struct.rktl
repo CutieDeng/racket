@@ -1240,6 +1240,31 @@
 
 ;; ----------------------------------------
 
+(let ()
+  (define-values (prop:a a? a-ref) (make-struct-type-property 'a))
+  (define-values (prop:b b? b-ref) (make-struct-type-property 'b))
+  (define-values (prop:c c? c-ref) (make-struct-type-property 'c))
+  (struct s (x y)
+    #:properties (list (cons prop:a "abc") (cons prop:b "xyz"))
+    #:property prop:procedure (lambda (self arg) arg)
+    #:properties (list (cons prop:c 'here)))
+
+  (test "abc" a-ref (s 1 2))
+  (test "xyz" b-ref (s 1 2))
+  (test 'here c-ref (s 1 2))
+  (test 123 (s 1 2) 123)
+
+  ;; Allow #:properties with #:prefab, dynamic error if non-empty
+  (struct ps1 (x y) #:prefab #:properties null)
+  (struct ps2 (x [y #:mutable]) #:properties null #:prefab)
+  (err/rt-test (let ()
+                 (struct pbad (x y)
+                   #:prefab
+                   #:properties (list (cons prop:procedure void)))
+                 (void))))
+
+;; ----------------------------------------
+
 (require (for-syntax racket/struct-info))
 
 (let ()
@@ -1920,6 +1945,53 @@
         values
         (eval (parameterize ([read-accept-compiled #t])
                 (read (open-input-bytes (get-output-bytes o)))))))
+
+;; ----------------------------------------
+;; Report malformed struct-copy correctly
+;; https://github.com/racket/racket/issues/5194
+
+(syntax-test #'struct-copy #px"struct-copy: bad syntax")
+(syntax-test #'(struct-copy) #px"struct-copy: bad syntax")
+(syntax-test #'(struct-copy (foo 1 2)) #px"struct-copy: bad syntax")
+
+;; ----------------------------------------
+
+(let-values ([(insp) (make-inspector)])
+  (let-values ([(type0 make0 pred0 sel0 set0) (make-struct-type 'foo1 #f 0 0 #f null)]
+               [(type0x make0x pred0x sel0x set0x) (make-struct-type 'foo1 #f 0 0 #f null (current-inspector))]
+               [(type1 make1 pred1 sel1 set1) (make-struct-type 'foo1 #f 0 0 #f null insp)]
+               [(type2 make2 pred2 sel2 set2) (make-struct-type 'foo2 #f 0 0 #f null 'current)]
+               [(type3 make3 pred3 sel3 set3) (parameterize ([current-inspector insp])
+                                                (make-struct-type 'foo3 #f 0 0 #f null))]
+               [(type3x make3x pred3x sel3x set3x) (parameterize ([current-inspector insp])
+                                                     (make-struct-type 'foo3 #f 0 0 #f null (current-inspector)))]
+               [(type4 make4 pred4 sel4 set4) (parameterize ([current-inspector insp])
+                                                (make-struct-type 'foo4 #f 0 0 #f null 'current))])
+    (err/rt-test (begin (struct-type-info type0) #t) exn? "inspector")
+    (err/rt-test (begin (struct-type-info type0x) #t) exn? "inspector")
+    (test '#t (begin (struct-type-info type1) #t))
+    (err/rt-test (begin (struct-type-info type2) #t) exn? "inspector")
+    (test '#t (begin (struct-type-info type3) #t))
+    (test '#t (begin (struct-type-info type3x) #t))
+    (test '#t (begin (struct-type-info type4) #t))
+    (parameterize ([current-inspector insp])
+      (err/rt-test (begin (struct-type-info type1) #t) exn:fail? "inspector")
+      (err/rt-test (begin (struct-type-info type3) #t) exn:fail? "inspector")
+      (err/rt-test (begin (struct-type-info type3x) #t) exn:fail? "inspector")
+      (err/rt-test (begin (struct-type-info type4) #t) exn:fail? "inspector"))))
+
+; We also try with a module which we hope gets the optimization which does
+; `make-struct-type` -> `make-struct-type-install-properties`
+; to check the default arg behavior of the latter, too. See the discussion
+; on https://github.com/racket/racket/pull/5367 for more info.
+(module make-struct-type-install-props-default-args racket/base
+  (define-values (struct:test7 make-test7 test7? test7-f7)
+    (let-values ([(struct:t7 make-t7 t7? t7-ref t7-set!)
+                      (make-struct-type 'test7 #f 1 0 #f
+                        null)])
+      (values struct:t7 make-t7 t7?
+              (make-struct-field-accessor t7-ref 0 'f7)))))
+(require 'make-struct-type-install-props-default-args)
 
 ;; ----------------------------------------
 

@@ -167,7 +167,9 @@
     (test 2.0 'flvector-copy (flvector-ref v 2))
     (test -10.0 'flvector-copy (flvector-ref vc 2))
     (test '(2.0 3.0) 'flvector-copy (for/list ([i (in-flvector (flvector-copy v 2))]) i))
-    (test '(2.0) 'flvector-copy (for/list ([i (in-flvector (flvector-copy v 2 3))]) i))))
+    (test '(2.0) 'flvector-copy (for/list ([i (in-flvector (flvector-copy v 2 3))]) i))
+    (err/rt-test (flvector-copy (flvector 1.0 2.0) 3 5) exn:fail? "flvector-copy: starting index is out of range")
+    (err/rt-test (flvector-copy (flvector 1.0 2.0) 0 5) exn:fail? "flvector-copy: ending index is out of range")))
 
 ;; Check empty clauses
 (let ()
@@ -440,6 +442,14 @@
   (for ([j (in-range i 65)])
     (test (bitwise-bit-field #x5B71B43544F260A6 i j)
           flbit-field 3.141579e132 i j)))
+
+;; ----------------------------------------
+;; Regression test to make sure that flbit-field does not internally
+;; claim to produce a flonum
+(let ([f (black-box (lambda (v) (fixnum? (flbit-field v 52 63))))])
+  (test #t f 1.0))
+(let ([f (black-box (lambda (v) (fixnum? (unsafe-flbit-field v 52 63))))])
+  (test #t f 1.0))
 
 ;; ----------------------------------------
 ;; Make sure `flvector` is not incorrectly constant-folded

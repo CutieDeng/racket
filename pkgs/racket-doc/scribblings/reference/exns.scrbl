@@ -650,8 +650,8 @@ fails.}
 @defform[(with-handlers ([pred-expr handler-expr] ...)
            body ...+)]{
 
-Evaluates each @racket[pred-expr] and @racket[handler-expr] in the
-order that they are specified, and then evaluates the @racket[body]s
+Evaluates each @racket[pred-expr] in order, then evaluates each
+@racket[handler-expr] in order, and then evaluates the @racket[body]s
 with a new exception handler during its dynamic extent.
 
 The new exception handler processes an exception only if one of the
@@ -855,6 +855,15 @@ a symbol if a name can be extracted from the syntax object,
 @history[#:added "8.15.0.2"]}
 
 
+@defparam[error-module-path->string-handler proc (any/c exact-nonnegative-integer?
+                                                        . -> .
+                                                        string?)]{
+
+Similar to @racket[error-value->string-handler], but intended for a
+module path. The default @racket[write]s the module path to a string.
+
+@history[#:added "8.16.0.3"]}
+
 @;------------------------------------------------------------------------
 @section{Built-in Exception Types}
 
@@ -1018,7 +1027,9 @@ code (under Windows, only), and @racket['gai] indicates a
 @tt{getaddrinfo} error code (which shows up only in
 @racket[exn:fail:network:errno] exceptions for operations that resolve
 hostnames, but is allowed in @racket[exn:fail:filesystem:errno]
-instances for consistency).}
+instances for consistency).
+
+See also @racket[exn-classify-errno].}
 
 @defstruct[(exn:fail:filesystem:missing-module exn:fail:filesystem) ([path module-path?])
            #:inspector #f]{
@@ -1045,7 +1056,9 @@ Raised for TCP and UDP errors.}
 
 Raised for a TCP or UDP error for which a system error code is
 available, where the @racket[errno] field is as for
-@racket[exn:fail:filesystem:errno].}
+@racket[exn:fail:filesystem:errno].
+
+See also @racket[exn-classify-errno].}
 
 
 @defstruct[(exn:fail:out-of-memory exn:fail) ()
@@ -1237,6 +1250,25 @@ property, @racket[#f] otherwise.}
          (exn:missing-module? . -> . module-path?)]{
 
 Returns the @tech{module path}-getting procedure associated with @racket[v].}
+
+@defproc[(exn-classify-errno [exn/errno (or/c exn? (cons/c exact-integer? (or/c 'posix 'windows 'gai)))])
+         (or/c symbol? #f)]{
+
+Attempts to normalize @racket[exn/errno] to a symbol so that the same
+kind of error on different platforms converts to the same symbol. The
+result is @racket[#f] if a normalization is unknown. Currently, the
+result will be @racket[#false] unless @racket[exn/errno] is an
+@racket[exn:fail:filesystem:errno] instance, an
+@racket[exn:fail:network:errno] instance, or a value that might be
+produced by @racket[exn:fail:filesystem:errno-errno] or
+@racket[exn:fail:network:errno-errno].
+
+When a symbol is returned, it uses a Posix-like convention. Potential
+result symbols include @racket['ENOENT] as ``file not found,''
+@racket['EEXIST] as ``file exists already,'' and @racket['EACCESS] as
+``permission denied.''
+
+@history[#:added "9.0.0.7"]}
 
 @;------------------------------------------------------------------------
 @section{Additional Exception Functions}

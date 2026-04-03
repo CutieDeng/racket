@@ -256,12 +256,18 @@
       (define sort-order (format "~a" (lookup-extra 'sort-order 0)))
       (define language-family (format-list (map quote-string
                                                 (lookup-extra 'language-family '("Racket")))))
+      (define kind (let ([kind (lookup-extra 'kind #f)])
+                     (if kind (quote-string kind) "false")))
+      (define long-text (let ([long-text (lookup-extra 'long-key #f)])
+                          (if long-text (quote-string long-text) "false")))
       (and href
+           ;; Array order matches `IDX_KEY`, etc., in "search.js"
            (string-append "[" (quote-string text) ","
                           (quote-string href) ","
                           html "," from-libs ","
                           pkg-name "," sort-order "," language-family ","
-                          display-from-libs "," key-from-libs "]"))))
+                          display-from-libs "," key-from-libs ","
+                          kind "," long-text "]"))))
   (define l (filter values l-all))
 
   (define user (if user-dir? "user_" ""))
@@ -353,9 +359,14 @@
      plain
      (append
       (if user-dir?
-          (list (script-ref (url->string
-                             (path->url
-                              (build-path (find-doc-dir) "search" "plt-index.js")))))
+          (list (script-ref (let ([main-file (build-path (find-doc-dir) "search" "plt-index.js")])
+                              (if (file-exists? main-file)
+                                  (url->string (path->url main-file))
+                                  (list
+                                   "var plt_span_classes  = [];"
+                                   "var plt_language_families  = [];"
+                                   "var plt_manual_ptrs = [];"
+                                   "var plt_search_data = [];")))))
           null)
       (list
        (script-ref "plt-index.js"

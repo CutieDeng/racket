@@ -24,11 +24,11 @@
          [result #f]
          [q (or async-callback-queue orig-place-async-callback-queue)]
          [m (async-callback-queue-lock q)])
-    (when interrupts-disabled? (enable-interrupts)) ; interrupt "lock" ordered after mutex
     (when need-atomic?  ; don't abandon engine after mutex is acquired
       (if (or (not allow-swap?) (current-future))
           (scheduler-start-atomic/counter-only)
           (scheduler-start-atomic)))
+    (when interrupts-disabled? (enable-interrupts)) ; interrupt "lock" ordered after mutex
     (mutex-acquire m)
     (set-async-callback-queue-in! q (cons (lambda ()
                                             (run-thunk
@@ -52,12 +52,20 @@
           (condition-wait (async-callback-queue-condition q) m)
           (loop))))
     (mutex-release m)
+    (when interrupts-disabled? (disable-interrupts))
     (when need-atomic?
       (if (or (not allow-swap?) (current-future))
           (scheduler-end-atomic/counter-only)
           (scheduler-end-atomic)))
-    (when interrupts-disabled? (disable-interrupts))
     result))
+
+(define (post-as-asynchronous-scheduler-callback thunk)
+  (let* ([q (current-async-callback-queue)]
+         [m (async-callback-queue-lock q)])
+    (mutex-acquire m)
+    (set-async-callback-queue-in! q (cons (box thunk) (async-callback-queue-in q)))
+    ((async-callback-queue-wakeup q))
+    (mutex-release m)))
 
 ;; Called with all threads all stopped:
 (define (async-callback-queue-major-gc!)
@@ -73,7 +81,9 @@
   (set-async-callback-queue-wakeup! (current-async-callback-queue) (make-async-callback-poll-wakeup)))
 
 ;; Returns callbacks to run in atomic mode. Interrupts must not be disabled
-;; when ths function is called.
+;; when ths function is called. A boxed function was queued by
+;; `post-as-asynchronous-scheduler-callback`, which is intended as a more
+;; lightweight protocol.
 (define (poll-async-callbacks)
   (let ([q (current-async-callback-queue)])
     (mutex-acquire (async-callback-queue-lock q))

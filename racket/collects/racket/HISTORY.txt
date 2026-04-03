@@ -1,4 +1,62 @@
-Version 8.16
+Version 9.1, January 2026
+Added support for configuring a language family to navigate
+ documentation
+Add `exn-classify-errno`
+BC: Change all characters to be interned, so `interned-char?`
+ implies `char?` and `eqv?` implies `eq?` on characters
+Change `make-struct-type` to accept `'current` for inspector
+Add `#:on-length-mismatch` to `for` and variants
+Add `--enable-sofind=<conv>` configuration mode to generalize
+ `--enable-[no]natipkg`
+Add `'platform` and `'so-find` modes to `system`
+Add `openssl/legacy`
+
+Version 9.0, October 2025
+Add support for recording a thread's results via the `#:keep` option
+ to `thread`; results are returned by `thread-wait`
+CS: Add support for parallel threads via the `#:pool` argument to
+ `thread`
+CS: Expand the set of primitives that can be used in futures without
+ blocking, although the changes are mainly meant to enable more
+ parallelism via parallel threads
+Adapt and expand the role of "uninterruptible" mode and the API
+ provided by `ffi/unsafe/atomic`
+Add `black-box`
+racket/linklet: Add `decompile-linklet`
+BC: Change `processor-count` to always return parallel count
+Add AArch64 "natipkg" packages, which are useful for package-build
+ and package-testing infrastructure
+
+Version 8.18, July 2025
+Build-system improvements support containers registered at Docker Hub
+ to build for all platforms that have downloads form the main Racket
+ download site; improvements also support Unix-style builds for Mac
+ OS a la MacPorts
+Use Unicode 16.0 for character and string operations
+Change `struct` to support `#:properties prop-alist-expr`
+Improve `expt` on a flonum to a large exact power
+Change TCP ports to use SO_KEEPALIVE correctly
+xml: Change structs to serializable
+ffi/unsafe: Add `start-uninterruptible`, `end-uninterruptible`
+net/imap: Add `imap-move`
+
+Version 8.17, April 2025
+Package manager: support a file URL without associated ".CHECKSUM"
+ file, and instead the download the file as needed to infer
+Add `bitwise-first-bit-set`
+Add a syntax-thunk argument to `dynamic-require`
+Add `error-module-path->string-handler`
+Improve precision in `angle`, `expt`, `log`, `sin`, and `cos`
+ on some platforms
+Improve `(apply string-append ....)` on long list arguments
+Change TCP ports to use SO_KEEPALIVE
+Add Windows mouse event translation in terminal support provided
+ by the `#%terminal` primitive module
+json: Add `#:replace-malformed-surrogate?` argument
+net/http-client: Avoid sending "Content-Length: 0" when no body
+compiler/demod: Improve pruning of unused assignments
+
+Version 8.16, January 2025
 Add `treelist-filter, `treelist-index-of`, `treelist-flatten`,
  `treelist-append*`, and `sequence->treelist` in `racket/treelist`,
   repair `treelist-set` on non-leftwise-dense subtrees,
@@ -21,7 +79,7 @@ Add `error-syntax->name-handler`
 Add `racket/serialize-structs`
 BC: upgrade to libffi 3.4.6
 
-Version 8.15, Ocotober 2024
+Version 8.15, October 2024
 Sort and highlight documentation-search results by core documentation
  and main-distribution packages
 Add "language family" to documents, support filtering searches by
