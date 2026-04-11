@@ -4,7 +4,7 @@
 
 @title[#:tag "pointer"]{Foreign Pointers}
 
-A @deftech{pointer} object encapulates a memory address and a
+A @deftech{pointer} object encapsulates a memory address and a
 potentially empty sequence of symbolic @tech{tags}. A pointer object
 may refer to an address that under the control of Racket's memory
 manager and garbage collection, or it may refer to an address is
@@ -76,7 +76,7 @@ representation of @racket[maybe-type]. Otherwise, the result is a
 pointer object using the representation of @racket[void_t*].
 
 By default, allocation uses @racket[#:gcable] mode, but a
-@racket[maybe-mode] specificaiton can pick any of the supported modes:
+@racket[maybe-mode] specification can pick any of the supported modes:
 
 @itemlist[
 
@@ -84,7 +84,7 @@ By default, allocation uses @racket[#:gcable] mode, but a
        space. The allocated memory becomes eligible for garbage
        collection when it is not referenced by any reachable pointer
        object or @tech{traced} allocated memory. Even before
-       collection, the meory manager may relocate the object, but
+       collection, the memory manager may relocate the object, but
        garbage collection or relocation cannot happen with a
        foreign-procedure call is active.}
 
@@ -103,7 +103,7 @@ By default, allocation uses @racket[#:gcable] mode, but a
        relocated by a different address by the memory manager as long
        as it is not collected.}
 
- @item{@racket[#:gcable]: Allocates outside of Racket's
+ @item{@racket[#:manual]: Allocates outside of Racket's
        garbage-collected space. The allocated memory is never
        relocated by the garbage collection, and it must be freed
        explicitly with @racket[ffi2-free].}
@@ -144,7 +144,54 @@ Converts the Racket representation produced by @racket[expr] from one
 foreign type's representation to another. If @racket[from-type] or
 @racket[to-type] is not specified, each defaults to @racket[void_t*].
 
+If the @racket[#:offset] option is provided, the resulting pointer is
+shifted to represent an address that is @racket[_n] bytes later, where
+@racket[_n] is the result of @racket[n-expr] multiplied by
+@racket[(ffi2-sizeof maybe-type)] or by @racket[1] if
+@racket[maybe-type] is empty.
+
 }
+
+@defform*[[(ffi2-add ptr-expr n-expr)
+           (ffi2-add ptr-expr type n-expr)]]{
+
+A shorthand for @racket[(ffi2-cast ptr-expr #:offset n-expr)]
+or @racket[(ffi2-cast ptr-expr #:offset type n-expr #:to (array type *))].
+
+}
+
+@deftogether[(
+@defproc[(ffi2-memcpy [dest ptr_t?]
+                      [src ptr_t?]
+                      [len exact-nonnegative-integer?]
+                      [#:dest-offset dest-offset exact-integer? 0]
+                      [#:src-offset src-offset exact-integer? 0])
+         void?]
+@defproc[(ffi2-memmove [dest ptr_t?]
+                       [src ptr_t?]
+                       [len exact-nonnegative-integer?]
+                       [#:dest-offset dest-offset exact-integer? 0]
+                       [#:src-offset src-offset exact-integer? 0])
+         void?]
+@defproc[(ffi2-memset [dest ptr_t?]
+                      [byte byte_t?]
+                      [len exact-nonnegative-integer?]
+                      [#:dest-offset dest-offset exact-integer? 0])
+         void?]
+)]{
+
+The @racket[ffi2-memcpy] and @racket[ffi2-memmove] functions copy
+@racket[len] bytes from the address represented by @racket[(ffi2-add
+src src-offset)] to the address represented by @racket[(ffi2-add dest
+dest-offset)]. In the case of @racket[ffi2-memcpy], the source and
+destination regions must not overlap.
+
+The @racket[ffi2-memcpy] function sets @racket[len] bytes at the
+address represented by @racket[(ffi2-add dest dest-offset)] so that
+each byte's value is @racket[byte].
+
+}
+
 
 @deftogether[(
 @defproc[(ptr_t->uintptr [ptr ptr_t?]) exact-nonnegative-integer?]

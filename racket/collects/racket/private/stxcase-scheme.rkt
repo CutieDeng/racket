@@ -5,25 +5,16 @@
 
 (module stxcase-scheme '#%kernel
   (#%require "define-et-al.rkt" "qq-and-or.rkt" "stx.rkt" "stxcase.rkt" "with-stx.rkt" "stxloc.rkt"
+             (rename "define-et-al.rkt" -define define)
+             (rename "define-et-al.rkt" -define-syntax define-syntax)
              (for-syntax '#%kernel "define-et-al.rkt" "stx.rkt" "stxcase.rkt"
                          "stxloc.rkt"))
 
   (-define (check-duplicate-identifier names)
     (unless (and (list? names) (andmap identifier? names))
       (raise-argument-error 'check-duplicate-identifier "(listof identifier?)" names))
-    (let/ec escape
-      (let ([ht (make-hasheq)])
-	(for-each
-	 (lambda (defined-name)
-	   (unless (identifier? defined-name)
-	     (raise-argument-error 'check-duplicate-identifier
-                                   "(listof identifier?)" names))
-	   (let ([l (hash-ref ht (syntax-e defined-name) null)])
-	     (when (ormap (lambda (i) (bound-identifier=? i defined-name)) l)
-	       (escape defined-name))
-	     (hash-set! ht (syntax-e defined-name) (cons defined-name l))))
-	 names)
-	#f)))
+    (let-values ([(dup origs) (stx-find-duplicate-identifiers names)])
+      dup))
 
   (begin-for-syntax
    (define-values (check-sr-rules)
