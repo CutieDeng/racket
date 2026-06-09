@@ -15,8 +15,8 @@
          ptr_t/gcable?
          void_t*?
          void_t*/gcable?
-         uintptr->ptr_t
-         ptr_t->uintptr)
+         uintptr_t->ptr_t
+         ptr_t->uintptr_t)
 
 (define-syntax (define-ffi2-base-type stx)
   (syntax-parse stx
@@ -54,13 +54,16 @@
 (define-ffi2-base-type bool_t 'stdbool #'any? #:category 'scalar)
 (define-ffi2-base-type boolint_t 'boolean #'any? #:category 'scalar)
 (define-ffi2-base-type ptr_t 'pointer #'ffi2-ptr? #:release #'black-box #:category 'ptr)
-(define-ffi2-base-type ptr_t/gcable 'pointer/gc #'ffi2-ptr/gcable? #:release #'black-box #:category 'ptr)
+(define-ffi2-base-type ptr_t/gcable 'pointer/gc #'ffi2-ptr? #:release #'black-box #:category 'ptr)
 (define-ffi2-base-type void_t* 'pointer #'ffi2-ptr? #:release #'black-box #:category 'ptr)
-(define-ffi2-base-type void_t*/gcable 'pointer/gc #'ffi2-ptr/gcable? #:release #'black-box #:category 'ptr)
+(define-ffi2-base-type void_t*/gcable 'pointer/gc #'ffi2-ptr? #:release #'black-box #:category 'ptr)
 (define-ffi2-base-type racket_t 'scheme-object #'any? #:release #'black-box #:category 'racket)
 (define-ffi2-base-type string_t 'pointer #'string-or-false? #:release #'black-box
   #:racket->c #'maybe-string->pointer
   #:c->racket #'maybe-pointer->string)
+(define-ffi2-base-type string_utf16_t 'pointer #'string-or-false? #:release #'black-box
+  #:racket->c #'maybe-string->pointer/utf-16
+  #:c->racket #'maybe-pointer->string/utf-16)
 (define-ffi2-base-type bytes_t 'pointer #'bytes-or-false? #:release #'black-box
   #:racket->c #'maybe-bytes->pointer/add-terminator
   #:c->racket #'maybe-pointer->bytes)
@@ -77,5 +80,5 @@
 (define (void_t*? v) (ffi2-ptr? v))
 (define (void_t*/gcable? v) (ffi2-ptr/gcable? v))
 
-(define (uintptr->ptr_t v) (ffi2-uintptr->ptr v))
-(define (ptr_t->uintptr v) (ffi2-ptr->uintptr v))
+(define (uintptr_t->ptr_t v) (ffi2-uintptr->ptr v))
+(define (ptr_t->uintptr_t v) (ffi2-ptr->uintptr v))

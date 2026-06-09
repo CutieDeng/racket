@@ -1,28 +1,32 @@
 #lang scribble/manual
-@(require "common.rkt")
+@(require "common.rkt"
+          "racket-id.rkt"
+          (for-label ffi/unsafe/os-thread))
 
-@title[#:tag "procedure"]{Foreign Procedures}
+@title[#:tag "procedure"]{Foreign Procedures and Callbacks}
 
 @defform[#:kind "ffi2 type"
          #:literals (: =)
-         (-> arg ...
+         (-> arg-or-do ...
              maybe-varargs
              result maybe-errno
              option
              ...)
-         #:grammar ([arg type
+         #:grammar ([arg-or-do arg
+                               (code:line #:do [defn-or-expr ...])]
+                    [arg type
                          [arg-id : type]
                          [type = auto-expr]
                          [arg-id : type = auto-expr]]
-                    [maybe-varargs (code:line #:varargs arg ...)
-                                   ϵ]
+                    [maybe-varargs code:blank
+                                   (code:line #:varargs arg-or-do ...)]
                     [result result-type
                             [result-id : result-type]]
-                    [maybe-errno #:errno
+                    [maybe-errno code:blank
+                                 #:errno
                                  #:get-last-error
                                  [errno-id : #:errno]
-                                 [errno-id : #:get-last-error]
-                                 ϵ]
+                                 [errno-id : #:get-last-error]]
                     [option (code:line #:result result-expr)
                             (code:line #:abi abi)
                             (code:line #:atomic)
@@ -33,6 +37,10 @@
 Describes the type of a procedure. The C representation of a procedure
 is an address, while the Racket representation is a Racket procedure.
 
+@margin-note{The @racketmodname[racket/contract] library also provides
+@|contract-arrow|. To avoid conflicts, consider renaming the
+@racketmodname[racket/contract] binding to @racket[->/c] on import.}
+
 A @racket[->] type is normally used with @racket[ffi2-procedure] or
 @racket[define-ffi2-procedure] to obtain a Racket produce that calls a
 C function. That use of @racket[->] creates a @deftech{foreign callout}.
@@ -40,26 +48,34 @@ C function. That use of @racket[->] creates a @deftech{foreign callout}.
 A @racket[->] type can also be used with @racket[ffi2-callback] to
 turn a Racket procedure into a function callback by C as represented
 by a @tech{pointer} object. That of use of @racket[->] creates a
-@deftech{foreign callback}. A callback always runs in @deftech{atomic
+@deftech{foreign callback}. A callback always runs in @tech[#:doc ffi-unsafe-doc]{atomic
 mode}, which means that it must not attempt any synchronization
 operations and generally must not raise an exception (unless
 @racket[#:allow-callback-exn] is used for a callout that reaches the
-callback).
+callback). If a callback is run in an operating-system thread that was
+not started by Racket, then the callback is subject to the same
+constraints as a procedure passed to @racket[call-in-os-thread].
 
 Each @racket[arg] describes a type for an argument, each with an
 optional name @racket[arg-id] and an optional @racket[auto-expr]. When
 an argument has an @racket[auto-expr], no corresponding argument is
 provided to a callout. Each @racket[auto-expr] can refer to
-@racket[arg-id]s for arguments without @racket[auto-expr]s and for
+@racket[arg-id]s for arguments without @racket[auto-expr]s and to
 earlier arguments that have @racket[auto-expr]s. When an arrow type
 is used for a foreign callback (instead of a callout), @racket[arg-id]s
 and @racket[auto-expr]s have no effect.
 
-A @racket[result] can similarly have a @racket[result-id]. That
-identifier can be used (along with the @racket[arg-id]s) in a
-@racket[result-expr] supplied with @racket[#:result]. The value of
-@racket[#:result] becomes the result for a callout, and it is not
-used for a callback.
+Each @racket[#:do] form among the @racket[arg]s inserts additional
+expressions and definitions that are evaluated similar to
+@racket[auto-expr]s, that can refer to earlier argument names, to
+argument names without @racket[auto-expr]s, and to definitions from
+earlier @racket[#:do] forms. An @racket[auto-expr] can also refer to
+definitions from preceding @racket[#:do] forms.
+
+A @racket[result] can have a @racket[result-id]. That identifier can
+be used (along with the @racket[arg-id]s) in a @racket[result-expr]
+supplied with @racket[#:result]. The value of @racket[#:result]
+becomes the result for a callout, and it is not used for a callback.
 
 If @racket[#:errno] or @racket[#:get-last-error] (optionally
 with a @racket[errno-id]) is specified after
@@ -110,14 +126,20 @@ how a callback is handled:
  using this option.}
 
  @item{@racket[#:in-original]: Adjusts a @tech{foreign callout} to
- take place in a @tech[#:doc ref-doc]{coroutine thread} within
+ run in a @tech[#:doc ref-doc]{coroutine thread} within
  Racket's main @tech[#:doc ref-doc]{place} (which is useful if the
  foreign procedure is not thread-safe), or adjusts a @tech{foreign
- callback} invocation so that it takes place in a coroutine thread
+ callback} invocation so that it runs in a coroutine thread
  within the current place (which can be useful if the callback might
- otherwise run in a thread not created by Racket). The callout or
- callback happens in the context of an unspecified Racket coroutine
- thread, so it must not raise an exception.}
+ otherwise run in a thread not created by Racket).@margin-note*{In the
+ @tech[#:doc ref-doc]{BC} variant of Racket, @racket[#:in-original] is
+ required if a callback may run in a thread not created by Racket.}
+ The callout or
+ callback happens in the context of an
+ @seclink["Thread_Scheduling" #:doc '(lib "scribblings/foreign/foreign.scrbl")]{unspecified
+ Racket coroutine thread}, so it must not raise an exception, and it is still in
+ @tech[#:doc ffi-unsafe-doc]{atomic mode}. The callback blocks the original thread
+ until it completes in a coroutine thread.}
 
 ]
 
@@ -201,8 +223,9 @@ is also exported using @racket[provide] with @racket[protect-out].
 @defproc[(make-not-available [name symbol?]) procedure?]{
 
 Returns a procedure that takes any number of arguments, including
-keyword arguments, and reports an error message from @racket[name].
-This function is intended for using with @racket[#:fail] in
+keyword arguments, and raises an @racket[exn:fail:unsupported]
+exception from @racket[name].
+This function is intended for use with @racket[#:fail] in
 @racket[define-ffi2-procedure] or @racket[#:default-fail] in
 @racket[define-ffi2-definer].
 

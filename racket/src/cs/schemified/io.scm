@@ -2820,6 +2820,8 @@
 (define RKTIO_NO_INHERIT_INPUT 1)
 (define RKTIO_NO_INHERIT_OUTPUT 2)
 (define RKTIO_FAMILY_ANY -1)
+(define RKTIO_LISTEN_REUSE 1)
+(define RKTIO_LISTEN_RETRY_ADDRINUSE 2)
 (define RKTIO_SHUTDOWN_READ 0)
 (define RKTIO_SHUTDOWN_WRITE 1)
 (define RKTIO_ADD_MEMBERSHIP 0)
@@ -2986,6 +2988,7 @@
 (define rktio_addrinfo_lookup_stop
   (hash-ref rktio-table 'rktio_addrinfo_lookup_stop))
 (define rktio_addrinfo_free (hash-ref rktio-table 'rktio_addrinfo_free))
+(define rktio_listen_opt (hash-ref rktio-table 'rktio_listen_opt))
 (define rktio_listen (hash-ref rktio-table 'rktio_listen))
 (define rktio_listen_stop (hash-ref rktio-table 'rktio_listen_stop))
 (define rktio_poll_accept_ready
@@ -15556,7 +15559,7 @@
         (void)
         (raise-argument-error
          'guard-for-prop:custom-write
-         "(procedure-arity-includes?/c 3)"
+         "(procedure-arity-includes/c 3)"
          v_0))
       v_0))))
 (define-values
@@ -22364,7 +22367,8 @@
                               (let ((or-part_5 (box? v_0)))
                                 (if or-part_5
                                   or-part_5
-                                  (let ((or-part_6 (hash? v_0)))
+                                  (let ((or-part_6
+                                         (printing-hash? v_0 config_0)))
                                     (if or-part_6
                                       or-part_6
                                       (let ((or-part_7
@@ -22586,11 +22590,7 @@
                                          o_0
                                          max-length_0)))
                                     (if (hash? v_0)
-                                      (if (if (config-get
-                                               config_0
-                                               1/print-hash-table)
-                                            (not (hash-weak? v_0))
-                                            #f)
+                                      (if (printing-hash? v_0 config_0)
                                         (if (eq? mode_0 0)
                                           (let ((l_0
                                                  (apply
@@ -22855,6 +22855,15 @@
     (if (if (eq? mode_0 #t) (not (config-get config_0 1/print-unreadable)) #f)
       (fail-unreadable who_0 v_0)
       (void))))
+(define printing-hash?
+  (lambda (v_0 config_0)
+    (if (hash? v_0)
+      (if (not
+           (let ((or-part_0 (hash-weak? v_0)))
+             (if or-part_0 or-part_0 (hash-ephemeron? v_0))))
+        (config-get config_0 1/print-hash-table)
+        #f)
+      #f)))
 (define struct-dots (unquoted-printing-string "..."))
 (define do-printf
   (lambda (who_0 o_0 fmt_0 all-args_0)
@@ -31263,7 +31272,9 @@
                             (|#%app| rktio_to_bytes v_0)
                             (|#%app| rktio_free v_0))
                           #f)))
-                   (begin (end-rktio) s_0))))
+                   (begin
+                     (end-rktio)
+                     (if s_0 (unsafe-bytes->immutable-bytes! s_0) #f)))))
              (cdr (hash-ref ht_0 (normalize-key k_0) '(#f . #f))))))))))
 (define none (gensym 'none))
 (define 1/environment-variables-set!
@@ -37487,14 +37498,22 @@
                                                       (let ((app_0
                                                              (unsafe-place-local-ref
                                                               cell.1)))
-                                                        (|#%app|
-                                                         rktio_listen
-                                                         app_0
-                                                         addr_0
-                                                         (min
-                                                          max-allow-wait2_0
-                                                          10000)
-                                                         reuse?3_0))))
+                                                        (let ((app_1
+                                                               (min
+                                                                max-allow-wait2_0
+                                                                10000)))
+                                                          (|#%app|
+                                                           rktio_listen_opt
+                                                           app_0
+                                                           addr_0
+                                                           app_1
+                                                           (bitwise-ior
+                                                            (if reuse?3_0 1 0)
+                                                            (if (eqv?
+                                                                 port-no5_0
+                                                                 0)
+                                                              2
+                                                              0)))))))
                                                  (begin
                                                    (end-rktio)
                                                    (if (vector? lnr_0)

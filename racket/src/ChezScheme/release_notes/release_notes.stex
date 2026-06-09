@@ -1,9 +1,9 @@
 \documentclass{releasenotes}
 
-\thisversion{Version 10.4.0}
+\thisversion{Version 10.5.0}
 \thatversion{Version 8.4}
-\pubmonth{October}
-\pubyear{2025}
+\pubmonth{May}
+\pubyear{2026}
 
 \iflatex
 \usepackage{enumitem}
@@ -89,6 +89,10 @@ procedure) is given in parentheses.
      \item x86, nonthreaded (i3s2) and threaded (ti3s2)
      \item x86\_64, nonthreaded (a6s2) and threaded (ta6s2)
      \end{itemizeC}
+\item Haiku
+     \begin{itemizeC}
+     \item x86\_64, nonthreaded (a6hk) and threaded (ta6hk)
+     \end{itemizeC}
 \item Other platforms
      \begin{itemizeC}
      \item bytecode interpretation (pb, tpb, pb32l, tpb32l, pb32b, tpb32b, pb64l, tpb64l, pb64b, tpb64b)
@@ -96,7 +100,7 @@ procedure) is given in parentheses.
 \end{itemize}
 
 {\thisversion} supports iOS natively to a limited extent. See
-\href[static]{section:ios-machine-types}{this section} for details.
+\href[static]{section:ios-machine-types}{``New machine types for iOS''} for details.
 
 This document contains three sections describing significant
 (1) \href[static]{section:functionality}{functionality changes},
@@ -139,7 +143,7 @@ return two values: the foreign procedure's direct result and the value
 of \scheme{errno} just after the foreign procedure returns. On
 Windows, the \scheme{current-errno-source} parameter selects the
 runtime C library whose \scheme{errno} is consulted, or instead of
-\scheme{__errno} use \scheme{__get_last-error} to get a result
+\scheme{__errno} use \scheme{__get_last_error} to get a result
 from \scheme{GetLastError} instead of \scheme{errno}.
 
 The new \scheme{__alloc} foreign-procedure convention modifies a preceding
@@ -157,9 +161,11 @@ first point that a callable would otherwise allow interrupt handling,
 and interrupts after reenabled after the last point where the callable
 would otherwise allow interrupt handling.
 
-\subsection{Add machine type a6gnu (10.4.0)}
+\subsection{New machine types for GNU/Hurd and Haiku on x86\_64 (10.4.0)}
 
-GNU/Hurd on x86\_64 is now supported as machine type a6gnu.
+GNU/Hurd on x86\_64 is now supported as machine types a6gnu (nonthreaded) and ta6gnu (threaded).
+
+Haiku on x86\_64 is now supported as machine types a6nk (nonthreaded) and ta6hk (threaded).
 
 \subsection{Interrupts and large-vector operations (10.4.0)}
 
@@ -2987,6 +2993,43 @@ in fasl files does not generally make sense.
 %-----------------------------------------------------------------------------
 \section{Bug Fixes}\label{section:bugfixes}
 
+\subsection{Error message fixes (10.4.1)}
+
+When \scheme{log} is called with exact \scheme{1} as the second argument, the error is now
+reported in terms of \scheme{log} instead of a divide-by-zero error in \scheme{/}.
+
+\subsection{Repair allocation in \scheme{logtest} (10.4.1)}
+
+In Version 10.4.0, the \scheme{logtest} procedure could allocate incorrectly when given a
+mixture of fixnum and bignum arguments. The problem has been fixed by adding a missing
+\scheme{__alloc} annotation on the internal implementation.
+
+\subsection{Repair \scheme{__alloc} mode for ppc32 (10.4.1)}
+
+In Version 10.4.0 on ppc32, an \scheme{__atomic __alloc} foreign-procedure annotation was
+not handled correctly. The problem has been fixed by migrating the end-of-allocation
+pointer between a register and the thread context during an allocating foreign call.
+
+\subsection{Declare \scheme{Spopcount} in scheme.h (10.4.0)}
+
+A bug where the header file scheme.h refers to an undeclared \scheme{Spopcount} function
+has been fixed.
+
+\subsection{Eager port closing on error in \scheme{open-source-file} (10.4.0)}
+
+When \scheme{open-source-file} failed on a non-seekable device, the file descriptor port
+was kept open until the garbage collector eventually closed it. It now closes the port on
+error.
+
+\subsection{Signals in non-Scheme threads (10.4.0)}
+
+A bug in threaded Chez Scheme where some signals raised in non-Scheme threads could cause
+a segmentation fault in the signal handler has been fixed.
+
+\subsection{LZ4 library updated (10.4.0)}
+
+The LZ4 compression library was updated from v1.9.4 to v1.10.0.
+
 \subsection{Out-of-memory improvements for \scheme{expt}, \scheme{logbit0}, and \scheme{logbit1} (10.4.0)}
 
 A call to \scheme{expt} with an exact rational base and an integer exponent too large
@@ -3000,8 +3043,8 @@ the indicated bit is already set.
 
 \subsection{Unicode Indic\_Conjunct\_Break support (10.4.0)}
 
-The grapheme cluster break algorithm neglected to consider the Indic\_Conjunct\_Break
-property available since Unicode 15.
+A bug where the grapheme cluster break algorithm neglected to consider the
+Indic\_Conjunct\_Break property available since Unicode 15 has been fixed.
 
 \subsection{Corrections and refinements to error reporting (10.4.0)}
 
@@ -3057,10 +3100,10 @@ the generic \scheme{+} case so non-real contributions are preserved.
 
 \subsection{Fix interaction of pbchunk and atomic foreign procedures (10.4.0)}
 
-The output of \scheme{pbchunk-convert-file} could be incorrect in the
-case of an inlined foreign call within certain blocks. The generated
-source was ill-formed in the case of a block that has too many entries
-and exits around unconvertible code to productively compile via C.
+A bug where the output of \scheme{pbchunk-convert-file} could be incorrect in the case of
+an inlined foreign call within certain blocks was fixed. The generated source was
+ill-formed in the case of a block that has too many entries and exits around unconvertible
+code to productively compile via C.
 
 \subsection{Exit with failure on error from boot file (10.3.0)}
 

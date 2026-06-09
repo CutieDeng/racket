@@ -199,9 +199,16 @@ flags:
  @item{@DFlag{no-docs} or @Flag{D} --- refrain from building
    documentation.}
 
+ @item{@DFlag{only-extra-docs} --- disable actions other than
+   rendering for @DFlag{doc-pdf} or @DFlag{doc-markdown}.}
+
  @item{@DFlag{doc-pdf} @nonterm{dir} --- in addition to building HTML
    documentation, render documentation to PDF and place files in
    @nonterm{dir}.}
+
+ @item{@DFlag{doc-markdown} @nonterm{dir} --- in addition to building
+   HTML documentation, render documentation to Markdown (using
+   Scribble's Markdown backend) and place files in @nonterm{dir}.}
 
  @item{@DFlag{no-pkg-deps} or @Flag{K} --- refrain from checking
   whether dependencies among libraries are properly reflected by
@@ -391,7 +398,9 @@ debugging:
          #:changed "7.9.0.3" @elem{Added @envvar{PLT_SETUP_NO_FORCE_GC},
                                    @envvar{PLT_SETUP_SHOW_TIMESTAMPS},
                                    and @DFlag{sync-docs-only}.}
-         #:changed "8.17.0.2" @elem{Added the @litchar{recompile-cache} flag.}]
+         #:changed "8.17.0.2" @elem{Added the @DFlag{recompile-cache} flag.}
+         #:changed "9.2.0.4" @elem{Added the @DFlag{doc-markdown} and
+                                   @DFlag{only-extra-docs} flags.}]
 
 @; ------------------------------------------------------------------------
 
@@ -1995,13 +2004,19 @@ be closed only though a @tech[#:doc reference-doc]{custodian}.}
 
 
 @defproc[(get-rendered-doc-directories [no-user? any/c]
-                                       [no-main? any/c])
+                                       [no-main? any/c]
+                                       [#:keep-omit? keep-omit? any/c #f])
          (listof path?)]{
 
 Returns a list of directories for all documentation for all installed
 collections, omitting documentation that is installed in the main
 installation or in a user-specific location, respectively, if
-@racket[no-main?] or @racket[no-user?] is @racket[#t].}
+@racket[no-main?] or @racket[no-user?] is @racket[#t].
+
+If @racket[keep-omit?] is true, then the result includes documentation
+that has the @racket['omit] category.
+
+@history[#:changed "1.5" @elem{Added the @racket[#:keep-omit?] argument.}]}
 
 
 @defproc[(get-current-doc-state) doc-state?]{

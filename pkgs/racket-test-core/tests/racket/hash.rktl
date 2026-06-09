@@ -1132,6 +1132,20 @@
   ;; writing, we expect collisions with chars, but not other collisions
   (test #t > (hash-count ht) 200000))
 
+(let ([ht
+       (for*/fold ([ht #hash()]) ([x (in-range 320)]
+                                  [y (in-range 320)])
+         (hash-set ht (equal-hash-code (make-rectangular x y)) #t))])
+  ;; 320*320 = 102400 distinct complex numbers; allow some collisions
+  (test #t > (hash-count ht) 100000))
+
+(let ([ht
+       (for*/fold ([ht #hash()]) ([n (in-range 1 321)]
+                                  [d (in-range 1 321)])
+         (hash-set ht (equal-hash-code (/ n d)) #t))])
+  ;; 62463 distinct rationals in the grid; allow some collisions
+  (test #t > (hash-count ht) 50000))
+
 ;; ----------------------------------------
 ;; Check that no keys are lost during mutating traversal
 ;; that doesn't add keys
@@ -1189,6 +1203,41 @@
   (black-box
    (hash-union! (make-ephemeron-hashalw (list (cons (list 'c) "list-a")))
                 (make-ephemeron-hashalw (list (cons (list 'a) "list-a") (cons (list 'b) "list-b"))))))
+
+;; ----------------------------------------
+
+(let ([ht (make-hasheq)]
+      [w-ht (make-weak-hasheq)]
+      [e-ht (make-ephemeron-hasheq)])
+  (test "'#hasheq()" format "~v" ht)
+  (test "#<hash>" format "~v" w-ht)
+  (test "#<hash>" format "~v" e-ht)
+  (parameterize ([print-hash-table #f])
+    (test "#<hash>" format "~v" ht)
+    (test "#<hash>" format "~v" w-ht)
+    (test "#<hash>" format "~v" e-ht)))
+
+
+;; ----------------------------------------
+
+;; check that iterating in a weak or ephemeron
+;; table does not end up retaining values
+(unless (eq? 'cgc (system-type 'gc))
+  (for ([make (in-list (list make-weak-hash
+                             make-ephemeron-hash))])
+    (define ht (make))
+    (define key (gensym))
+    (define val (gensym))
+    (define b (make-weak-box val))
+    (hash-set! ht key val)
+    (black-box
+     (for/fold ([v #f]) ([k (in-hash-keys ht)])
+       k))
+    (set! key #f)
+    (collect-garbage)
+    (collect-garbage)
+    (test #f weak-box-value b)
+    (black-box ht)))
 
 ;; ----------------------------------------
 

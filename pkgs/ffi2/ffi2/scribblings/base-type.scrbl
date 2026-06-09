@@ -60,11 +60,13 @@ complement bit representation.
 @deftypeform[uintptr_t]
 @deftypeform[size_t]
 @deftypeform[ssize_t]
+@deftypeform[byte_t]
 )]{
 
-Signed and unsigned integer @tech{scalar} types of platform-specific
-bit widths. For consistently, a @litchar{_t} is added to the end of C
-type names like @tt{int} to form a type name like @racket[int_t].
+Signed and unsigned integer @tech{scalar} types of (in some cases)
+platform-specific bit widths. For consistently, a @litchar{_t} is
+added to the end of C type names like @tt{int} to form a type name
+like @racket[int_t].
 
 All are represented as exact integers on the Racket side, constrained
 to a range that fits in the platform-specific C representation.
@@ -131,31 +133,41 @@ be used for the result of a foreign procedure for foreign callback.
 
 @deftogether[(
 @deftypeform[string_t]
+@deftypeform[string_utf16_t]
 @deftypeform[bytes_t]
 @deftypeform[bytes_ptr_t]
 @deftypeform[path_t]
 )]{
 
-Types that are represented on the C side like @racket[ptr_t], but
-that are represented in Racket by conversion to and from strings, byte
-strings, and paths. The @racket[string_t] type converts a Racket
-string to a null-terminated byte string and passes the address of the
-start of the byte string. The @racket[bytes_t] type similarly copies a
-racket byte string to add a null terminator, while
-@racket[bytes_ptr_t] passes the start of a Racket byte string as-is,
-without adding a terminator (and where mutation of pointer content on
-the C side is reflected as changes to the byte string content). The
-@racket[path_t] is like @racket[string_t], but for paths in the sense
-of @racket[path-for-some-system?].
+Types that are represented on the C side like @racket[ptr_t], but that
+are represented in Racket by conversion to and from strings, byte
+strings, and paths---or by @racket[#f] to represent a @tt{NULL}
+pointer.
 
-When converting from C to Racket, the pointer received from C is
-treated as a reference to a null-terminated C string, and a fresh
-Racket byte string is created to hold the content up to the null
-terminator. The @racket[string_t] or @racket[path_t] types then
-convert that byte string to a string or path, respectively.
+For Racket-to-C conversion, the @racket[string_t] type converts a
+Racket string to a null-terminated byte string and passes the address
+of the start of the byte string to the C side.
+The @racket[string_utf16_t] type similarly converts a
+Racket string to a UTF-16 sequence with a two-byte null terminator.
+The @racket[bytes_t]
+type similarly copies a Racket byte string to add a null terminator,
+while @racket[bytes_ptr_t] passes the start of a Racket byte string
+as-is, without adding a terminator (and where mutation of pointer
+content on the C side is reflected as changes to the byte string
+content). The @racket[path_t] is like @racket[string_t], but for paths
+in the sense of @racket[path-for-some-system?], and Racket to C conversion
+adjusts relative paths using @racket[path->complete-path]. All of these types
+convert @racket[#f] on the Racket side to @tt{NULL} on the C side.
+
+When converting from C to Racket, a non-@tt{NULL} pointer received
+from C is treated as a reference to a null-terminated C string
+(with an aligned, two-byte terminator in the case of @racket[string_utf16_t]), and a
+fresh Racket byte string is created to hold the content up to the null
+terminator. The @racket[string_t], @racket[string_utf16_t], and @racket[path_t] types then
+convert that byte string to a string or path. A
+@tt{NULL} from C is converted to @racket[#f] for Racket.
 
 }
-
 
 @deftogether[(
 @deftypeform[racket_t]

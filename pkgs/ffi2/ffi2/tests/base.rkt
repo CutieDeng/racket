@@ -94,7 +94,7 @@
   (define path (bytes->path #"apple"))
   (ffi2-set! p path_t path)
   (copy-content-to-immobile p)
-  (check-equal? (ffi2-ref p path_t) path)
+  (check-equal? (ffi2-ref p path_t) (path->complete-path path))
   (void (black-box p)))
 
 (let ()
@@ -106,3 +106,20 @@
   (check-equal? (integer->char (ffi2-ref ptr byte_t 0)) #\p)
   (check-equal? (integer->char (ffi2-ref ptr byte_t 1)) #\i)
   (check-equal? (integer->char (ffi2-ref ptr byte_t 2)) #\e))
+
+(check-equal? (ffi2-cast (uintptr_t->ptr_t 0) #:to bytes_t) #false)
+(check-equal? (ffi2-cast (uintptr_t->ptr_t 0) #:to bytes_ptr_t) #false)
+(check-equal? (ffi2-cast (uintptr_t->ptr_t 0) #:to string_t) #false)
+(check-equal? (ffi2-cast (uintptr_t->ptr_t 0) #:to path_t) #false)
+
+(check-equal? (ptr_t->uintptr_t (ffi2-cast #false #:from bytes_t)) 0)
+(check-equal? (ptr_t->uintptr_t (ffi2-cast #false #:from bytes_ptr_t)) 0)
+(check-equal? (ptr_t->uintptr_t (ffi2-cast #false #:from string_t)) 0)
+(check-equal? (ptr_t->uintptr_t (ffi2-cast #false #:from path_t)) 0)
+
+(let ()
+  (define p (ffi2-cast "apple" #:from string_utf16_t))
+  (check-equal? (ffi2-ref p short_t) (char->integer #\a))
+  (check-equal? (ffi2-ref p short_t 4) (char->integer #\e))
+  (check-equal? (ffi2-ref p short_t 5) 0)
+  (check-equal? "apple" (ffi2-cast p #:to string_utf16_t)))

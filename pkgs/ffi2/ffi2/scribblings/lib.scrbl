@@ -15,8 +15,8 @@ from @racketmodname[ffi/unsafe].}
 
 @defproc[(ffi2-lib [path (or/c path-string? #f)]
                    [version (or/c string? (listof (or/c string? #f)) #f) #f]
-                   [#:get-lib-dirs get-lib-dirs (-> (listof path?)) get-lib-search-dirs]
-                   [#:fail fail (or/c #f (-> any)) #f]
+                   [#:get-lib-dirs get-lib-dirs (->/c (listof path?)) get-lib-search-dirs]
+                   [#:fail fail (or/c #f (->/c any)) #f]
                    [#:global? global? any/c (eq? 'global (system-type 'so-mode))]
                    [#:custodian custodian (or/c 'place custodian? #f) #f])
          any]{
@@ -30,14 +30,14 @@ is called to produce a result.
 }
 
 @defproc[(ffi2-lib-ref [name (or/c string? bytes? symbol?)]
-                       [lib ffi2-lib?]
-                       [#:fail fail (or/c (-> any) #f) #f])
+                       [lib (or/c ffi2-lib? #f)]
+                       [#:fail fail (or/c (->/c any) #f) #f])
          any]{
 
 Gets the address for @racket[name] as exported by the foreign library
-@racket[lib]. If no such export is found, the @racket[fail] is called
-to produce the result, or an exception is raised if @racket[fail] is
-@racket[#f].
+@racket[lib]. If @racket[lib] is @racket[#f] or if no such export is
+found, the @racket[fail] is called to produce the result, or an
+exception is raised if @racket[fail] is @racket[#f].
 
 The result is normally a @tech{pointer} recognized by @racket[ptr_t?],
 but the result can be anything if @racket[fail] is called to produce a

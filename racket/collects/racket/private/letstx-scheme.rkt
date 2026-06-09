@@ -3,13 +3,11 @@
 ;; #%stxcase-scheme: adds let-syntax, letrec-syntax, etc.
 
 (module letstx-scheme '#%kernel
-  (#%require "define-et-al.rkt" "qq-and-or.rkt" "cond.rkt"
-             (rename "define-et-al.rkt" -define define)
-             (rename "define-et-al.rkt" -define-syntax define-syntax)
+  (#%require "core-syntax.rkt"
              (for-syntax '#%kernel "stxcase.rkt" 
                          "with-stx.rkt" "stxloc.rkt"))
   
-  (-define-syntax letrec-syntaxes
+  (define-syntax letrec-syntaxes
     (lambda (stx)
       (syntax-case stx ()
 	[(_ ([(id ...) expr] ...) body1 body ...)
@@ -18,7 +16,7 @@
 				     ()
 	       body1 body ...))])))
 
-  (-define-syntax letrec-syntax
+  (define-syntax letrec-syntax
     (lambda (stx)
       (syntax-case stx ()
 	[(_ ([id expr] ...) body1 body ...)
@@ -27,7 +25,7 @@
 				     ()
 	       body1 body ...))])))
 
-  (-define-syntax let-syntaxes
+  (define-syntax let-syntaxes
     (lambda (stx)
       (syntax-case stx ()
 	[(_ ([(id ...) expr] ...) body1 body ...)
@@ -47,7 +45,7 @@
                (letrec-syntaxes+values ([(tmp ...) expr] ...) ()
                  let-syntaxes-body/loc))))])))
 
-  (-define-syntax let-syntax
+  (define-syntax let-syntax
     (lambda (stx)
       (syntax-case stx ()
 	[(_ ([id expr] ...) body1 body ...)
@@ -55,5 +53,5 @@
 	     (let-syntaxes ([(id) expr] ...)
 	       body1 body ...))])))
 
-  (#%provide (all-from "define-et-al.rkt") (all-from "qq-and-or.rkt") (all-from "cond.rkt")
+  (#%provide (all-from "core-syntax.rkt")
              letrec-syntaxes letrec-syntax let-syntaxes let-syntax))
