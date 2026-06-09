@@ -76,8 +76,8 @@
   (define literal-end (find-template-source-end source literal-start))
   (write-string
    (if (char=? prefix #\f)
-       "(fpl "
-       "(tpl "
+       "(#%tstring-fpl "
+       "(#%tstring-tpl "
    ) ; end if
    out
   ) ; end write-string

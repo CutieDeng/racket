@@ -14,6 +14,7 @@
 ) ; end provide
 
 (define-runtime-path main-rkt "../main.rkt")
+(define-runtime-path expand-rkt "../private/expand.rkt")
 
 (define base-read-syntax
   (dynamic-require 'racket/base 'read-syntax)
@@ -44,6 +45,9 @@
   (define transformed-source
     (string-append "#lang racket/base\n"
                    (format "(require (file ~s))\n" (path->string main-rkt))
+                   (format "(require (only-in (file ~s) #%tstring-tpl #%tstring-fpl))\n"
+                           (path->string expand-rkt)
+                   ) ; end format
                    transformed-body
     ) ; end string-append
   ) ; end define transformed-source

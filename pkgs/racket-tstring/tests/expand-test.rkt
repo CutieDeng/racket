@@ -4,6 +4,7 @@
  rackunit
  racket/string
  "../main.rkt"
+ "../private/expand.rkt"
 ) ; end require
 
 (define name "Alice")
@@ -28,7 +29,7 @@
  exn:fail?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl "{missing-name}")
           ) ; end let
    ) ; end eval
@@ -104,7 +105,7 @@
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl 1)
           ) ; end let
    ) ; end eval
@@ -115,7 +116,7 @@
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl "hello {}")
           ) ; end let
    ) ; end eval
@@ -126,7 +127,7 @@
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl "hello {")
           ) ; end let
    ) ; end eval
@@ -137,7 +138,7 @@
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl "hello }")
           ) ; end let
    ) ; end eval
@@ -148,7 +149,7 @@
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
-            (require "../main.rkt")
+            (require "../private/expand.rkt")
             (tpl "hello {(+ 1 2}")
           ) ; end let
    ) ; end eval

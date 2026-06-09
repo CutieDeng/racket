@@ -4,7 +4,6 @@
  "private/template.rkt"
  "private/render.rkt"
  "private/parse.rkt"
- "private/expand.rkt"
 ) ; end require
 
 (provide
@@ -24,6 +23,4 @@
  template->sql
  html-render
  parse-template-string
- tpl
- fpl
 ) ; end provide

@@ -16,6 +16,7 @@
 ) ; end provide
 
 (define-runtime-path main-rkt "../main.rkt")
+(define-runtime-path expand-rkt "../../racket-tstring/private/expand.rkt")
 
 (define (wrap-reader proc)
   (lambda args
@@ -25,6 +26,9 @@
     (define transformed-port
       (open-input-string
        (string-append (format "(require (file ~s))\n" (path->string main-rkt))
+                      (format "(require (only-in (file ~s) #%tstring-tpl #%tstring-fpl))\n"
+                              (path->string expand-rkt)
+                      ) ; end format
                       (transform-with-read-errors port)
        ) ; end string-append
       ) ; end open-input-string

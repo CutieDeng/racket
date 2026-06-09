@@ -13,4 +13,25 @@
 
 (check-true (template? tpl-value))
 (check-equal? (render-template tpl-value) "hello Alice")
-(check-equal? (fpl "{(+ 1 2)}") "3")
+
+(check-exn
+ exn:fail?
+ (lambda ()
+   (eval '(let ()
+            (require "../main.rkt")
+            fpl
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn private fpl
+
+(check-exn
+ exn:fail?
+ (lambda ()
+   (eval '(let ()
+            (require "../main.rkt")
+            tpl
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn private tpl

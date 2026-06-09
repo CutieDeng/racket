@@ -16,6 +16,9 @@
 (provide
  tpl
  fpl
+ (rename-out (tpl #%tstring-tpl)
+             (fpl #%tstring-fpl)
+ ) ; end rename-out
 ) ; end provide
 
 (define-syntax (tpl stx)
@@ -285,7 +288,7 @@
     (cond
       ((symbol? datum)
        (unless quoted?
-         (unless (memq datum '(tpl fpl))
+         (unless (memq datum '(tpl fpl #%tstring-tpl #%tstring-fpl))
            (add! datum)
          ) ; end unless tstring macro
        ) ; end unless quoted

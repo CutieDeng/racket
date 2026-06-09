@@ -7,6 +7,11 @@
 ) ; end require
 
 (namespace-require '(lib "tstring/main.rkt"))
+(namespace-require '(only (lib "racket-tstring/private/expand.rkt")
+                          #%tstring-tpl
+                          #%tstring-fpl
+                    ) ; end only
+) ; end namespace-require
 
 (define (tstring-read-interaction source-name in)
   (let loop ((lines '()))
