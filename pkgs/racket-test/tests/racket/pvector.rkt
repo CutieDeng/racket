@@ -32,6 +32,7 @@
   (check-pred pvector-empty? (pvector-empty))
   (check-false (pvector-empty? '(not a pvector)))
   (check-pvector-model (pvector 1 2 3) '(1 2 3))
+  (check-pvector-model (apply pvector '(1 2 3)) '(1 2 3))
   (check-pvector-model (make-pvector 4 'x) '(x x x x))
   (check-pvector-model (list->pvector '(a b c)) '(a b c))
   (check-pvector-model (vector->pvector #(a b c)) '(a b c))
@@ -121,6 +122,95 @@
   (check-equal? (stream-first pv) 1)
   (check-equal? (stream-first (stream-rest pv)) 2)
   (check-equal? (stream->list pv) '(1 2 3)))
+
+(test-case "match expanders"
+  (check-equal? (match (pvector 1 2 3)
+                  [(pvector a b c) (list a b c)]
+                  [_ #f])
+                '(1 2 3))
+  (check-equal? (match (pvector 1 2 3 4)
+                  [(pvector 1 xs ..2) xs]
+                  [_ #f])
+                '(2 3 4))
+  (check-true (match (pvector-empty)
+                [(pvector) #t]
+                [_ #f]))
+  (check-false (match (pvector 1 2)
+                 [(pvector 1 2 3) #t]
+                 [_ #f]))
+  (check-false (match '(1 2 3)
+                 [(pvector _ _ _) #t]
+                 [_ #f]))
+  (define pv (pvector 'a 'b 'c 'd 'e))
+  (check-equal? (match pv
+                  [(pvector* 'a #:rest mid 'e)
+                   (pvector->list mid)]
+                  [_ #f])
+                '(b c d))
+  (check-equal? (match pv
+                  [(pvector* #:span 2 left 'c #:span 2 right)
+                   (list (pvector->list left) (pvector->list right))]
+                  [_ #f])
+                '((a b) (d e)))
+  (check-equal? (match pv
+                  [(pvector* #:rest left 'd 'e)
+                   (pvector->list left)]
+                  [_ #f])
+                '(a b c))
+  (check-equal? (match pv
+                  [(pvector* 'a 'b #:rest right)
+                   (pvector->list right)]
+                  [_ #f])
+                '(c d e))
+  (let ([n 2])
+    (check-equal? (match pv
+                    [(pvector* #:span n left 'c #:rest right)
+                     (list (pvector->list left) (pvector->list right))]
+                    [_ #f])
+                  '((a b) (d e))))
+  (check-equal? (match pv
+                  [(pvector* 'a 'b . right)
+                   (pvector->list right)]
+                  [_ #f])
+                '(c d e))
+  (check-equal? (match (pvector (pvector 'x 'y) 'z)
+                  [(pvector* (pvector x y) 'z) (list x y)]
+                  [_ #f])
+                '(x y))
+  (check-false (match pv
+                 [(pvector* #:span 3 _ 'e #:span 3 _) #t]
+                 [_ #f]))
+  (check-false (match pv
+                 [(pvector* #:span #f _ #:rest _) #t]
+                 [_ #f]))
+  (check-false (match pv
+                 [(pvector* #:span -1 _ #:rest _) #t]
+                 [_ #f]))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:rest left #:rest right) #t]
+            [_ #f])))))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:span 2) #t]
+            [_ #f])))))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:rest) #t]
+            [_ #f])))))
+  )
 
 (test-case "serialization"
   (define pv (pvector 'a "b" 3))

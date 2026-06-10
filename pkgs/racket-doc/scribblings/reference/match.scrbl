@@ -1,9 +1,10 @@
 #lang scribble/doc
-@(require "mz.rkt" "match-grammar.rkt" racket/match)
+@(require "mz.rkt" "match-grammar.rkt" racket/match
+          (for-label racket/pvector))
 
 @(define match-eval (make-base-eval))
 @(define (match-kw s) (index (list s) (racketidfont s)))
-@examples[#:hidden #:eval match-eval (require racket/match racket/list)]
+@examples[#:hidden #:eval match-eval (require racket/match racket/list racket/pvector)]
 @examples[#:hidden #:eval match-eval (require (for-syntax racket/base))]
 
 @title[#:tag "match"]{Pattern Matching}
@@ -251,6 +252,46 @@ In more detail, patterns match as follows:
        #:eval match-eval
        (match #(1 (2) (2) (2) 5)
          [(vector 1 (list a) ..3 5) a])
+       ]}
+
+ @item{@racket[(pvector _lvp ...)] --- like a
+       @racketidfont{list} pattern, but matching a pvector from
+       @racketmodname[racket/pvector]. This pattern is a
+       @tech{match expander}, so the @racket[pvector] binding must be
+       in scope. Repetition forms bind variables to lists, as in a
+       @racketidfont{list} pattern. See also
+       @secref["pvector-pattern-matching"].
+
+       @examples[
+       #:eval match-eval
+       (match (pvector 1 (pvector 2) (pvector 2) (pvector 2) 5)
+         [(pvector 1 (pvector a) ..3 5) a])
+       ]}
+
+ @item{@racket[(pvector* _segment ...)] --- matches a pvector from
+       @racketmodname[racket/pvector] by splitting it into element and
+       pvector segments. This pattern is a @tech{match expander}, so
+       the @racket[pvector*] binding must be in scope.
+
+       A @racket[_segment] is either an element pattern,
+       @racket[#:span] @racket[_len-expr] @racket[_pvector-pat], or
+       @racket[#:rest] @racket[_pvector-pat]. The @racket[#:span]
+       segment matches the next @racket[_len-expr] elements as a
+       pvector, while the @racket[#:rest] segment matches the single
+       variable-length interval, if any, as a pvector. At most one
+       @racket[#:rest] segment is allowed. The dotted form
+       @racket[(pvector* _elem-pat ... . _pvector-pat)] is shorthand
+       for a variable-length pvector tail. See also
+       @secref["pvector-pattern-matching"].
+
+       @examples[
+       #:eval match-eval
+       (match (pvector 1 2 3 4 5)
+         [(pvector* 1 #:rest middle 5)
+          (pvector->list middle)])
+       (match (pvector 1 2 3 4 5)
+         [(pvector* #:span 2 left 3 #:span 2 right)
+          (list (pvector->list left) (pvector->list right))])
        ]}
 
  @item{@racket[(#,(match-kw "hash") _expr _pat ... ... _ht-opt)] ---

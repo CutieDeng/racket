@@ -15,6 +15,9 @@ pat     ::= id                                   @match anything, bind identifie
          |  (LIST-NO-ORDER pat ...)              @match pats in any order
          |  (LIST-NO-ORDER pat ... lvp)          @match pats in any order
          |  (VECTOR lvp ...)                     @match vector of pats
+         |  (PVECTOR lvp ...)                    @match pvector of lvps
+         |  (PVECTOR* pv-segment ...)            @match pvector segments
+         |  (PVECTOR* pat ... . pat)             @match pvector elements plus a tail pvector
          |  (HASH expr pat ... ... ht-opt)       @match hash table
          |  (HASH* [expr pat kv-opt] ... ht-opt) @match hash table
          |  (HASH-TABLE (pat pat) ...)           @match hash table - deprecated
@@ -46,6 +49,9 @@ literal ::= #t                                   @match true
          |  pregexp literal                      @match equal% pregexp literal
 lvp     ::= (code:line pat ooo)                  @greedily match pat instances
          |  pat                                  @match pat
+pv-segment ::= pat                               @match one pvector element
+         |  (code:line #:span expr pat)          @match fixed-length pvector segment
+         |  (code:line #:rest pat)               @match variable-length pvector segment
 qp      ::= literal                              @match literal
          |  id                                   @match symbol
          |  (qp ...)                             @match sequences of qps

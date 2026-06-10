@@ -2,11 +2,13 @@
 @(require "mz.rkt"
           (for-label racket/pvector
                      (submod racket/pvector unsafe)
+                     racket/match
                      racket/serialize
                      racket/stream))
 
 @(define pvector-eval (make-base-eval))
 @(pvector-eval '(require racket/pvector
+                         racket/match
                          racket/serialize
                          racket/stream))
 
@@ -72,12 +74,87 @@ Both operations take @math{O(1)} time.
 @defproc[(pvector [v any/c] ...) pvector?]{
 
 Returns a pvector containing the @racket[v]s in order. Constructing a
-pvector of @math{N} elements takes @math{O(N)} time.
+pvector of @math{N} elements takes @math{O(N)} time. The same
+@racket[pvector] binding can be used as a @racket[match] pattern, as
+described in @secref["pvector-pattern-matching"].
 
 @examples[
 #:eval pvector-eval
 (pvector 1 "a" 'apple)
 (pvector->list (pvector 1 2 3))
+(pvector->list (apply pvector '(1 2 3)))
+]}
+
+@section[#:tag "pvector-pattern-matching"]{Pattern Matching}
+
+@racketblock[(pvector elem-pat ...)]
+
+As a @racket[match] pattern, matches a pvector whose elements match
+the @racket[elem-pat]s in order. The element patterns are matched as
+in a @racket[list] pattern, so forms such as @racket[...] and
+@racket[..k] have their usual list-pattern meaning. Variables bound by
+repetition are bound to lists. Use @racket[pvector*] when a
+variable-length interval should be matched as a pvector instead.
+
+The pattern first checks @racket[pvector?]. A non-pvector value does
+not match, even if it is a list or vector with matching elements.
+
+@examples[
+#:eval pvector-eval
+(match (pvector "a" "b" "c")
+  [(pvector first second third)
+   (list third second first)])
+(match (pvector 1 2 3 4)
+  [(pvector 1 xs ..2) xs])
+(match '(1 2 3)
+  [(pvector _ _ _) 'pvector]
+  [_ 'not-a-pvector])
+]
+
+@defform[(pvector* segment ...)
+         #:grammar
+         ([segment elem-pat
+                   (code:line #:span len-expr pvector-pat)
+                   (code:line #:rest pvector-pat)])]{
+
+As a @racket[match] pattern, matches a pvector by splitting it into an
+append-like sequence of element and pvector segments. An
+@racket[elem-pat] segment matches one element. A @racket[#:span]
+segment matches the next @racket[len-expr] elements as a pvector
+against @racket[pvector-pat], where @racket[len-expr] must produce an
+exact nonnegative integer; otherwise, the pattern fails. A
+@racket[#:rest] segment matches the one variable-length interval, if
+any, as a pvector.
+
+At most one @racket[#:rest] segment is allowed. If no variable-length
+segment appears, then the matched pvector must have exactly the total
+length implied by the fixed element and pvector segments. If a
+variable-length segment appears, then it receives all remaining
+elements after the fixed-length constraints are satisfied. The
+@racket[#:span] and @racket[#:rest] keywords are reserved as
+@racket[pvector*] segment markers; other patterns, including
+@racket[(pvector elem-pat ...)] for a pvector-valued element, are
+treated as single element patterns.
+
+The dotted form @racket[(pvector* elem-pat ... . pvector-pat)] is a
+shorthand for a fixed prefix of element patterns followed by a
+variable-length pvector tail.
+
+@examples[
+#:eval pvector-eval
+(define letters (pvector "a" "b" "c" "d" "e"))
+(match letters
+  [(pvector* "a" #:rest middle "e")
+   (pvector->list middle)])
+(match letters
+  [(pvector* #:span 2 left "c" #:span 2 right)
+   (list (pvector->list left) (pvector->list right))])
+(match letters
+  [(pvector* "a" "b" . tail)
+   (pvector->list tail)])
+(match (pvector (pvector "x" "y") "z")
+  [(pvector* (pvector first second) "z")
+   (list first second)])
 ]}
 
 @defproc[(make-pvector [size exact-nonnegative-integer?] [v any/c #f])

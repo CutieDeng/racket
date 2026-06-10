@@ -3,7 +3,9 @@
 (require (prefix-in raw: "private/pvector-runtime-adapter.rkt")
          "private/serialize-structs.rkt"
          (only-in "private/for.rkt" prop:stream)
-         racket/hash-code)
+         racket/hash-code
+         racket/match
+         (for-syntax racket/base))
 
 (provide pvector?
          pvector-empty
@@ -37,7 +39,8 @@
          in-pvector
          in-pvector-reverse
          for/pvector
-         for*/pvector)
+         for*/pvector
+         pvector*)
 
 (struct pvector-wrapper (tree)
   #:sealed
@@ -142,7 +145,7 @@
   (and (pvector-wrapper? v)
        (raw:pvector-empty? (pvector-wrapper-tree v))))
 
-(define (pvector . elems)
+(define (pvector/proc . elems)
   (list->pvector elems))
 
 (define (make-pvector n [v #f])
@@ -371,6 +374,165 @@
   (for*/fold ([pv (pvector-empty)])
              (clause ...)
     (pvector-cons-right pv (let () body ...))))
+
+(define-match-expander pvector
+  (syntax-rules ()
+    [(_) (? pvector-empty?)]
+    [(_ pat ...)
+     (? pvector?
+        (app pvector->list (list pat ...)))])
+  (lambda (stx)
+    (syntax-case stx ()
+      [(_ elem ...) #'(pvector/proc elem ...)]
+      [_ #'pvector/proc])))
+
+(begin-for-syntax
+  (struct pvector*-piece (kind len pat stx) #:transparent)
+
+  (define (pvector*-keyword? stx kw)
+    (and (keyword? (syntax-e stx))
+         (eq? (syntax-e stx) kw)))
+
+  (define (parse-pvector*-pieces who stx elems)
+    (let loop ([elems elems] [pieces null])
+      (cond
+        [(null? elems) (reverse pieces)]
+        [(pvector*-keyword? (car elems) '#:span)
+         (unless (and (pair? (cdr elems)) (pair? (cddr elems)))
+           (raise-syntax-error
+            who
+            "expected a length expression and a pvector pattern after #:span"
+            stx
+            (car elems)))
+         (loop (cdddr elems)
+               (cons (pvector*-piece 'span (cadr elems) (caddr elems) (car elems))
+                     pieces))]
+        [(pvector*-keyword? (car elems) '#:rest)
+         (unless (pair? (cdr elems))
+           (raise-syntax-error
+            who
+            "expected a pvector pattern after #:rest"
+            stx
+            (car elems)))
+         (loop (cddr elems)
+               (cons (pvector*-piece 'rest #f (cadr elems) (car elems))
+                     pieces))]
+        [else
+         (loop (cdr elems)
+               (cons (pvector*-piece 'element #f (car elems) (car elems))
+                     pieces))])))
+
+  (define (count-rest-segments pieces)
+    (for/sum ([piece (in-list pieces)])
+      (if (eq? (pvector*-piece-kind piece) 'rest)
+          1
+          0)))
+
+  (define (checked-pvector*-pieces who stx pieces)
+    (define rest-count (count-rest-segments pieces))
+    (when (> rest-count 1)
+      (raise-syntax-error who
+                          "expected at most one variable-length pvector segment"
+                          stx))
+    pieces)
+
+  (define (generate-pvector*-match who stx pieces)
+    (define checked-pieces (checked-pvector*-pieces who stx pieces))
+    (define has-rest?
+      (for/or ([piece (in-list checked-pieces)])
+        (eq? (pvector*-piece-kind piece) 'rest)))
+    (define fixed-segment-len-bindings null)
+    (define fixed-segment-len-ids null)
+    (define element-count 0)
+    (define runtime-pieces
+      (for/list ([piece (in-list checked-pieces)])
+        (case (pvector*-piece-kind piece)
+          [(element)
+           (set! element-count (add1 element-count))
+           (list #'1 (pvector*-piece-pat piece) #t)]
+          [(rest)
+           (list #'rest-len (pvector*-piece-pat piece) #f)]
+          [else
+           (define len-id
+             (car (generate-temporaries
+                   (list (pvector*-piece-stx piece)))))
+           (set! fixed-segment-len-bindings
+                 (cons #`[#,len-id #,(pvector*-piece-len piece)]
+                       fixed-segment-len-bindings))
+           (set! fixed-segment-len-ids
+                 (cons len-id fixed-segment-len-ids))
+           (list len-id (pvector*-piece-pat piece) #f)])))
+    (define len-bindings (reverse fixed-segment-len-bindings))
+    (define len-ids (reverse fixed-segment-len-ids))
+    (define fixed-total-expr
+      (if (null? len-ids)
+          #`#,element-count
+          #`(+ #,element-count #,@len-ids)))
+    (define len-check-exprs
+      (for/list ([len-id (in-list len-ids)])
+        #`(exact-nonnegative-integer? #,len-id)))
+    (define starts
+      (generate-temporaries
+       (for/list ([i (in-range (add1 (length runtime-pieces)))]) 'pos)))
+    (define values
+      (generate-temporaries
+       (for/list ([piece (in-list runtime-pieces)]) 'piece)))
+    (define extract-bindings
+      (cons #`[#,(car starts) 0]
+            (apply
+             append
+             (for/list ([runtime-piece (in-list runtime-pieces)]
+                        [start (in-list starts)]
+                        [next-start (in-list (cdr starts))]
+                        [value (in-list values)])
+               (define len-expr (car runtime-piece))
+               (define element? (caddr runtime-piece))
+               (list
+                #`[#,value
+                   #,(if element?
+                         #`(pvector-ref pv #,start)
+                         #`(pvector-subvector pv #,start (+ #,start #,len-expr)))]
+                #`[#,next-start (+ #,start #,len-expr)])))))
+    (define pats
+      (for/list ([runtime-piece (in-list runtime-pieces)])
+        (cadr runtime-piece)))
+    (define success-expr
+      #`(let* (#,@extract-bindings)
+          (list #,@values)))
+    (define checked-expr
+      #`(and #,@len-check-exprs
+             (let ([fixed-total #,fixed-total-expr])
+               #,(if has-rest?
+                     #`(let ([rest-len (- total-len fixed-total)])
+                         (and (exact-nonnegative-integer? rest-len)
+                              #,success-expr))
+                     #`(and (= total-len fixed-total)
+                            #,success-expr)))))
+    #`(? pvector?
+         (app (lambda (pv)
+                (define total-len (pvector-length pv))
+                (let (#,@len-bindings)
+                  #,checked-expr))
+              (list #,@pats)))))
+
+(define-match-expander pvector*
+  (lambda (stx)
+    (syntax-case stx ()
+      [(_ seg ...)
+       (generate-pvector*-match
+        'pvector*
+        stx
+        (parse-pvector*-pieces 'pvector* stx (syntax->list #'(seg ...))))]
+      [(_ seg ... . rest-pat)
+       (generate-pvector*-match
+        'pvector*
+        stx
+        (append
+         (parse-pvector*-pieces 'pvector* stx (syntax->list #'(seg ...)))
+         (list (pvector*-piece 'rest
+                               #f
+                               #'rest-pat
+                               #'rest-pat))))])))
 
 (define (pvector-print pv port mode)
   (display "(pvector" port)
