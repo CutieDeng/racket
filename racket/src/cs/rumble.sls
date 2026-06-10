@@ -404,6 +404,30 @@
           vector->immutable-vector
           vector->list
 	  vector-extend
+
+          ;; pvector runtime candidate; not used by public `racket/pvector` yet
+          core-pvector?
+          core-pvector-empty
+          core-pvector-empty?
+          core-pvector-length
+          core-vector->pvector
+          core-list->pvector
+          core-make-pvector
+          core-pvector->vector
+          core-pvector->list
+          core-pvector-ref
+          core-pvector-set
+          core-pvector-cons-left
+          core-pvector-cons-right
+          core-pvector-pop-left
+          core-pvector-pop-right
+          core-pvector-append
+          core-pvector-split-at
+          core-pvector-split-at-right
+          core-pvector-take
+          core-pvector-drop
+          core-pvector-copy
+
           vector*-length
           vector*-ref
           vector*-set!
@@ -923,6 +947,7 @@
   (include "rumble/char-range.ss")
   (include "rumble/list.ss")
   (include "rumble/vector.ss")
+  (include "rumble/pvector.ss")
   (include "rumble/box.ss")
   (include "rumble/immutable.ss")
   (include "rumble/keyword.ss")

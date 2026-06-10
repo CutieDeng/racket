@@ -136,6 +136,7 @@
             "symbol.ss"
             "list.ss"
             "vector.ss"
+            "pvector.ss"
             "box.ss"
             "immutable.ss"
             "keyword.ss"

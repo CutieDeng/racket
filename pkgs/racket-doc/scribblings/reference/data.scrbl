@@ -143,6 +143,9 @@ boxes that are not @tech{impersonators}.
 @include-section["treelists.scrbl"]
 
 @; ----------------------------------------------------------------------
+@include-section["pvectors.scrbl"]
+
+@; ----------------------------------------------------------------------
 @include-section["sequences.scrbl"]
 
 @; ----------------------------------------------------------------------
