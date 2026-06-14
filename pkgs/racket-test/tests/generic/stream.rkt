@@ -1,6 +1,8 @@
 #lang racket
 
-(require racket/generic racket/stream)
+(require racket/generic
+         racket/stream
+         (only-in racket/private/for prop:gen-sequence))
 
 (define-struct list-stream (v)
   #:methods gen:stream
@@ -21,10 +23,23 @@
                                        (vector-length
                                         (vector-stream-v x))))])
 
+(struct sequence+stream (stream-values sequence-values)
+  #:property prop:gen-sequence
+  (lambda (x) (in-list (sequence+stream-sequence-values x)))
+  #:methods gen:stream
+  [(define (stream-empty? x)
+     (empty? (sequence+stream-stream-values x)))
+   (define (stream-first x)
+     (first (sequence+stream-stream-values x)))
+   (define (stream-rest x)
+     (sequence+stream (rest (sequence+stream-stream-values x))
+                      (sequence+stream-sequence-values x)))])
+
 
 
 (module+ test
-  (require rackunit)
+  (require rackunit
+           racket/pvector)
 
   (define l1 (list-stream '(1 2)))
 
@@ -44,4 +59,18 @@
 
   (define s2 (vector-stream 0 '#(1 2 3)))
   (check-equal? (sequence-fold + 0 s2) 6)
+  (define s3 (sequence+stream '(stream values)
+                              '(sequence values)))
+  (check-equal? (stream->list s3)
+                '(stream values))
+  (check-equal? (stream-length s3) 2)
+  (check-equal? (stream-ref s3 1) 'values)
+  (check-equal? (stream->list (stream-tail s3 1)) '(values))
+  (check-equal? (stream->list (stream-take s3 1)) '(stream))
+  (let* ([sep (box 'sep)]
+         [between (stream-add-between (pvector 'a 'b 'c) sep)])
+    (check-true (pvector? between))
+    (check-equal? (stream->list between) (list 'a sep 'b sep 'c))
+    (check-true (eq? (pvector-ref between 1) sep))
+    (check-true (eq? (pvector-ref between 3) sep)))
   )

@@ -6,7 +6,7 @@
          racket/match
          racket/path
          racket/system
-         (prefix-in chunked: racket/private/pvector-chunked))
+         (prefix-in runtime: racket/private/pvector-runtime-adapter))
 
 (define N 10000)
 (define quiet? #f)
@@ -85,7 +85,8 @@
 
 (define (total-objects h)
   (+ (struct-objects h)
-     (href h 'vector-leaves)))
+     (href h 'vector-leaves)
+     (href h 'chunk-index-vectors)))
 
 (define (ratio numerator denominator)
   (/ numerator (max 1 denominator)))
@@ -100,36 +101,36 @@
   (ratio (href h 'retained-elems) (href h 'visible-elems)))
 
 (define (build-compact n)
-  (chunked:list->pvector (build-list n values)))
+  (runtime:list->pvector (build-list n values)))
 
 (define (build-cons-right n)
-  (for/fold ([pv (chunked:pvector-empty)]) ([i (in-range n)])
-    (chunked:pvector-cons-right pv i)))
+  (for/fold ([pv (runtime:pvector-empty)]) ([i (in-range n)])
+    (runtime:pvector-cons-right pv i)))
 
 (define (build-cons-left n)
-  (for/fold ([pv (chunked:pvector-empty)]) ([i (in-range n)])
-    (chunked:pvector-cons-left pv i)))
+  (for/fold ([pv (runtime:pvector-empty)]) ([i (in-range n)])
+    (runtime:pvector-cons-left pv i)))
 
 (define (pop-left-half pv n)
   (for/fold ([pv pv]) ([i (in-range (quotient n 2))])
-    (define-values (_ rest) (chunked:pvector-pop-left pv))
+    (define-values (_ rest) (runtime:pvector-pop-left pv))
     rest))
 
 (define (pop-right-half pv n)
   (for/fold ([pv pv]) ([i (in-range (quotient n 2))])
-    (define-values (_ rest) (chunked:pvector-pop-right pv))
+    (define-values (_ rest) (runtime:pvector-pop-right pv))
     rest))
 
 (define (split-left pv n)
-  (define-values (left right) (chunked:pvector-split-at pv (quotient n 2)))
+  (define-values (left right) (runtime:pvector-split-at pv (quotient n 2)))
   left)
 
 (define (split-right pv n)
-  (define-values (left right) (chunked:pvector-split-at pv (quotient n 2)))
+  (define-values (left right) (runtime:pvector-split-at pv (quotient n 2)))
   right)
 
 (define (subvector-middle pv n)
-  (chunked:pvector-copy pv (quotient n 4) (- n (quotient n 4))))
+  (runtime:pvector-copy pv (quotient n 4) (- n (quotient n 4))))
 
 (define (scenario-values n)
   (define compact (build-compact n))
@@ -175,7 +176,9 @@
     (string->symbol (car m))))
 
 (define (source-record-type-names s)
-  (regexp-symbols #px"\\(define-record-type\\s+([^\\s()\\[\\]]+)" s))
+  (append
+   (regexp-symbols #px"\\(define-record-type\\s+([^\\s()\\[\\]]+)" s)
+   (regexp-symbols #px"\\(define-record-type\\s+\\(([^\\s()\\[\\]]+)" s)))
 
 (define (source-define-names s)
   (append
@@ -208,6 +211,10 @@
 
 (define (source-primitive-names s)
   (regexp-symbols #px"\\[([^\\s\\[\\]]+)\\s" s))
+
+(define (kernel-procedure-provided? name)
+  (with-handlers ([exn:fail? (lambda (_) #f)])
+    (procedure? (dynamic-require ''#%kernel name))))
 
 (define (source-provide-names s)
   (regexp-symbols #px"\\b([^\\s()\\[\\]]+)\\b" s))
@@ -306,7 +313,9 @@
             (define primitive-names (source-primitive-names kernel-source))
             (for ([name (in-list (alist-ref 'names kernel-primitives null))])
               (unless (memq name primitive-names)
-                (fail! "~a is missing primitive entry ~a" kernel-rel name)))))
+                (fail! "~a is missing primitive entry ~a" kernel-rel name))
+              (unless (kernel-procedure-provided? name)
+                (fail! "current #%kernel does not provide primitive ~a" name)))))
         (define candidate-source (file->string candidate-path))
         (with-handlers ([exn:fail?
                          (lambda (exn)
@@ -421,8 +430,8 @@
      list->pvector vector->pvector sequence->pvector pvector->list
      pvector->vector pvector-ref pvector-set pvector-cons-left
      pvector-cons-right pvector-pop-left pvector-pop-right pvector-append
-     pvector-split-at pvector-split-at-right pvector-take pvector-drop
-     pvector-copy))
+     pvector-map pvector-split-at pvector-split-at-right pvector-take pvector-drop
+     pvector-take-right pvector-drop-right pvector-copy))
   (for ([name '(compact cons-right cons-left pop-left-half pop-right-half
                 split-left split-right subvector-middle)])
     (unless (alist-ref name shape-gates)
@@ -430,7 +439,7 @@
 
 (define (check-shape! name pv)
   (define spec (alist-ref name shape-gates))
-  (define h (chunked:pvector-shape-stats pv))
+  (define h (runtime:pvector-shape-stats pv))
   (define obj (objects-per-elem h))
   (define retained (retained-per-visible h))
   (define obj-limit (alist-ref 'max-objects-per-elem spec))

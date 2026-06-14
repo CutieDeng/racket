@@ -5,7 +5,7 @@
  (racket-backend-module . racket/private/pvector-chunked)
  (core-structure-module . racket/private/pvector-core)
  (default-chunk-size . 64)
- (endpoint-pack-limit . 4)
+ (endpoint-pack-limit . 8)
  (measure
   . ((mode . fixed-length)
      (unit . 0)
@@ -29,22 +29,36 @@
          core-pvector-empty
          core-pvector-empty?
          core-pvector-length
-         core-vector->pvector
-         core-list->pvector
-         core-make-pvector
-         core-pvector->vector
-         core-pvector->list
-         core-pvector-ref
-         core-pvector-set
-         core-pvector-cons-left
-         core-pvector-cons-right
-         core-pvector-pop-left
-         core-pvector-pop-right
-         core-pvector-append
-         core-pvector-split-at
+	         core-pvector-shape-stats
+	         core-vector->pvector
+	         core-fixed-chunks->pvector
+	         core-chunks->pvector
+	             core-list->pvector
+	             core-make-pvector
+	             core-pvector->vector
+	             core-pvector->chunk-vector
+             core-pvector-lookup-chunk
+	             core-pvector->list
+	         core-pvector-ref
+	         core-pvector-view-left
+	         core-pvector-view-right
+		         core-pvector-set
+	         core-pvector-cons-left
+	         core-pvector-cons-right
+		         core-pvector-pop-left
+		         core-pvector-pop-right
+		         core-pvector-append
+	         core-pvector-map
+         core-pvector-for-each
+	         core-pvector-split-at
          core-pvector-split-at-right
+         core-pvector-split
+         core-pvector-insert
+         core-pvector-delete
          core-pvector-take
          core-pvector-drop
+         core-pvector-take-right
+         core-pvector-drop-right
          core-pvector-copy))
      (kernel-primitives
       . ((file . "racket/src/cs/primitive/kernel.ss")
@@ -53,23 +67,38 @@
              core-pvector-empty
              core-pvector-empty?
              core-pvector-length
-             core-vector->pvector
+	             core-pvector-shape-stats
+	             core-vector->pvector
+	             core-fixed-chunks->pvector
+	             core-chunks->pvector
              core-list->pvector
-             core-make-pvector
-             core-pvector->vector
-             core-pvector->list
-             core-pvector-ref
-             core-pvector-set
-             core-pvector-cons-left
-             core-pvector-cons-right
-             core-pvector-pop-left
-             core-pvector-pop-right
-             core-pvector-append
-             core-pvector-split-at
+	             core-make-pvector
+	             core-pvector->vector
+	             core-pvector->chunk-vector
+             core-pvector-lookup-chunk
+	             core-pvector->list
+	             core-pvector-ref
+	             core-pvector-view-left
+	             core-pvector-view-right
+		             core-pvector-set
+	             core-pvector-cons-left
+	             core-pvector-cons-right
+		             core-pvector-pop-left
+		             core-pvector-pop-right
+		             core-pvector-append
+	             core-pvector-map
+             core-pvector-for-each
+	             core-pvector-split-at
              core-pvector-split-at-right
+             core-pvector-split
+             core-pvector-insert
+             core-pvector-delete
              core-pvector-take
              core-pvector-drop
-             core-pvector-copy))))
+             core-pvector-take-right
+             core-pvector-drop-right
+             core-pvector-copy))
+         ))
      (record-types
       . (core-pvector
          pvector-leaf-chunk
@@ -85,9 +114,14 @@
      (helpers
       . (default-core-pvector-chunk-size
          core-pvector-endpoint-pack-limit
-         empty-core-pvector-tree
-         empty-core-pvector
-         core-pvector-empty
+	         empty-core-pvector-tree
+	         empty-core-pvector
+         core-empty-pvector/size
+	         make-core-pvector
+	         make-core-pvector/with-chunks
+	         core-pvector-cached-chunks
+	         core-pvector-chunks-fixed-indexed?
+	         core-pvector-empty
          core-pvector-empty?
          pvector-leaf-vector?
          pvector-chunk?
@@ -98,6 +132,10 @@
          pvector-chunk-ref
          pvector-chunk-slice
          pvector-copy-chunk-range
+         pvector-chunk-insert
+         pvector-chunk-delete
+         pvector-copy-chunk-to-vector!
+         pvector-chunk->list/reverse
          pvector-chunk-set
          pvector-chunk-prepend
          pvector-chunk-append
@@ -142,26 +180,64 @@
          pvector-tree-add-right-list
          pvector-tree-add-left-list
          pvector-split-tree
+         pvector-split-tree-left
+         pvector-split-tree-right
+         pvector-insert-node/direct
+         pvector-insert-digit/direct
+         pvector-insert-tree/direct
+         pvector-chunk-insert/splice
+         pvector-insert-node/splice
+         pvector-insert-digit/splice
+         pvector-deep-tree-left-splice
+         pvector-deep-tree-right-splice
+         pvector-insert-tree/splice
          core-pvector-ref-node
+         core-pvector-ref-node1
+         core-pvector-ref-node2
+         core-pvector-ref-digit1
+         core-pvector-ref-digit2
+         core-pvector-ref-node3
+         core-pvector-ref-digit3
+         core-pvector-ref-tree3
+         core-pvector-ref-tree2
+         core-pvector-ref-tree1
          core-pvector-ref-digit
          core-pvector-ref-tree
          core-pvector-ref
+         core-pvector-view-left
+         core-pvector-view-right
          core-pvector-set-node
+         core-pvector-set-node1
+         core-pvector-set-node2
+         core-pvector-set-digit1
+         core-pvector-set-digit2
+         core-pvector-set-tree2
+         core-pvector-set-tree1
          core-pvector-set-digit
          core-pvector-set-tree
          core-pvector-set
          core-pvector-singleton-chunk
-         core-pvector-cons-left
-         core-pvector-cons-right
-         core-pvector-pop-left
-         core-pvector-pop-right
-         core-pvector-append
-         core-pvector-split-at
+	         core-pvector-cons-left
+	         core-pvector-cons-right
+		         core-pvector-pop-left
+		         core-pvector-pop-right
+		         core-pvector-append
+	         core-pvector-map
+	         core-pvector-split-at
          core-pvector-split-at-right
+         core-pvector-split
+         core-pvector-insert
+         pvector-delete-node/direct
+         pvector-delete-digit/direct
+         pvector-delete-tree/direct
+         core-pvector-delete
          core-pvector-take
          core-pvector-drop
+         core-pvector-take-right
+         core-pvector-drop-right
          core-pvector-copy
          core-vector->pvector
+         core-chunks->pvector
          core-list->pvector
          core-make-pvector
          core-pvector-fill-chunk!
@@ -169,6 +245,23 @@
          core-pvector-fill-digit!
          core-pvector-fill-tree!
          core-pvector->vector
+         core-pvector-count-node-chunks
+         core-pvector-count-digit-chunks
+         core-pvector-count-tree-chunks
+         core-pvector-chunk->plain-vector
+         core-pvector-fill-chunk-vector!
+         core-pvector-fill-node-chunk-vector!
+         core-pvector-fill-digit-chunk-vector!
+         core-pvector-fill-tree-chunk-vector!
+         core-pvector->chunk-vector
+         core-pvector-for-each
+         core-pvector-lookup-chunk-node
+         core-pvector-lookup-chunk-digit
+         core-pvector-lookup-chunk-tree
+         core-pvector-lookup-chunk
+         core-pvector-node->list/reverse
+         core-pvector-digit->list/reverse
+         core-pvector-tree->list/reverse
          core-pvector->list))))
  (runtime-adapter
   . ((file . "racket/collects/racket/private/pvector-runtime-adapter.rkt")
@@ -228,11 +321,11 @@
       . (tree-measure node-measure digit-measure tree-cons-left
          tree-cons-right tree-pop-left tree-pop-right tree-concat
          tree-split-at tree-replace-first tree-replace-last))
-     (pvector
-      . (list->pvector vector->pvector sequence->pvector pvector->vector
-         pvector-ref pvector-set pvector-cons-left pvector-cons-right
-         pvector-pop-left pvector-pop-right pvector-append pvector-split-at
-         pvector-take pvector-drop pvector-copy))
+	     (pvector
+	      . (list->pvector vector->pvector sequence->pvector pvector->vector
+	         pvector-ref pvector-set pvector-cons-left pvector-cons-right
+	         pvector-pop-left pvector-pop-right pvector-append pvector-split-at
+	         pvector-map pvector-for-each pvector-take pvector-drop pvector-copy))
      (iteration
       . (pvector-for-each in-pvector in-pvector-reverse))
      (debug-only
@@ -283,10 +376,16 @@
      ((name . pvector-pop-right)
       (arity . 1)
       (kind . endpoint-view))
-     ((name . pvector-append)
-      (arity . any)
-      (kind . concatenate))
-     ((name . pvector-split-at)
+	     ((name . pvector-append)
+	      (arity . any)
+	      (kind . concatenate))
+	     ((name . pvector-map)
+	      (arity . 2)
+	      (kind . traversal))
+     ((name . pvector-for-each)
+      (arity . 2)
+      (kind . traversal))
+	     ((name . pvector-split-at)
       (arity . 2)
       (kind . split))
      ((name . pvector-split-at-right)
@@ -296,6 +395,12 @@
       (arity . 2)
       (kind . slice))
      ((name . pvector-drop)
+      (arity . 2)
+      (kind . slice))
+     ((name . pvector-take-right)
+      (arity . 2)
+      (kind . slice))
+     ((name . pvector-drop-right)
       (arity . 2)
       (kind . slice))
      ((name . pvector-copy)
@@ -317,12 +422,12 @@
      (cons-right
       . ((source . build-cons-right)
          (min-n . 10000)
-         (max-objects-per-elem . 2/5)
+         (max-objects-per-elem . 1/4)
          (max-retained-per-visible . 1)))
      (cons-left
       . ((source . build-cons-left)
          (min-n . 10000)
-         (max-objects-per-elem . 2/5)
+         (max-objects-per-elem . 1/4)
          (max-retained-per-visible . 1)))
      (pop-left-half
       . ((source . pop-left-half)

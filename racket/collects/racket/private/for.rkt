@@ -96,13 +96,20 @@
              stream-rest
              prop:stream
              stream-ref stream-via-prop? ; only provided for racket/stream
+             sequence-via-prop? ; only provided for racket/stream
              sequence->stream
              empty-stream make-do-stream
 
              sequence?
              sequence-generate
              sequence-generate*
+             prop:gen-sequence
              prop:sequence
+             range-sequence->exact-nonnegative-integer
+             range-sequence->exact-integer-range-info
+             range-sequence-exact-integer-range-start
+             range-sequence-exact-integer-range-step
+             range-sequence-exact-integer-range-length
 
              define-sequence-syntax
              make-do-sequence
@@ -655,7 +662,7 @@
                   range?
                   range-ref
                   range-set!)
-    (make-struct-type 'stream #f 3 0 #f
+    (make-struct-type 'stream #f 5 0 #f
                       (list (cons prop:stream
                                   (vector
                                    (lambda (v)
@@ -666,7 +673,9 @@
                                    (lambda (v) (make-range
                                                 ((range-ref v 1) (range-ref v 0))
                                                 (range-ref v 1)
-                                                (range-ref v 2)))))
+                                                (range-ref v 2)
+                                                #f
+                                                #f))))
                             (cons prop:gen-sequence
                                   (lambda (v)
                                     (values
@@ -677,6 +686,46 @@
                                      (range-ref v 2)
                                      #f
                                      #f))))))
+
+  (define (exact-integer-range-info a b step)
+    (and (exact-integer? a)
+         (exact-integer? b)
+         (exact-integer? step)
+         (cond
+           [(step . > . 0)
+            (let ([delta (- b a)])
+              (vector a
+                      step
+                      (if (delta . <= . 0)
+                          0
+                          (quotient (+ delta step -1) step))))]
+           [(step . < . 0)
+            (let ([delta (- a b)]
+                  [neg-step (- step)])
+              (vector a
+                      step
+                      (if (delta . <= . 0)
+                          0
+                          (quotient (+ delta neg-step -1) neg-step))))]
+           [else #f])))
+
+  (define (range-sequence->exact-nonnegative-integer v)
+    (and (range? v)
+         (range-ref v 3)))
+
+  (define (range-sequence->exact-integer-range-info v)
+    (and (range? v)
+         (let ([info (range-ref v 4)])
+           (and (vector? info) info))))
+
+  (define (range-sequence-exact-integer-range-start info)
+    (vector-ref info 0))
+
+  (define (range-sequence-exact-integer-range-step info)
+    (vector-ref info 1))
+
+  (define (range-sequence-exact-integer-range-length info)
+    (vector-ref info 2))
 
   (define (check-range a b step)
     (check-range-generic 'in-range a b step))
@@ -695,8 +744,16 @@
        (let* ([cont? (if (step . >= . 0)
                          (lambda (x) (< x b))
                          (lambda (x) (> x b)))]
-              [inc (lambda (x) (+ x step))])
-         (make-range a inc cont?))]))
+              [inc (lambda (x) (+ x step))]
+              [fast-len
+               (and (eqv? a 0)
+                    (eqv? step 1)
+                    (exact-nonnegative-integer? b)
+                    b)]
+              [fast-info
+               (and (not fast-len)
+                    (exact-integer-range-info a b step))])
+         (make-range a inc cont? fast-len fast-info))]))
 
   (define in-inclusive-range
     (case-lambda
@@ -707,7 +764,7 @@
                          (lambda (x) (<= x b))
                          (lambda (x) (>= x b)))]
               [inc (lambda (x) (+ x step))])
-         (make-range a inc cont?))]))
+         (make-range a inc cont? #f #f))]))
 
   (define (:integer-gen v)
     (values values #f add1 0 (lambda (i) (i . < . v)) #f #f))
@@ -726,7 +783,7 @@
       [() (in-naturals 0)]
       [(n)
        (check-naturals n)
-       (make-range n add1 #f)]))
+       (make-range n add1 #f #f #f)]))
 
   (define-values (struct:list-stream
                   make-list-stream

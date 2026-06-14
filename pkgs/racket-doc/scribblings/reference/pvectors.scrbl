@@ -31,6 +31,18 @@ is not observable except through performance and memory use.
 Pvectors can be used directly as single-valued @tech{sequences}. They
 can also be used as @tech{streams}; using @racket[stream-rest] on a
 non-empty pvector produces a pvector with the first element removed.
+Using @racket[stream->list], @racket[stream-length],
+@racket[stream-ref], @racket[stream-tail], or @racket[stream-take] on
+a pvector stream produces results consistent with the corresponding
+pvector conversion, length, reference, and slicing operations. Appending
+only pvector streams with @racket[stream-append] produces a pvector, and
+using @racket[stream-add-between] on a pvector produces a pvector.
+Using @racket[stream-map] with @racket[values] or @racket[void] on a
+pvector produces a pvector. Using @racket[stream-filter] with
+@racket[values] or @racket[void] on a pvector produces a pvector.
+Traversal operations such as @racket[stream-for-each],
+@racket[stream-fold], @racket[stream-count], @racket[stream-andmap],
+and @racket[stream-ormap] visit pvector elements in order.
 Pvectors compare with @racket[equal?] element by element, print as
 @racket[(pvector elem ...)], and are serializable.
 
@@ -296,6 +308,32 @@ the elements of @racket[other-pv].
 (pvector-append (pvector 1 2) (pvector 3 4))
 ]}
 
+@defproc[(pvector-map [pv pvector?] [proc (any/c . -> . any/c)]) pvector?]{
+
+Produces a pvector by applying @racket[proc] to each element of
+@racket[pv] and gathering the results into a new pvector. For a
+constant-time @racket[proc], this operation takes @math{O(N)} time.
+
+@examples[
+#:eval pvector-eval
+(pvector-map (pvector 1 2 3) add1)
+]}
+
+@defproc[(pvector-for-each [pv pvector?] [proc (any/c . -> . any)])
+         void?]{
+
+Applies @racket[proc] to each element of @racket[pv], ignoring the
+results. For a constant-time @racket[proc], this operation takes
+@math{O(N)} time.
+
+@examples[
+#:eval pvector-eval
+(define nums (pvector 1 2 3))
+(define total 0)
+(pvector-for-each nums (lambda (v) (set! total (+ total v))))
+total
+]}
+
 @defproc[(pvector-insert [pv pvector?]
                          [pos exact-nonnegative-integer?]
                          [v any/c])
@@ -429,19 +467,36 @@ but these functions make the intended traversal direction explicit.
 ]}
 
 @deftogether[(
-@defform[(for/pvector (for-clause ...) body-or-break ... body)]
-@defform[(for*/pvector (for-clause ...) body-or-break ... body)]
+@defform/subs[(for/pvector maybe-length (for-clause ...) body-or-break ... body)
+              ([maybe-length (code:line)
+                             (code:line #:length length-expr)
+                             (code:line #:length length-expr #:fill fill-expr)])
+              #:contracts ([length-expr exact-nonnegative-integer?])]
+@defform/subs[(for*/pvector maybe-length (for-clause ...) body-or-break ... body)
+              ([maybe-length (code:line)
+                             (code:line #:length length-expr)
+                             (code:line #:length length-expr #:fill fill-expr)])
+              #:contracts ([length-expr exact-nonnegative-integer?])]
 )]{
 
-Like @racket[for/list] and @racket[for*/list], but produces a
-@tech{pvector}.
+Like @racket[for/vector] and @racket[for*/vector], but produces a
+@tech{pvector}. If @racket[#:length] is specified, the result of
+@racket[length-expr] determines the length of the result pvector, and
+iteration stops when that many elements have been produced. If fewer
+elements are produced, the remaining elements are initialized to
+@racket[fill-expr], which defaults to @racket[0].
 
 @examples[
 #:eval pvector-eval
 (for/pvector ([i (in-range 5)])
   (* i i))
+(for/pvector #:length 4 #:fill 'done ([i (in-range 2)])
+  i)
 (for*/pvector ([i (in-range 3)]
                [j (in-range 2)])
+  (list i j))
+(for*/pvector #:length 4 ([i (in-range 3)]
+                          [j (in-range 2)])
   (list i j))
 ]}
 
@@ -460,6 +515,17 @@ pvector.
 If these constraints are violated, behavior is unpredictable. Use the
 unsafe operations only when the constraints are guaranteed by other
 parts of the program and avoiding checks matters.
+
+@deftogether[(
+@defproc[(unsafe-pvector->list [pv pvector?]) list?]
+@defproc[(unsafe-pvector->vector [pv pvector?]) vector?]
+@defproc[(unsafe-pvector->chunk-vector [pv pvector?]) vector?]
+)]{
+
+Unchecked variants of @racket[pvector->list] and
+@racket[pvector->vector]. The @racket[unsafe-pvector->chunk-vector]
+procedure returns a vector of immutable internal chunks for low-level
+iteration; the chunk shape is unspecified and may change.}
 
 @deftogether[(
 @defproc[(unsafe-pvector-length [pv pvector?]) exact-nonnegative-integer?]

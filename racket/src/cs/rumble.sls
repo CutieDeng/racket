@@ -410,22 +410,37 @@
           core-pvector-empty
           core-pvector-empty?
           core-pvector-length
-          core-vector->pvector
-          core-list->pvector
+	          core-pvector-shape-stats
+	          core-vector->pvector
+	          core-fixed-chunks->pvector
+	          core-chunks->pvector
+	          core-list->pvector
           core-make-pvector
           core-pvector->vector
+          core-pvector->chunk-vector
+          core-pvector->chunk-vector/shared
+          core-pvector-lookup-chunk
           core-pvector->list
           core-pvector-ref
+          core-pvector-view-left
+          core-pvector-view-right
           core-pvector-set
-          core-pvector-cons-left
-          core-pvector-cons-right
-          core-pvector-pop-left
-          core-pvector-pop-right
-          core-pvector-append
+	          core-pvector-cons-left
+	          core-pvector-cons-right
+	          core-pvector-pop-left
+	          core-pvector-pop-right
+	          core-pvector-append
+          core-pvector-map
+          core-pvector-for-each
           core-pvector-split-at
           core-pvector-split-at-right
+          core-pvector-split
+          core-pvector-insert
+          core-pvector-delete
           core-pvector-take
           core-pvector-drop
+          core-pvector-take-right
+          core-pvector-drop-right
           core-pvector-copy
 
           vector*-length
