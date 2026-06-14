@@ -610,6 +610,20 @@
       (check-equal? (adapter:pvector-ref set-pv* 4096) 'x)
       (check-equal? (adapter:pvector-ref set-pv* 4097) 'y)
       (check-equal? (hash-ref stats 'chunk-index-vectors 0) 0))
+    (let* ([pv (adapter:list->pvector (range 130))]
+           [set-pv (adapter:pvector-set pv 64 6400)]
+           [set-pv* (adapter:pvector-set set-pv 65 6500)]
+           [set-xs (append (range 64) '(6400) (range 65 130))]
+           [set-xs* (append (range 64) '(6400 6500) (range 66 130))]
+           [stats (adapter:pvector-shape-stats set-pv*)]
+           [seen null])
+      (check-model (adapter:pvector-map set-pv add1)
+                   (map add1 set-xs))
+      (adapter:pvector-for-each set-pv*
+                                (lambda (x) (set! seen (cons x seen))))
+      (check-equal? (reverse seen) set-xs*)
+      (check-equal? (hash-ref stats 'edit-leaves 0) 1)
+      (check-equal? (hash-ref stats 'edit-leaf-edits 0) 2))
     (let* ([pv (adapter:list->pvector (range 8192))]
            [consed (adapter:pvector-cons-left pv 'x)]
            [stats (adapter:pvector-shape-stats consed)])

@@ -460,12 +460,28 @@
          [(pvector-leaf-vector? chunk)
           (inc! 'vector-leaves 1)
           (inc! 'retained-elems len)]
-         [else
+         [(pvector-leaf-chunk? chunk)
           (let ([vec (pvector-leaf-chunk-vector chunk)])
             (inc! 'slice-leaves 1)
             (unless (hash-ref slice-bases vec #f)
               (inc! 'retained-elems (#%vector-length vec))
-              (hash-set! slice-bases vec #t)))])))
+              (hash-set! slice-bases vec #t)))]
+         [else
+          (let ([base (pvector-edit-chunk-base chunk)])
+            (inc! 'edit-leaves 1)
+            (inc! 'edit-leaf-edits (pvector-edit-chunk-count chunk))
+            (cond
+             [(pvector-leaf-vector? base)
+              (unless (hash-ref slice-bases base #f)
+                (inc! 'retained-elems (#%vector-length base))
+                (hash-set! slice-bases base #t))]
+             [(pvector-leaf-chunk? base)
+              (let ([vec (pvector-leaf-chunk-vector base)])
+                (unless (hash-ref slice-bases vec #f)
+                  (inc! 'retained-elems (#%vector-length vec))
+                  (hash-set! slice-bases vec #t)))]
+             [else
+              (inc! 'retained-elems len)]))])))
     (define (walk-node node depth)
       (note-depth! depth)
       (cond
@@ -4754,9 +4770,7 @@
   (if (pvector-leaf-vector? chunk)
       chunk
       (pvector-vector->immutable
-       (pvector-vector-copy-range (pvector-leaf-chunk-vector chunk)
-                                  (pvector-leaf-chunk-start chunk)
-                                  (pvector-leaf-chunk-end chunk)))))
+       (pvector-chunk->vector chunk))))
 
 (define (core-pvector-chunks-plain? chunks)
   (let ([count (#%vector-length chunks)])
@@ -5130,12 +5144,18 @@
         (unless (fx= elem-i len)
           (proc (#3%vector-ref chunk elem-i))
           (loop (fx+ elem-i 1)))))]
-   [else
+   [(pvector-leaf-chunk? chunk)
     (let ([vec (pvector-leaf-chunk-vector chunk)]
           [end (pvector-leaf-chunk-end chunk)])
       (let loop ([elem-i (pvector-leaf-chunk-start chunk)])
         (unless (fx= elem-i end)
           (proc (#3%vector-ref vec elem-i))
+          (loop (fx+ elem-i 1)))))]
+   [else
+    (let ([len (pvector-chunk-length chunk)])
+      (let loop ([elem-i 0])
+        (unless (fx= elem-i len)
+          (proc (pvector-chunk-ref chunk elem-i))
           (loop (fx+ elem-i 1)))))]))
 
 (define (core-pvector-for-each-node node depth proc)
