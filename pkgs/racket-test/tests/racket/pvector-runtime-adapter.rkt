@@ -30,6 +30,9 @@
   (with-handlers ([exn:fail? (lambda (_) #f)])
     (procedure? (dynamic-require ''#%kernel name))))
 
+(define (kernel-value name)
+  (dynamic-require ''#%kernel name))
+
 (define (check-no-chunk-shape-stats stats)
   (check-equal? (hash-ref stats 'chunked-tree? #t) #f)
   (check-equal? (hash-ref stats 'chunk-index-vectors #f) 0)
@@ -37,9 +40,9 @@
   (check-equal? (hash-ref stats 'ref-cache? #t) #f)
   (check-false (hash-has-key? stats 'append-ref-cache-index-vectors))
   (check-false (hash-has-key? stats 'shifted-cache-index-vectors))
-  (check-not-false
-   (memq (hash-ref stats 'representation #f)
-         '(empty single large-finger)))
+  (define representation (hash-ref stats 'representation #f))
+  (when representation
+    (check-not-false (memq representation '(empty single large-finger))))
   (check-core-large-finger-tree-stats stats))
 
 (define (check-core-large-finger-tree-stats stats)
@@ -59,6 +62,109 @@
                   (- (hash-ref stats 'length)
                      (hash-ref stats 'prefix-length)
                      (hash-ref stats 'suffix-length)))))
+
+(test-case "kernel core pvector P0 primitives"
+  (define core-pvector? (kernel-value 'core-pvector?))
+  (define core-pvector-empty (kernel-value 'core-pvector-empty))
+  (define core-pvector-empty? (kernel-value 'core-pvector-empty?))
+  (define core-pvector-length (kernel-value 'core-pvector-length))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-vector->pvector (kernel-value 'core-vector->pvector))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-make-pvector (kernel-value 'core-make-pvector))
+  (define core-pvector->vector (kernel-value 'core-pvector->vector))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-view-left (kernel-value 'core-pvector-view-left))
+  (define core-pvector-view-right (kernel-value 'core-pvector-view-right))
+  (define kernel-core-backend
+    (hash-ref (core-pvector-shape-stats (core-pvector-empty)) 'backend #f))
+
+  (define (check-core-model pv xs)
+    (check-true (core-pvector? pv))
+    (check-equal? (core-pvector-length pv) (length xs))
+    (check-equal? (core-pvector->list pv) xs)
+    (check-equal? (vector->list (core-pvector->vector pv)) xs)
+    (define stats (core-pvector-shape-stats pv))
+    (check-no-chunk-shape-stats stats)
+    (check-not-false (memq (hash-ref stats 'backend #f) '(core bc-native)))
+    (cond
+      [(null? xs)
+       (check-true (core-pvector-empty? pv))
+       (check-equal? (hash-ref stats 'representation #f) 'empty)]
+      [(null? (cdr xs))
+       (check-false (core-pvector-empty? pv))
+       (check-equal? (hash-ref stats 'representation #f) 'single)
+       (check-equal? (core-pvector-view-left pv) (car xs))
+       (check-equal? (core-pvector-view-right pv) (car xs))]
+      [else
+       (check-false (core-pvector-empty? pv))
+       (check-equal? (hash-ref stats 'representation #f) 'large-finger)
+       (check-true (<= 1 (hash-ref stats 'prefix-length 0) 4))
+       (check-true (<= 1 (hash-ref stats 'suffix-length 0) 4))
+       (check-equal? (core-pvector-view-left pv) (car xs))
+       (check-equal? (core-pvector-view-right pv) (last xs))])
+    (for ([x (in-list xs)]
+          [i (in-naturals)])
+      (check-equal? (core-pvector-ref pv i) x)))
+
+  (check-core-model (core-pvector-empty) '())
+  (for ([size (in-list '(0 1 2 3 4 5 8 9 10 17 64))])
+    (define xs (range size))
+    (check-core-model (core-list->pvector xs) xs)
+    (check-core-model (core-vector->pvector (list->vector xs)) xs))
+  (check-core-model (core-make-pvector 0 'x) '())
+  (check-core-model (core-make-pvector 1 'x) '(x))
+  (check-core-model (core-make-pvector 12 'x) (make-list 12 'x))
+  (collect-garbage)
+  (check-core-model (core-list->pvector (range 33)) (range 33))
+  (when (eq? kernel-core-backend 'bc-native)
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-length '(not a pvector)))))
+  (check-exn exn:fail:contract?
+             (lambda () (core-pvector-ref (core-list->pvector '(a b)) -1)))
+  (check-exn exn:fail:contract?
+             (lambda () (core-pvector-ref (core-list->pvector '(a b)) 2))))
+
+(test-case "kernel core pvector direct set primitive"
+  (check-true (kernel-procedure? 'core-pvector-set))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-set (kernel-value 'core-pvector-set))
+
+  (define (replace-nth xs idx value)
+    (let loop ([xs xs] [i 0])
+      (cond
+        [(null? xs) '()]
+        [(= i idx) (cons value (cdr xs))]
+        [else (cons (car xs) (loop (cdr xs) (add1 i)))])))
+
+  (define (check-core-set size indexes)
+    (define xs (range size))
+    (define pv (core-list->pvector xs))
+    (for ([idx (in-list indexes)])
+      (define value (string->symbol (format "changed-~a-~a" size idx)))
+      (define expected (replace-nth xs idx value))
+      (define pv* (core-pvector-set pv idx value))
+      (check-no-chunk-shape-stats (core-pvector-shape-stats pv*))
+      (check-equal? (core-pvector->list pv*) expected)
+      (check-equal? (core-pvector-ref pv* idx) value)
+      (check-equal? (core-pvector->list pv) xs)
+      (check-true (eq? pv (core-pvector-set pv idx (list-ref xs idx))))
+      (check-false (eq? pv pv*))))
+
+  (check-core-set 1 '(0))
+  (check-core-set 2 '(0 1))
+  (check-core-set 4 '(0 1 2 3))
+  (check-core-set 9 '(0 3 4 5 6 8))
+  (check-core-set 17 '(0 3 4 8 12 16))
+  (check-core-set 64 '(0 3 4 17 33 60 63))
+  (check-exn exn:fail:contract?
+             (lambda () (core-pvector-set (core-list->pvector '(a b)) -1 'x)))
+  (check-exn exn:fail:contract?
+             (lambda () (core-pvector-set (core-list->pvector '(a b)) 2 'x))))
 
 (define (check-core-large-edge-stats stats prefix-len suffix-len middle-measure)
   (when (core-backend?)

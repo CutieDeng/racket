@@ -169,6 +169,8 @@ scheme_init_type ()
   set_name(scheme_hash_tree_collision_type, "<hash-node>");
   set_name(scheme_bucket_table_type, "<hash>");
   set_name(scheme_stencil_vector_type, "<stencil-vector>");
+  set_name(scheme_pvector_type, "<pvector>");
+  set_name(scheme_pvector_node_type, "<pvector-node>");
   set_name(scheme_case_closure_type, "<procedure>");
   set_name(scheme_placeholder_type, "<placeholder>");
   set_name(scheme_table_placeholder_type, "<hash-table-placeholder>");
@@ -595,6 +597,8 @@ void scheme_register_traversers(void)
   GC_REG_TRAV(scheme_mutable_pair_type, cons_cell);
   GC_REG_TRAV(scheme_raw_pair_type, cons_cell);
   GC_REG_TRAV(scheme_vector_type, vector_obj);
+  GC_REG_TRAV(scheme_pvector_type, pvector_obj);
+  GC_REG_TRAV(scheme_pvector_node_type, pvector_node_obj);
   GC_REG_TRAV(scheme_flvector_type, flvector_obj);
 #ifdef MZ_LONG_DOUBLE
   GC_REG_TRAV(scheme_extflvector_type, extflvector_obj);

@@ -279,6 +279,7 @@ static void init_startup_env(void)
   MZTIMEIT(portfun, scheme_init_port_fun(env));
   MZTIMEIT(string, scheme_init_string(env));
   MZTIMEIT(vector, scheme_init_vector(env));
+  MZTIMEIT(pvector, scheme_init_pvector(env));
   MZTIMEIT(char, scheme_init_char(env));
   MZTIMEIT(bool, scheme_init_bool(env));
   MZTIMEIT(syntax, scheme_init_compile(env));

@@ -765,7 +765,11 @@ const ffi_type ffi_type_slongdouble = {
   FFI_TYPE_STRUCT, NULL
 };
 #else /* _MSC_VER undefined */
+#ifdef MZ_LONG_DOUBLE
 #define ffi_type_slongdouble ffi_type_longdouble
+#else /* MZ_LONG_DOUBLE undefined */
+#define ffi_type_slongdouble ffi_type_double
+#endif /* MZ_LONG_DOUBLE */
 #endif /* _MSC_VER */
 #ifdef MZ_LONG_DOUBLE
 #define SCHEME_MAYBE_LONG_DBL_VAL(x) SCHEME_LONG_DBL_VAL(x)

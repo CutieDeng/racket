@@ -159,6 +159,7 @@
       "port.c"
       "portfun.c"
       "print.c"
+      "pvector.c"
       "rational.c"
       "read.c"
       "regexp.c"
@@ -677,6 +678,7 @@
 
         ;; Phase2 "cstartup.inc" generation as a compiled form of "startup.inc"
         [:target ,phase2/cstartup.inc (,(at-source "src/startup.inc")
+                                       ,(at-source "src/schminc.h")
                                        ,(input-data-target 'cify cify-mode)
                                        ,(input-data-target 'version (racket-version)))
                  ,(lambda (path token)
@@ -687,7 +689,7 @@
                                     [(equal? cify-mode "yes") #t]
                                     [(equal? cify-mode "no") #f]
                                     [provided-racket? #f]
-				    [(eq? windows-arch 'arm64)
+                                    [(eq? windows-arch 'arm64)
 				     ;; The cified expander on Arm64 triggers frequent C stack
 				     ;; overflows, which is especially bad for RacketCGC, but
 				     ;; generally causes trouble. It doesn't seem work sorting out
@@ -706,7 +708,8 @@
                     (cond
                       [cify?
                        (racket (bootstrap-racket-config config racketcgc1)
-                               (setup-boot at-dir config (hash 'dep-file "cstartup.d"))
+                               (setup-boot at-dir config (hash 'compiled-subdir "compiled/cstartup"
+                                                               'dep-file "cstartup.d"))
                                (at-source "src/cify-startup.rkt")
                                path
                                (at-source "src/startup.inc")
@@ -1115,6 +1118,7 @@
 
         ;; Phase1 startup
         [:target ,startup1.o (,(at-source "src/startup.c") ,@common-headers
+                                                           ,(at-source "src/schminc.h")
                                                            ,phase1/cstartup.inc
                                                            ,(at-source "src/startup.inc"))
                  ,(lambda (path token)
@@ -1296,6 +1300,8 @@
                src-names)
 
         [:depend ,(at-dir "xsrc/startup.c") (,phase2/cstartup.inc)]
+        [:depend ,(at-dir "xsrc/env.c") (,(at-source "src/schminc.h"))]
+        [:depend ,(at-dir "xsrc/read.c") (,(at-source "src/schminc.h"))]
 
         ;; Main file compiled for 3m
         ,@(map (lambda (main.c gracket?)
