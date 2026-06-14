@@ -15,7 +15,12 @@
          pvector-empty?
          pvector
          make-pvector
+         fresh-vector->pvector
          small-immutable-vector->pvector
+         single-value->pvector
+         two-values->pvector
+         three-values->pvector
+         four-values->pvector
          list->pvector
          pvector->list
          vector->pvector
@@ -70,7 +75,12 @@
 (define core-vector->pvector (maybe-kernel 'core-vector->pvector))
 (define core-immutable-vector->pvector
   (maybe-kernel 'core-immutable-vector->pvector))
+(define core-fresh-vector->pvector (maybe-kernel 'core-fresh-vector->pvector))
 (define core-list->pvector (maybe-kernel 'core-list->pvector))
+(define core-make-single-pvector (maybe-kernel 'core-make-single-pvector))
+(define core-make-deep2-pvector (maybe-kernel 'core-make-deep2-pvector))
+(define core-make-deep3-pvector (maybe-kernel 'core-make-deep3-pvector))
+(define core-make-deep4-pvector (maybe-kernel 'core-make-deep4-pvector))
 (define core-make-pvector (maybe-kernel 'core-make-pvector))
 (define core-pvector->vector (maybe-kernel 'core-pvector->vector))
 (define core-pvector->list (maybe-kernel 'core-pvector->list))
@@ -104,7 +114,12 @@
         core-pvector-shape-stats
         core-vector->pvector
         core-immutable-vector->pvector
+        core-fresh-vector->pvector
         core-list->pvector
+        core-make-single-pvector
+        core-make-deep2-pvector
+        core-make-deep3-pvector
+        core-make-deep4-pvector
         core-make-pvector
         core-pvector->vector
         core-pvector->list
@@ -156,8 +171,13 @@
 
 (define core-builder-block-size 64)
 
+(define (fresh-vector->pvector vec)
+  (if core-available?
+      (core-fresh-vector->pvector vec)
+      (fallback:vector->pvector vec)))
+
 (define (fresh-vector->core-pvector vec)
-  (core-immutable-vector->pvector (vector->immutable-vector vec)))
+  (core-fresh-vector->pvector vec))
 
 (define-syntax-rule (with-core-pvector-builder emit body ...)
   (let* ([len 0]
@@ -200,20 +220,63 @@
             (vector-copy vec 0 len)))])))
 
 (define (small-immutable-vector->pvector chunk len)
+  (cond
+    [(not core-available?)
+     (fallback:vector->pvector
+      (if (= len (vector-length chunk))
+          chunk
+          (vector-copy chunk 0 len)))]
+    [(= len 1)
+     (core-make-single-pvector (vector-ref chunk 0))]
+    [(= len 2)
+     (core-make-deep2-pvector (vector-ref chunk 0) (vector-ref chunk 1))]
+    [(= len 3)
+     (core-make-deep3-pvector
+      (vector-ref chunk 0)
+      (vector-ref chunk 1)
+      (vector-ref chunk 2))]
+    [(= len 4)
+     (core-make-deep4-pvector
+      (vector-ref chunk 0)
+      (vector-ref chunk 1)
+      (vector-ref chunk 2)
+      (vector-ref chunk 3))]
+    [else
+     (core-immutable-vector->pvector
+      (cond
+        [(= len (vector-length chunk))
+         (if (immutable? chunk)
+             chunk
+             (vector->immutable-vector chunk))]
+        [else
+         (vector->immutable-vector (vector-copy chunk 0 len))]))]))
+
+(define (single-value->pvector value)
   (if core-available?
-      (core-immutable-vector->pvector
-       (cond
-         [(= len (vector-length chunk))
-          (if (immutable? chunk)
-              chunk
-              (vector->immutable-vector chunk))]
-         [else
-          (vector->immutable-vector (vector-copy chunk 0 len))]))
-      (fallback:vector->pvector chunk)))
+      (core-make-single-pvector value)
+      (fallback:pvector value)))
+
+(define (two-values->pvector left-value right-value)
+  (if core-available?
+      (core-make-deep2-pvector left-value right-value)
+      (fallback:pvector left-value right-value)))
+
+(define (three-values->pvector a b c)
+  (if core-available?
+      (core-make-deep3-pvector a b c)
+      (fallback:pvector a b c)))
+
+(define (four-values->pvector a b c d)
+  (if core-available?
+      (core-make-deep4-pvector a b c d)
+      (fallback:pvector a b c d)))
 
 (define (small-vector->pvector vec len)
   (if core-available?
-      (small-immutable-vector->pvector (vector->immutable-vector vec) len)
+      (fresh-vector->pvector
+       (if (= len (vector-length vec))
+           vec
+           (vector-copy vec 0 len)))
       (fallback:vector->pvector vec)))
 
 (define pvector?
@@ -235,9 +298,26 @@
   (if core-available? core-list->pvector fallback:list->pvector))
 
 (define (vector->pvector vec)
-  (if (and (vector? vec) (zero? (vector-length vec)))
-      (pvector-empty)
-      (vector->pvector/backend vec)))
+  (if (and core-available? (vector? vec))
+      (case (vector-length vec)
+        [(0) (pvector-empty)]
+        [(1) (core-make-single-pvector (vector-ref vec 0))]
+        [(2) (core-make-deep2-pvector (vector-ref vec 0) (vector-ref vec 1))]
+        [(3)
+         (core-make-deep3-pvector
+          (vector-ref vec 0)
+          (vector-ref vec 1)
+          (vector-ref vec 2))]
+        [(4)
+         (core-make-deep4-pvector
+          (vector-ref vec 0)
+          (vector-ref vec 1)
+          (vector-ref vec 2)
+          (vector-ref vec 3))]
+        [else (vector->pvector/backend vec)])
+      (if (and (vector? vec) (zero? (vector-length vec)))
+          (pvector-empty)
+          (vector->pvector/backend vec))))
 
 (define (list->pvector lst)
   (match lst
@@ -311,7 +391,7 @@
       #'[(len) (pvector elem ...)]))
 
   (define (small-make-pvector-clauses stx value-id)
-    (for/list ([len (in-range 1 (add1 64))])
+    (for/list ([len (in-range 1 5)])
       (small-make-pvector-clause stx len value-id))))
 
 (define-syntax (small-make-pvector-dispatch stx)
@@ -328,7 +408,7 @@
     [(and core-available?
           (fixnum? len)
           (unsafe-fx<= 0 len)
-          (unsafe-fx<= len 64))
+          (unsafe-fx<= len 4))
      (small-make-pvector-dispatch len value)]
     [core-available?
      (core-make-pvector len value)]
@@ -342,14 +422,28 @@
   (define (small-pvector-proc-clause stx len)
     (define ids (generate-temporaries
                  (for/list ([i (in-range len)]) 'elem)))
-    (if (<= len pvector-single-chunk-arity-limit)
-        (with-syntax ([(elem ...) ids]
-                      [len (datum->syntax stx len)])
-          #'[(elem ...)
-             (small-immutable-vector->pvector (vector-immutable elem ...) len)])
-        (with-syntax ([(elem ...) ids])
-          #'[(elem ...)
-             (vector->pvector/backend (vector-immutable elem ...))])))
+    (cond
+      [(= len 1)
+       (with-syntax ([(elem) ids])
+         #'[(elem) (single-value->pvector elem)])]
+      [(= len 2)
+       (with-syntax ([(left right) ids])
+         #'[(left right) (two-values->pvector left right)])]
+      [(= len 3)
+       (with-syntax ([(a b c) ids])
+         #'[(a b c) (three-values->pvector a b c)])]
+      [(= len 4)
+       (with-syntax ([(a b c d) ids])
+         #'[(a b c d) (four-values->pvector a b c d)])]
+      [(<= len pvector-single-chunk-arity-limit)
+       (with-syntax ([(elem ...) ids]
+                     [len (datum->syntax stx len)])
+         #'[(elem ...)
+            (small-immutable-vector->pvector (vector-immutable elem ...) len)])]
+      [else
+       (with-syntax ([(elem ...) ids])
+         #'[(elem ...)
+            (vector->pvector/backend (vector-immutable elem ...))])]))
 
   (define (small-pvector-proc-clauses stx)
     (for/list ([len (in-range 1 (add1 pvector-fixed-vector-arity-limit))])
@@ -401,12 +495,19 @@
   (if core-available? core-pvector->list fallback:pvector->list))
 
 (define (small-integer-range->pvector len)
-  (define vec (make-vector len))
-  (let loop ([i 0])
-    (unless (unsafe-fx= i len)
-      (unsafe-vector-set! vec i i)
-      (loop (unsafe-fx+ i 1))))
-  (small-vector->pvector vec len))
+  (case len
+    [(0) (core-pvector-empty)]
+    [(1) (core-make-single-pvector 0)]
+    [(2) (core-make-deep2-pvector 0 1)]
+    [(3) (core-make-deep3-pvector 0 1 2)]
+    [(4) (core-make-deep4-pvector 0 1 2 3)]
+    [else
+     (define vec (make-vector len))
+     (let loop ([i 0])
+       (unless (unsafe-fx= i len)
+         (unsafe-vector-set! vec i i)
+         (loop (unsafe-fx+ i 1))))
+     (small-vector->pvector vec len)]))
 
 (define (integer-range->pvector len)
   (cond
@@ -426,6 +527,19 @@
   (cond
     [(unsafe-fx= len 0)
      (core-pvector-empty)]
+    [(unsafe-fx= len 1)
+     (core-make-single-pvector start)]
+    [(unsafe-fx= len 2)
+     (core-make-deep2-pvector start (+ start step))]
+    [(unsafe-fx= len 3)
+     (let* ([b (+ start step)]
+            [c (+ b step)])
+       (core-make-deep3-pvector start b c))]
+    [(unsafe-fx= len 4)
+     (let* ([b (+ start step)]
+            [c (+ b step)]
+            [d (+ c step)])
+       (core-make-deep4-pvector start b c d))]
     [else
      (define vec (make-vector len))
      (let loop ([i 0] [elem start])
@@ -440,7 +554,7 @@
   (define len (vector-ref info 2))
   (if (and core-available? (fixnum? len))
       (arithmetic-range->pvector start step len)
-      (vector->pvector
+      (fresh-vector->pvector
        (for/vector #:length len ([i (in-range len)])
          (+ start (* i step))))))
 
@@ -451,7 +565,7 @@
      => (lambda (len)
           (if (and core-available? (fixnum? len))
               (integer-range->pvector len)
-              (vector->pvector
+              (fresh-vector->pvector
                (for/vector #:length len ([elem (in-range len)])
                  elem))))]
     [(range-sequence->exact-integer-range-info seq)
@@ -459,7 +573,7 @@
     [(exact-nonnegative-integer? seq)
      (if (and core-available? (fixnum? seq))
          (integer-range->pvector seq)
-         (vector->pvector
+         (fresh-vector->pvector
           (for/vector #:length seq ([elem (in-range seq)])
             elem)))]
     [(list? seq) (list->pvector seq)]
@@ -478,7 +592,7 @@
 (define (in-range-length-end->pvector end)
   (if (exact-nonnegative-integer? end)
       (sequence->pvector end)
-      (vector->pvector
+      (fresh-vector->pvector
        (for/vector #:length end ([elem (in-range end)])
          elem))))
 
@@ -657,10 +771,14 @@
 (define-syntax in-pvector-indexed
   (make-rename-transformer #'in-pvector/index))
 
-(define pvector-shape-stats
-  (if core-available?
-      core-pvector-shape-stats
-      fallback:pvector-shape-stats))
+(define (pvector-shape-stats pv)
+  (cond
+    [core-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'pvector-shape-stats "pvector?" pv))
+     (core-pvector-shape-stats pv)]
+    [else
+     (fallback:pvector-shape-stats pv)]))
 
 (begin-for-syntax
   (define (small-core-length-literal? stx)
@@ -677,7 +795,7 @@
                     (clause ...) body ...)
         len)]
     [(_ #:length length-expr #:fill fill-expr (clause ...) body ...)
-     #'(vector->pvector
+     #'(fresh-vector->pvector
         (for/vector #:length length-expr #:fill fill-expr
                     (clause ...) body ...))]
     [(_ #:length end ([elem (in-range end*)]) body)
@@ -724,10 +842,10 @@
                (if (and (pvector? pv)
                         (= len (pvector-length pv)))
                    pv
-                   (vector->pvector
+                   (fresh-vector->pvector
                     (for/vector #:length len ([elem (in-pvector pv)])
                       elem))))
-             (vector->pvector
+             (fresh-vector->pvector
               (for/vector #:length len ([elem (in-pvector pv-expr)])
                 elem))))]
     [(_ #:length length-expr ([elem (in-vector vec-expr)]) body)
@@ -740,10 +858,10 @@
                (if (and (vector? vec)
                         (= len (vector-length vec)))
                    (vector->pvector vec)
-                   (vector->pvector
+                   (fresh-vector->pvector
                     (for/vector #:length len ([elem (in-vector vec)])
                       elem))))
-             (vector->pvector
+             (fresh-vector->pvector
               (for/vector #:length len ([elem (in-vector vec-expr)])
                 elem))))]
     [(_ #:length length-expr ([elem seq-id]) body)
@@ -762,10 +880,10 @@
                        (= len (vector-length seq)))
                   (vector->pvector seq)]
                  [else
-                  (vector->pvector
+                  (fresh-vector->pvector
                    (for/vector #:length len ([elem seq])
                      elem))]))
-             (vector->pvector
+             (fresh-vector->pvector
               (for/vector #:length len ([elem seq-id])
                 elem))))]
     [(_ #:length len (clause ...) body ...)
@@ -775,7 +893,7 @@
                     (clause ...) body ...)
         len)]
     [(_ #:length length-expr (clause ...) body ...)
-     #'(vector->pvector
+     #'(fresh-vector->pvector
         (for/vector #:length length-expr
                     (clause ...) body ...))]
     [(_ ([elem (in-pvector pv-expr)]) body)
@@ -867,7 +985,7 @@
                      (clause ...) body ...)
         len)]
     [(_ #:length length-expr #:fill fill-expr (clause ...) body ...)
-     #'(vector->pvector
+     #'(fresh-vector->pvector
         (for*/vector #:length length-expr #:fill fill-expr
                      (clause ...) body ...))]
     [(_ #:length end ([elem (in-range end*)]) body)
@@ -914,10 +1032,10 @@
                (if (and (pvector? pv)
                         (= len (pvector-length pv)))
                    pv
-                   (vector->pvector
+                   (fresh-vector->pvector
                     (for*/vector #:length len ([elem (in-pvector pv)])
                       elem))))
-             (vector->pvector
+             (fresh-vector->pvector
               (for*/vector #:length len ([elem (in-pvector pv-expr)])
                 elem))))]
     [(_ #:length length-expr ([elem (in-vector vec-expr)]) body)
@@ -930,10 +1048,10 @@
                (if (and (vector? vec)
                         (= len (vector-length vec)))
                    (vector->pvector vec)
-                   (vector->pvector
+                   (fresh-vector->pvector
                     (for*/vector #:length len ([elem (in-vector vec)])
                       elem))))
-             (vector->pvector
+             (fresh-vector->pvector
               (for*/vector #:length len ([elem (in-vector vec-expr)])
                 elem))))]
     [(_ #:length length-expr ([elem seq-id]) body)
@@ -952,10 +1070,10 @@
                        (= len (vector-length seq)))
                   (vector->pvector seq)]
                  [else
-                  (vector->pvector
+                  (fresh-vector->pvector
                    (for*/vector #:length len ([elem seq])
                      elem))]))
-             (vector->pvector
+             (fresh-vector->pvector
               (for*/vector #:length len ([elem seq-id])
                 elem))))]
     [(_ #:length len (clause ...) body ...)
@@ -965,7 +1083,7 @@
                      (clause ...) body ...)
         len)]
     [(_ #:length length-expr (clause ...) body ...)
-     #'(vector->pvector
+     #'(fresh-vector->pvector
         (for*/vector #:length length-expr
                      (clause ...) body ...))]
     [(_ ([elem (in-pvector pv-expr)]) body)

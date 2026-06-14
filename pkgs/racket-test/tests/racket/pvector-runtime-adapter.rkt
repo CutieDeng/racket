@@ -2,6 +2,7 @@
 
 (require racket/list
          (prefix-in adapter: racket/private/pvector-runtime-adapter)
+         (prefix-in public: racket/pvector)
          rackunit)
 
 (define (check-model pv xs)
@@ -25,6 +26,10 @@
 (define (core-backend?)
   (eq? (adapter:pvector-runtime-adapter-backend) 'core))
 
+(define (kernel-procedure? name)
+  (with-handlers ([exn:fail? (lambda (_) #f)])
+    (procedure? (dynamic-require ''#%kernel name))))
+
 (define (check-no-chunk-shape-stats stats)
   (check-equal? (hash-ref stats 'chunked-tree? #t) #f)
   (check-equal? (hash-ref stats 'chunk-index-vectors #f) 0)
@@ -42,6 +47,8 @@
              (eq? (hash-ref stats 'representation #f) 'large-finger))
     (check-equal? (hash-ref stats 'payload-vectors #f) 0)
     (check-equal? (hash-ref stats 'digit-vectors #f) 2)
+    (check-true (<= 1 (hash-ref stats 'prefix-length 0) 4))
+    (check-true (<= 1 (hash-ref stats 'suffix-length 0) 4))
     (when (positive? (hash-ref stats 'middle-measure 0))
       (check-true (positive? (hash-ref stats 'finger-depth 0)))
       (check-true (positive? (hash-ref stats 'finger-nodes 0))))
@@ -94,7 +101,19 @@
       (adapter:pvector-shape-stats
        (adapter:list->pvector (range 130))))
     (check-equal? (hash-ref stats 'backend #f) backend)
-    (check-no-chunk-shape-stats stats)))
+    (check-no-chunk-shape-stats stats))
+  (when (eq? backend 'core)
+    (check-true (kernel-procedure? 'core-fresh-vector->pvector))
+    (check-true (kernel-procedure? 'core-make-single-pvector))
+    (check-true (kernel-procedure? 'core-make-deep2-pvector))
+    (check-true (kernel-procedure? 'core-make-deep3-pvector))
+    (check-true (kernel-procedure? 'core-make-deep4-pvector)))
+  (check-exn exn:fail:contract?
+             (lambda ()
+               (adapter:pvector-shape-stats '(not a pvector))))
+  (check-exn exn:fail:contract?
+             (lambda ()
+               (adapter:pvector-shape-stats (public:pvector 1 2 3)))))
 
 (test-case "adapter operations"
   (define xs (range 130))
@@ -117,12 +136,64 @@
   (check-model (apply adapter:pvector (range 128))
                (range 128))
   (when (core-backend?)
-    (let* ([single1 (adapter:list->pvector (range 1))]
+    (let* ([core-list->pvector
+            (dynamic-require ''#%kernel 'core-list->pvector)]
+           [single1 (adapter:list->pvector (range 1))]
            [single1-stats (adapter:pvector-shape-stats single1)]
            [deep2 (adapter:list->pvector (range 2))]
            [deep2-stats (adapter:pvector-shape-stats deep2)]
+           [deep3 (adapter:list->pvector (range 3))]
+           [deep3-stats (adapter:pvector-shape-stats deep3)]
+           [deep4 (adapter:list->pvector (range 4))]
+           [deep4-stats (adapter:pvector-shape-stats deep4)]
+           [direct3 (adapter:three-values->pvector 0 1 2)]
+           [direct3-stats (adapter:pvector-shape-stats direct3)]
+           [direct4 (adapter:four-values->pvector 0 1 2 3)]
+           [direct4-stats (adapter:pvector-shape-stats direct4)]
+           [mapped3 (adapter:pvector-map direct3 add1)]
+           [mapped3-stats (adapter:pvector-shape-stats mapped3)]
+           [mapped4 (adapter:pvector-map direct4 add1)]
+           [mapped4-stats (adapter:pvector-shape-stats mapped4)]
+           [fixed-arity3 (adapter:pvector 0 1 2)]
+           [fixed-arity3-stats (adapter:pvector-shape-stats fixed-arity3)]
+           [fixed-arity4 (adapter:pvector 0 1 2 3)]
+           [fixed-arity4-stats (adapter:pvector-shape-stats fixed-arity4)]
+           [vector3 (adapter:vector->pvector (vector 0 1 2))]
+           [vector3-stats (adapter:pvector-shape-stats vector3)]
+           [vector4 (adapter:vector->pvector (vector 0 1 2 3))]
+           [vector4-stats (adapter:pvector-shape-stats vector4)]
+           [range3 (adapter:sequence->pvector 3)]
+           [range3-stats (adapter:pvector-shape-stats range3)]
+           [range4 (adapter:sequence->pvector 4)]
+           [range4-stats (adapter:pvector-shape-stats range4)]
+           [arith4 (adapter:sequence->pvector (in-range 1 5))]
+           [arith4-stats (adapter:pvector-shape-stats arith4)]
+           [step4 (adapter:sequence->pvector (in-range 0 8 2))]
+           [step4-stats (adapter:pvector-shape-stats step4)]
+           [core-list2 (core-list->pvector (range 2))]
+           [core-list2-stats (adapter:pvector-shape-stats core-list2)]
+           [core-list3 (core-list->pvector (range 3))]
+           [core-list3-stats (adapter:pvector-shape-stats core-list3)]
+           [core-list4 (core-list->pvector (range 4))]
+           [core-list4-stats (adapter:pvector-shape-stats core-list4)]
            [deep9 (adapter:list->pvector (range 9))]
            [deep9-stats (adapter:pvector-shape-stats deep9)]
+           [deep9-copy1 (adapter:pvector-copy deep9 4 5)]
+           [deep9-copy1-stats (adapter:pvector-shape-stats deep9-copy1)]
+           [deep9-copy2 (adapter:pvector-copy deep9 4 6)]
+           [deep9-copy2-stats (adapter:pvector-shape-stats deep9-copy2)]
+           [deep9-copy3 (adapter:pvector-copy deep9 3 6)]
+           [deep9-copy3-stats (adapter:pvector-shape-stats deep9-copy3)]
+           [deep9-copy4 (adapter:pvector-copy deep9 2 6)]
+           [deep9-copy4-stats (adapter:pvector-shape-stats deep9-copy4)]
+           [deep9-left1 (adapter:pvector-copy deep9 0 1)]
+           [deep9-left1-stats (adapter:pvector-shape-stats deep9-left1)]
+           [deep9-right1 (adapter:pvector-copy deep9 8 9)]
+           [deep9-right1-stats (adapter:pvector-shape-stats deep9-right1)]
+           [deep9-left2 (adapter:pvector-copy deep9 0 2)]
+           [deep9-left2-stats (adapter:pvector-shape-stats deep9-left2)]
+           [deep9-right2 (adapter:pvector-copy deep9 7 9)]
+           [deep9-right2-stats (adapter:pvector-shape-stats deep9-right2)]
            [appended64
             (adapter:pvector-append
              (adapter:list->pvector (range 64))
@@ -135,37 +206,219 @@
            [appended256-stats (adapter:pvector-shape-stats appended256)])
       (check-model single1 (range 1))
       (check-model deep2 (range 2))
+      (check-model deep3 (range 3))
+      (check-model deep4 (range 4))
+      (check-model direct3 (range 3))
+      (check-model direct4 (range 4))
+      (check-model mapped3 '(1 2 3))
+      (check-model mapped4 '(1 2 3 4))
+      (check-model fixed-arity3 (range 3))
+      (check-model fixed-arity4 (range 4))
+      (check-model vector3 (range 3))
+      (check-model vector4 (range 4))
+      (check-model range3 (range 3))
+      (check-model range4 (range 4))
+      (check-model arith4 '(1 2 3 4))
+      (check-model step4 '(0 2 4 6))
+      (check-model core-list2 (range 2))
+      (check-model core-list3 (range 3))
+      (check-model core-list4 (range 4))
       (check-model deep9 (range 9))
+      (check-model deep9-copy1 '(4))
+      (check-model deep9-copy2 '(4 5))
+      (check-model deep9-copy3 '(3 4 5))
+      (check-model deep9-copy4 '(2 3 4 5))
+      (check-model deep9-left1 '(0))
+      (check-model deep9-right1 '(8))
+      (check-model deep9-left2 '(0 1))
+      (check-model deep9-right2 '(7 8))
       (check-model appended64 (range 128))
       (check-model appended256 (range 512))
       (check-equal? (hash-ref single1-stats 'representation #f) 'single)
+      (check-equal? (hash-ref deep9-copy1-stats 'representation #f) 'single)
+      (check-equal? (hash-ref deep9-left1-stats 'representation #f) 'single)
+      (check-equal? (hash-ref deep9-right1-stats 'representation #f) 'single)
       (check-core-large-edge-stats deep2-stats 1 1 0)
+      (check-core-large-edge-stats deep3-stats 1 2 0)
+      (check-core-large-edge-stats deep4-stats 2 2 0)
+      (check-core-large-edge-stats direct3-stats 1 2 0)
+      (check-core-large-edge-stats direct4-stats 2 2 0)
+      (check-core-large-edge-stats mapped3-stats 1 2 0)
+      (check-core-large-edge-stats mapped4-stats 2 2 0)
+      (check-core-large-edge-stats fixed-arity3-stats 1 2 0)
+      (check-core-large-edge-stats fixed-arity4-stats 2 2 0)
+      (check-core-large-edge-stats vector3-stats 1 2 0)
+      (check-core-large-edge-stats vector4-stats 2 2 0)
+      (check-core-large-edge-stats range3-stats 1 2 0)
+      (check-core-large-edge-stats range4-stats 2 2 0)
+      (check-core-large-edge-stats arith4-stats 2 2 0)
+      (check-core-large-edge-stats step4-stats 2 2 0)
+      (check-core-large-edge-stats core-list2-stats 1 1 0)
+      (check-core-large-edge-stats core-list3-stats 1 2 0)
+      (check-core-large-edge-stats core-list4-stats 2 2 0)
+      (check-core-large-edge-stats deep9-copy2-stats 1 1 0)
+      (check-core-large-edge-stats deep9-copy3-stats 1 2 0)
+      (check-core-large-edge-stats deep9-copy4-stats 2 2 0)
+      (check-core-large-edge-stats deep9-left2-stats 1 1 0)
+      (check-core-large-edge-stats deep9-right2-stats 1 1 0)
       (check-core-large-edge-stats deep9-stats 4 3 2)
       (check-core-large-edge-stats appended64-stats 4 4 120)
       (check-core-large-edge-stats appended256-stats 4 4 504)
       (check-no-chunk-shape-stats single1-stats)
       (check-no-chunk-shape-stats deep2-stats)
+      (check-no-chunk-shape-stats deep3-stats)
+      (check-no-chunk-shape-stats deep4-stats)
+      (check-no-chunk-shape-stats direct3-stats)
+      (check-no-chunk-shape-stats direct4-stats)
+      (check-no-chunk-shape-stats mapped3-stats)
+      (check-no-chunk-shape-stats mapped4-stats)
+      (check-no-chunk-shape-stats fixed-arity3-stats)
+      (check-no-chunk-shape-stats fixed-arity4-stats)
+      (check-no-chunk-shape-stats vector3-stats)
+      (check-no-chunk-shape-stats vector4-stats)
+      (check-no-chunk-shape-stats range3-stats)
+      (check-no-chunk-shape-stats range4-stats)
+      (check-no-chunk-shape-stats arith4-stats)
+      (check-no-chunk-shape-stats step4-stats)
+      (check-no-chunk-shape-stats core-list3-stats)
+      (check-no-chunk-shape-stats core-list4-stats)
       (check-no-chunk-shape-stats deep9-stats)
+      (check-no-chunk-shape-stats deep9-copy1-stats)
+      (check-no-chunk-shape-stats deep9-copy2-stats)
+      (check-no-chunk-shape-stats deep9-copy3-stats)
+      (check-no-chunk-shape-stats deep9-copy4-stats)
+      (check-no-chunk-shape-stats deep9-left1-stats)
+      (check-no-chunk-shape-stats deep9-right1-stats)
+      (check-no-chunk-shape-stats deep9-left2-stats)
+      (check-no-chunk-shape-stats deep9-right2-stats)
       (check-no-chunk-shape-stats appended64-stats)
-      (check-no-chunk-shape-stats appended256-stats)))
-	  (check-model (adapter:list->pvector (range 32))
-	               (range 32))
-	  (check-model (adapter:list->pvector (range 33))
-	               (range 33))
-	  (let* ([elem (box 'uniform-list)]
-	         [uniform-list (make-list 130 elem)]
-	         [pv (adapter:list->pvector uniform-list)])
-	    (check-model pv uniform-list)
-	    (check-eq? (vector-ref (adapter:pvector->vector pv) 64) elem)
-	    (check-eq? (list-ref (adapter:pvector->list pv) 129) elem))
-	  (let* ([elem (box 'mixed-list)]
-	         [mixed-list (cons elem (cons 'other (make-list 128 elem)))]
-	         [pv (adapter:list->pvector mixed-list)])
-	    (check-model pv mixed-list)
-	    (check-eq? (vector-ref (adapter:pvector->vector pv) 0) elem)
-	    (check-equal? (vector-ref (adapter:pvector->vector pv) 1) 'other)
-	    (check-eq? (list-ref (adapter:pvector->list pv) 129) elem))
-	  (define small-conversion (adapter:pvector 1 2 3 4 5))
+      (check-no-chunk-shape-stats appended256-stats)
+      (for* ([left-case (in-list '((1 . 2) (2 . 4) (3 . 6) (4 . 8)))]
+             [right-case (in-list '((1 . 2) (2 . 4) (3 . 6) (4 . 8)))])
+        (define left-suffix-len (car left-case))
+        (define left-size (cdr left-case))
+        (define right-prefix-len (car right-case))
+        (define right-size (cdr right-case))
+        (define left-xs (range left-size))
+        (define right-xs (range 100 (+ 100 right-size)))
+        (define bridge-append
+          (adapter:pvector-append
+           (adapter:list->pvector left-xs)
+           (adapter:list->pvector right-xs)))
+        (define bridge-stats (adapter:pvector-shape-stats bridge-append))
+        (with-check-info
+          (['left-suffix-length left-suffix-len]
+           ['right-prefix-length right-prefix-len]
+           ['bridge-length (+ left-suffix-len right-prefix-len)]
+           ['stats bridge-stats])
+          (check-model bridge-append (append left-xs right-xs))
+          (check-no-chunk-shape-stats bridge-stats)))
+      (let-values ([(left value right) (adapter:pvector-split deep9 0)])
+        (define right-stats (adapter:pvector-shape-stats right))
+        (check-true (adapter:pvector-empty? left))
+        (check-equal? value 0)
+        (check-model right (range 1 9))
+        (check-core-large-edge-stats right-stats 3 3 2)
+        (check-no-chunk-shape-stats right-stats))
+      (let-values ([(left value right) (adapter:pvector-split deep9 8)])
+        (define left-stats (adapter:pvector-shape-stats left))
+        (check-model left (range 8))
+        (check-equal? value 8)
+        (check-true (adapter:pvector-empty? right))
+        (check-core-large-edge-stats left-stats 4 2 2)
+        (check-no-chunk-shape-stats left-stats))
+      (let-values ([(left right) (adapter:pvector-split-at deep9 0)])
+        (check-true (adapter:pvector-empty? left))
+        (check-true (eq? right deep9)))
+      (let-values ([(left right) (adapter:pvector-split-at deep9 9)])
+        (check-true (eq? left deep9))
+        (check-true (adapter:pvector-empty? right)))
+      (let-values ([(right left) (adapter:pvector-split-at-right deep9 0)])
+        (check-true (adapter:pvector-empty? right))
+        (check-true (eq? left deep9)))
+      (let-values ([(right left) (adapter:pvector-split-at-right deep9 9)])
+        (check-true (eq? right deep9))
+        (check-true (adapter:pvector-empty? left)))
+      (check-true (adapter:pvector-empty? (adapter:pvector-take deep9 0)))
+      (check-true (eq? deep9 (adapter:pvector-take deep9 9)))
+      (check-true (eq? deep9 (adapter:pvector-drop deep9 0)))
+      (check-true (adapter:pvector-empty? (adapter:pvector-drop deep9 9)))
+      (check-true (adapter:pvector-empty? (adapter:pvector-take-right deep9 0)))
+      (check-true (eq? deep9 (adapter:pvector-take-right deep9 9)))
+      (check-true (eq? deep9 (adapter:pvector-drop-right deep9 0)))
+      (check-true (adapter:pvector-empty? (adapter:pvector-drop-right deep9 9)))
+      (let ([rest (adapter:pvector-copy deep9 1 9)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 1 9))
+        (check-core-large-edge-stats rest-stats 3 3 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let ([rest (adapter:pvector-copy deep9 0 8)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 8))
+        (check-core-large-edge-stats rest-stats 4 2 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let ([rest (adapter:pvector-drop deep9 1)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 1 9))
+        (check-core-large-edge-stats rest-stats 3 3 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let ([rest (adapter:pvector-take-right deep9 8)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 1 9))
+        (check-core-large-edge-stats rest-stats 3 3 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let ([rest (adapter:pvector-take deep9 8)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 8))
+        (check-core-large-edge-stats rest-stats 4 2 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let ([rest (adapter:pvector-drop-right deep9 1)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-model rest (range 8))
+        (check-core-large-edge-stats rest-stats 4 2 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let-values ([(value rest) (adapter:pvector-pop-left deep9)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-equal? value 0)
+        (check-model rest (range 1 9))
+        (check-core-large-edge-stats rest-stats 3 3 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let-values ([(value rest) (adapter:pvector-pop-right deep9)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-equal? value 8)
+        (check-model rest (range 8))
+        (check-core-large-edge-stats rest-stats 4 2 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let-values ([(rest value) (adapter:pvector-delete deep9 0)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-equal? value 0)
+        (check-model rest (range 1 9))
+        (check-core-large-edge-stats rest-stats 3 3 2)
+        (check-no-chunk-shape-stats rest-stats))
+      (let-values ([(rest value) (adapter:pvector-delete deep9 8)])
+        (define rest-stats (adapter:pvector-shape-stats rest))
+        (check-equal? value 8)
+        (check-model rest (range 8))
+        (check-core-large-edge-stats rest-stats 4 2 2)
+        (check-no-chunk-shape-stats rest-stats))))
+  (check-model (adapter:list->pvector (range 32))
+               (range 32))
+  (check-model (adapter:list->pvector (range 33))
+               (range 33))
+  (let* ([elem (box 'uniform-list)]
+         [uniform-list (make-list 130 elem)]
+         [pv (adapter:list->pvector uniform-list)])
+    (check-model pv uniform-list)
+    (check-eq? (vector-ref (adapter:pvector->vector pv) 64) elem)
+    (check-eq? (list-ref (adapter:pvector->list pv) 129) elem))
+  (let* ([elem (box 'mixed-list)]
+         [mixed-list (cons elem (cons 'other (make-list 128 elem)))]
+         [pv (adapter:list->pvector mixed-list)])
+    (check-model pv mixed-list)
+    (check-eq? (vector-ref (adapter:pvector->vector pv) 0) elem)
+    (check-equal? (vector-ref (adapter:pvector->vector pv) 1) 'other)
+    (check-eq? (list-ref (adapter:pvector->list pv) 129) elem))
+  (define small-conversion (adapter:pvector 1 2 3 4 5))
   (define small-conversion-vector (adapter:pvector->vector small-conversion))
   (vector-set! small-conversion-vector 0 'changed)
   (check-equal? (vector->list small-conversion-vector) '(changed 2 3 4 5))
@@ -213,7 +466,156 @@
                    (adapter:pvector-empty)))
   (check-true (eq? (adapter:sequence->pvector 0)
                    (adapter:pvector-empty)))
-  (check-model (adapter:make-pvector 5 'x) '(x x x x x))
+  (let* ([list1 (adapter:list->pvector '(1))]
+         [direct1 (adapter:single-value->pvector 'direct)]
+         [direct2 (adapter:two-values->pvector 'left 'right)]
+         [direct3 (adapter:three-values->pvector 'a 'b 'c)]
+         [direct4 (adapter:four-values->pvector 'a 'b 'c 'd)]
+         [small-vec1
+          (adapter:small-immutable-vector->pvector
+           (vector-immutable 'vector-direct)
+           1)]
+         [small-vec2
+          (adapter:small-immutable-vector->pvector
+           (vector-immutable 'vector-left 'vector-right 'ignored)
+           2)]
+         [small-vec3
+          (adapter:small-immutable-vector->pvector
+           (vector-immutable 'vector-a 'vector-b 'vector-c 'ignored)
+           3)]
+         [small-vec4
+          (adapter:small-immutable-vector->pvector
+           (vector-immutable 'vector-a 'vector-b 'vector-c 'vector-d 'ignored)
+           4)]
+         [make1 (adapter:make-pvector 1 'x)]
+         [make2 (adapter:make-pvector 2 'x)]
+         [cons-left-empty
+          (adapter:pvector-cons-left (adapter:pvector-empty) 'x)]
+         [cons-right-empty
+          (adapter:pvector-cons-right (adapter:pvector-empty) 'x)]
+         [cons-left-single (adapter:pvector-cons-left (adapter:pvector 2) 1)]
+         [cons-right-single (adapter:pvector-cons-right (adapter:pvector 1) 2)]
+         [append-single
+          (adapter:pvector-append (adapter:pvector 1) (adapter:pvector 2))]
+         [map2 (adapter:pvector-map append-single add1)]
+         [set-single (adapter:pvector-set (adapter:pvector 1) 0 2)]
+         [set-deep2-left (adapter:pvector-set append-single 0 'left)]
+         [set-deep2-right (adapter:pvector-set append-single 1 'right)])
+    (check-model list1 '(1))
+    (check-model direct1 '(direct))
+    (check-model direct2 '(left right))
+    (check-model direct3 '(a b c))
+    (check-model direct4 '(a b c d))
+    (check-model small-vec1 '(vector-direct))
+    (check-model small-vec2 '(vector-left vector-right))
+    (check-model small-vec3 '(vector-a vector-b vector-c))
+    (check-model small-vec4 '(vector-a vector-b vector-c vector-d))
+    (check-model make1 '(x))
+    (check-model make2 '(x x))
+    (check-model cons-left-empty '(x))
+    (check-model cons-right-empty '(x))
+    (check-model cons-left-single '(1 2))
+    (check-model cons-right-single '(1 2))
+    (check-model append-single '(1 2))
+    (check-model map2 '(2 3))
+    (check-model set-single '(2))
+    (check-model set-deep2-left '(left 2))
+    (check-model set-deep2-right '(1 right))
+    (check-true (eq? append-single (adapter:pvector-set append-single 0 1)))
+    (check-true (eq? append-single (adapter:pvector-set append-single 1 2)))
+    (let ([seen null])
+      (check-equal? (adapter:pvector-for-each
+                     append-single
+                     (lambda (v)
+                       (set! seen (append seen (list v)))
+                       (values v 'ignored)))
+                    (void))
+      (check-equal? seen '(1 2)))
+    (let ([vec (adapter:pvector->vector direct2)])
+      (check-equal? (vector->list vec) '(left right))
+      (vector-set! vec 0 'changed)
+      (check-model direct2 '(left right)))
+    (check-equal? (adapter:pvector->list direct2) '(left right))
+    (let ([vec (adapter:pvector->vector direct3)])
+      (check-equal? (vector->list vec) '(a b c))
+      (vector-set! vec 1 'changed)
+      (check-model direct3 '(a b c)))
+    (check-equal? (adapter:pvector->list direct3) '(a b c))
+    (let ([vec (adapter:pvector->vector direct4)])
+      (check-equal? (vector->list vec) '(a b c d))
+      (vector-set! vec 2 'changed)
+      (check-model direct4 '(a b c d)))
+    (check-equal? (adapter:pvector->list direct4) '(a b c d))
+    (let-values ([(value rest) (adapter:pvector-pop-left append-single)])
+      (check-equal? value 1)
+      (check-model rest '(2))
+      (when (core-backend?)
+        (check-equal? (hash-ref (adapter:pvector-shape-stats rest)
+                                'representation
+                                #f)
+                      'single)))
+    (let-values ([(value rest) (adapter:pvector-pop-right append-single)])
+      (check-equal? value 2)
+      (check-model rest '(1))
+      (when (core-backend?)
+        (check-equal? (hash-ref (adapter:pvector-shape-stats rest)
+                                'representation
+                                #f)
+                      'single)))
+    (let-values ([(rest value) (adapter:pvector-delete append-single 0)])
+      (check-equal? value 1)
+      (check-model rest '(2))
+      (when (core-backend?)
+        (check-equal? (hash-ref (adapter:pvector-shape-stats rest)
+                                'representation
+                                #f)
+                      'single)))
+    (let-values ([(rest value) (adapter:pvector-delete append-single 1)])
+      (check-equal? value 2)
+      (check-model rest '(1))
+      (when (core-backend?)
+        (check-equal? (hash-ref (adapter:pvector-shape-stats rest)
+                                'representation
+                                #f)
+                      'single)))
+    (let-values ([(value rest) (adapter:pvector-pop-left list1)])
+      (check-equal? value 1)
+      (check-true (adapter:pvector-empty? rest)))
+    (let-values ([(value rest) (adapter:pvector-pop-right list1)])
+      (check-equal? value 1)
+      (check-true (adapter:pvector-empty? rest)))
+    (when (core-backend?)
+      (for ([pv (in-list (list list1
+                                direct1
+                                small-vec1
+                                make1
+                                cons-left-empty
+                                cons-right-empty
+                                set-single))])
+        (check-equal? (hash-ref (adapter:pvector-shape-stats pv)
+                                'representation
+                                #f)
+                      'single))
+      (for ([pv (in-list (list direct2
+                                small-vec2
+                                make2
+                                cons-left-single
+                                cons-right-single
+                                append-single
+                                map2
+                                set-deep2-left
+                                set-deep2-right))])
+        (check-core-large-edge-stats
+         (adapter:pvector-shape-stats pv)
+         1
+         1
+         0))))
+  (let ([made5 (adapter:make-pvector 5 'x)])
+    (check-model made5 '(x x x x x))
+    (when (core-backend?)
+      (define made5-stats (adapter:pvector-shape-stats made5))
+      (check-core-large-edge-stats made5-stats 2 3 0)
+      (check-no-chunk-shape-stats made5-stats)))
   (check-model (adapter:make-pvector 32 'x)
                '(x x x x x x x x x x x x x x x x
                  x x x x x x x x x x x x x x x x))
@@ -347,14 +749,12 @@
           (define right-stats (adapter:pvector-shape-stats right-appended))
           (define left-prefix-len
             (cond
-              [(= small-len 1) 0]
               [(<= small-len 3) 1]
               [(= small-len 4) 2]
               [else 4]))
           (define right-suffix-len
             (cond
-              [(= small-len 1) 0]
-              [(= small-len 2) 1]
+              [(<= small-len 2) 1]
               [(<= small-len 4) 2]
               [else 4]))
           (define total-len (+ 10000 small-len))
@@ -500,15 +900,45 @@
                                             (lambda (v)
                                               (set! seen (append seen (list v)))))
                   (void))
-    (check-equal? seen '(a b c)))
+    (check-equal? seen '(a b c))
+    (set! seen null)
+    (check-equal? (adapter:pvector-for-each (adapter:pvector 'a 'b 'c 'd)
+                                            (lambda (v)
+                                              (set! seen (append seen (list v)))))
+                  (void))
+    (check-equal? seen '(a b c d)))
   (check-equal? (adapter:pvector-for-each pv void) (void))
   (check-equal? (adapter:pvector-for-each pv values) (void))
   (check-exn exn:fail?
              (lambda ()
                (adapter:pvector-map (adapter:pvector 1)
                                     (lambda (x) (values x x)))))
+  (check-exn exn:fail?
+             (lambda ()
+               (adapter:pvector-map (adapter:pvector 1 2)
+                                    (lambda (x) (values x x)))))
+  (check-exn exn:fail?
+             (lambda ()
+               (adapter:pvector-map (adapter:pvector 1 2 3)
+                                    (lambda (x) (values x x)))))
+  (check-exn exn:fail?
+             (lambda ()
+               (adapter:pvector-map (adapter:pvector 1 2 3 4)
+                                    (lambda (x) (values x x)))))
+  (check-equal? (adapter:pvector-view-left (adapter:pvector 'only)) 'only)
+  (check-equal? (adapter:pvector-view-right (adapter:pvector 'only)) 'only)
+  (check-equal? (adapter:pvector-view-left (adapter:pvector 'left 'right))
+                'left)
+  (check-equal? (adapter:pvector-view-right (adapter:pvector 'left 'right))
+                'right)
   (check-equal? (adapter:pvector-view-left pv) 0)
   (check-equal? (adapter:pvector-view-right pv) 129)
+  (check-exn exn:fail?
+             (lambda ()
+               (adapter:pvector-view-left (adapter:pvector-empty))))
+  (check-exn exn:fail?
+             (lambda ()
+               (adapter:pvector-view-right (adapter:pvector-empty))))
   (check-model (adapter:pvector-set pv 64 'x)
                (append (take xs 64) '(x) (drop xs 65)))
   (when (core-backend?)
@@ -736,17 +1166,20 @@
       (check-equal? (adapter:pvector-ref consed 0) 'x)
       (check-equal? (adapter:pvector-ref consed 1) 0)
       (check-equal? (adapter:pvector-ref consed 8192) 8191)
+      (check-core-large-edge-stats stats 1 4 8188)
       (check-no-chunk-shape-stats stats))
     (let* ([pv (adapter:list->pvector (range 8192))]
            [consed (adapter:pvector-cons-right pv 'x)]
            [stats (adapter:pvector-shape-stats consed)])
       (check-model consed (append (range 8192) '(x)))
+      (check-core-large-edge-stats stats 4 1 8188)
       (check-no-chunk-shape-stats stats))
     (let* ([pv (adapter:list->pvector (range 8192))]
            [consed (adapter:pvector-cons-right pv 'x)]
            [consed* (adapter:pvector-cons-right consed 'y)]
            [stats (adapter:pvector-shape-stats consed*)])
       (check-model consed* (append (range 8192) '(x y)))
+      (check-core-large-edge-stats stats 4 2 8188)
       (check-no-chunk-shape-stats stats))
     (let* ([pv (adapter:list->pvector (range 8192))]
            [stats #f])
@@ -829,6 +1262,14 @@
           (check-core-large-edge-stats deleted-stats 4 3 8184)
           (check-no-chunk-shape-stats inserted-stats)
           (check-no-chunk-shape-stats deleted-stats))))
+    (let* ([pv (adapter:list->pvector (range 8192))]
+           [stats #f])
+      (let-values ([(rest value) (adapter:pvector-delete pv 0)])
+        (set! stats (adapter:pvector-shape-stats rest))
+        (check-equal? value 0)
+        (check-model rest (range 1 8192))
+        (check-core-large-edge-stats stats 3 4 8184)
+        (check-no-chunk-shape-stats stats)))
     (let* ([pv (adapter:list->pvector (range 8192))]
            [stats #f])
       (let-values ([(rest value) (adapter:pvector-delete pv 8191)])
@@ -920,20 +1361,20 @@
       (check-model middle-right (range 4 8192))
       (check-model aligned-middle-right (range 7 8192))
       (check-model unaligned-middle-right (range 5 8192))
-      (check-core-large-edge-stats middle-only-stats 0 0 8184)
-      (check-core-large-edge-stats aligned-middle-stats 0 0 8178)
-      (check-core-large-edge-stats unaligned-middle-stats 0 1 8180)
+      (check-core-large-edge-stats middle-only-stats 1 1 8182)
+      (check-core-large-edge-stats aligned-middle-stats 1 1 8176)
+      (check-core-large-edge-stats unaligned-middle-stats 2 1 8178)
       (check-core-large-edge-stats
        unaligned-deep-middle-stats
        1
        1
        7998)
-      (check-core-large-edge-stats left-middle-stats 4 0 8184)
-      (check-core-large-edge-stats left-aligned-middle-stats 4 0 8181)
+      (check-core-large-edge-stats left-middle-stats 4 1 8183)
+      (check-core-large-edge-stats left-aligned-middle-stats 4 1 8180)
       (check-core-large-edge-stats left-unaligned-middle-stats 4 1 8181)
-      (check-core-large-edge-stats middle-right-stats 0 4 8184)
-      (check-core-large-edge-stats aligned-middle-right-stats 0 4 8181)
-      (check-core-large-edge-stats unaligned-middle-right-stats 0 4 8183)
+      (check-core-large-edge-stats middle-right-stats 1 4 8183)
+      (check-core-large-edge-stats aligned-middle-right-stats 1 4 8180)
+      (check-core-large-edge-stats unaligned-middle-right-stats 2 4 8181)
       (check-no-chunk-shape-stats middle-only-stats)
       (check-no-chunk-shape-stats aligned-middle-stats)
       (check-no-chunk-shape-stats unaligned-middle-stats)
@@ -949,31 +1390,31 @@
         (define right-stats (adapter:pvector-shape-stats large-right))
         (check-model small-left (range 4))
         (check-model large-right (range 4 8192))
-        (check-core-large-edge-stats right-stats 0 4 8184)
+        (check-core-large-edge-stats right-stats 1 4 8183)
         (check-no-chunk-shape-stats right-stats))
       (let-values ([(large-left small-right) (adapter:pvector-split-at pv 8188)])
         (define left-stats (adapter:pvector-shape-stats large-left))
         (check-model large-left (range 8188))
         (check-model small-right (range 8188 8192))
-        (check-core-large-edge-stats left-stats 4 0 8184)
+        (check-core-large-edge-stats left-stats 4 1 8183)
         (check-no-chunk-shape-stats left-stats))
       (let-values ([(small-left large-right) (adapter:pvector-split-at pv 7)])
         (define right-stats (adapter:pvector-shape-stats large-right))
         (check-model small-left (range 7))
         (check-model large-right (range 7 8192))
-        (check-core-large-edge-stats right-stats 0 4 8181)
+        (check-core-large-edge-stats right-stats 1 4 8180)
         (check-no-chunk-shape-stats right-stats))
       (let-values ([(small-left large-right) (adapter:pvector-split-at pv 5)])
         (define right-stats (adapter:pvector-shape-stats large-right))
         (check-model small-left (range 5))
         (check-model large-right (range 5 8192))
-        (check-core-large-edge-stats right-stats 0 4 8183)
+        (check-core-large-edge-stats right-stats 2 4 8181)
         (check-no-chunk-shape-stats right-stats))
       (let-values ([(large-left small-right) (adapter:pvector-split-at pv 8185)])
         (define left-stats (adapter:pvector-shape-stats large-left))
         (check-model large-left (range 8185))
         (check-model small-right (range 8185 8192))
-        (check-core-large-edge-stats left-stats 4 0 8181)
+        (check-core-large-edge-stats left-stats 4 1 8180)
         (check-no-chunk-shape-stats left-stats))
       (let-values ([(large-left small-right) (adapter:pvector-split-at pv 8186)])
         (define left-stats (adapter:pvector-shape-stats large-left))

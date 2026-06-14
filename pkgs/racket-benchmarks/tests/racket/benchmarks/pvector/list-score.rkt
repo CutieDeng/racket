@@ -19,6 +19,22 @@
 (define speed-score-weight 0.7)
 (define cost-score-weight 0.3)
 
+;; The academic-clean profile is a direct-interface score for a clean
+;; engineering baseline: each implementation is called through its concrete
+;; operations, and the cost side models the necessary result shape instead of
+;; rewarding accidental wrapper, cache, or representation shortcuts. Use this
+;; score to justify representation changes only when the benefit survives
+;; across the power-of-two size distribution.
+(define score-profile-name 'academic-clean)
+(define size-weight-model 'equal-per-power-size)
+(define operation-weight-model 'equal-per-operation-within-size)
+(define interface-model-name 'direct-concrete-interface)
+(define speed-metric-name 'real-ns/op)
+(define cost-model-name 'academic-result-cost)
+(define cost-metric-name 'academic-result-cost-units/op)
+(define speed-ratio-model-name 'baseline/target)
+(define cost-ratio-model-name 'zero-aware-add1-baseline/target)
+
 (define default-ops
   '(build length sum ref-first ref-middle ref-last
           cons-left cons-right append-self take-half drop-half map-add1 to-list))
@@ -95,6 +111,13 @@
   (raise-user-error 'pvector-list-score
                     "speed and cost weights cannot both be zero"))
 
+(define (score-method-label)
+  (format "weighted-geomean(speed=~a,cost=~a;speed-ratio=~a;cost-ratio=~a)"
+          speed-score-weight
+          cost-score-weight
+          speed-ratio-model-name
+          cost-ratio-model-name))
+
 (define sizes
   (or explicit-sizes (power-sizes max-size)))
 
@@ -124,7 +147,8 @@
 
 (struct row
   (size op impl iterations cpu-ms real-ms real-ns/op gc-ms live-bytes
-        cost-model cost-units cost-units/op result weight)
+        cost-model generated-result-cost-units result-cost-units/op result
+        weight)
   #:transparent)
 
 (define current-repeat-count (make-parameter M))
@@ -307,8 +331,8 @@
        real/op
        gc
        live
-       'academic-result-cost
-       cost-units
+       cost-model-name
+       (* iterations cost-units)
        cost-units
        result
        1.0))
@@ -390,18 +414,22 @@
 (define (safe-positive n)
   (max 1 n))
 
-(define (score-ratio baseline-value target-value)
+(define (speed-score-ratio baseline-value target-value)
   (/ (safe-positive baseline-value)
      (safe-positive target-value)))
+
+(define (cost-score-ratio baseline-value target-value)
+  (/ (add1 baseline-value)
+     (add1 target-value)))
 
 (define (row-score r baseline metric)
   (and r
        baseline
        (case metric
-         [(speed) (score-ratio (row-real-ns/op baseline)
-                               (row-real-ns/op r))]
-         [(cost) (score-ratio (row-cost-units/op baseline)
-                              (row-cost-units/op r))])))
+         [(speed) (speed-score-ratio (row-real-ns/op baseline)
+                                     (row-real-ns/op r))]
+         [(cost) (cost-score-ratio (row-result-cost-units/op baseline)
+                                   (row-result-cost-units/op r))])))
 
 (define (composite-score speed-score cost-score)
   (and speed-score
@@ -533,9 +561,12 @@
 (emit-row
  '("kind" "size" "power" "band" "op" "impl" "iterations" "cpu-ms"
    "real-ms" "real-ns/op" "gc-ms" "live-bytes" "cost-model"
-   "cost-units" "cost-units/op" "result" "baseline" "speed/list"
-   "speed/vector" "cost/list" "cost/vector" "speed-score" "cost-score"
-   "total-score" "sample-count" "weight"))
+   "generated-result-cost-units" "result-cost-units/op" "result" "baseline"
+   "speed-score/list" "speed-score/vector" "cost-score/list"
+   "cost-score/vector" "speed-score" "cost-score"
+   "total-score" "sample-count" "weight" "score-profile" "size-weight-model"
+   "operation-weight-model" "interface-model" "score-method" "speed-metric"
+   "cost-metric"))
 
 (for ([r (in-list (reverse rows))])
   (define list-row
@@ -559,8 +590,8 @@
          (row-gc-ms r)
          (row-live-bytes r)
          (row-cost-model r)
-         (row-cost-units r)
-         (row-cost-units/op r)
+         (row-generated-result-cost-units r)
+         (row-result-cost-units/op r)
          (row-result r)
          baseline-name
          (row-score r list-row 'speed)
@@ -571,7 +602,14 @@
          cost-score
          (composite-score speed-score cost-score)
          1
-         (row-weight r))))
+         (row-weight r)
+         score-profile-name
+         size-weight-model
+         operation-weight-model
+         interface-model-name
+         (score-method-label)
+         speed-metric-name
+         cost-metric-name)))
 
 (for ([imp (in-list selected-impls)])
   (define name (impl-name imp))
@@ -597,7 +635,14 @@
              (list-ref primary 1)
              (list-ref primary 2)
              (list-ref primary 3)
-             1.0))))
+             1.0
+             score-profile-name
+             size-weight-model
+             operation-weight-model
+             interface-model-name
+             (score-method-label)
+             speed-metric-name
+             cost-metric-name))))
   (define primary (total-score-result name baseline-name))
   (define list-score (total-score-result name 'list))
   (define vector-score (total-score-result name 'vector))
@@ -618,4 +663,11 @@
          (list-ref primary 1)
          (list-ref primary 2)
          (list-ref primary 3)
-         1.0)))
+         1.0
+         score-profile-name
+         size-weight-model
+         operation-weight-model
+         interface-model-name
+         (score-method-label)
+         speed-metric-name
+         cost-metric-name)))

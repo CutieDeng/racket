@@ -14,6 +14,7 @@
 (define quiet? #f)
 (define compile-rumble? #f)
 (define performance? #f)
+(define score-smoke? #f)
 (define performance-count 200000)
 (define performance-m 100000)
 
@@ -38,6 +39,8 @@
                           (set! performance? #t)
                           (set! performance-count 20000)
                           (set! performance-m 10000)]
+ [("--score-smoke") "Run the list-score academic-clean output smoke"
+                    (set! score-smoke? #t)]
  [("--perf-count") n "list-workload live container count for --performance"
                     (set! performance-count (parse-count '--perf-count n))]
  [("--perf-m") n "list-spectrum repeat count for --performance"
@@ -630,8 +633,15 @@
 
 (define (parse-tsv-field key s)
   (case key
-    [(size count cpu-ms real-ms gc-ms live-bytes) (parse-tsv-number s)]
-    [(op impl) (string->symbol s)]
+    [(size count iterations cpu-ms real-ms real-ns/op gc-ms live-bytes
+           generated-result-cost-units result-cost-units/op
+           speed-score/list speed-score/vector cost-score/list
+           cost-score/vector speed-score cost-score total-score
+           sample-count weight)
+     (parse-tsv-number s)]
+    [(kind op impl baseline cost-model score-profile size-weight-model
+           operation-weight-model interface-model speed-metric cost-metric)
+     (string->symbol s)]
     [else s]))
 
 (define (parse-benchmark-tsv label output)
@@ -804,9 +814,147 @@
       (check-real-ratio! "list-spectrum" index size 'map-add1 impl 'treelist 1.0)
       (check-real-ratio! "list-spectrum" index size 'sum impl 'list 1.0))))
 
+(define list-score-required-columns
+  '(kind size power band op impl iterations cpu-ms real-ms real-ns/op gc-ms
+         live-bytes cost-model generated-result-cost-units
+         result-cost-units/op result baseline speed-score/list
+         speed-score/vector cost-score/list cost-score/vector speed-score
+         cost-score total-score sample-count weight score-profile
+         size-weight-model operation-weight-model interface-model score-method
+         speed-metric cost-metric))
+
+(define (count-score-rows rows kind)
+  (for/sum ([row (in-list rows)]
+            #:when (eq? (hash-ref row 'kind #f) kind))
+    1))
+
+(define (find-score-row rows kind op impl)
+  (for/first ([row (in-list rows)]
+              #:when (and (eq? (hash-ref row 'kind #f) kind)
+                          (eq? (hash-ref row 'op #f) op)
+                          (eq? (hash-ref row 'impl #f) impl)))
+    row))
+
+(define (find-score-detail-row rows size op impl)
+  (for/first ([row (in-list rows)]
+              #:when (and (eq? (hash-ref row 'kind #f) 'detail)
+                          (= (hash-ref row 'size #f) size)
+                          (eq? (hash-ref row 'op #f) op)
+                          (eq? (hash-ref row 'impl #f) impl)))
+    row))
+
+(define (check-score-positive! label row field)
+  (define value (hash-ref row field #f))
+  (unless (and (number? value) (positive? value))
+    (fail! "~a has ~a ~a, expected positive score"
+           label
+           field
+           value)))
+
+(define (check-list-score-row-contract! rows)
+  (for ([row (in-list rows)])
+    (case (hash-ref row 'kind #f)
+      [(detail)
+       (define iterations (hash-ref row 'iterations #f))
+       (define cost/op (hash-ref row 'result-cost-units/op #f))
+       (define generated (hash-ref row 'generated-result-cost-units #f))
+       (unless (and (number? iterations)
+                    (number? cost/op)
+                    (number? generated)
+                    (equal? generated (* iterations cost/op)))
+         (fail! "list-score detail row cost contract failed for size=~a op=~a impl=~a: generated=~a iterations=~a cost/op=~a"
+                (hash-ref row 'size #f)
+                (hash-ref row 'op #f)
+                (hash-ref row 'impl #f)
+                generated
+                iterations
+                cost/op))]
+      [(power-score total-score)
+       (define label
+         (format "list-score ~a row size=~a impl=~a"
+                 (hash-ref row 'kind #f)
+                 (hash-ref row 'size #f)
+                 (hash-ref row 'impl #f)))
+       (check-score-positive! label row 'speed-score)
+       (check-score-positive! label row 'cost-score)
+       (check-score-positive! label row 'total-score)]
+      [else (void)])))
+
+(define (check-list-score-smoke!)
+  (define rows
+    (run-benchmark-tsv
+     "list-score"
+     "pkgs/racket-benchmarks/tests/racket/benchmarks/pvector/list-score.rkt"
+     (list "--target-ms" "0"
+           "--m" "5"
+           "--sizes" "0,1,2,4"
+           "--ops" "build,sum,append-self,map-add1"
+           "--impls" "list,vector,pvector,adapter-pvector")))
+  (when (null? rows)
+    (fail! "list-score smoke produced no data rows"))
+  (define first-row (and (pair? rows) (car rows)))
+  (when first-row
+    (for ([column (in-list list-score-required-columns)])
+      (unless (hash-has-key? first-row column)
+        (fail! "list-score smoke is missing column ~a" column))))
+  (unless (= (count-score-rows rows 'detail) 64)
+    (fail! "list-score smoke detail row count is ~a, expected 64"
+           (count-score-rows rows 'detail)))
+  (unless (= (count-score-rows rows 'power-score) 16)
+    (fail! "list-score smoke power-score row count is ~a, expected 16"
+           (count-score-rows rows 'power-score)))
+  (unless (= (count-score-rows rows 'total-score) 4)
+    (fail! "list-score smoke total-score row count is ~a, expected 4"
+           (count-score-rows rows 'total-score)))
+  (for ([row (in-list rows)])
+    (unless (eq? (hash-ref row 'score-profile #f) 'academic-clean)
+      (fail! "list-score row has score-profile ~a"
+             (hash-ref row 'score-profile #f)))
+    (unless (eq? (hash-ref row 'size-weight-model #f) 'equal-per-power-size)
+      (fail! "list-score row has size-weight-model ~a"
+             (hash-ref row 'size-weight-model #f)))
+    (unless (eq? (hash-ref row 'operation-weight-model #f)
+                 'equal-per-operation-within-size)
+      (fail! "list-score row has operation-weight-model ~a"
+             (hash-ref row 'operation-weight-model #f)))
+    (unless (eq? (hash-ref row 'interface-model #f) 'direct-concrete-interface)
+      (fail! "list-score row has interface-model ~a"
+             (hash-ref row 'interface-model #f)))
+    (unless (regexp-match? #rx"cost-ratio=zero-aware-add1-baseline/target"
+                           (hash-ref row 'score-method ""))
+      (fail! "list-score row has score-method ~a"
+             (hash-ref row 'score-method ""))))
+  (check-list-score-row-contract! rows)
+  (define vector-empty-build
+    (find-score-detail-row rows 0 'build 'vector))
+  (unless vector-empty-build
+    (fail! "list-score smoke missing vector empty build detail row"))
+  (when vector-empty-build
+    (define vector-empty-cost
+      (hash-ref vector-empty-build 'result-cost-units/op #f))
+    (define vector-empty-cost-score
+      (hash-ref vector-empty-build 'cost-score/list #f))
+    (unless (equal? vector-empty-cost 1)
+      (fail! "list-score vector empty build result-cost-units/op is ~a"
+             vector-empty-cost))
+    (unless (and (number? vector-empty-cost-score)
+                 (< vector-empty-cost-score 1.0))
+      (fail! "list-score vector empty build cost-score/list is ~a, expected below 1.0"
+             vector-empty-cost-score)))
+  (for ([impl (in-list '(list vector pvector adapter-pvector))])
+    (define total-row (find-score-row rows 'total-score 'all impl))
+    (unless total-row
+      (fail! "list-score smoke missing total-score row for ~a" impl))
+    (when total-row
+      (unless (positive? (hash-ref total-row 'total-score 0))
+        (fail! "list-score total-score for ~a is ~a"
+               impl
+               (hash-ref total-row 'total-score #f))))))
+
 (define (check-performance!)
   (check-list-workload-performance!)
   (check-list-spectrum-performance!)
+  (check-list-score-smoke!)
   (unless quiet?
     (printf "pvector performance gate checked count=~a m=~a\n"
             performance-count
@@ -830,6 +978,9 @@
 
 (when performance?
   (check-performance!))
+
+(when (and score-smoke? (not performance?))
+  (check-list-score-smoke!))
 
 (cond
   [(null? failures)

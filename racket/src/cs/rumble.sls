@@ -413,7 +413,12 @@
 	          core-pvector-shape-stats
 	          core-vector->pvector
           core-immutable-vector->pvector
+          core-fresh-vector->pvector
           core-list->pvector
+          core-make-single-pvector
+          core-make-deep2-pvector
+          core-make-deep3-pvector
+          core-make-deep4-pvector
           core-make-pvector
           core-pvector->vector
           core-pvector->list
