@@ -210,107 +210,16 @@
                   [else #f]))))))
 
 (define (pvector-gen-sequence pv)
-  (define chunks
-    (raw:pvector->chunk-vector/shared (pvector-wrapper-tree/unsafe pv)))
-  (define chunk-count (unsafe-vector-length chunks))
-  (define len (pvector-wrapper-length/unsafe pv))
-  (define size (regular-chunk-size chunks chunk-count))
-  (cond
-    [size
-     (define idx-elem
-       (if (unsafe-fx= size 64)
-           (lambda (index)
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks (unsafe-fxrshift index 6))
-              (unsafe-fxand index 63)))
-           (lambda (index)
-             (define chunk-pos (unsafe-fxquotient index size))
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks chunk-pos)
-              (unsafe-fx- index (unsafe-fx* chunk-pos size))))))
-     (values
-      idx-elem
-      #f
-      (lambda (index) (unsafe-fx+ index 1))
-      0
-      (lambda (index) (unsafe-fx< index len))
-      #f
-      #f)]
-    [(shifted-regular-chunk-layout chunks chunk-count)
-     => (lambda (layout)
-	          (define first-len (car layout))
-	          (define size (cdr layout))
-	          (define idx-elem
-	            (if (unsafe-fx= size 64)
-	                (lambda (index)
-	                  (cond
-	                    [(unsafe-fx< index first-len)
-	                     (unsafe-vector-ref (unsafe-vector-ref chunks 0) index)]
-	                    [else
-	                     (define shifted-index (unsafe-fx- index first-len))
-	                     (unsafe-vector-ref
-	                      (unsafe-vector-ref
-	                       chunks
-	                       (unsafe-fx+ (unsafe-fxrshift shifted-index 6) 1))
-	                      (unsafe-fxand shifted-index 63))]))
-	                (lambda (index)
-	                  (cond
-	                    [(unsafe-fx< index first-len)
-	                     (unsafe-vector-ref (unsafe-vector-ref chunks 0) index)]
-	                    [else
-	                     (define shifted-index (unsafe-fx- index first-len))
-	                     (define shifted-chunk-pos
-	                       (unsafe-fxquotient shifted-index size))
-	                     (define chunk-pos (unsafe-fx+ shifted-chunk-pos 1))
-	                     (unsafe-vector-ref
-	                      (unsafe-vector-ref chunks chunk-pos)
-	                      (unsafe-fx- shifted-index
-	                                  (unsafe-fx* shifted-chunk-pos size)))]))))
-	          (values
-	           idx-elem
-           #f
-           (lambda (index) (unsafe-fx+ index 1))
-           0
-           (lambda (index) (unsafe-fx< index len))
-           #f
-           #f))]
-    [else
-     (define first-chunk
-       (if (unsafe-fx> chunk-count 0)
-           (unsafe-vector-ref chunks 0)
-           #f))
-     (define first-len
-       (if first-chunk (unsafe-vector-length first-chunk) 0))
-     (define (pos-elem pos)
-       (unsafe-vector-ref (unsafe-vector-ref pos 2)
-                          (unsafe-vector-ref pos 1)))
-     (define (next-pos pos)
-       (define chunk-pos (unsafe-vector-ref pos 0))
-       (define elem-idx (unsafe-vector-ref pos 1))
-       (define chunk-len (unsafe-vector-ref pos 3))
-       (define next-elem-idx (unsafe-fx+ elem-idx 1))
-       (cond
-         [(unsafe-fx< next-elem-idx chunk-len)
-          (unsafe-vector-set! pos 1 next-elem-idx)]
-         [else
-          (define next-chunk-pos (unsafe-fx+ chunk-pos 1))
-          (unsafe-vector-set! pos 0 next-chunk-pos)
-          (unsafe-vector-set! pos 1 0)
-          (when (unsafe-fx< next-chunk-pos chunk-count)
-            (define next-chunk (unsafe-vector-ref chunks next-chunk-pos))
-            (unsafe-vector-set! pos 2 next-chunk)
-            (unsafe-vector-set! pos 3 (unsafe-vector-length next-chunk)))])
-       pos)
-     (define (pos-more? pos)
-       (unsafe-fx< (unsafe-vector-ref pos 0) chunk-count))
-     (values
-      pos-elem
-      #f
-      next-pos
-      (vector 0 0 first-chunk first-len)
-      pos-more?
-      #f
-      #f)]))
+  (define vec (raw:pvector->vector (pvector-wrapper-tree/unsafe pv)))
+  (define len (unsafe-vector-length vec))
+  (values
+   (lambda (index) (unsafe-vector-ref vec index))
+   #f
+   (lambda (index) (unsafe-fx+ index 1))
+   0
+   (lambda (index) (unsafe-fx< index len))
+   #f
+   #f))
 
 (define (small-immutable-vector->pvector vec len)
   (wrap/len (raw:small-immutable-vector->pvector vec len) len))
@@ -1138,129 +1047,26 @@
                 (wrap/len right (unsafe-fx- len pos)))])]))
 
 (define (raw-tree-in-pvector/proc tree len)
-  (define chunks (raw:pvector->chunk-vector/shared tree))
-  (define chunk-count (unsafe-vector-length chunks))
-  (define size (regular-chunk-size chunks chunk-count))
-  (cond
-    [size
-     (define pos-elem
-       (if (unsafe-fx= size 64)
-           (lambda (index)
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks (unsafe-fxrshift index 6))
-              (unsafe-fxand index 63)))
-           (lambda (index)
-             (define chunk-pos (unsafe-fxquotient index size))
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks chunk-pos)
-              (unsafe-fx- index (unsafe-fx* chunk-pos size))))))
-     (make-do-sequence
-      (lambda ()
-        (values pos-elem
-                (lambda (index) (unsafe-fx+ index 1))
-                0
-                (lambda (index) (unsafe-fx< index len))
-                (lambda (elem) #t)
-                (lambda (pos elem) #t))))]
-    [else
-     (make-do-sequence
-      (lambda ()
-        (define chunk-pos 0)
-        (define elem-idx 0)
-        (define chunk
-          (if (unsafe-fx> chunk-count 0)
-              (unsafe-vector-ref chunks 0)
-              #f))
-        (define chunk-len
-          (if chunk (unsafe-vector-length chunk) 0))
-        (define (pos-elem pos)
-          (unsafe-vector-ref chunk elem-idx))
-        (define (next-pos pos)
-          (define next-elem-idx (unsafe-fx+ elem-idx 1))
-          (cond
-            [(unsafe-fx< next-elem-idx chunk-len)
-             (set! elem-idx next-elem-idx)]
-            [else
-             (define next-chunk-pos (unsafe-fx+ chunk-pos 1))
-             (set! chunk-pos next-chunk-pos)
-             (set! elem-idx 0)
-             (when (unsafe-fx< next-chunk-pos chunk-count)
-               (define next-chunk (unsafe-vector-ref chunks next-chunk-pos))
-               (set! chunk next-chunk)
-               (set! chunk-len (unsafe-vector-length next-chunk)))])
-          #f)
-        (define (pos-more? pos)
-          (unsafe-fx< chunk-pos chunk-count))
-        (values pos-elem
-                next-pos
-                #f
-                pos-more?
-                (lambda (elem) #t)
-                (lambda (pos elem) #t))))]))
+  (define vec (raw:pvector->vector tree))
+  (make-do-sequence
+   (lambda ()
+     (values (lambda (index) (unsafe-vector-ref vec index))
+             (lambda (index) (unsafe-fx+ index 1))
+             0
+             (lambda (index) (unsafe-fx< index len))
+             (lambda (elem) #t)
+             (lambda (pos elem) #t)))))
 
 (define (raw-tree-in-pvector-reverse/proc tree len)
-  (define chunks (raw:pvector->chunk-vector/shared tree))
-  (define chunk-count (unsafe-vector-length chunks))
-  (define last-chunk-pos (unsafe-fx- chunk-count 1))
-  (define size (regular-chunk-size chunks chunk-count))
-  (cond
-    [size
-     (define pos-elem
-       (if (unsafe-fx= size 64)
-           (lambda (index)
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks (unsafe-fxrshift index 6))
-              (unsafe-fxand index 63)))
-           (lambda (index)
-             (define chunk-pos (unsafe-fxquotient index size))
-             (unsafe-vector-ref
-              (unsafe-vector-ref chunks chunk-pos)
-              (unsafe-fx- index (unsafe-fx* chunk-pos size))))))
-     (make-do-sequence
-      (lambda ()
-        (values pos-elem
-                (lambda (index) (unsafe-fx- index 1))
-                (unsafe-fx- len 1)
-                (lambda (index) (unsafe-fx>= index 0))
-                (lambda (elem) #t)
-                (lambda (pos elem) #t))))]
-    [else
-     (make-do-sequence
-      (lambda ()
-        (define chunk-pos last-chunk-pos)
-        (define chunk
-          (if (unsafe-fx>= last-chunk-pos 0)
-              (unsafe-vector-ref chunks last-chunk-pos)
-              #f))
-        (define elem-idx
-          (if chunk
-              (unsafe-fx- (unsafe-vector-length chunk) 1)
-              -1))
-        (define (pos-elem pos)
-          (unsafe-vector-ref chunk elem-idx))
-        (define (next-pos pos)
-          (define next-elem-idx (unsafe-fx- elem-idx 1))
-          (cond
-            [(unsafe-fx>= next-elem-idx 0)
-             (set! elem-idx next-elem-idx)]
-            [else
-             (define next-chunk-pos (unsafe-fx- chunk-pos 1))
-             (set! chunk-pos next-chunk-pos)
-             (if (unsafe-fx>= next-chunk-pos 0)
-                 (let ([next-chunk (unsafe-vector-ref chunks next-chunk-pos)])
-                   (set! chunk next-chunk)
-                   (set! elem-idx
-                         (unsafe-fx- (unsafe-vector-length next-chunk) 1)))
-                 (set! elem-idx -1))])
-          #f)
-        (define (pos-more? pos)
-          (unsafe-fx>= chunk-pos 0))
-        (values pos-elem
-                next-pos
-                #f
-                pos-more?
-                (lambda (elem) #t)
-                (lambda (pos elem) #t))))]))
+  (define vec (raw:pvector->vector tree))
+  (make-do-sequence
+   (lambda ()
+     (values (lambda (index) (unsafe-vector-ref vec index))
+             (lambda (index) (unsafe-fx- index 1))
+             (unsafe-fx- len 1)
+             (lambda (index) (unsafe-fx>= index 0))
+             (lambda (elem) #t)
+             (lambda (pos elem) #t)))))
 
 (define (in-pvector/proc pv)
   (if (pvector-wrapper? pv)
@@ -1289,47 +1095,21 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(chunks) (raw:pvector->chunk-vector/shared
-                       (let ([pv pv-expr])
-                         (if (pvector-wrapper? pv)
-                             (pvector-wrapper-tree/unsafe pv)
-                             (unwrap 'in-pvector pv))))])
+           ([(vec) (raw:pvector->vector
+                    (let ([pv pv-expr])
+                      (if (pvector-wrapper? pv)
+                          (pvector-wrapper-tree/unsafe pv)
+                          (unwrap 'in-pvector pv))))])
            (begin
-             (define chunk-count (unsafe-vector-length chunks))
-             (define first-chunk
-               (if (unsafe-fx> chunk-count 0)
-                   (unsafe-vector-ref chunks 0)
-                   #f))
-             (define first-len
-               (if first-chunk (unsafe-vector-length first-chunk) 0)))
-           ([chunk-pos 0]
-            [elem-idx 0]
-            [chunk first-chunk]
-            [chunk-len first-len])
-           (unsafe-fx< chunk-pos chunk-count)
-           ([(elem next-chunk-pos next-elem-idx next-chunk next-chunk-len)
-             (let ([elem (unsafe-vector-ref chunk elem-idx)]
-                   [next-elem-idx (unsafe-fx+ elem-idx 1)])
-               (cond
-                 [(unsafe-fx< next-elem-idx chunk-len)
-                  (values elem chunk-pos next-elem-idx chunk chunk-len)]
-                 [else
-                  (define next-chunk-pos (unsafe-fx+ chunk-pos 1))
-                  (if (unsafe-fx< next-chunk-pos chunk-count)
-                      (let ([next-chunk (unsafe-vector-ref chunks next-chunk-pos)])
-                        (values elem
-                                next-chunk-pos
-                                0
-                                next-chunk
-                                (unsafe-vector-length next-chunk)))
-                      (values elem
-                              next-chunk-pos
-                              0
-                              chunk
-                              chunk-len))]))])
+             (define len (unsafe-vector-length vec)))
+           ([elem-idx 0])
+           (unsafe-fx< elem-idx len)
+           ([(elem next-elem-idx)
+             (values (unsafe-vector-ref vec elem-idx)
+                     (unsafe-fx+ elem-idx 1))])
            #t
            #t
-           (next-chunk-pos next-elem-idx next-chunk next-chunk-len))]]
+           (next-elem-idx))]]
       [_ #f])))
 
 (define-sequence-syntax in-pvector-reverse
@@ -1339,47 +1119,21 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(chunks) (raw:pvector->chunk-vector/shared
-                       (let ([pv pv-expr])
-                         (if (pvector-wrapper? pv)
-                             (pvector-wrapper-tree/unsafe pv)
-                             (unwrap 'in-pvector-reverse pv))))])
+           ([(vec) (raw:pvector->vector
+                    (let ([pv pv-expr])
+                      (if (pvector-wrapper? pv)
+                          (pvector-wrapper-tree/unsafe pv)
+                          (unwrap 'in-pvector-reverse pv))))])
            (begin
-             (define chunk-count (unsafe-vector-length chunks))
-             (define last-chunk-pos (unsafe-fx- chunk-count 1))
-             (define last-chunk
-               (if (unsafe-fx>= last-chunk-pos 0)
-                   (unsafe-vector-ref chunks last-chunk-pos)
-                   #f))
-             (define last-elem-idx
-               (if last-chunk
-                   (unsafe-fx- (unsafe-vector-length last-chunk) 1)
-                   -1)))
-           ([chunk-pos last-chunk-pos]
-            [elem-idx last-elem-idx]
-            [chunk last-chunk])
-           (unsafe-fx>= chunk-pos 0)
-           ([(elem next-chunk-pos next-elem-idx next-chunk)
-             (let ([elem (unsafe-vector-ref chunk elem-idx)]
-                   [next-elem-idx (unsafe-fx- elem-idx 1)])
-               (cond
-                 [(unsafe-fx>= next-elem-idx 0)
-                  (values elem chunk-pos next-elem-idx chunk)]
-                 [else
-                  (define next-chunk-pos (unsafe-fx- chunk-pos 1))
-                  (if (unsafe-fx>= next-chunk-pos 0)
-                      (let ([next-chunk (unsafe-vector-ref chunks next-chunk-pos)])
-                        (values elem
-                                next-chunk-pos
-                                (unsafe-fx- (unsafe-vector-length next-chunk) 1)
-                                next-chunk))
-                      (values elem
-                              next-chunk-pos
-                              -1
-                              chunk))]))])
+             (define len (unsafe-vector-length vec)))
+           ([elem-idx (unsafe-fx- len 1)])
+           (unsafe-fx>= elem-idx 0)
+           ([(elem next-elem-idx)
+             (values (unsafe-vector-ref vec elem-idx)
+                     (unsafe-fx- elem-idx 1))])
            #t
            #t
-           (next-chunk-pos next-elem-idx next-chunk))]]
+           (next-elem-idx))]]
       [_ #f])))
 
 (module+ unsafe
@@ -1591,43 +1345,17 @@
         [[(elem) (_ pv-expr)]
          #'[(elem)
             (:do-in
-             ([(chunks) (raw:pvector->chunk-vector/shared (unsafe-tree pv-expr))])
+             ([(vec) (raw:pvector->vector (unsafe-tree pv-expr))])
              (begin
-               (define chunk-count (unsafe-vector-length chunks))
-               (define first-chunk
-                 (if (unsafe-fx> chunk-count 0)
-                     (unsafe-vector-ref chunks 0)
-                     #f))
-               (define first-len
-                 (if first-chunk (unsafe-vector-length first-chunk) 0)))
-             ([chunk-pos 0]
-              [elem-idx 0]
-              [chunk first-chunk]
-              [chunk-len first-len])
-             (unsafe-fx< chunk-pos chunk-count)
-             ([(elem next-chunk-pos next-elem-idx next-chunk next-chunk-len)
-               (let ([elem (unsafe-vector-ref chunk elem-idx)]
-                     [next-elem-idx (unsafe-fx+ elem-idx 1)])
-                 (cond
-                   [(unsafe-fx< next-elem-idx chunk-len)
-                    (values elem chunk-pos next-elem-idx chunk chunk-len)]
-                   [else
-                    (define next-chunk-pos (unsafe-fx+ chunk-pos 1))
-                    (if (unsafe-fx< next-chunk-pos chunk-count)
-                        (let ([next-chunk (unsafe-vector-ref chunks next-chunk-pos)])
-                          (values elem
-                                  next-chunk-pos
-                                  0
-                                  next-chunk
-                                  (unsafe-vector-length next-chunk)))
-                        (values elem
-                                next-chunk-pos
-                                0
-                                chunk
-                                chunk-len))]))])
+               (define len (unsafe-vector-length vec)))
+             ([elem-idx 0])
+             (unsafe-fx< elem-idx len)
+             ([(elem next-elem-idx)
+               (values (unsafe-vector-ref vec elem-idx)
+                       (unsafe-fx+ elem-idx 1))])
              #t
              #t
-             (next-chunk-pos next-elem-idx next-chunk next-chunk-len))]]
+             (next-elem-idx))]]
         [_ #f])))
 
   (define-sequence-syntax unsafe-in-pvector-reverse
@@ -1637,43 +1365,17 @@
         [[(elem) (_ pv-expr)]
          #'[(elem)
             (:do-in
-             ([(chunks) (raw:pvector->chunk-vector/shared (unsafe-tree pv-expr))])
+             ([(vec) (raw:pvector->vector (unsafe-tree pv-expr))])
              (begin
-               (define chunk-count (unsafe-vector-length chunks))
-               (define last-chunk-pos (unsafe-fx- chunk-count 1))
-               (define last-chunk
-                 (if (unsafe-fx>= last-chunk-pos 0)
-                     (unsafe-vector-ref chunks last-chunk-pos)
-                     #f))
-               (define last-elem-idx
-                 (if last-chunk
-                     (unsafe-fx- (unsafe-vector-length last-chunk) 1)
-                     -1)))
-             ([chunk-pos last-chunk-pos]
-              [elem-idx last-elem-idx]
-              [chunk last-chunk])
-             (unsafe-fx>= chunk-pos 0)
-             ([(elem next-chunk-pos next-elem-idx next-chunk)
-               (let ([elem (unsafe-vector-ref chunk elem-idx)]
-                     [next-elem-idx (unsafe-fx- elem-idx 1)])
-                 (cond
-                   [(unsafe-fx>= next-elem-idx 0)
-                    (values elem chunk-pos next-elem-idx chunk)]
-                   [else
-                    (define next-chunk-pos (unsafe-fx- chunk-pos 1))
-                    (if (unsafe-fx>= next-chunk-pos 0)
-                        (let ([next-chunk (unsafe-vector-ref chunks next-chunk-pos)])
-                          (values elem
-                                  next-chunk-pos
-                                  (unsafe-fx- (unsafe-vector-length next-chunk) 1)
-                                  next-chunk))
-                        (values elem
-                                next-chunk-pos
-                                -1
-                                chunk))]))])
+               (define len (unsafe-vector-length vec)))
+             ([elem-idx (unsafe-fx- len 1)])
+             (unsafe-fx>= elem-idx 0)
+             ([(elem next-elem-idx)
+               (values (unsafe-vector-ref vec elem-idx)
+                       (unsafe-fx- elem-idx 1))])
              #t
              #t
-             (next-chunk-pos next-elem-idx next-chunk))]]
+             (next-elem-idx))]]
         [_ #f]))))
 
 (define (pvector-match-tail->list tree start end)

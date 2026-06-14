@@ -5,12 +5,17 @@
          racket/list
          racket/match
          racket/path
+         racket/port
+         racket/string
          racket/system
          (prefix-in runtime: racket/private/pvector-runtime-adapter))
 
 (define N 10000)
 (define quiet? #f)
 (define compile-rumble? #f)
+(define performance? #f)
+(define performance-count 200000)
+(define performance-m 100000)
 
 (define (parse-count who s)
   (define n (string->number s))
@@ -26,7 +31,17 @@
  [("--quiet") "Only print failures"
               (set! quiet? #t)]
  [("--compile-rumble") "Compile racket/src/cs/rumble.sls with the local Chez build"
-                       (set! compile-rumble? #t)])
+                       (set! compile-rumble? #t)]
+ [("--performance") "Run pvector benchmark performance and memory gates"
+                    (set! performance? #t)]
+ [("--performance-smoke") "Run performance gates with smaller benchmark counts"
+                          (set! performance? #t)
+                          (set! performance-count 20000)
+                          (set! performance-m 10000)]
+ [("--perf-count") n "list-workload live container count for --performance"
+                    (set! performance-count (parse-count '--perf-count n))]
+ [("--perf-m") n "list-spectrum repeat count for --performance"
+                (set! performance-m (parse-count '--perf-m n))])
 
 (define (alist-ref key alst [default #f])
   (cond
@@ -58,6 +73,7 @@
            (loop (cons v forms)))))))
 
 (define boundary (read-one boundary-path))
+(define boundary-format-version (alist-ref 'format-version boundary 1))
 (define shape-gates (alist-ref 'shape-gates boundary))
 (define rumble-candidate (alist-ref 'rumble-candidate boundary))
 (define runtime-adapter (alist-ref 'runtime-adapter boundary))
@@ -415,12 +431,12 @@
   (check-members
    "object"
    (and runtime-objects (map car runtime-objects))
-   '(pvector leaf-chunk leaf-vector digit1 digit2 digit3 digit4
+   '(pvector leaf-vector digit1 digit2 digit3 digit4
      node2 node3 empty-tree single-tree deep-tree))
   (check-members
    "helper group"
    (and runtime-helper-groups (map car runtime-helper-groups))
-   '(chunk tree pvector iteration debug-only))
+   '(tree pvector iteration debug-only))
   (check-members
    "primitive candidate"
    (and primitive-candidates
@@ -436,6 +452,146 @@
                 split-left split-right subvector-middle)])
     (unless (alist-ref name shape-gates)
       (fail! "runtime boundary manifest is missing shape gate ~a" name))))
+
+(define (check-path-field! owner label rel)
+  (unless rel
+    (fail! "~a is missing ~a path" owner label))
+  (when rel
+    (unless (file-exists? (repo-path rel))
+      (fail! "~a ~a file does not exist: ~a" owner label rel))))
+
+(define (allowed-backend? backend allowed)
+  (cond
+    [(list? allowed) (and (memq backend allowed) #t)]
+    [else (eq? backend allowed)]))
+
+(define obsolete-chunk-constructor-symbols
+  '("core-fixed-chunks->pvector"
+    "core-chunks->pvector"))
+
+(define obsolete-core-chunk-view-symbols
+  '("core-pvector->chunk-vector"
+    "core-pvector->chunk-vector/shared"
+    "core-pvector-lookup-chunk"))
+
+(define (check-source-no-obsolete-chunk-constructors!)
+  (define sources
+    (list (cons 'runtime-candidate
+                (alist-ref 'runtime-candidate-file boundary))
+          (cons 'runtime-adapter
+                (and runtime-adapter (alist-ref 'file runtime-adapter)))
+          (cons 'rumble-exports
+                "racket/src/cs/rumble.sls")
+          (cons 'kernel-primitives
+                "racket/src/cs/primitive/kernel.ss")))
+  (for ([source (in-list sources)])
+    (define label (car source))
+    (define rel (cdr source))
+    (when rel
+      (define text (file->string (repo-path rel)))
+      (for ([symbol-name (in-list obsolete-chunk-constructor-symbols)])
+        (when (regexp-match? (regexp (regexp-quote symbol-name)) text)
+          (fail! "~a still mentions obsolete chunk constructor primitive ~a"
+                 label
+                 symbol-name))))))
+
+(define (check-source-no-core-chunk-view-primitives!)
+  (define sources
+    (list (cons 'runtime-candidate
+                (alist-ref 'runtime-candidate-file boundary))
+          (cons 'rumble-exports
+                "racket/src/cs/rumble.sls")
+          (cons 'kernel-primitives
+                "racket/src/cs/primitive/kernel.ss")))
+  (for ([source (in-list sources)])
+    (define label (car source))
+    (define rel (cdr source))
+    (when rel
+      (define text (file->string (repo-path rel)))
+      (for ([symbol-name (in-list obsolete-core-chunk-view-symbols)])
+        (when (regexp-match? (regexp (regexp-quote symbol-name)) text)
+          (fail! "~a still mentions obsolete core chunk-view primitive ~a"
+                 label
+                 symbol-name))))))
+
+(define (check-boundary-v2!)
+  (unless (eq? (alist-ref 'name boundary) 'pvector-runtime-boundary)
+    (fail! "runtime boundary manifest has unexpected name: ~e"
+           (alist-ref 'name boundary)))
+  (unless (eqv? boundary-format-version 2)
+    (fail! "runtime boundary manifest is not format-version 2: ~e"
+           boundary-format-version))
+  (define current-default (alist-ref 'current-default boundary))
+  (define compatibility-views (alist-ref 'compatibility-views boundary))
+  (define no-chunk-baseline
+    (alist-ref 'no-chunk-baseline (alist-ref 'acceptance boundary null)))
+  (check-path-field! 'boundary 'runtime-candidate
+                     (alist-ref 'runtime-candidate-file boundary))
+  (unless runtime-adapter
+    (fail! "runtime boundary manifest is missing runtime-adapter"))
+  (when runtime-adapter
+    (check-path-field! 'runtime-adapter 'file
+                       (alist-ref 'file runtime-adapter))
+    (check-path-field! 'runtime-adapter 'fallback-module
+                       (alist-ref 'fallback-module runtime-adapter))
+    (unless (allowed-backend? 'finger
+                              (alist-ref 'expected-default-backend runtime-adapter))
+      (fail! "runtime-adapter expected-default-backend does not allow finger: ~e"
+             (alist-ref 'expected-default-backend runtime-adapter))))
+  (check-source-no-obsolete-chunk-constructors!)
+  (check-source-no-core-chunk-view-primitives!)
+  (unless (allowed-backend? 'finger
+                            (alist-ref 'adapter-backend current-default))
+    (fail! "current-default adapter-backend does not allow finger: ~e"
+           (alist-ref 'adapter-backend current-default)))
+  (unless (eq? (alist-ref 'chunked-runtime-status current-default)
+               'removed-from-current-boundary)
+    (fail! "current-default does not mark chunked runtime as removed: ~e"
+           (alist-ref 'chunked-runtime-status current-default)))
+  (define backend (runtime:pvector-runtime-adapter-backend))
+  (unless (allowed-backend? backend (alist-ref 'adapter-backend current-default))
+    (fail! "runtime adapter backend is not allowed by manifest: ~e" backend))
+  (unless compatibility-views
+    (fail! "runtime boundary manifest is missing compatibility-views"))
+  (unless no-chunk-baseline
+    (fail! "runtime boundary manifest is missing no-chunk-baseline acceptance"))
+  (unless (eq? (alist-ref 'chunk-constructor-primitives no-chunk-baseline)
+               'absent)
+    (fail! "no-chunk-baseline does not require absent chunk constructor primitives"))
+  (unless (eq? (alist-ref 'chunk-view-primitives no-chunk-baseline)
+               'absent)
+    (fail! "no-chunk-baseline does not require absent chunk-view primitives"))
+  (define stats
+    (runtime:pvector-shape-stats
+     (runtime:list->pvector (build-list (max 1 N) values))))
+  (unless (allowed-backend? (hash-ref stats 'backend #f)
+                            (alist-ref 'shape-stats-backend no-chunk-baseline))
+    (fail! "shape-stats backend is not allowed by manifest: ~e"
+           (hash-ref stats 'backend #f)))
+  (unless (eq? (hash-ref stats 'chunked-tree? #t) #f)
+    (fail! "shape-stats does not report chunked-tree? #f"))
+  (unless (zero? (hash-ref stats 'chunk-index-vectors 1))
+    (fail! "shape-stats reports chunk-index-vectors: ~e"
+           (hash-ref stats 'chunk-index-vectors #f)))
+  (unless (eq? (hash-ref stats 'ref-cache? #t) #f)
+    (fail! "shape-stats does not report ref-cache? #f"))
+  (when (eq? backend 'core)
+    (define large-stats
+      (runtime:pvector-shape-stats
+       (runtime:list->pvector (build-list (max 513 N) values))))
+    (unless (eq? (hash-ref large-stats 'representation #f) 'large-finger)
+      (fail! "core large value is not represented as large-finger: ~e"
+             (hash-ref large-stats 'representation #f)))
+    (unless (zero? (hash-ref large-stats 'payload-vectors 1))
+      (fail! "core large-finger still reports vector payloads: ~e"
+             (hash-ref large-stats 'payload-vectors #f)))
+    (unless (= (hash-ref large-stats 'digit-vectors 0) 2)
+      (fail! "core large-finger does not report prefix/suffix digits: ~e"
+             (hash-ref large-stats 'digit-vectors #f)))
+    (unless (positive? (hash-ref large-stats 'finger-nodes 0))
+      (fail! "core large-finger does not report measured nodes: ~e"
+             (hash-ref large-stats 'finger-nodes #f))))
+  (check-rumble-compile!))
 
 (define (check-shape! name pv)
   (define spec (alist-ref name shape-gates))
@@ -469,16 +625,211 @@
     (fail! "~a retained/visible is ~a, over limit ~a"
            name (format-ratio retained) (format-ratio retained-limit))))
 
-(check-boundary!)
+(define (parse-tsv-number s)
+  (or (string->number s) 0))
 
-(unless quiet?
-  (printf "pvector runtime boundary: ~a\n" (alist-ref 'status boundary))
-  (printf "shape gate n=~a\n" N))
+(define (parse-tsv-field key s)
+  (case key
+    [(size count cpu-ms real-ms gc-ms live-bytes) (parse-tsv-number s)]
+    [(op impl) (string->symbol s)]
+    [else s]))
 
-(for ([name+pv (in-list (scenario-values N))])
-  (check-shape! (car name+pv) (cdr name+pv)))
+(define (parse-benchmark-tsv label output)
+  (define lines
+    (filter (lambda (s) (not (string=? s "")))
+            (string-split output "\n")))
+  (cond
+    [(null? lines)
+     (fail! "~a benchmark produced no output" label)
+     null]
+    [else
+     (define headers
+       (map string->symbol (string-split (car lines) "\t" #:trim? #f)))
+     (for/list ([line (in-list (cdr lines))]
+                #:when (not (regexp-match? #rx"^#" line)))
+       (define cells (string-split line "\t" #:trim? #f))
+       (define row (make-hasheq))
+       (for ([key (in-list headers)]
+             [cell (in-list cells)])
+         (hash-set! row key (parse-tsv-field key cell)))
+       row)]))
 
-(check-rumble-compile!)
+(define (run-benchmark-tsv label rel args)
+  (define racket-bin (repo-path "racket/bin/racket"))
+  (define script (repo-path rel))
+  (define command
+    (append (list (path-string racket-bin)
+                  "-t"
+                  (path-string script)
+                  "--")
+            args))
+  (unless quiet?
+    (printf "~a benchmark command: ~a\n" label (string-join command " "))
+    (flush-output))
+  (define ok? #t)
+  (define output
+    (with-output-to-string
+      (lambda ()
+        (set! ok? (apply system* command)))))
+  (unless ok?
+    (fail! "~a benchmark command failed" label))
+  (parse-benchmark-tsv label output))
+
+(define (index-benchmark-rows rows)
+  (for/hash ([row (in-list rows)])
+    (values (list (hash-ref row 'size #f)
+                  (hash-ref row 'op #f)
+                  (hash-ref row 'impl #f))
+            row)))
+
+(define (benchmark-row label index size op impl)
+  (define row (hash-ref index (list size op impl) #f))
+  (unless row
+    (fail! "~a is missing row size=~a op=~a impl=~a"
+           label size op impl))
+  row)
+
+(define (row-real-ms row)
+  (if row (max 1 (hash-ref row 'real-ms 0)) 1))
+
+(define (row-live-bytes row)
+  (if row (max 0 (hash-ref row 'live-bytes 0)) 0))
+
+(define (check-real-ratio! label index size op impl baseline-impl max-ratio)
+  (define target (benchmark-row label index size op impl))
+  (define baseline (benchmark-row label index size op baseline-impl))
+  (when (and target baseline)
+    (define target-ms (row-real-ms target))
+    (define baseline-ms (row-real-ms baseline))
+    (define actual (ratio target-ms baseline-ms))
+    (unless (<= actual max-ratio)
+      (fail! "~a size=~a op=~a: ~a real-ms ~a is ~ax ~a real-ms ~a, over limit ~ax"
+             label
+             size
+             op
+             impl
+             target-ms
+             (format-ratio actual)
+             baseline-impl
+             baseline-ms
+             (format-ratio max-ratio)))))
+
+(define (check-live-bytes-ratio! label index size op impl baseline-impl max-ratio)
+  (define target (benchmark-row label index size op impl))
+  (define baseline (benchmark-row label index size op baseline-impl))
+  (when (and target baseline)
+    (define target-bytes (row-live-bytes target))
+    (define baseline-bytes (max 1 (row-live-bytes baseline)))
+    (define actual (ratio target-bytes baseline-bytes))
+    (unless (<= actual max-ratio)
+      (fail! "~a size=~a op=~a: ~a live-bytes ~a is ~ax ~a live-bytes ~a, over limit ~ax"
+             label
+             size
+             op
+             impl
+             target-bytes
+             (format-ratio actual)
+             baseline-impl
+             baseline-bytes
+             (format-ratio max-ratio)))))
+
+(define (geomean xs)
+  (cond
+    [(null? xs) #f]
+    [else (exp (/ (for/sum ([x (in-list xs)]) (log x))
+                  (length xs)))]))
+
+(define performance-impls '(pvector adapter-pvector))
+
+(define (check-list-workload-performance!)
+  (define rows
+    (run-benchmark-tsv
+     "list-workload"
+     "pkgs/racket-benchmarks/tests/racket/benchmarks/pvector/list-workload.rkt"
+     (list "--count" (number->string performance-count)
+           "--sizes" "1,2,4,8,16,64"
+           "--ops" "build-live,sum-live,ref-live,cons-left-live,cons-right-live,drop-left-live,append-self-live"
+           "--impls" "list,vector,treelist,pvector,adapter-pvector")))
+  (define index (index-benchmark-rows rows))
+  (for ([impl (in-list performance-impls)])
+    (for ([size (in-list '(1 2 4))])
+      (check-real-ratio! "list-workload" index size 'build-live impl 'list 2.0)
+      (check-real-ratio! "list-workload" index size 'cons-left-live impl 'list 2.0)
+      (check-real-ratio! "list-workload" index size 'ref-live impl 'treelist 1.0))
+    (check-live-bytes-ratio! "list-workload" index 1 'build-live impl 'list 2.0)
+    (for ([size (in-list '(2 4))])
+      (check-live-bytes-ratio! "list-workload" index size 'build-live impl 'list 1.5)
+      (check-live-bytes-ratio! "list-workload" index size 'build-live impl 'vector 2.0))
+    (check-live-bytes-ratio! "list-workload" index 64 'build-live impl 'list 1.0)
+    (check-live-bytes-ratio! "list-workload" index 64 'append-self-live impl 'list 1.0)
+    (check-real-ratio! "list-workload" index 64 'append-self-live impl 'list 1.0)
+    (check-real-ratio! "list-workload" index 64 'append-self-live impl 'vector 1.0)))
+
+(define (check-list-spectrum-performance!)
+  (define sizes '(1 2 4 8 16 64 256))
+  (define ops '(build sum ref-middle append-self map-add1))
+  (define rows
+    (run-benchmark-tsv
+     "list-spectrum"
+     "pkgs/racket-benchmarks/tests/racket/benchmarks/pvector/list-spectrum.rkt"
+     (list "--m" (number->string performance-m)
+           "--sizes" "1,2,4,8,16,64,256"
+           "--ops" "build,sum,ref-middle,append-self,map-add1"
+           "--impls" "list,vector,treelist,pvector,adapter-pvector")))
+  (define index (index-benchmark-rows rows))
+  (for ([impl (in-list performance-impls)])
+    (define ratios
+      (for*/list ([size (in-list sizes)]
+                  [op (in-list ops)]
+                  [target (in-value (benchmark-row "list-spectrum" index size op impl))]
+                  [baseline (in-value (benchmark-row "list-spectrum" index size op 'list))]
+                  #:when (and target baseline))
+        (ratio (row-real-ms target) (row-real-ms baseline))))
+    (define gm (geomean ratios))
+    (when (and gm (> gm 1.0))
+      (fail! "list-spectrum: ~a geometric mean real time is ~ax list, over limit 1.0000x"
+             impl
+             (format-ratio gm)))
+    (for* ([size (in-list sizes)]
+           [op (in-list ops)])
+      (unless (and (memq size '(64 256))
+                   (memq op '(build sum append-self map-add1)))
+        (check-real-ratio! "list-spectrum" index size op impl 'list 2.0)))
+    (for ([size (in-list '(64 256))])
+      (check-real-ratio! "list-spectrum" index size 'append-self impl 'list 1.0)
+      (check-real-ratio! "list-spectrum" index size 'append-self impl 'vector 1.0)
+      (check-real-ratio! "list-spectrum" index size 'build impl 'list 1.0)
+      (check-real-ratio! "list-spectrum" index size 'build impl 'treelist 1.0)
+      (check-real-ratio! "list-spectrum" index size 'map-add1 impl 'vector 1.0)
+      (check-real-ratio! "list-spectrum" index size 'map-add1 impl 'treelist 1.0)
+      (check-real-ratio! "list-spectrum" index size 'sum impl 'list 1.0))))
+
+(define (check-performance!)
+  (check-list-workload-performance!)
+  (check-list-spectrum-performance!)
+  (unless quiet?
+    (printf "pvector performance gate checked count=~a m=~a\n"
+            performance-count
+            performance-m)))
+
+(if (eqv? boundary-format-version 2)
+    (begin
+      (check-boundary-v2!)
+      (unless quiet?
+        (printf "pvector runtime boundary: ~a\n" (alist-ref 'status boundary))
+        (printf "no-chunk baseline backend: ~a\n"
+                (runtime:pvector-runtime-adapter-backend))))
+    (begin
+      (check-boundary!)
+      (unless quiet?
+        (printf "pvector runtime boundary: ~a\n" (alist-ref 'status boundary))
+        (printf "shape gate n=~a\n" N))
+      (for ([name+pv (in-list (scenario-values N))])
+        (check-shape! (car name+pv) (cdr name+pv)))
+      (check-rumble-compile!)))
+
+(when performance?
+  (check-performance!))
 
 (cond
   [(null? failures)

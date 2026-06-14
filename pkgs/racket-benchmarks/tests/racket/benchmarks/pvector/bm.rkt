@@ -6,7 +6,6 @@
          (prefix-in cutie: (file "/Users/cutiedeng/Y2026/M03/D28/cutie-ftree.rkt/pvector.rkt"))
          racket/pvector
          (prefix-in adapter: racket/private/pvector-runtime-adapter)
-         (prefix-in chunked: racket/private/pvector-chunked)
          (prefix-in raw: racket/private/pvector)
          (prefix-in unsafe: (submod racket/pvector unsafe))
          racket/string
@@ -17,7 +16,7 @@
 (define M 20)
 (define N 1000)
 (define list-limit 2000)
-(define impls '(list vector treelist cutie-pvector raw-pvector chunked-pvector adapter-pvector pvector unsafe-pvector))
+(define impls '(list vector treelist cutie-pvector raw-pvector adapter-pvector pvector unsafe-pvector))
 (define ops #f)
 
 (define (parse-count who s)
@@ -40,7 +39,7 @@
           (set! N (parse-count '--n n))]
  [("--list-limit") n "Maximum N for O(N^2) list baselines"
                    (set! list-limit (parse-count '--list-limit n))]
- [("--impls") s "Comma-separated implementations: list,vector,treelist,cutie-pvector,raw-pvector,chunked-pvector,adapter-pvector,pvector,unsafe-pvector"
+ [("--impls") s "Comma-separated implementations: list,vector,treelist,cutie-pvector,raw-pvector,adapter-pvector,pvector,unsafe-pvector"
               (set! impls (parse-symbol-list s))]
  [("--ops") s "Comma-separated benchmark names"
            (set! ops (parse-symbol-list s))])
@@ -72,7 +71,6 @@
     [(treelist? v) (format "treelist:~a" (treelist-length v))]
     [(cutie:pvector? v) (format "cutie-pvector:~a" (cutie:pvector-length v))]
     [(raw:pvector? v) (format "raw-pvector:~a" (raw:pvector-length v))]
-    [(chunked:pvector? v) (format "chunked-pvector:~a" (chunked:pvector-length v))]
     [(adapter:pvector? v) (format "adapter-pvector:~a" (adapter:pvector-length v))]
     [(pvector? v) (format "pvector:~a" (pvector-length v))]
     [else (format "~s" v)]))
@@ -105,7 +103,6 @@
   (define base-filter-treelist (list->treelist base-filter-list))
   (define base-cutie-pvector (cutie:list->pvector base-list))
   (define base-raw-pvector (raw:list->pvector base-list))
-  (define base-chunked-pvector (chunked:list->pvector base-list))
   (define base-adapter-pvector (adapter:list->pvector base-list))
   (define base-pvector (list->pvector base-list))
   (define base-filter-pvector (list->pvector base-filter-list))
@@ -195,8 +192,6 @@
   (define right-cutie-pvector (cutie:pvector-drop base-cutie-pvector half))
   (define left-raw-pvector (raw:pvector-take base-raw-pvector half))
   (define right-raw-pvector (raw:pvector-drop base-raw-pvector half))
-  (define left-chunked-pvector (chunked:pvector-take base-chunked-pvector half))
-  (define right-chunked-pvector (chunked:pvector-drop base-chunked-pvector half))
   (define left-pvector (pvector-take base-pvector half))
   (define right-pvector (pvector-drop base-pvector half))
   (define take-right-half-pvector (pvector-take-right base-pvector half))
@@ -339,10 +334,6 @@
          (lambda ()
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (cutie:for/pvector ([i (in-range n)]) i))))
-  (bench 'build-native 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:for/pvector ([i (in-range n)]) i))))
   (bench 'build-native 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -724,10 +715,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))))
-  (bench 'construct-17 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16))))
   (bench 'construct-17 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -1426,11 +1413,6 @@
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (for/fold ([pv (cutie:pvector-empty)]) ([i (in-range n)])
                (cutie:pvector-cons-left pv i)))))
-  (bench 'cons-left-chain 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (for/fold ([pv (chunked:pvector-empty)]) ([i (in-range n)])
-               (chunked:pvector-cons-left pv i)))))
   (bench 'cons-left-chain 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -1464,11 +1446,6 @@
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (for/fold ([pv (cutie:pvector-empty)]) ([i (in-range n)])
                (cutie:pvector-cons-right pv i)))))
-  (bench 'cons-right-chain 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (for/fold ([pv (chunked:pvector-empty)]) ([i (in-range n)])
-               (chunked:pvector-cons-right pv i)))))
   (bench 'cons-right-chain 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -1501,12 +1478,6 @@
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (for/fold ([pv base-cutie-pvector]) ([i (in-range n)])
                (define-values (_ rest) (cutie:pvector-pop-left pv))
-               rest))))
-  (bench 'pop-left-chain 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (for/fold ([pv base-chunked-pvector]) ([i (in-range n)])
-               (define-values (_ rest) (chunked:pvector-pop-left pv))
                rest))))
   (bench 'pop-left-chain 'pvector
          (lambda ()
@@ -1554,12 +1525,6 @@
              (for/fold ([pv base-cutie-pvector]) ([i (in-range n)])
                (define-values (_ rest) (cutie:pvector-pop-right pv))
                rest))))
-  (bench 'pop-right-chain 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (for/fold ([pv base-chunked-pvector]) ([i (in-range n)])
-               (define-values (_ rest) (chunked:pvector-pop-right pv))
-               rest))))
   (bench 'pop-right-chain 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -1603,10 +1568,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector-append left-raw-pvector right-raw-pvector))))
-  (bench 'append-halves 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-append left-chunked-pvector right-chunked-pvector))))
   (bench 'append-halves 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -1810,10 +1771,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
              (+ sum (raw:pvector-view-left base-raw-pvector)))))
-  (bench 'first-repeated 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
-             (+ sum (chunked:pvector-view-left base-chunked-pvector)))))
   (bench 'first-repeated 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
@@ -1852,10 +1809,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
              (+ sum (raw:pvector-view-right base-raw-pvector)))))
-  (bench 'last-repeated 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
-             (+ sum (chunked:pvector-view-right base-chunked-pvector)))))
   (bench 'last-repeated 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
@@ -1886,10 +1839,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
              (+ sum (treelist-length base-treelist)))))
-  (bench 'length-repeated 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
-             (+ sum (chunked:pvector-length base-chunked-pvector)))))
   (bench 'length-repeated 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
@@ -1924,10 +1873,6 @@
          (lambda ()
            (for/fold ([h 0]) ([j (in-range m)])
              (bitwise-xor h (equal-hash-code base-treelist)))))
-  (bench 'hash-repeated 'chunked-pvector
-         (lambda ()
-           (for/fold ([h 0]) ([j (in-range m)])
-             (bitwise-xor h (equal-hash-code base-chunked-pvector)))))
   (bench 'hash-repeated 'pvector
          (lambda ()
            (for/fold ([h 0]) ([j (in-range m)])
@@ -1984,11 +1929,6 @@
          (lambda ()
            (for/fold ([r null]) ([j (in-range m)])
              (define-values (left right) (raw:pvector-split-at base-raw-pvector half))
-             (list left right))))
-  (bench 'split-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r null]) ([j (in-range m)])
-             (define-values (left right) (chunked:pvector-split-at base-chunked-pvector half))
              (list left right))))
   (bench 'split-middle 'pvector
          (lambda ()
@@ -2095,10 +2035,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector-take base-raw-pvector half))))
-  (bench 'take-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-take base-chunked-pvector half))))
   (bench 'take-middle 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2144,10 +2080,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector-drop base-raw-pvector half))))
-  (bench 'drop-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-drop base-chunked-pvector half))))
   (bench 'drop-middle 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2177,10 +2109,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (pvector-take-right base-pvector narrow-subvector-len))))
-  (bench 'take-right-small 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-take-right base-chunked-pvector narrow-subvector-len))))
   (bench 'take-right-small 'unsafe-pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2189,10 +2117,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (pvector-drop-right base-pvector narrow-subvector-len))))
-  (bench 'drop-right-small 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-drop-right base-chunked-pvector narrow-subvector-len))))
   (bench 'drop-right-small 'unsafe-pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2209,10 +2133,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (pvector-take-right base-pvector n))))
-  (bench 'take-right-half 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-take-right base-chunked-pvector half))))
   (bench 'take-right-half 'unsafe-pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2237,10 +2157,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (pvector-drop-right base-pvector n))))
-  (bench 'drop-right-half 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-drop-right base-chunked-pvector half))))
   (bench 'drop-right-half 'unsafe-pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2274,10 +2190,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector-copy base-raw-pvector quarter three-quarter))))
-  (bench 'subvector-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-copy base-chunked-pvector quarter three-quarter))))
   (bench 'subvector-middle 'adapter-pvector
          (lambda ()
            (for/fold ([r (adapter:pvector-empty)]) ([j (in-range m)])
@@ -2392,12 +2304,6 @@
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (unsafe:unsafe-pvector-subvector base-pvector narrow-subvector-start narrow-subvector-end))))
 
-  (bench 'subvector-small-2chunk 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-copy base-chunked-pvector
-                                   small-subvector-start
-                                   small-2chunk-subvector-end))))
   (bench 'subvector-small-2chunk 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2410,12 +2316,6 @@
              (unsafe:unsafe-pvector-subvector base-pvector
                                               small-subvector-start
                                               small-2chunk-subvector-end))))
-  (bench 'subvector-small-3chunk 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-copy base-chunked-pvector
-                                   small-subvector-start
-                                   small-3chunk-subvector-end))))
   (bench 'subvector-small-3chunk 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2450,10 +2350,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
              (+ sum (raw:pvector-ref base-raw-pvector i)))))
-  (bench 'ref-sequential 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
-             (+ sum (chunked:pvector-ref base-chunked-pvector i)))))
   (bench 'ref-sequential 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-range n)])
@@ -2698,11 +2594,6 @@
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (for/fold ([pv base-raw-pvector]) ([i (in-range n)])
                (raw:pvector-set pv i (+ i j))))))
-  (bench 'set-sequential 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (for/fold ([pv base-chunked-pvector]) ([i (in-range n)])
-               (chunked:pvector-set pv i (+ i j))))))
   (bench 'set-sequential 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2714,10 +2605,6 @@
              (for/fold ([pv base-pvector]) ([i (in-range n)])
                (unsafe:unsafe-pvector-set pv i (+ i j))))))
 
-  (bench 'set-same 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-set base-chunked-pvector half half))))
   (bench 'set-same 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2726,10 +2613,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (unsafe:unsafe-pvector-set base-pvector half half))))
-  (bench 'set-different 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-set base-chunked-pvector half 'different))))
   (bench 'set-different 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2797,10 +2680,6 @@
          (lambda ()
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (raw:pvector-insert base-raw-pvector half j))))
-  (bench 'insert-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-insert base-chunked-pvector half j))))
   (bench 'insert-middle 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2809,10 +2688,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (unsafe:unsafe-pvector-insert base-pvector half j))))
-  (bench 'insert-left 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-insert base-chunked-pvector 0 j))))
   (bench 'insert-left 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2821,10 +2696,6 @@
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (unsafe:unsafe-pvector-insert base-pvector 0 j))))
-  (bench 'insert-right 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:pvector-insert base-chunked-pvector n j))))
   (bench 'insert-right 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2861,12 +2732,6 @@
            (for/fold ([r (raw:pvector-empty)]) ([j (in-range m)])
              (define-values (pv value)
                (raw:pvector-delete base-raw-pvector half))
-             pv)))
-  (bench 'delete-middle 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (define-values (pv value)
-               (chunked:pvector-delete base-chunked-pvector half))
              pv)))
   (bench 'delete-middle 'pvector
          (lambda ()
@@ -2906,12 +2771,6 @@
                (unsafe:unsafe-pvector-delete base-boundary-inserted-pvector 64))
              pv))
          #:when base-boundary-inserted-pvector)
-  (bench 'delete-left 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (define-values (pv value)
-               (chunked:pvector-delete base-chunked-pvector 0))
-             pv)))
   (bench 'delete-left 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -2923,12 +2782,6 @@
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (define-values (pv value)
                (unsafe:unsafe-pvector-delete base-pvector 0))
-             pv)))
-  (bench 'delete-right 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (define-values (pv value)
-               (chunked:pvector-delete base-chunked-pvector (sub1 n)))
              pv)))
   (bench 'delete-right 'pvector
          (lambda ()
@@ -2975,10 +2828,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (raw:in-pvector base-raw-pvector)])
              (+ sum i))))
-  (bench 'iterate 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (chunked:in-pvector base-chunked-pvector)])
-             (+ sum i))))
   (bench 'iterate 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-pvector base-pvector)])
@@ -3001,12 +2850,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)])
              (define seq (adapter:in-pvector base-adapter-pvector))
-             (for/fold ([sum sum]) ([i seq])
-               (+ sum i)))))
-  (bench 'iterate-proc 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)])
-             (define seq (chunked:in-pvector base-chunked-pvector))
              (for/fold ([sum sum]) ([i seq])
                (+ sum i)))))
   (bench 'iterate-proc 'pvector
@@ -3053,20 +2896,10 @@
            (for*/fold ([sum 0]) ([j (in-range m)]
                                  [(x i) (adapter:in-pvector/index base-adapter-pvector)])
              (+ sum x i))))
-  (bench 'iterate-indexed 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)]
-                                 [(x i) (chunked:in-pvector/index base-chunked-pvector)])
-             (+ sum x i))))
   (bench 'iterate-indexed-alias 'adapter-pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)]
                                  [(x i) (adapter:in-pvector-indexed base-adapter-pvector)])
-             (+ sum x i))))
-  (bench 'iterate-indexed-alias 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)]
-                                 [(x i) (chunked:in-pvector-indexed base-chunked-pvector)])
              (+ sum x i))))
   (bench 'iterate-indexed-proc 'adapter-pvector
          (lambda ()
@@ -3074,22 +2907,10 @@
              (define seq (adapter:in-pvector/index base-adapter-pvector))
              (for/fold ([sum sum]) ([(x i) seq])
                (+ sum x i)))))
-  (bench 'iterate-indexed-proc 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)])
-             (define seq (chunked:in-pvector/index base-chunked-pvector))
-             (for/fold ([sum sum]) ([(x i) seq])
-               (+ sum x i)))))
   (bench 'iterate-indexed-alias-proc 'adapter-pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)])
              (define seq (adapter:in-pvector-indexed base-adapter-pvector))
-             (for/fold ([sum sum]) ([(x i) seq])
-               (+ sum x i)))))
-  (bench 'iterate-indexed-alias-proc 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)])
-             (define seq (chunked:in-pvector-indexed base-chunked-pvector))
              (for/fold ([sum sum]) ([(x i) seq])
                (+ sum x i)))))
 
@@ -3127,10 +2948,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (raw:in-pvector-reverse base-raw-pvector)])
              (+ sum i))))
-  (bench 'iterate-reverse 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)] [i (chunked:in-pvector-reverse base-chunked-pvector)])
-             (+ sum i))))
   (bench 'iterate-reverse 'pvector
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)] [i (in-pvector-reverse base-pvector)])
@@ -3153,12 +2970,6 @@
          (lambda ()
            (for*/fold ([sum 0]) ([j (in-range m)])
              (define seq (adapter:in-pvector-reverse base-adapter-pvector))
-             (for/fold ([sum sum]) ([i seq])
-               (+ sum i)))))
-  (bench 'iterate-reverse-proc 'chunked-pvector
-         (lambda ()
-           (for*/fold ([sum 0]) ([j (in-range m)])
-             (define seq (chunked:in-pvector-reverse base-chunked-pvector))
              (for/fold ([sum sum]) ([i seq])
                (+ sum i)))))
   (bench 'iterate-reverse-proc 'pvector
@@ -3216,10 +3027,6 @@
          (lambda ()
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (cutie:list->pvector base-list))))
-  (bench 'list->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:list->pvector base-list))))
   (bench 'list->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -3249,10 +3056,6 @@
          (lambda ()
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
              (cutie:vector->pvector base-vector))))
-  (bench 'vector->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:vector->pvector base-vector))))
   (bench 'vector->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -3274,34 +3077,18 @@
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (sequence->pvector (in-pvector-reverse base-pvector)))))
 
-  (bench 'range->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:sequence->pvector (in-range n)))))
   (bench 'range->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (sequence->pvector (in-range n)))))
-  (bench 'range-offset->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:sequence->pvector (in-range 1 (+ n 1))))))
   (bench 'range-offset->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (sequence->pvector (in-range 1 (+ n 1))))))
-  (bench 'range-step->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:sequence->pvector (in-range 0 (* n 2) 2)))))
   (bench 'range-step->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
              (sequence->pvector (in-range 0 (* n 2) 2)))))
-  (bench 'integer->seq 'chunked-pvector
-         (lambda ()
-           (for/fold ([r (chunked:pvector-empty)]) ([j (in-range m)])
-             (chunked:sequence->pvector n))))
   (bench 'integer->seq 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
@@ -3327,10 +3114,6 @@
          (lambda ()
            (for/fold ([r null]) ([j (in-range m)])
              (raw:pvector->list base-raw-pvector))))
-  (bench 'seq->list 'chunked-pvector
-         (lambda ()
-           (for/fold ([r null]) ([j (in-range m)])
-             (chunked:pvector->list base-chunked-pvector))))
   (bench 'seq->list 'pvector
          (lambda ()
            (for/fold ([r null]) ([j (in-range m)])
@@ -3360,10 +3143,6 @@
          (lambda ()
            (for/fold ([r #()]) ([j (in-range m)])
              (raw:pvector->vector base-raw-pvector))))
-  (bench 'seq->vector 'chunked-pvector
-         (lambda ()
-           (for/fold ([r #()]) ([j (in-range m)])
-             (chunked:pvector->vector base-chunked-pvector))))
   (bench 'seq->vector 'pvector
          (lambda ()
            (for/fold ([r #()]) ([j (in-range m)])
@@ -3372,15 +3151,6 @@
          (lambda ()
            (for/fold ([r #()]) ([j (in-range m)])
              (unsafe:unsafe-pvector->vector base-pvector))))
-
-  (bench 'seq->chunk-vector 'chunked-pvector
-         (lambda ()
-           (for/fold ([r #()]) ([j (in-range m)])
-             (chunked:pvector->chunk-vector base-chunked-pvector))))
-  (bench 'seq->chunk-vector 'pvector
-         (lambda ()
-           (for/fold ([r #()]) ([j (in-range m)])
-             (adapter:pvector->chunk-vector base-adapter-pvector))))
 
   (bench 'stream-list 'list
          (lambda ()

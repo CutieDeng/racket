@@ -524,8 +524,10 @@ parts of the program and avoiding checks matters.
 
 Unchecked variants of @racket[pvector->list] and
 @racket[pvector->vector]. The @racket[unsafe-pvector->chunk-vector]
-procedure returns a vector of immutable internal chunks for low-level
-iteration; the chunk shape is unspecified and may change.}
+procedure returns a compatibility vector of immutable element blocks for
+low-level iteration. The block shape is unspecified, may be freshly
+materialized, is not a runtime primitive contract, and is not part of
+the pvector representation.}
 
 @deftogether[(
 @defproc[(unsafe-pvector-length [pv pvector?]) exact-nonnegative-integer?]

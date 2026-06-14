@@ -412,14 +412,10 @@
           core-pvector-length
 	          core-pvector-shape-stats
 	          core-vector->pvector
-	          core-fixed-chunks->pvector
-	          core-chunks->pvector
-	          core-list->pvector
+          core-immutable-vector->pvector
+          core-list->pvector
           core-make-pvector
           core-pvector->vector
-          core-pvector->chunk-vector
-          core-pvector->chunk-vector/shared
-          core-pvector-lookup-chunk
           core-pvector->list
           core-pvector-ref
           core-pvector-view-left

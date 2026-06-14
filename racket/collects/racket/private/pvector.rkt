@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require racket/match racket/sequence)
+(require racket/match racket/sequence racket/vector)
 (require "pvector-core.rkt")
 
 (define (pvector-cons-left pv value)
@@ -702,6 +702,7 @@
   (cond
     [(< idx 0) (error 'pvector-set "index out of bounds: ~a" idx)]
     [(>= idx (size:ft pv 0)) (error 'pvector-set "index out of bounds: ~a" idx)]
+    [(eq? (pvector-ref:impl pv idx 0) val) pv]
     [else (pvector-set:impl pv idx val 0)]
     )) ; cond: pvector-set guards
 
@@ -1764,6 +1765,78 @@
   ) ; define in-pvector-indexed
 
 ;; ========================================
+;; Runtime adapter compatibility
+;; ========================================
+
+(define adapter-view-chunk-size 64)
+
+(define (make-pvector len [value #f])
+  (cond
+    [(zero? len) (pvector-empty)]
+    [else (vector->pvector (make-vector len value))]))
+
+(define (sequence->pvector seq)
+  (cond
+    [(pvector? seq) seq]
+    [(list? seq) (list->pvector seq)]
+    [(vector? seq) (vector->pvector seq)]
+    [(exact-nonnegative-integer? seq)
+     (vector->pvector
+      (for/vector #:length seq ([elem (in-range seq)])
+        elem))]
+    [else
+     (for/pvector ([elem seq]) elem)]))
+
+(define (pvector-map pv proc)
+  (cond
+    [(pvector-empty? pv) (pvector-empty)]
+    [(eq? proc values) pv]
+    [(eq? proc void) (make-pvector (pvector-length pv) (void))]
+    [else
+     (for/pvector ([elem (in-pvector pv)])
+       (proc elem))]))
+
+(define (pvector-for-each pv proc)
+  (pvector-for-each:impl proc pv)
+  (void))
+
+(define (vector->adapter-chunk-vector vec)
+  (define len (vector-length vec))
+  (cond
+    [(zero? len) #()]
+    [else
+     (define chunk-count
+       (add1 (quotient (sub1 len) adapter-view-chunk-size)))
+     (for/vector #:length chunk-count ([chunk-index (in-range chunk-count)])
+       (define start (* chunk-index adapter-view-chunk-size))
+       (define end (min len (+ start adapter-view-chunk-size)))
+       (vector->immutable-vector (vector-copy vec start end)))]))
+
+(define (pvector->chunk-vector/shared pv)
+  (vector->adapter-chunk-vector (pvector->vector pv)))
+
+(define (pvector->chunk-vector pv)
+  (vector-copy (pvector->chunk-vector/shared pv)))
+
+(define (pvector-lookup-chunk pv index)
+  (define len (pvector-length pv))
+  (unless (and (exact-nonnegative-integer? index)
+               (< index len))
+    (error 'pvector-lookup-chunk "index out of bounds: ~a" index))
+  (define vec (pvector->vector pv))
+  (values index vec))
+
+(define (pvector-shape-stats pv)
+  (define h (make-hasheq))
+  (hash-set! h 'backend 'finger)
+  (hash-set! h 'length (pvector-length pv))
+  (hash-set! h 'chunked-tree? #f)
+  (hash-set! h 'chunk-index-vectors 0)
+  (hash-set! h 'chunk-index-slots 0)
+  (hash-set! h 'ref-cache? #f)
+  h)
+
+;; ========================================
 ;; for/pvector comprehension
 ;; ========================================
 
@@ -2162,6 +2235,10 @@
 (provide vector->pvector pvector->vector)
 (provide list->pvector pvector->list)
 (provide pvector-insert)
+(provide make-pvector sequence->pvector)
+(provide pvector-map pvector-for-each)
+(provide pvector->chunk-vector pvector->chunk-vector/shared pvector-lookup-chunk)
+(provide pvector-shape-stats)
 ;; Comprehensions
 (provide for/pvector for*/pvector)
 ;; Match expanders
