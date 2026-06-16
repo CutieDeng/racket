@@ -36,13 +36,15 @@
  ) ; end lambda
 ) ; end check-exn unbound t-string interpolation
 (define t "T")
+(define bang! "bang")
 (check-true (template? (tpl "{t}")))
 (check-equal? (interpolation-value (car (template-interpolations (tpl "{t}")))) "T")
 (check-equal? (interpolation-format-spec (car (template-interpolations (tpl "{t}")))) #f)
 (check-equal? (interpolation-conversion (car (template-interpolations (tpl "{t}")))) "")
+(check-equal? (fpl "{bang!}") "bang")
 
 (define formatted-template
-  (tpl "{1 r .2f}")
+  (tpl "{1!r:.2f}")
 ) ; end define formatted-template
 
 (check-equal? (interpolation-value (car (template-interpolations formatted-template))) 1)
@@ -51,19 +53,75 @@
 (check-equal? (interpolation-format-spec (car (template-interpolations formatted-template))) ".2f")
 
 (check-equal? (fpl "{(string-upcase name)}") "ALICE")
-(check-equal? (fpl "{2 03d}") "002")
-(check-equal? (fpl "{10 >2d}") "10")
-(check-equal? (fpl "{7 >3d}") "  7")
-(check-equal? (fpl "{7 <3d}") "7  ")
-(check-equal? (fpl "{1.234 .2f}") "1.23")
-(check-equal? (fpl "{2 .2f}") "2.00")
-(check-equal? (fpl "{\"hi\" r}") "\"hi\"")
+(check-equal? (fpl "{(+ 1)}") "1")
+(check-equal? (fpl "{2:03d}") "002")
+(check-equal? (fpl "{10:>2d}") "10")
+(check-equal? (fpl "{7:>3d}") "  7")
+(check-equal? (fpl "{7:<3d}") "7  ")
+(check-equal? (fpl "{1.234:.2f}") "1.23")
+(check-equal? (fpl "{2:.2f}") "2.00")
+(check-equal? (fpl "{\"hi\"!r}") "\"hi\"")
 (check-exn
  exn:fail?
  (lambda ()
-   (fpl "{\"hi\" r .2f}")
+   (fpl "{\"hi\"!r:.2f}")
  ) ; end lambda
 ) ; end check-exn string conversion numeric format
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{+ 1}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn extra text after expression
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{2 03d}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn old format suffix
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{value r}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn old conversion suffix
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{x!rr}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn extra conversion text
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{x:}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn empty format suffix
 
 (define evaluation-order '())
 
