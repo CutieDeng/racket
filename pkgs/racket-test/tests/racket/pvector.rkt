@@ -1963,6 +1963,15 @@
   (check-exn #rx"(cannot transmit|place-message-allowed\\?)"
              (lambda () (place-channel-put in pv))))
 
+(test-case "default racket language bindings"
+  (for ([module-path (in-list '(racket racket/init))])
+    (define ns (make-base-empty-namespace))
+    (parameterize ([current-namespace ns])
+      (namespace-require module-path)
+      (check-equal? (eval '(pvector->list (pvector 1 2 3)))
+                    '(1 2 3))
+      (check-true (eval '(pvector? (pvector-empty)))))))
+
 (test-case "JIT on/off public hot paths"
   (when (bc-native-public-pvector?)
     (define jit-off-score (public-pvector-jit-score #f))
@@ -2028,8 +2037,8 @@
                     core-pvector->vector
                     core-unsafe-pvector-ref
                     core-pvector-set
-                    core-unsafe-pvector-first
-                    core-unsafe-pvector-last
+                    core-unsafe-pvector-view-left
+                    core-unsafe-pvector-view-right
                     core-pvector-cons-left
                     core-pvector-cons-right
                     core-pvector-pop-left

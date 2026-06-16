@@ -26,6 +26,7 @@
          racket/promise
          racket/bool
          racket/stream
+         racket/pvector
          racket/sequence
          racket/local
          racket/system
@@ -59,6 +60,7 @@
                        racket/promise
                        racket/bool
                        racket/stream
+                       racket/pvector
                        racket/sequence
                        racket/local
                        racket/system

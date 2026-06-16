@@ -49,7 +49,7 @@ accepted as @tech{place message}s in this first stage. Compatibility
 backends may print pvectors as @racket[(pvector elem ...)] and may
 support serialization.
 
-@note-lib-only[racket/pvector]
+@note-lib[racket/pvector #:use-sources (racket/pvector)]
 
 @examples[
 #:eval pvector-eval
