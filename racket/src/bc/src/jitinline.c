@@ -364,6 +364,61 @@ static int generate_inlined_type_test(mz_jit_state *jitter, Scheme_App2_Rec *app
   return 1;
 }
 
+static int generate_inlined_pvector_empty_test(mz_jit_state *jitter,
+                                               Scheme_App2_Rec *app,
+                                               Branch_Info *for_branch,
+                                               int branch_short,
+                                               int dest)
+{
+  GC_CAN_IGNORE jit_insn *ref_bad_tag, *ref_bad_type, *ref_not_empty, *ref_done;
+  int reg_valid = 0;
+
+  LOG_IT(("inlined %s\n", ((Scheme_Primitive_Proc *)app->rator)->name));
+
+  mz_runstack_skipped(jitter, 1);
+
+  scheme_generate_non_tail(app->rand, jitter, 0, 1, 0);
+  CHECK_LIMIT();
+
+  mz_runstack_unskipped(jitter, 1);
+
+  mz_rs_sync();
+
+  __START_SHORT_JUMPS__(branch_short);
+
+  if (for_branch) {
+    reg_valid = mz_CURRENT_REG_STATUS_VALID();
+    scheme_prepare_branch_jump(jitter, for_branch);
+    CHECK_LIMIT();
+  }
+
+  ref_bad_tag = jit_bmsi_ul(jit_forward(), JIT_R0, 0x1);
+  ref_bad_type = mz_bnei_t(jit_forward(), JIT_R0, scheme_pvector_type, JIT_R1);
+  jit_ldxi_c(JIT_R1, JIT_R0, (intptr_t)&SCHEME_PVECTOR_SHAPE(0x0));
+  ref_not_empty = jit_bnei_i(jit_forward(), JIT_R1, SCHEME_PVECTOR_EMPTY);
+
+  if (for_branch) {
+    scheme_add_branch_false(for_branch, ref_bad_tag);
+    scheme_add_branch_false(for_branch, ref_bad_type);
+    scheme_add_branch_false(for_branch, ref_not_empty);
+    mz_SET_R0_STATUS_VALID(reg_valid);
+    scheme_branch_for_true(jitter, for_branch);
+    CHECK_LIMIT();
+  } else {
+    (void)jit_movi_p(dest, scheme_true);
+    ref_done = jit_jmpi(jit_forward());
+    mz_patch_branch(ref_bad_tag);
+    mz_patch_branch(ref_bad_type);
+    mz_patch_branch(ref_not_empty);
+    (void)jit_movi_p(dest, scheme_false);
+    mz_patch_ucbranch(ref_done);
+  }
+
+  __END_SHORT_JUMPS__(branch_short);
+
+  return 1;
+}
+
 static int generate_inlined_immutable_test(mz_jit_state *jitter, Scheme_App2_Rec *app,
                                            Branch_Info *for_branch, int branch_short,
                                            int dest)
@@ -1294,6 +1349,12 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
   } else if (IS_NAMED_PRIM(rator, "vector?")) {
     generate_inlined_type_test(jitter, app, scheme_vector_type, scheme_vector_type, 1, for_branch, branch_short, dest);
     return 1;
+  } else if (IS_NAMED_PRIM(rator, "core-pvector?")) {
+    generate_inlined_type_test(jitter, app, scheme_pvector_type, scheme_pvector_type, 0, for_branch, branch_short, dest);
+    return 1;
+  } else if (IS_NAMED_PRIM(rator, "core-pvector-empty?")) {
+    generate_inlined_pvector_empty_test(jitter, app, for_branch, branch_short, dest);
+    return 1;
   } else if (IS_NAMED_PRIM(rator, "box?")) {
     generate_inlined_type_test(jitter, app, scheme_box_type, scheme_box_type, 1, for_branch, branch_short, dest);
     return 1;
@@ -1716,14 +1777,21 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
                || IS_NAMED_PRIM(rator, "flvector-length")
                || IS_NAMED_PRIM(rator, "unsafe-flvector-length")
                || MZ_LONG_DOUBLE_AND(IS_NAMED_PRIM(rator, "extflvector-length")
-                                     || IS_NAMED_PRIM(rator, "unsafe-extflvector-length"))) {
+                                     || IS_NAMED_PRIM(rator, "unsafe-extflvector-length"))
+               || IS_NAMED_PRIM(rator, "core-pvector-length")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-length")) {
       GC_CAN_IGNORE jit_insn *reffail, *ref;
-      int unsafe = 0, for_fl = 0, for_fx = 0, can_chaperone = 0;
+      int unsafe = 0, for_fl = 0, for_fx = 0, for_pvector = 0, can_chaperone = 0;
       int extfl USED_ONLY_IF_LONG_DOUBLE = 0;
 
       if (IS_NAMED_PRIM(rator, "unsafe-vector*-length")
           || IS_NAMED_PRIM(rator, "unsafe-fxvector-length")) {
         unsafe = 1;
+      } else if (IS_NAMED_PRIM(rator, "core-unsafe-pvector-length")) {
+        unsafe = 1;
+        for_pvector = 1;
+      } else if (IS_NAMED_PRIM(rator, "core-pvector-length")) {
+        for_pvector = 1;
       } else if (IS_NAMED_PRIM(rator, "unsafe-vector-length")) {
         unsafe = 1;
         can_chaperone = 1;
@@ -1768,6 +1836,8 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
                          (void)jit_calli(sjc.bad_flvector_length_code));
         } else if (for_fx)
           (void)jit_calli(sjc.bad_fxvector_length_code);
+        else if (for_pvector)
+          (void)jit_calli(sjc.bad_pvector_length_code);
         else if (can_chaperone) {
           (void)jit_calli(sjc.bad_vector_length_code);
           /* can return with updated R0 */
@@ -1785,6 +1855,8 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
                          (void)mz_bnei_t(reffail, JIT_R0, scheme_flvector_type, JIT_R1));
         } else if (for_fx)
           (void)mz_bnei_t(reffail, JIT_R0, scheme_fxvector_type, JIT_R1);
+        else if (for_pvector)
+          (void)mz_bnei_t(reffail, JIT_R0, scheme_pvector_type, JIT_R1);
         else
           (void)mz_bnei_t(reffail, JIT_R0, scheme_vector_type, JIT_R1);
         __END_TINY_JUMPS__(1);
@@ -1801,6 +1873,8 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
         MZ_FPUSEL_STMT(extfl,
                        (void)jit_ldxi_l(JIT_R0, JIT_R0, &SCHEME_EXTFLVEC_SIZE(0x0)),
                        (void)jit_ldxi_l(JIT_R0, JIT_R0, &SCHEME_FLVEC_SIZE(0x0)));
+      } else if (for_pvector)
+        (void)jit_ldxi_l(JIT_R0, JIT_R0, &SCHEME_PVECTOR_LENGTH(0x0));
       } else
         (void)jit_ldxi_l(JIT_R0, JIT_R0, &SCHEME_VEC_SIZE(0x0));
 
@@ -2248,6 +2322,51 @@ int scheme_generate_inlined_unary(mz_jit_state *jitter, Scheme_App2_Rec *app, in
       return 1;
     } else if (IS_NAMED_PRIM(rator, "fxnot")) {
       scheme_generate_arith(jitter, rator, app->rand, NULL, 1, ARITH_NOT, 0, 9, NULL, 1, -1, 0, NULL, dest);
+      return 1;
+    } else if (IS_NAMED_PRIM(rator, "core-make-single-pvector")) {
+      LOG_IT(("inlined make-single-pvector\n"));
+
+      mz_runstack_skipped(jitter, 1);
+      scheme_generate_non_tail(app->rand, jitter, 0, 1, 0);
+      CHECK_LIMIT();
+      mz_runstack_unskipped(jitter, 1);
+      mz_rs_sync();
+
+      generate_pvector_single_alloc(jitter, dest);
+      CHECK_LIMIT();
+
+      return 1;
+    } else if (IS_NAMED_PRIM(rator, "core-pvector-view-left")
+               || IS_NAMED_PRIM(rator, "core-pvector-view-right")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-view-left")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-view-right")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-first")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-last")) {
+      int right, unsafe;
+
+      right = (IS_NAMED_PRIM(rator, "core-pvector-view-right")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-view-right")
+               || IS_NAMED_PRIM(rator, "core-unsafe-pvector-last"));
+      unsafe = (IS_NAMED_PRIM(rator, "core-unsafe-pvector-view-left")
+                || IS_NAMED_PRIM(rator, "core-unsafe-pvector-view-right")
+                || IS_NAMED_PRIM(rator, "core-unsafe-pvector-first")
+                || IS_NAMED_PRIM(rator, "core-unsafe-pvector-last"));
+      LOG_IT(("inlined pvector-view\n"));
+
+      mz_runstack_skipped(jitter, 1);
+      scheme_generate_non_tail(app->rand, jitter, 0, 1, 0);
+      CHECK_LIMIT();
+      if (!unsafe)
+        mz_rs_sync();
+
+      if (unsafe)
+        generate_unsafe_pvector_view(jitter, right, dest);
+      else
+        generate_checked_pvector_view(jitter, right, dest);
+      CHECK_LIMIT();
+
+      mz_runstack_unskipped(jitter, 1);
+
       return 1;
     } else if (IS_NAMED_PRIM(rator, "vector-immutable")
                || IS_NAMED_PRIM(rator, "vector")) {
@@ -2995,6 +3114,596 @@ static int generate_vector_op(mz_jit_state *jitter, int set, int int_ready, int 
   }
 
   return 1;
+}
+
+static void generate_unsafe_pvector_ref(mz_jit_state *jitter, int int_ready,
+                                        intptr_t ready_index, int dest)
+/* R0 has pvector. If `int_ready`, `ready_index` has the unboxed index.
+   Otherwise R1 has a fixnum index. */
+{
+  GC_CAN_IGNORE jit_insn *ref_not_single, *ref_not_deep, *ref_middle;
+  GC_CAN_IGNORE jit_insn *ref_not_prefix, *ref_done_single, *ref_done_prefix, *ref_done_suffix;
+
+  if (int_ready) {
+    jit_movi_l(JIT_R1, ready_index);
+  } else {
+    jit_rshi_ul(JIT_R1, JIT_R1, 1);
+  }
+
+  jit_ldxi_c(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_SHAPE(0x0));
+  ref_not_single = jit_bnei_i(jit_forward(), JIT_R2, SCHEME_PVECTOR_SINGLE);
+  jit_ldxi_p(dest, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+  ref_done_single = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_single);
+  ref_not_deep = jit_bnei_i(jit_forward(), JIT_R2, SCHEME_PVECTOR_DEEP);
+
+  jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+  jit_ldxi_c(JIT_V1, JIT_R2, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+  ref_not_prefix = jit_bler_ul(jit_forward(), JIT_V1, JIT_R1);
+  jit_lshi_ul(JIT_R1, JIT_R1, JIT_LOG_WORD_SIZE);
+  jit_addi_p(JIT_R1, JIT_R1, (intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0));
+  jit_ldxr_p(dest, JIT_R2, JIT_R1);
+  ref_done_prefix = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_prefix);
+  jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_C(0x0));
+  jit_ldxi_c(JIT_V1, JIT_R2, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+  jit_ldxi_l(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_LENGTH(0x0));
+  jit_subr_l(JIT_R2, JIT_R2, JIT_V1);
+  ref_middle = jit_bltr_ul(jit_forward(), JIT_R1, JIT_R2);
+  jit_subr_l(JIT_R1, JIT_R1, JIT_R2);
+  jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_C(0x0));
+  jit_lshi_ul(JIT_R1, JIT_R1, JIT_LOG_WORD_SIZE);
+  jit_addi_p(JIT_R1, JIT_R1, (intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0));
+  jit_ldxr_p(dest, JIT_R2, JIT_R1);
+  ref_done_suffix = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_deep);
+  mz_patch_branch(ref_middle);
+  jit_fixnum_l(JIT_R1, JIT_R1);
+  JIT_UPDATE_THREAD_RSPTR_IF_NEEDED();
+  mz_prepare(2);
+  jit_pusharg_p(JIT_R1);
+  jit_pusharg_p(JIT_R0);
+  {
+    GC_CAN_IGNORE jit_insn *refr USED_ONLY_FOR_FUTURES;
+    (void)mz_finish_lwe(ts_scheme_unsafe_pvector_ref, refr);
+  }
+  jit_retval(dest);
+
+  mz_patch_ucbranch(ref_done_single);
+  mz_patch_ucbranch(ref_done_prefix);
+  mz_patch_ucbranch(ref_done_suffix);
+}
+
+static void generate_checked_pvector_ref(mz_jit_state *jitter, int int_ready,
+                                         intptr_t ready_index, int dest)
+/* R0 has a candidate pvector. If `int_ready`, `ready_index` has the
+   unboxed index and R1 has the original index object for fallback.
+   Otherwise R1 has a candidate fixnum index. */
+{
+  GC_CAN_IGNORE jit_insn *ref_bad_index_type = NULL, *ref_bad_index_sign = NULL;
+  GC_CAN_IGNORE jit_insn *ref_bad_pvector_tag, *ref_bad_pvector_type, *ref_bad_index_bounds;
+  GC_CAN_IGNORE jit_insn *ref_done;
+
+  if (!int_ready) {
+    ref_bad_index_type = jit_bmci_ul(jit_forward(), JIT_R1, 0x1);
+    ref_bad_index_sign = jit_blti_l(jit_forward(), JIT_R1, 0x0);
+  }
+
+  ref_bad_pvector_tag = jit_bmsi_ul(jit_forward(), JIT_R0, 0x1);
+  ref_bad_pvector_type = mz_bnei_t(jit_forward(), JIT_R0, scheme_pvector_type, JIT_R2);
+  jit_ldxi_l(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_LENGTH(0x0));
+  if (int_ready) {
+    jit_movi_l(JIT_V1, ready_index);
+  } else {
+    jit_rshi_ul(JIT_V1, JIT_R1, 1);
+  }
+  ref_bad_index_bounds = jit_bler_ul(jit_forward(), JIT_R2, JIT_V1);
+
+  generate_unsafe_pvector_ref(jitter, int_ready, ready_index, dest);
+  ref_done = jit_jmpi(jit_forward());
+
+  if (!int_ready) {
+    mz_patch_branch(ref_bad_index_type);
+    mz_patch_branch(ref_bad_index_sign);
+  }
+  mz_patch_branch(ref_bad_pvector_tag);
+  mz_patch_branch(ref_bad_pvector_type);
+  mz_patch_branch(ref_bad_index_bounds);
+  JIT_UPDATE_THREAD_RSPTR_IF_NEEDED();
+  mz_prepare(2);
+  jit_pusharg_p(JIT_R1);
+  jit_pusharg_p(JIT_R0);
+  {
+    GC_CAN_IGNORE jit_insn *refr USED_ONLY_FOR_FUTURES;
+    (void)mz_finish_lwe(ts_scheme_pvector_ref, refr);
+  }
+  jit_retval(dest);
+
+  mz_patch_ucbranch(ref_done);
+}
+
+static void generate_unsafe_pvector_view(mz_jit_state *jitter, int right, int dest)
+/* R0 has a pvector. */
+{
+  if (right) {
+    jit_ldxi_l(JIT_R1, JIT_R0, (intptr_t)&SCHEME_PVECTOR_LENGTH(0x0));
+    jit_subi_l(JIT_R1, JIT_R1, 1);
+    jit_fixnum_l(JIT_R1, JIT_R1);
+    generate_unsafe_pvector_ref(jitter, 0, 0, dest);
+  } else {
+    generate_unsafe_pvector_ref(jitter, 1, 0, dest);
+  }
+}
+
+static void generate_checked_pvector_view(mz_jit_state *jitter, int right, int dest)
+/* R0 has a candidate pvector. */
+{
+  GC_CAN_IGNORE jit_insn *ref_bad_tag, *ref_bad_type, *ref_bad_empty, *ref_done;
+
+  ref_bad_tag = jit_bmsi_ul(jit_forward(), JIT_R0, 0x1);
+  ref_bad_type = mz_bnei_t(jit_forward(), JIT_R0, scheme_pvector_type, JIT_R2);
+  jit_ldxi_l(JIT_R1, JIT_R0, (intptr_t)&SCHEME_PVECTOR_LENGTH(0x0));
+  ref_bad_empty = jit_beqi_l(jit_forward(), JIT_R1, 0);
+
+  if (right) {
+    jit_subi_l(JIT_R1, JIT_R1, 1);
+    jit_fixnum_l(JIT_R1, JIT_R1);
+    generate_unsafe_pvector_ref(jitter, 0, 0, dest);
+  } else {
+    generate_unsafe_pvector_ref(jitter, 1, 0, dest);
+  }
+  ref_done = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_bad_tag);
+  mz_patch_branch(ref_bad_type);
+  mz_patch_branch(ref_bad_empty);
+  JIT_UPDATE_THREAD_RSPTR_IF_NEEDED();
+  mz_prepare(1);
+  jit_pusharg_p(JIT_R0);
+  {
+    GC_CAN_IGNORE jit_insn *refr USED_ONLY_FOR_FUTURES;
+    if (right)
+      (void)mz_finish_lwe(ts_scheme_pvector_view_right, refr);
+    else
+      (void)mz_finish_lwe(ts_scheme_pvector_view_left, refr);
+  }
+  jit_retval(dest);
+
+  mz_patch_ucbranch(ref_done);
+}
+
+static void generate_pvector_alloc_common(int len, int shape,
+                                          int prefix_len, int suffix_len)
+{
+  jit_movi_l(JIT_R2, len);
+  jit_stxi_l((intptr_t)&SCHEME_PVECTOR_LENGTH(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, shape);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_SHAPE(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, prefix_len);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_PREFIX_LEN(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, suffix_len);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_SUFFIX_LEN(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, 0);
+  jit_stxi_c((intptr_t)&((Scheme_PVector *)0x0)->reserved + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+}
+
+static void generate_pvector_single_alloc(mz_jit_state *jitter, int dest)
+/* R0 has element. */
+{
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector), scheme_pvector_type,
+                      0, 1, 0, 0, 0);
+  CHECK_LIMIT();
+
+  generate_pvector_alloc_common(1, SCHEME_PVECTOR_SINGLE, 0, 0);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_A(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R0);
+  jit_movi_p(JIT_R1, NULL);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_B(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R1);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_C(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R1);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_D(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R1);
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_digit_alloc_from_regs(mz_jit_state *jitter,
+                                                   int count, int *elem_regs,
+                                                   int dest)
+{
+  int i;
+
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector_Digit),
+                      scheme_pvector_node_type, 0, 1, 0, 0, 0);
+  CHECK_LIMIT();
+
+  jit_movi_i(JIT_R2, SCHEME_PVECTOR_NODE_DIGIT);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_NODE_KIND(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, count);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, 0);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_NODE_LEVEL(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+
+  for (i = 0; i < 4; i++) {
+    if (i < count) {
+      jit_stxi_p((intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i] + OBJHEAD_SIZE,
+                 JIT_V1, elem_regs[i]);
+    } else {
+      jit_movi_p(JIT_R2, NULL);
+      jit_stxi_p((intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i] + OBJHEAD_SIZE,
+                 JIT_V1, JIT_R2);
+    }
+  }
+
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_digit_alloc_from_runstack(mz_jit_state *jitter,
+                                                       int start, int count,
+                                                       int dest)
+{
+  int i;
+
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector_Digit),
+                      scheme_pvector_node_type, 0, 0, 0, 0, 0);
+  CHECK_LIMIT();
+
+  jit_movi_i(JIT_R2, SCHEME_PVECTOR_NODE_DIGIT);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_NODE_KIND(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, count);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_movi_i(JIT_R2, 0);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_NODE_LEVEL(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+
+  for (i = 0; i < 4; i++) {
+    if (i < count) {
+      jit_ldxi_p(JIT_R2, JIT_RUNSTACK, WORDS_TO_BYTES(start + i));
+      jit_stxi_p((intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i] + OBJHEAD_SIZE,
+                 JIT_V1, JIT_R2);
+    } else {
+      jit_movi_p(JIT_R2, NULL);
+      jit_stxi_p((intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i] + OBJHEAD_SIZE,
+                 JIT_V1, JIT_R2);
+    }
+  }
+
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_deep_alloc_from_regs(mz_jit_state *jitter,
+                                                  int len, int prefix_len,
+                                                  int suffix_len, int dest)
+/* R0 has prefix digit and R1 has suffix digit. */
+{
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector), scheme_pvector_type,
+                      0, 1, 0, 0, 0);
+  CHECK_LIMIT();
+
+  generate_pvector_alloc_common(len, SCHEME_PVECTOR_DEEP,
+                                prefix_len, suffix_len);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_A(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R0);
+  jit_movi_p(JIT_R2, scheme_false);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_B(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R2);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_C(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R1);
+  jit_movi_p(JIT_R2, NULL);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_D(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R2);
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_deep_alloc_from_runstack(mz_jit_state *jitter,
+                                                      int len, int prefix_len,
+                                                      int suffix_len, int dest)
+/* Runstack slot 0 has prefix digit and slot 1 has suffix digit. */
+{
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector), scheme_pvector_type,
+                      0, 0, 0, 0, 0);
+  CHECK_LIMIT();
+
+  generate_pvector_alloc_common(len, SCHEME_PVECTOR_DEEP,
+                                prefix_len, suffix_len);
+  jit_ldxi_p(JIT_R0, JIT_RUNSTACK, WORDS_TO_BYTES(0));
+  jit_ldxi_p(JIT_R1, JIT_RUNSTACK, WORDS_TO_BYTES(1));
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_A(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R0);
+  jit_movi_p(JIT_R2, scheme_false);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_B(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R2);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_C(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R1);
+  jit_movi_p(JIT_R2, NULL);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_D(0x0) + OBJHEAD_SIZE, JIT_V1, JIT_R2);
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_deep2_alloc(mz_jit_state *jitter, int dest)
+/* R0 has first element and R1 has second element. */
+{
+  int elem_regs[1];
+
+  elem_regs[0] = JIT_R0;
+  generate_pvector_digit_alloc_from_regs(jitter, 1, elem_regs, JIT_R0);
+  elem_regs[0] = JIT_R1;
+  generate_pvector_digit_alloc_from_regs(jitter, 1, elem_regs, JIT_R1);
+  generate_pvector_deep_alloc_from_regs(jitter, 2, 1, 1, dest);
+}
+
+static void generate_pvector_deep_n_alloc(mz_jit_state *jitter, int len,
+                                          int dest)
+{
+  generate_pvector_digit_alloc_from_runstack(jitter, 0, 1, JIT_R0);
+  jit_str_p(JIT_RUNSTACK, JIT_R0);
+  generate_pvector_digit_alloc_from_runstack(jitter, 1, len - 1, JIT_R0);
+  jit_stxi_p(WORDS_TO_BYTES(1), JIT_RUNSTACK, JIT_R0);
+  generate_pvector_deep_alloc_from_runstack(jitter, len, 1, len - 1, dest);
+}
+
+enum {
+  PVECTOR_CONS_PV_SLOT = 0,
+  PVECTOR_CONS_VALUE_SLOT = 1,
+  PVECTOR_CONS_MIDDLE_SLOT = 2,
+  PVECTOR_CONS_OTHER_DIGIT_SLOT = 3,
+  PVECTOR_CONS_EDGE_DIGIT_SLOT = 4,
+  PVECTOR_CONS_NEW_DIGIT_SLOT = 5,
+  PVECTOR_CONS_ELEM_SLOT = 5,
+  PVECTOR_CONS_RUNSTACK_SLOTS = 9
+};
+
+static void generate_pvector_cons_digit_alloc_from_runstack(mz_jit_state *jitter,
+                                                            int right,
+                                                            int old_count)
+{
+  int i;
+
+  jit_movi_p(JIT_R2, NULL);
+  for (i = 0; i < 4; i++) {
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_ELEM_SLOT + i),
+               JIT_RUNSTACK, JIT_R2);
+  }
+
+  jit_ldxi_p(JIT_R0, JIT_RUNSTACK,
+             WORDS_TO_BYTES(PVECTOR_CONS_EDGE_DIGIT_SLOT));
+  if (right) {
+    for (i = 0; i < old_count; i++) {
+      jit_ldxi_p(JIT_R1, JIT_R0,
+                 (intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i]);
+      jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_ELEM_SLOT + i),
+                 JIT_RUNSTACK, JIT_R1);
+    }
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_VALUE_SLOT));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_ELEM_SLOT + old_count),
+               JIT_RUNSTACK, JIT_R1);
+  } else {
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_VALUE_SLOT));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_ELEM_SLOT),
+               JIT_RUNSTACK, JIT_R1);
+    for (i = 0; i < old_count; i++) {
+      jit_ldxi_p(JIT_R1, JIT_R0,
+                 (intptr_t)&SCHEME_PVECTOR_DIGIT_ELS(0x0)[i]);
+      jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_ELEM_SLOT + i + 1),
+                 JIT_RUNSTACK, JIT_R1);
+    }
+  }
+
+  generate_pvector_digit_alloc_from_runstack(jitter,
+                                             PVECTOR_CONS_ELEM_SLOT,
+                                             old_count + 1,
+                                             JIT_R0);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT),
+             JIT_RUNSTACK, JIT_R0);
+}
+
+static void generate_pvector_cons_deep_alloc_from_runstack(mz_jit_state *jitter,
+                                                           int right,
+                                                           int dest)
+{
+  scheme_inline_alloc(jitter, sizeof(Scheme_PVector), scheme_pvector_type,
+                      0, 0, 0, 0, 0);
+  CHECK_LIMIT();
+
+  jit_ldxi_p(JIT_R0, JIT_RUNSTACK, WORDS_TO_BYTES(PVECTOR_CONS_PV_SLOT));
+  jit_ldxi_l(JIT_R1, JIT_R0, (intptr_t)&SCHEME_PVECTOR_LENGTH(0x0));
+  jit_addi_l(JIT_R1, JIT_R1, 1);
+  jit_stxi_l((intptr_t)&SCHEME_PVECTOR_LENGTH(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R1);
+  jit_movi_i(JIT_R2, SCHEME_PVECTOR_DEEP);
+  jit_stxi_c((intptr_t)&SCHEME_PVECTOR_SHAPE(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+
+  if (right) {
+    jit_ldxi_c(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_PREFIX_LEN(0x0));
+    jit_stxi_c((intptr_t)&SCHEME_PVECTOR_PREFIX_LEN(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R2);
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT));
+    jit_ldxi_c(JIT_R2, JIT_R1, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+    jit_stxi_c((intptr_t)&SCHEME_PVECTOR_SUFFIX_LEN(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R2);
+  } else {
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT));
+    jit_ldxi_c(JIT_R2, JIT_R1, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+    jit_stxi_c((intptr_t)&SCHEME_PVECTOR_PREFIX_LEN(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R2);
+    jit_ldxi_c(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_SUFFIX_LEN(0x0));
+    jit_stxi_c((intptr_t)&SCHEME_PVECTOR_SUFFIX_LEN(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R2);
+  }
+
+  jit_movi_i(JIT_R2, 0);
+  jit_stxi_c((intptr_t)&((Scheme_PVector *)0x0)->reserved + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+
+  if (right) {
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_OTHER_DIGIT_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_A(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_MIDDLE_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_B(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_C(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+  } else {
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_A(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_MIDDLE_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_B(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+    jit_ldxi_p(JIT_R1, JIT_RUNSTACK,
+               WORDS_TO_BYTES(PVECTOR_CONS_OTHER_DIGIT_SLOT));
+    jit_stxi_p((intptr_t)&SCHEME_PVECTOR_C(0x0) + OBJHEAD_SIZE,
+               JIT_V1, JIT_R1);
+  }
+  jit_movi_p(JIT_R2, NULL);
+  jit_stxi_p((intptr_t)&SCHEME_PVECTOR_D(0x0) + OBJHEAD_SIZE,
+             JIT_V1, JIT_R2);
+  jit_addi_p(dest, JIT_V1, OBJHEAD_SIZE);
+}
+
+static void generate_pvector_cons_deep_case(mz_jit_state *jitter,
+                                            int right,
+                                            int old_count,
+                                            int dest)
+{
+  generate_pvector_cons_digit_alloc_from_runstack(jitter, right, old_count);
+  generate_pvector_cons_deep_alloc_from_runstack(jitter, right, dest);
+  jit_addi_p(JIT_RUNSTACK, JIT_RUNSTACK,
+             WORDS_TO_BYTES(PVECTOR_CONS_RUNSTACK_SLOTS));
+  mz_runstack_popped(jitter, PVECTOR_CONS_RUNSTACK_SLOTS);
+}
+
+static void generate_checked_pvector_cons(mz_jit_state *jitter,
+                                          int right,
+                                          int dest)
+/* R0 has a candidate pvector and R1 has the new value. */
+{
+  GC_CAN_IGNORE jit_insn *ref_bad_tag, *ref_bad_type, *ref_not_empty;
+  GC_CAN_IGNORE jit_insn *ref_not_single, *ref_not_deep;
+  GC_CAN_IGNORE jit_insn *ref_bad_low_count, *ref_full_count;
+  GC_CAN_IGNORE jit_insn *ref_not_count1, *ref_not_count2;
+  GC_CAN_IGNORE jit_insn *ref_done_empty, *ref_done_single;
+  GC_CAN_IGNORE jit_insn *ref_done_deep1, *ref_done_deep2, *ref_done_deep3;
+
+  ref_bad_tag = jit_bmsi_ul(jit_forward(), JIT_R0, 0x1);
+  ref_bad_type = mz_bnei_t(jit_forward(), JIT_R0, scheme_pvector_type, JIT_R2);
+  jit_ldxi_c(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_SHAPE(0x0));
+
+  ref_not_empty = jit_bnei_i(jit_forward(), JIT_R2, SCHEME_PVECTOR_EMPTY);
+  jit_movr_p(JIT_R0, JIT_R1);
+  generate_pvector_single_alloc(jitter, dest);
+  ref_done_empty = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_empty);
+  ref_not_single = jit_bnei_i(jit_forward(), JIT_R2, SCHEME_PVECTOR_SINGLE);
+  jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+  if (right) {
+    jit_movr_p(JIT_R0, JIT_R2);
+  } else {
+    jit_movr_p(JIT_R0, JIT_R1);
+    jit_movr_p(JIT_R1, JIT_R2);
+  }
+  generate_pvector_deep2_alloc(jitter, dest);
+  ref_done_single = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_single);
+  ref_not_deep = jit_bnei_i(jit_forward(), JIT_R2, SCHEME_PVECTOR_DEEP);
+
+  if (right)
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_C(0x0));
+  else
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+  jit_ldxi_c(JIT_V1, JIT_R2, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+  ref_bad_low_count = jit_blei_i(jit_forward(), JIT_V1, 0);
+  ref_full_count = jit_bgei_i(jit_forward(), JIT_V1, 4);
+
+  mz_rs_dec(PVECTOR_CONS_RUNSTACK_SLOTS);
+  CHECK_RUNSTACK_OVERFLOW();
+  mz_runstack_pushed(jitter, PVECTOR_CONS_RUNSTACK_SLOTS);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_PV_SLOT), JIT_RUNSTACK, JIT_R0);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_VALUE_SLOT), JIT_RUNSTACK, JIT_R1);
+  jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_B(0x0));
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_MIDDLE_SLOT), JIT_RUNSTACK, JIT_R2);
+  if (right) {
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_OTHER_DIGIT_SLOT),
+               JIT_RUNSTACK, JIT_R2);
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_C(0x0));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_EDGE_DIGIT_SLOT),
+               JIT_RUNSTACK, JIT_R2);
+  } else {
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_C(0x0));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_OTHER_DIGIT_SLOT),
+               JIT_RUNSTACK, JIT_R2);
+    jit_ldxi_p(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_A(0x0));
+    jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_EDGE_DIGIT_SLOT),
+               JIT_RUNSTACK, JIT_R2);
+  }
+  jit_movi_p(JIT_R2, NULL);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT),
+             JIT_RUNSTACK, JIT_R2);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT + 1),
+             JIT_RUNSTACK, JIT_R2);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT + 2),
+             JIT_RUNSTACK, JIT_R2);
+  jit_stxi_p(WORDS_TO_BYTES(PVECTOR_CONS_NEW_DIGIT_SLOT + 3),
+             JIT_RUNSTACK, JIT_R2);
+  mz_rs_sync();
+
+  jit_ldxi_p(JIT_R0, JIT_RUNSTACK,
+             WORDS_TO_BYTES(PVECTOR_CONS_EDGE_DIGIT_SLOT));
+  jit_ldxi_c(JIT_R2, JIT_R0, (intptr_t)&SCHEME_PVECTOR_DIGIT_COUNT(0x0));
+
+  ref_not_count1 = jit_bnei_i(jit_forward(), JIT_R2, 1);
+  generate_pvector_cons_deep_case(jitter, right, 1, dest);
+  ref_done_deep1 = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_count1);
+  ref_not_count2 = jit_bnei_i(jit_forward(), JIT_R2, 2);
+  generate_pvector_cons_deep_case(jitter, right, 2, dest);
+  ref_done_deep2 = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_not_count2);
+  generate_pvector_cons_deep_case(jitter, right, 3, dest);
+  ref_done_deep3 = jit_jmpi(jit_forward());
+
+  mz_patch_branch(ref_bad_tag);
+  mz_patch_branch(ref_bad_type);
+  mz_patch_branch(ref_not_deep);
+  mz_patch_branch(ref_bad_low_count);
+  mz_patch_branch(ref_full_count);
+  JIT_UPDATE_THREAD_RSPTR_IF_NEEDED();
+  mz_prepare(2);
+  jit_pusharg_p(JIT_R1);
+  jit_pusharg_p(JIT_R0);
+  {
+    GC_CAN_IGNORE jit_insn *refr USED_ONLY_FOR_FUTURES;
+    if (right)
+      (void)mz_finish_lwe(ts_scheme_pvector_cons_right, refr);
+    else
+      (void)mz_finish_lwe(ts_scheme_pvector_cons_left, refr);
+  }
+  jit_retval(dest);
+
+  mz_patch_ucbranch(ref_done_empty);
+  mz_patch_ucbranch(ref_done_single);
+  mz_patch_ucbranch(ref_done_deep1);
+  mz_patch_ucbranch(ref_done_deep2);
+  mz_patch_ucbranch(ref_done_deep3);
 }
 
 static int allocate_rectangular(mz_jit_state *jitter, int dest)
@@ -3825,6 +4534,81 @@ int scheme_generate_inlined_binary(mz_jit_state *jitter, Scheme_App3_Rec *app, i
       scheme_generate_extflonum_arith(jitter, rator, app->rand1, app->rand2, 2, ARITH_EXPT, 0, 0, NULL, 1, 0, -1, NULL, dest);
       return 1;
 #endif
+    } else if (IS_NAMED_PRIM(rator, "core-make-deep2-pvector")) {
+      LOG_IT(("inlined make-deep2-pvector\n"));
+
+      scheme_generate_two_args(app->rand1, app->rand2, jitter, 1, 2);
+      CHECK_LIMIT();
+      mz_rs_sync();
+
+      generate_pvector_deep2_alloc(jitter, dest);
+      CHECK_LIMIT();
+
+      return 1;
+    } else if (IS_NAMED_PRIM(rator, "core-pvector-ref")) {
+      LOG_IT(("inlined pvector-ref\n"));
+
+      if (SCHEME_INTP(app->rand2) && (SCHEME_INT_VAL(app->rand2) >= 0)) {
+        mz_runstack_skipped(jitter, 2);
+
+        scheme_generate_non_tail(app->rand1, jitter, 0, 1, 0);
+        CHECK_LIMIT();
+        jit_movi_p(JIT_R1, app->rand2);
+
+        mz_rs_sync();
+
+        generate_checked_pvector_ref(jitter, 1, SCHEME_INT_VAL(app->rand2), dest);
+        CHECK_LIMIT();
+
+        mz_runstack_unskipped(jitter, 2);
+      } else {
+        scheme_generate_two_args(app->rand1, app->rand2, jitter, 1, 2);
+        CHECK_LIMIT();
+
+        mz_rs_sync();
+
+        generate_checked_pvector_ref(jitter, 0, 0, dest);
+        CHECK_LIMIT();
+      }
+
+      return 1;
+    } else if (IS_NAMED_PRIM(rator, "core-unsafe-pvector-ref")) {
+      LOG_IT(("inlined unsafe-pvector-ref\n"));
+
+      if (SCHEME_INTP(app->rand2) && (SCHEME_INT_VAL(app->rand2) >= 0)) {
+        mz_runstack_skipped(jitter, 2);
+
+        scheme_generate_non_tail(app->rand1, jitter, 0, 1, 0);
+        CHECK_LIMIT();
+
+        generate_unsafe_pvector_ref(jitter, 1, SCHEME_INT_VAL(app->rand2), dest);
+        CHECK_LIMIT();
+
+        mz_runstack_unskipped(jitter, 2);
+      } else {
+        scheme_generate_two_args(app->rand1, app->rand2, jitter, 1, 2);
+        CHECK_LIMIT();
+
+        generate_unsafe_pvector_ref(jitter, 0, 0, dest);
+        CHECK_LIMIT();
+      }
+
+      return 1;
+    } else if (IS_NAMED_PRIM(rator, "core-pvector-cons-left")
+               || IS_NAMED_PRIM(rator, "core-pvector-cons-right")) {
+      int right;
+
+      right = IS_NAMED_PRIM(rator, "core-pvector-cons-right");
+      LOG_IT(("inlined pvector-cons\n"));
+
+      scheme_generate_two_args(app->rand1, app->rand2, jitter, 1, 2);
+      CHECK_LIMIT();
+      mz_rs_sync();
+
+      generate_checked_pvector_cons(jitter, right, dest);
+      CHECK_LIMIT();
+
+      return 1;
     } else if (IS_NAMED_PRIM(rator, "vector-ref")
                || IS_NAMED_PRIM(rator, "vector*-ref")
                || IS_NAMED_PRIM(rator, "unsafe-vector-ref")
@@ -4611,7 +5395,28 @@ int scheme_generate_inlined_nary(mz_jit_state *jitter, Scheme_App_Rec *app, int 
 
   scheme_direct_call_count++;
 
-  if (IS_NAMED_PRIM(rator, "=")) {
+  if (IS_NAMED_PRIM(rator, "core-pvector-empty")) {
+    LOG_IT(("inlined pvector-empty\n"));
+    jit_movi_p(dest, scheme_pvector_empty);
+    return 1;
+  } else if (IS_NAMED_PRIM(rator, "core-make-deep3-pvector")
+      || IS_NAMED_PRIM(rator, "core-make-deep4-pvector")) {
+    int c = app->num_args;
+
+    LOG_IT(("inlined make-deepN-pvector\n"));
+
+    scheme_generate_app(app, NULL, c, c, jitter, 0, 0, 0, 2);
+    CHECK_LIMIT();
+    mz_rs_sync();
+
+    generate_pvector_deep_n_alloc(jitter, c, dest);
+    CHECK_LIMIT();
+
+    mz_rs_inc(c); /* no sync */
+    mz_runstack_popped(jitter, c);
+
+    return 1;
+  } else if (IS_NAMED_PRIM(rator, "=")) {
     scheme_generate_nary_arith(jitter, app, 0, CMP_EQUAL, for_branch, branch_short, 0, 0, dest);
     return 1;
   } else if (IS_NAMED_PRIM(rator, "fx=")) {

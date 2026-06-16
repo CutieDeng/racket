@@ -119,38 +119,38 @@
   (unless pvector-stream-procs
     (set! pvector-stream-procs
           (with-handlers ([exn:fail? (lambda (_) 'unavailable)])
-            (vector (dynamic-require 'racket/pvector 'pvector?)
-                    (dynamic-require 'racket/pvector 'pvector->list)
-                    (dynamic-require 'racket/pvector 'pvector-length)
-                    (dynamic-require 'racket/pvector 'pvector-ref)
-                    (dynamic-require 'racket/pvector 'pvector-drop)
-                    (dynamic-require 'racket/pvector 'pvector-take)
-                    (dynamic-require 'racket/pvector 'pvector-empty)
-                    (dynamic-require 'racket/pvector 'pvector-append)
-                    (dynamic-require 'racket/pvector 'pvector->vector)
-                    (dynamic-require 'racket/pvector 'vector->pvector)
-                    (dynamic-require 'racket/pvector 'pvector-for-each)
-                    (dynamic-require 'racket/pvector 'pvector-map)
-                    (dynamic-require '(submod racket/pvector unsafe)
-                                     'unsafe-pvector->chunk-vector)
-                    (dynamic-require 'racket/pvector 'make-pvector)
-                    (dynamic-require '(submod racket/pvector unsafe)
-                                     'unsafe-pvector-length)
-                    (dynamic-require '(submod racket/pvector unsafe)
-                                     'unsafe-pvector-ref)
-                    (dynamic-require '(submod racket/pvector unsafe)
-                                     'unsafe-pvector-drop)
-                    (dynamic-require '(submod racket/pvector unsafe)
-                                     'unsafe-pvector-take)))))
+            (let ([unsafe-pvector-length
+                   (dynamic-require '(submod racket/pvector unsafe)
+                                    'unsafe-pvector-length)])
+              (vector (dynamic-require 'racket/pvector 'pvector?)
+                      (dynamic-require 'racket/pvector 'pvector->list)
+                      (dynamic-require 'racket/pvector 'pvector-length)
+                      (dynamic-require 'racket/pvector 'pvector-ref)
+                      (dynamic-require 'racket/pvector 'pvector-drop)
+                      (dynamic-require 'racket/pvector 'pvector-take)
+                      (dynamic-require 'racket/pvector 'pvector-empty)
+                      (dynamic-require 'racket/pvector 'pvector-append)
+                      (dynamic-require 'racket/pvector 'pvector->vector)
+                      (dynamic-require 'racket/pvector 'vector->pvector)
+                      (dynamic-require 'racket/pvector 'pvector-for-each)
+                      (dynamic-require 'racket/pvector 'pvector-map)
+                      #f
+                      (dynamic-require 'racket/pvector 'make-pvector)
+                      unsafe-pvector-length
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-ref)
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-drop)
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-take))))))
   (and (vector? pvector-stream-procs)
        pvector-stream-procs))
 
 (define (pvector-stream-procs-for s)
-  (and (sequence-via-prop? s)
-       (let ([procs (load-pvector-stream-procs)])
-         (and procs
-              ((vector-ref procs 0) s)
-              procs))))
+  (let ([procs (load-pvector-stream-procs)])
+    (and procs
+         ((vector-ref procs 0) s)
+         procs)))
 
 (define (stream->list s)
   (cond
@@ -299,6 +299,9 @@
         tail
         (loop (cdr acc) (cons (car acc) tail)))))
 
+(define (pvector-stream-unsafe-length procs s)
+  ((vector-ref procs 14) s))
+
 (define (all-pvectors? l pvector?)
   (let loop ([l l])
     (cond
@@ -409,141 +412,53 @@
 
 (define (pvector-append-stream->list st)
   (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
         [len (pvector-append-stream-len st)]
-        [chunks ((vector-ref (pvector-append-stream-procs st) 12)
-                 (pvector-append-stream-s st))])
-    (let chunk-loop ([chunk-pos 0] [offset 0] [acc null])
-      (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (unsafe-fx>= offset len))
-          (reverse-onto acc (stream->list (pvector-append-stream-tail st)))
-          (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                 [chunk-len (unsafe-vector-length chunk)]
-                 [next-offset (unsafe-fx+ offset chunk-len)]
-                 [end-pos (if (unsafe-fx< len next-offset)
-                              (unsafe-fx- len offset)
-                              chunk-len)])
-            (cond
-              [(unsafe-fx<= next-offset (pvector-append-stream-pos st))
-               (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)]
-              [else
-               (let elem-loop ([elem-pos
-                                 (if (unsafe-fx<= (pvector-append-stream-pos st)
-                                                  offset)
-                                     0
-                                     (unsafe-fx- (pvector-append-stream-pos st)
-                                                offset))]
-                                [acc acc])
-                 (if (unsafe-fx= elem-pos end-pos)
-                     (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)
-                     (elem-loop (unsafe-fx+ elem-pos 1)
-                                (cons (unsafe-vector-ref chunk elem-pos)
-                                      acc))))]))))))
+        [tail (pvector-append-stream-tail st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos] [acc null])
+      (if (unsafe-fx>= index len)
+          (reverse-onto acc (stream->list tail))
+          (loop (unsafe-fx+ index 1)
+                (cons (ref s index) acc))))))
 
 (define (pvector-append-stream-count f st)
-  (let ([chunks ((vector-ref (pvector-append-stream-procs st) 12)
-                 (pvector-append-stream-s st))]
-        [len (pvector-append-stream-len st)])
-    (+ (let chunk-loop ([chunk-pos 0] [offset 0] [count 0])
-         (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                 (unsafe-fx>= offset len))
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (+ (let loop ([index pos] [count 0])
+         (if (unsafe-fx>= index len)
              count
-             (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                    [chunk-len (unsafe-vector-length chunk)]
-                    [next-offset (unsafe-fx+ offset chunk-len)]
-                    [end-pos (if (unsafe-fx< len next-offset)
-                                 (unsafe-fx- len offset)
-                                 chunk-len)])
-               (cond
-                 [(unsafe-fx<= next-offset (pvector-append-stream-pos st))
-                  (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset count)]
-                 [else
-                  (let elem-loop ([elem-pos
-                                    (if (unsafe-fx<=
-                                         (pvector-append-stream-pos st)
-                                         offset)
-                                        0
-                                        (unsafe-fx-
-                                         (pvector-append-stream-pos st)
-                                         offset))]
-                                   [count count])
-                    (if (unsafe-fx= elem-pos end-pos)
-                        (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                    next-offset
-                                    count)
-                        (elem-loop (unsafe-fx+ elem-pos 1)
-                                   (if (f (unsafe-vector-ref chunk elem-pos))
-                                       (unsafe-fx+ count 1)
-                                       count))))]))))
+             (loop (unsafe-fx+ index 1)
+                   (if (f (ref s index))
+                       (unsafe-fx+ count 1)
+                       count))))
        (stream-count f (pvector-append-stream-tail st)))))
 
 (define (pvector-append-stream-for-each f st)
-  (let ([chunks ((vector-ref (pvector-append-stream-procs st) 12)
-                 (pvector-append-stream-s st))]
-        [len (pvector-append-stream-len st)])
-    (let chunk-loop ([chunk-pos 0] [offset 0])
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos])
       (cond
-        [(or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-             (unsafe-fx>= offset len))
+        [(unsafe-fx>= index len)
          (stream-for-each f (pvector-append-stream-tail st))]
         [else
-         (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                [chunk-len (unsafe-vector-length chunk)]
-                [next-offset (unsafe-fx+ offset chunk-len)]
-                [end-pos (if (unsafe-fx< len next-offset)
-                             (unsafe-fx- len offset)
-                             chunk-len)])
-           (cond
-             [(unsafe-fx<= next-offset (pvector-append-stream-pos st))
-              (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset)]
-             [else
-              (let elem-loop ([elem-pos
-                                (if (unsafe-fx<=
-                                     (pvector-append-stream-pos st)
-                                     offset)
-                                    0
-                                    (unsafe-fx-
-                                     (pvector-append-stream-pos st)
-                                     offset))])
-                (cond
-                  [(unsafe-fx= elem-pos end-pos)
-                   (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset)]
-                  [else
-                   (f (unsafe-vector-ref chunk elem-pos))
-                   (elem-loop (unsafe-fx+ elem-pos 1))]))]))]))))
+         (f (ref s index))
+         (loop (unsafe-fx+ index 1))]))))
 
 (define (pvector-append-stream-fold f init st)
-  (let ([chunks ((vector-ref (pvector-append-stream-procs st) 12)
-                 (pvector-append-stream-s st))]
-        [len (pvector-append-stream-len st)])
-    (let chunk-loop ([chunk-pos 0] [offset 0] [acc init])
-      (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (unsafe-fx>= offset len))
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos] [acc init])
+      (if (unsafe-fx>= index len)
           (stream-fold f acc (pvector-append-stream-tail st))
-          (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                 [chunk-len (unsafe-vector-length chunk)]
-                 [next-offset (unsafe-fx+ offset chunk-len)]
-                 [end-pos (if (unsafe-fx< len next-offset)
-                              (unsafe-fx- len offset)
-                              chunk-len)])
-            (cond
-              [(unsafe-fx<= next-offset (pvector-append-stream-pos st))
-               (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)]
-              [else
-               (let elem-loop ([elem-pos
-                                 (if (unsafe-fx<=
-                                      (pvector-append-stream-pos st)
-                                      offset)
-                                     0
-                                     (unsafe-fx-
-                                      (pvector-append-stream-pos st)
-                                      offset))]
-                                [acc acc])
-                 (if (unsafe-fx= elem-pos end-pos)
-                     (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)
-                     (elem-loop (unsafe-fx+ elem-pos 1)
-                                (f acc
-                                   (unsafe-vector-ref chunk
-                                                      elem-pos)))))]))))))
+          (loop (unsafe-fx+ index 1)
+                (f acc (ref s index)))))))
 
 (define (stream-append . l)
   (for ([s (in-list l)])
@@ -640,143 +555,61 @@
 (define (pvector-map-stream->list st)
   (let ([f (pvector-map-stream-f st)]
         [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
         [len (pvector-map-stream-len st)]
-        [chunks ((vector-ref (pvector-map-stream-procs st) 12)
-                 (pvector-map-stream-s st))])
-    (let chunk-loop ([chunk-pos 0] [offset 0] [acc null])
-      (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (unsafe-fx>= offset len))
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [acc null])
+      (if (unsafe-fx>= index len)
           (reverse acc)
-          (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                 [chunk-len (unsafe-vector-length chunk)]
-                 [next-offset (unsafe-fx+ offset chunk-len)]
-                 [end-pos (if (unsafe-fx< len next-offset)
-                              (unsafe-fx- len offset)
-                              chunk-len)])
-            (cond
-              [(unsafe-fx<= next-offset (pvector-map-stream-pos st))
-               (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)]
-              [else
-               (let elem-loop ([elem-pos
-                                 (if (unsafe-fx<= (pvector-map-stream-pos st)
-                                                  offset)
-                                     0
-                                     (unsafe-fx- (pvector-map-stream-pos st)
-                                                offset))]
-                                [acc acc])
-                 (if (unsafe-fx= elem-pos end-pos)
-                     (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)
-                     (elem-loop (unsafe-fx+ elem-pos 1)
-                                (cons (f (unsafe-vector-ref chunk elem-pos))
-                                      acc))))]))))))
+          (loop (unsafe-fx+ index 1)
+                (cons (f (ref s index)) acc))))))
 
 (define (pvector-map-stream-count f st)
   (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
         [len (pvector-map-stream-len st)]
-        [chunks ((vector-ref (pvector-map-stream-procs st) 12)
-                 (pvector-map-stream-s st))])
-    (let chunk-loop ([chunk-pos 0] [offset 0] [count 0])
-      (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (unsafe-fx>= offset len))
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [count 0])
+      (if (unsafe-fx>= index len)
           count
-          (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                 [chunk-len (unsafe-vector-length chunk)]
-                 [next-offset (unsafe-fx+ offset chunk-len)]
-                 [end-pos (if (unsafe-fx< len next-offset)
-                              (unsafe-fx- len offset)
-                              chunk-len)])
-            (cond
-              [(unsafe-fx<= next-offset (pvector-map-stream-pos st))
-               (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset count)]
-              [else
-               (let elem-loop ([elem-pos
-                                 (if (unsafe-fx<= (pvector-map-stream-pos st)
-                                                  offset)
-                                     0
-                                     (unsafe-fx- (pvector-map-stream-pos st)
-                                                offset))]
-                                [count count])
-                 (if (unsafe-fx= elem-pos end-pos)
-                     (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset count)
-                     (elem-loop
-                      (unsafe-fx+ elem-pos 1)
-                      (if (call-with-values
-                              (lambda ()
-                                (map-f (unsafe-vector-ref chunk elem-pos)))
-                            f)
-                          (unsafe-fx+ count 1)
-                          count))))]))))))
+          (loop (unsafe-fx+ index 1)
+                (if (call-with-values
+                        (lambda () (map-f (ref s index)))
+                      f)
+                    (unsafe-fx+ count 1)
+                    count))))))
 
 (define (pvector-map-stream-for-each f st)
   (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
         [len (pvector-map-stream-len st)]
-        [chunks ((vector-ref (pvector-map-stream-procs st) 12)
-                 (pvector-map-stream-s st))])
-    (let chunk-loop ([chunk-pos 0] [offset 0])
-      (unless (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                  (unsafe-fx>= offset len))
-        (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-               [chunk-len (unsafe-vector-length chunk)]
-               [next-offset (unsafe-fx+ offset chunk-len)]
-               [end-pos (if (unsafe-fx< len next-offset)
-                            (unsafe-fx- len offset)
-                            chunk-len)])
-          (cond
-            [(unsafe-fx<= next-offset (pvector-map-stream-pos st))
-             (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset)]
-            [else
-             (let elem-loop ([elem-pos
-                               (if (unsafe-fx<= (pvector-map-stream-pos st)
-                                                offset)
-                                   0
-                                   (unsafe-fx- (pvector-map-stream-pos st)
-                                              offset))])
-               (unless (unsafe-fx= elem-pos end-pos)
-                 (call-with-values
-                  (lambda ()
-                    (map-f (unsafe-vector-ref chunk elem-pos)))
-                  (case-lambda
-                    [(v) (f v)]
-                    [vs (apply f vs)]))
-                 (elem-loop (unsafe-fx+ elem-pos 1))))
-             (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset)]))))))
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos])
+      (unless (unsafe-fx>= index len)
+        (call-with-values
+         (lambda () (map-f (ref s index)))
+         (case-lambda
+           [(v) (f v)]
+           [vs (apply f vs)]))
+        (loop (unsafe-fx+ index 1))))))
 
 (define (pvector-map-stream-fold f init st)
   (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
         [len (pvector-map-stream-len st)]
-        [chunks ((vector-ref (pvector-map-stream-procs st) 12)
-                 (pvector-map-stream-s st))])
-    (let chunk-loop ([chunk-pos 0] [offset 0] [acc init])
-      (if (or (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (unsafe-fx>= offset len))
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [acc init])
+      (if (unsafe-fx>= index len)
           acc
-          (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                 [chunk-len (unsafe-vector-length chunk)]
-                 [next-offset (unsafe-fx+ offset chunk-len)]
-                 [end-pos (if (unsafe-fx< len next-offset)
-                              (unsafe-fx- len offset)
-                              chunk-len)])
-            (cond
-              [(unsafe-fx<= next-offset (pvector-map-stream-pos st))
-               (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)]
-              [else
-               (let elem-loop ([elem-pos
-                                 (if (unsafe-fx<= (pvector-map-stream-pos st)
-                                                  offset)
-                                     0
-                                     (unsafe-fx- (pvector-map-stream-pos st)
-                                                offset))]
-                                [acc acc])
-                 (if (unsafe-fx= elem-pos end-pos)
-                     (chunk-loop (unsafe-fx+ chunk-pos 1) next-offset acc)
-                     (elem-loop
-                      (unsafe-fx+ elem-pos 1)
-                      (call-with-values
-                       (lambda ()
-                         (map-f (unsafe-vector-ref chunk elem-pos)))
-                       (case-lambda
-                         [(v) (f acc v)]
-                         [vs (apply f acc vs)])))))]))))))
+          (loop (unsafe-fx+ index 1)
+                (call-with-values
+                 (lambda () (map-f (ref s index)))
+                 (case-lambda
+                   [(v) (f acc v)]
+                   [vs (apply f acc vs)])))))))
 
 (struct pvector-filter-stream (f s pos len procs state)
   #:property prop:stream
@@ -852,34 +685,15 @@
     (if pos
         (let ([f (pvector-filter-stream-f st)]
               [s (pvector-filter-stream-s st)]
-              [procs (pvector-filter-stream-procs st)])
-          (let ([chunks ((vector-ref procs 12) s)]
-                [start (unsafe-fx+ pos 1)])
-            (let chunk-loop ([chunk-pos 0] [offset 0] [count 1])
-              (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                  count
-                  (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                         [chunk-len (unsafe-vector-length chunk)]
-                         [next-offset (unsafe-fx+ offset chunk-len)])
-                    (cond
-                      [(unsafe-fx<= next-offset start)
-                       (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                   next-offset
-                                   count)]
-                      [else
-                       (let elem-loop ([elem-pos
-                                         (if (unsafe-fx<= start offset)
-                                             0
-                                             (unsafe-fx- start offset))]
-                                        [count count])
-                         (if (unsafe-fx= elem-pos chunk-len)
-                             (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                         next-offset
-                                         count)
-                             (elem-loop (unsafe-fx+ elem-pos 1)
-                                        (if (f (unsafe-vector-ref chunk elem-pos))
-                                            (unsafe-fx+ count 1)
-                                            count))))]))))))
+              [len (pvector-filter-stream-len st)]
+              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+          (let loop ([index (unsafe-fx+ pos 1)] [count 1])
+            (if (unsafe-fx>= index len)
+                count
+                (loop (unsafe-fx+ index 1)
+                      (if (f (ref s index))
+                          (unsafe-fx+ count 1)
+                          count)))))
         0)))
 
 (define (pvector-filter-stream-ref st i)
@@ -894,31 +708,22 @@
       (else
        (let* ((f (pvector-filter-stream-f st))
               (s (pvector-filter-stream-s st))
-              (procs (pvector-filter-stream-procs st))
+              (len (pvector-filter-stream-len st))
+              (ref (vector-ref (pvector-filter-stream-procs st) 15))
               (start (unsafe-fx+ pos 1))
-              (chunks ((vector-ref procs 12) s)))
-         (let ((remaining i))
-           (let/ec return
-             (let chunk-loop ((chunk-pos 0) (offset 0))
-               (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                 (let* ((chunk (unsafe-vector-ref chunks chunk-pos))
-                        (chunk-len (unsafe-vector-length chunk))
-                        (next-offset (unsafe-fx+ offset chunk-len)))
-                   (unless (unsafe-fx<= next-offset start)
-                     (let elem-loop ((elem-pos
-                                      (if (unsafe-fx<= start offset)
-                                          0
-                                          (unsafe-fx- start offset))))
-                       (unless (unsafe-fx= elem-pos chunk-len)
-                         (let ((v (unsafe-vector-ref chunk elem-pos)))
-                           (when (f v)
-                             (if (= remaining 1)
-                                 (return v)
-                                 (set! remaining (sub1 remaining)))))
-                         (elem-loop (unsafe-fx+ elem-pos 1)))))
-                   (chunk-loop (unsafe-fx+ chunk-pos 1)
-                               next-offset))))
-             (raise-stream-ended-before-index 'stream-ref i))))))))
+              (remaining i))
+         (let/ec return
+           (let loop ([index start] [remaining remaining])
+             (unless (unsafe-fx>= index len)
+               (let ([v (ref s index)])
+                 (cond
+                   [(f v)
+                    (if (= remaining 1)
+                        (return v)
+                        (loop (unsafe-fx+ index 1) (sub1 remaining)))]
+                   [else
+                    (loop (unsafe-fx+ index 1) remaining)]))))
+           (raise-stream-ended-before-index 'stream-ref i)))))))
 
 (define (pvector-filter-stream-tail-at st i)
   (let ((pos (pvector-filter-stream-force! st)))
@@ -930,34 +735,22 @@
       (else
        (let* ((f (pvector-filter-stream-f st))
               (s (pvector-filter-stream-s st))
-              (procs (pvector-filter-stream-procs st))
+              (len (pvector-filter-stream-len st))
+              (ref (vector-ref (pvector-filter-stream-procs st) 15))
               (start (unsafe-fx+ pos 1))
-              (chunks ((vector-ref procs 12) s)))
-         (let ((remaining (sub1 i)))
-           (let/ec return
-             (let chunk-loop ((chunk-pos 0) (offset 0))
-               (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                 (let* ((chunk (unsafe-vector-ref chunks chunk-pos))
-                        (chunk-len (unsafe-vector-length chunk))
-                        (next-offset (unsafe-fx+ offset chunk-len)))
-                   (unless (unsafe-fx<= next-offset start)
-                     (let elem-loop ((elem-pos
-                                      (if (unsafe-fx<= start offset)
-                                          0
-                                          (unsafe-fx- start offset))))
-                       (unless (unsafe-fx= elem-pos chunk-len)
-                         (let ((v (unsafe-vector-ref chunk elem-pos)))
-                           (when (f v)
-                             (if (= remaining 1)
-                                 (return
-                                  (pvector-filter-stream-rest-after
-                                   st
-                                   (unsafe-fx+ offset elem-pos)))
-                                 (set! remaining (sub1 remaining)))))
-                         (elem-loop (unsafe-fx+ elem-pos 1)))))
-                   (chunk-loop (unsafe-fx+ chunk-pos 1)
-                               next-offset))))
-             (raise-stream-ended-before-index 'stream-tail i))))))))
+              (remaining (sub1 i)))
+         (let/ec return
+           (let loop ([index start] [remaining remaining])
+             (unless (unsafe-fx>= index len)
+               (let ([v (ref s index)])
+                 (cond
+                   [(f v)
+                    (if (= remaining 1)
+                        (return (pvector-filter-stream-rest-after st index))
+                        (loop (unsafe-fx+ index 1) (sub1 remaining)))]
+                   [else
+                    (loop (unsafe-fx+ index 1) remaining)]))))
+           (raise-stream-ended-before-index 'stream-tail i)))))))
 
 (define (pvector-filter-stream-take st i)
   (cond
@@ -995,64 +788,33 @@
       [(pvector-filter-stream? s)
        (let ([pos (pvector-filter-stream-force! s)])
          (if pos
-             (let ([f (pvector-filter-stream-f s)]
-                   [source (pvector-filter-stream-s s)]
-                   [procs (pvector-filter-stream-procs s)])
-               (let ([first ((vector-ref procs 15) source pos)])
-                 (if (unsafe-fx= remaining 1)
-                     (list first)
-                     (let ([chunks ((vector-ref procs 12) source)]
-                           [start (unsafe-fx+ pos 1)])
-                       (let/ec return
-                         (let chunk-loop ([chunk-pos 0]
-                                          [offset 0]
-                                          [remaining (unsafe-fx- remaining 1)]
-                                          [acc (list first)])
-                           (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                               (raise-stream-ended-before-index
-                                'stream-take
-                                (pvector-filter-take-stream-index st))
-                               (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                                      [chunk-len (unsafe-vector-length chunk)]
-                                      [next-offset (unsafe-fx+ offset chunk-len)])
-                                 (cond
-                                   [(unsafe-fx<= next-offset start)
-                                    (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                next-offset
-                                                remaining
-                                                acc)]
-                                   [else
-                                    (let elem-loop ([elem-pos
-                                                      (if (unsafe-fx<= start
-                                                                       offset)
-                                                          0
-                                                          (unsafe-fx- start
-                                                                     offset))]
-                                                     [remaining remaining]
-                                                     [acc acc])
-                                      (cond
-                                        [(unsafe-fx= elem-pos chunk-len)
-                                         (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                     next-offset
-                                                     remaining
-                                                     acc)]
-                                        [else
-                                         (let ([v (unsafe-vector-ref chunk
-                                                                     elem-pos)])
-                                           (cond
-                                             [(f v)
-                                              (if (unsafe-fx= remaining 1)
-                                                  (return
-                                                   (reverse (cons v acc)))
-                                                  (elem-loop
-                                                   (unsafe-fx+ elem-pos 1)
-                                                   (unsafe-fx- remaining 1)
-                                                   (cons v acc)))]
-                                             [else
-                                              (elem-loop
-                                               (unsafe-fx+ elem-pos 1)
-                                               remaining
-                                               acc)]))]))])))))))))
+             (let* ([f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [first (ref source pos)])
+               (if (unsafe-fx= remaining 1)
+                   (list first)
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [acc (list first)])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(f v)
+                                (if (unsafe-fx= remaining 1)
+                                    (return (reverse (cons v acc)))
+                                    (loop (unsafe-fx+ index 1)
+                                          (unsafe-fx- remaining 1)
+                                          (cons v acc)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      acc)])))))))
              (raise-stream-ended-before-index
               'stream-take
               (pvector-filter-take-stream-index st))))]
@@ -1073,109 +835,52 @@
 
 (define (pvector-filter-stream-count f st)
   (let ([pos (pvector-filter-stream-force! st)])
-    (if pos
-        (let ([filter-f (pvector-filter-stream-f st)]
-              [s (pvector-filter-stream-s st)]
-              [procs (pvector-filter-stream-procs st)])
-          (let* ([first ((vector-ref procs 15) s pos)]
-                 [count (if (f first) 1 0)]
-                 [chunks ((vector-ref procs 12) s)]
-                 [start (unsafe-fx+ pos 1)])
-            (let chunk-loop ([chunk-pos 0] [offset 0] [count count])
-              (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                  count
-                  (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                         [chunk-len (unsafe-vector-length chunk)]
-                         [next-offset (unsafe-fx+ offset chunk-len)])
-                    (cond
-                      [(unsafe-fx<= next-offset start)
-                       (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                   next-offset
-                                   count)]
-                      [else
-                       (let elem-loop ([elem-pos
-                                         (if (unsafe-fx<= start offset)
-                                             0
-                                             (unsafe-fx- start offset))]
-                                        [count count])
-                         (if (unsafe-fx= elem-pos chunk-len)
-                             (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                         next-offset
-                                         count)
-                             (let ([v (unsafe-vector-ref chunk elem-pos)])
-                               (elem-loop
-                                (unsafe-fx+ elem-pos 1)
-                                (if (and (filter-f v) (f v))
-                                    (unsafe-fx+ count 1)
-                                    count)))))]))))))
-        0)))
+	    (if pos
+	        (let ([filter-f (pvector-filter-stream-f st)]
+	              [s (pvector-filter-stream-s st)]
+	              [len (pvector-filter-stream-len st)]
+	              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	          (let ([first (ref s pos)])
+	            (let loop ([index (unsafe-fx+ pos 1)]
+	                       [count (if (f first) 1 0)])
+	              (if (unsafe-fx>= index len)
+	                  count
+	                  (let ([v (ref s index)])
+	                    (loop (unsafe-fx+ index 1)
+	                          (if (and (filter-f v) (f v))
+	                              (unsafe-fx+ count 1)
+	                              count)))))))
+	        0)))
 
 (define (pvector-filter-stream-for-each f st)
   (let ([pos (pvector-filter-stream-force! st)])
-    (when pos
-      (let ([filter-f (pvector-filter-stream-f st)]
-            [s (pvector-filter-stream-s st)]
-            [procs (pvector-filter-stream-procs st)])
-        (f ((vector-ref procs 15) s pos))
-        (let ([chunks ((vector-ref procs 12) s)]
-              [start (unsafe-fx+ pos 1)])
-          (let chunk-loop ([chunk-pos 0] [offset 0])
-            (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-              (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                     [chunk-len (unsafe-vector-length chunk)]
-                     [next-offset (unsafe-fx+ offset chunk-len)])
-                (cond
-                  [(unsafe-fx<= next-offset start)
-                   (chunk-loop (unsafe-fx+ chunk-pos 1)
-                               next-offset)]
-                  [else
-                   (let elem-loop ([elem-pos
-                                     (if (unsafe-fx<= start offset)
-                                         0
-                                         (unsafe-fx- start offset))])
-                     (unless (unsafe-fx= elem-pos chunk-len)
-                       (let ([v (unsafe-vector-ref chunk elem-pos)])
-                         (when (filter-f v) (f v)))
-                       (elem-loop (unsafe-fx+ elem-pos 1))))
-                   (chunk-loop (unsafe-fx+ chunk-pos 1)
-                               next-offset)])))))))))
+	    (when pos
+	      (let ([filter-f (pvector-filter-stream-f st)]
+	            [s (pvector-filter-stream-s st)]
+	            [len (pvector-filter-stream-len st)]
+	            [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	        (f (ref s pos))
+	        (let loop ([index (unsafe-fx+ pos 1)])
+	          (unless (unsafe-fx>= index len)
+	            (let ([v (ref s index)])
+	              (when (filter-f v) (f v)))
+	            (loop (unsafe-fx+ index 1))))))))
 
 (define (pvector-filter-stream-fold f init st)
   (let ([pos (pvector-filter-stream-force! st)])
-    (if pos
-        (let ([filter-f (pvector-filter-stream-f st)]
-              [s (pvector-filter-stream-s st)]
-              [procs (pvector-filter-stream-procs st)])
-          (let* ([first ((vector-ref procs 15) s pos)]
-                 [acc (f init first)]
-                 [chunks ((vector-ref procs 12) s)]
-                 [start (unsafe-fx+ pos 1)])
-            (let chunk-loop ([chunk-pos 0] [offset 0] [acc acc])
-              (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                  acc
-                  (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                         [chunk-len (unsafe-vector-length chunk)]
-                         [next-offset (unsafe-fx+ offset chunk-len)])
-                    (cond
-                      [(unsafe-fx<= next-offset start)
-                       (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                   next-offset
-                                   acc)]
-                      [else
-                       (let elem-loop ([elem-pos
-                                         (if (unsafe-fx<= start offset)
-                                             0
-                                             (unsafe-fx- start offset))]
-                                        [acc acc])
-                         (if (unsafe-fx= elem-pos chunk-len)
-                             (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                         next-offset
-                                         acc)
-                             (let ([v (unsafe-vector-ref chunk elem-pos)])
-                               (elem-loop
-                                (unsafe-fx+ elem-pos 1)
-                                (if (filter-f v) (f acc v) acc)))))]))))))
-        init)))
+	    (if pos
+	        (let ([filter-f (pvector-filter-stream-f st)]
+	              [s (pvector-filter-stream-s st)]
+	              [len (pvector-filter-stream-len st)]
+	              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	          (let loop ([index (unsafe-fx+ pos 1)]
+	                     [acc (f init (ref s pos))])
+	            (if (unsafe-fx>= index len)
+	                acc
+	                (let ([v (ref s index)])
+	                  (loop (unsafe-fx+ index 1)
+	                        (if (filter-f v) (f acc v) acc))))))
+	        init)))
 
 (define (pvector-filter-take-stream-count f st)
   (let ([s (pvector-filter-take-stream-s st)]
@@ -1185,69 +890,37 @@
       [(pvector-filter-stream? s)
        (let ([pos (pvector-filter-stream-force! s)])
          (if pos
-             (let ([filter-f (pvector-filter-stream-f s)]
-                   [source (pvector-filter-stream-s s)]
-                   [procs (pvector-filter-stream-procs s)])
-               (let* ([first ((vector-ref procs 15) source pos)]
-                      [count (if (f first) 1 0)])
-                 (if (unsafe-fx= remaining 1)
-                     count
-                     (let ([chunks ((vector-ref procs 12) source)]
-                           [start (unsafe-fx+ pos 1)])
-                       (let/ec return
-                         (let chunk-loop ([chunk-pos 0]
-                                          [offset 0]
-                                          [remaining (unsafe-fx- remaining 1)]
-                                          [count count])
-                           (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                               (raise-stream-ended-before-index
-                                'stream-take
-                                (pvector-filter-take-stream-index st))
-                               (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                                      [chunk-len (unsafe-vector-length chunk)]
-                                      [next-offset (unsafe-fx+ offset chunk-len)])
-                                 (cond
-                                   [(unsafe-fx<= next-offset start)
-                                    (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                next-offset
-                                                remaining
-                                                count)]
-                                   [else
-                                    (let elem-loop ([elem-pos
-                                                      (if (unsafe-fx<= start
-                                                                       offset)
-                                                          0
-                                                          (unsafe-fx- start
-                                                                     offset))]
-                                                     [remaining remaining]
-                                                     [count count])
-                                      (cond
-                                        [(unsafe-fx= elem-pos chunk-len)
-                                         (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                     next-offset
-                                                     remaining
-                                                     count)]
-                                        [else
-                                         (let ([v (unsafe-vector-ref chunk
-                                                                     elem-pos)])
-                                           (cond
-                                             [(filter-f v)
-                                              (let ([count (if (f v)
-                                                               (unsafe-fx+
-                                                                count
-                                                                1)
-                                                               count)])
-                                                (if (unsafe-fx= remaining 1)
-                                                    (return count)
-                                                    (elem-loop
-                                                     (unsafe-fx+ elem-pos 1)
-                                                     (unsafe-fx- remaining 1)
-                                                     count)))]
-                                             [else
-                                              (elem-loop
-                                               (unsafe-fx+ elem-pos 1)
-                                               remaining
-                                               count)]))]))])))))))))
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [first (ref source pos)]
+                    [count (if (f first) 1 0)])
+               (if (unsafe-fx= remaining 1)
+                   count
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [count count])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(filter-f v)
+                                (let ([count (if (f v)
+                                                 (unsafe-fx+ count 1)
+                                                 count)])
+                                  (if (unsafe-fx= remaining 1)
+                                      (return count)
+                                      (loop (unsafe-fx+ index 1)
+                                            (unsafe-fx- remaining 1)
+                                            count)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      count)])))))))
              (raise-stream-ended-before-index
               'stream-take
               (pvector-filter-take-stream-index st))))]
@@ -1274,57 +947,29 @@
       [(pvector-filter-stream? s)
        (let ([pos (pvector-filter-stream-force! s)])
          (if pos
-             (let ([filter-f (pvector-filter-stream-f s)]
-                   [source (pvector-filter-stream-s s)]
-                   [procs (pvector-filter-stream-procs s)])
-               (f ((vector-ref procs 15) source pos))
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)])
+               (f (ref source pos))
                (unless (unsafe-fx= remaining 1)
-                 (let ([chunks ((vector-ref procs 12) source)]
-                       [start (unsafe-fx+ pos 1)])
-                   (let/ec return
-                     (let chunk-loop ([chunk-pos 0]
-                                      [offset 0]
-                                      [remaining (unsafe-fx- remaining 1)])
-                       (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                           (raise-stream-ended-before-index
-                            'stream-take
-                            (pvector-filter-take-stream-index st))
-                           (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                                  [chunk-len (unsafe-vector-length chunk)]
-                                  [next-offset (unsafe-fx+ offset chunk-len)])
-                             (cond
-                               [(unsafe-fx<= next-offset start)
-                                (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                            next-offset
-                                            remaining)]
-                               [else
-                                (let elem-loop ([elem-pos
-                                                  (if (unsafe-fx<= start
-                                                                   offset)
-                                                      0
-                                                      (unsafe-fx- start
-                                                                 offset))]
-                                                 [remaining remaining])
-                                  (cond
-                                    [(unsafe-fx= elem-pos chunk-len)
-                                     (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                 next-offset
-                                                 remaining)]
-                                    [else
-                                     (let ([v (unsafe-vector-ref chunk
-                                                                 elem-pos)])
-                                       (cond
-                                         [(filter-f v)
-                                          (f v)
-                                          (if (unsafe-fx= remaining 1)
-                                              (return (void))
-                                              (elem-loop
-                                               (unsafe-fx+ elem-pos 1)
-                                               (unsafe-fx- remaining 1)))]
-                                         [else
-                                          (elem-loop
-                                           (unsafe-fx+ elem-pos 1)
-                                           remaining)]))]))]))))))))
+                 (let/ec return
+                   (let loop ([index (unsafe-fx+ pos 1)]
+                              [remaining (unsafe-fx- remaining 1)])
+                     (if (unsafe-fx>= index len)
+                         (raise-stream-ended-before-index
+                          'stream-take
+                          (pvector-filter-take-stream-index st))
+                         (let ([v (ref source index)])
+                           (cond
+                             [(filter-f v)
+                              (f v)
+                              (if (unsafe-fx= remaining 1)
+                                  (return (void))
+                                  (loop (unsafe-fx+ index 1)
+                                        (unsafe-fx- remaining 1)))]
+                             [else
+                              (loop (unsafe-fx+ index 1) remaining)])))))))
              (raise-stream-ended-before-index
               'stream-take
               (pvector-filter-take-stream-index st))))]
@@ -1349,65 +994,34 @@
       [(pvector-filter-stream? s)
        (let ([pos (pvector-filter-stream-force! s)])
          (if pos
-             (let ([filter-f (pvector-filter-stream-f s)]
-                   [source (pvector-filter-stream-s s)]
-                   [procs (pvector-filter-stream-procs s)])
-               (let* ([first ((vector-ref procs 15) source pos)]
-                      [acc (f init first)])
-                 (if (unsafe-fx= remaining 1)
-                     acc
-                     (let ([chunks ((vector-ref procs 12) source)]
-                           [start (unsafe-fx+ pos 1)])
-                       (let/ec return
-                         (let chunk-loop ([chunk-pos 0]
-                                          [offset 0]
-                                          [remaining (unsafe-fx- remaining 1)]
-                                          [acc acc])
-                           (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                               (raise-stream-ended-before-index
-                                'stream-take
-                                (pvector-filter-take-stream-index st))
-                               (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                                      [chunk-len (unsafe-vector-length chunk)]
-                                      [next-offset (unsafe-fx+ offset chunk-len)])
-                                 (cond
-                                   [(unsafe-fx<= next-offset start)
-                                    (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                next-offset
-                                                remaining
-                                                acc)]
-                                   [else
-                                    (let elem-loop ([elem-pos
-                                                      (if (unsafe-fx<= start
-                                                                       offset)
-                                                          0
-                                                          (unsafe-fx- start
-                                                                     offset))]
-                                                     [remaining remaining]
-                                                     [acc acc])
-                                      (cond
-                                        [(unsafe-fx= elem-pos chunk-len)
-                                         (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                                     next-offset
-                                                     remaining
-                                                     acc)]
-                                        [else
-                                         (let ([v (unsafe-vector-ref chunk
-                                                                     elem-pos)])
-                                           (cond
-                                             [(filter-f v)
-                                              (let ([acc (f acc v)])
-                                                (if (unsafe-fx= remaining 1)
-                                                    (return acc)
-                                                    (elem-loop
-                                                     (unsafe-fx+ elem-pos 1)
-                                                     (unsafe-fx- remaining 1)
-                                                     acc)))]
-                                             [else
-                                              (elem-loop
-                                               (unsafe-fx+ elem-pos 1)
-                                               remaining
-                                               acc)]))]))])))))))))
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [acc (f init (ref source pos))])
+               (if (unsafe-fx= remaining 1)
+                   acc
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [acc acc])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(filter-f v)
+                                (let ([acc (f acc v)])
+                                  (if (unsafe-fx= remaining 1)
+                                      (return acc)
+                                      (loop (unsafe-fx+ index 1)
+                                            (unsafe-fx- remaining 1)
+                                            acc)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      acc)])))))))
              (raise-stream-ended-before-index
               'stream-take
               (pvector-filter-take-stream-index st))))]
@@ -1434,38 +1048,16 @@
         (let ([f (pvector-filter-stream-f st)]
               [s (pvector-filter-stream-s st)]
               [len (pvector-filter-stream-len st)]
-              [procs (pvector-filter-stream-procs st)])
-          (let ([chunks ((vector-ref procs 12) s)]
-                [ref (vector-ref procs 15)]
-                [start (unsafe-fx+ pos 1)])
-            (let chunk-loop ([chunk-pos 0]
-                             [offset 0]
-                             [acc (list (ref s pos))])
-              (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-                  (reverse acc)
-                  (let* ([chunk (unsafe-vector-ref chunks chunk-pos)]
-                         [chunk-len (unsafe-vector-length chunk)]
-                         [next-offset (unsafe-fx+ offset chunk-len)])
-                    (cond
-                      [(unsafe-fx<= next-offset start)
-                       (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                   next-offset
-                                   acc)]
-                      [else
-                       (let elem-loop ([elem-pos
-                                         (if (unsafe-fx<= start offset)
-                                             0
-                                             (unsafe-fx- start offset))]
-                                        [acc acc])
-                         (if (unsafe-fx= elem-pos chunk-len)
-                             (chunk-loop (unsafe-fx+ chunk-pos 1)
-                                         next-offset
-                                         acc)
-                             (let ([v (unsafe-vector-ref chunk elem-pos)])
-                               (elem-loop (unsafe-fx+ elem-pos 1)
-                                          (if (f v)
-                                              (cons v acc)
-                                              acc)))))]))))))
+              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+          (let loop ([index (unsafe-fx+ pos 1)]
+                     [acc (list (ref s pos))])
+            (if (unsafe-fx>= index len)
+                (reverse acc)
+                (let ([v (ref s index)])
+                  (loop (unsafe-fx+ index 1)
+                        (if (f v)
+                            (cons v acc)
+                            acc))))))
         null)))
 
 (define (stream-map f s)
@@ -1486,79 +1078,52 @@
                                     (loop (stream-rest s)))])))))))
 
 (define (pvector-stream-andmap f s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let/ec return
-      (let chunk-loop ([chunk-pos 0] [last #t])
-        (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-            last
-            (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-              (let elem-loop ([elem-pos 0] [last last])
-                (if (unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                    (chunk-loop (unsafe-fx+ chunk-pos 1) last)
-                    (let ([v (f (unsafe-vector-ref chunk elem-pos))])
-                      (if v
-                          (elem-loop (unsafe-fx+ elem-pos 1) v)
-                          (return #f)))))))))))
+  (let/ec return
+    (let ([last #t])
+      ((vector-ref procs 10)
+       s
+       (lambda (elem)
+         (let ([v (f elem)])
+           (if v
+               (set! last v)
+               (return #f)))))
+      last)))
 
 (define (pvector-stream-ormap f s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let/ec return
-      (let chunk-loop ([chunk-pos 0])
-        (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let elem-loop ([elem-pos 0])
-              (cond
-                [(unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                 (chunk-loop (unsafe-fx+ chunk-pos 1))]
-                [else
-                 (let ([v (f (unsafe-vector-ref chunk elem-pos))])
-                   (if v
-                       (return v)
-                       (elem-loop (unsafe-fx+ elem-pos 1))))])))))
-      #f)))
+  (let/ec return
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (let ([v (f elem)])
+         (when v (return v)))))
+    #f))
 
 (define (pvector-stream-andmap-values s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let/ec return
-      (let chunk-loop ([chunk-pos 0] [last #t])
-        (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-            last
-            (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-              (let elem-loop ([elem-pos 0] [last last])
-                (if (unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                    (chunk-loop (unsafe-fx+ chunk-pos 1) last)
-                    (let ([v (unsafe-vector-ref chunk elem-pos)])
-                      (if v
-                          (elem-loop (unsafe-fx+ elem-pos 1) v)
-                          (return #f)))))))))))
+  (let/ec return
+    (let ([last #t])
+      ((vector-ref procs 10)
+       s
+       (lambda (elem)
+         (if elem
+             (set! last elem)
+             (return #f))))
+      last)))
 
 (define (pvector-stream-ormap-values s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let/ec return
-      (let chunk-loop ([chunk-pos 0])
-        (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let elem-loop ([elem-pos 0])
-              (cond
-                [(unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                 (chunk-loop (unsafe-fx+ chunk-pos 1))]
-                [else
-                 (let ([v (unsafe-vector-ref chunk elem-pos)])
-                   (if v
-                       (return v)
-                       (elem-loop (unsafe-fx+ elem-pos 1))))])))))
-      #f)))
+  (let/ec return
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when elem (return elem))))
+    #f))
 
-(define (pvector-stream-for-each/chunks f s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let chunk-loop ([chunk-pos 0])
-      (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-        (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-          (let elem-loop ([elem-pos 0])
-            (unless (unsafe-fx= elem-pos (unsafe-vector-length chunk))
-              (f (unsafe-vector-ref chunk elem-pos))
-              (elem-loop (unsafe-fx+ elem-pos 1)))))
-        (chunk-loop (unsafe-fx+ chunk-pos 1))))))
+(define (pvector-stream-for-each/indexed f s procs)
+  (let ([len (pvector-stream-unsafe-length procs s)]
+        [ref (vector-ref procs 15)])
+    (let loop ([index 0])
+      (unless (unsafe-fx>= index len)
+        (f (ref s index))
+        (loop (unsafe-fx+ index 1))))))
 
 (define (pvector-stream-for-each f s procs)
   (let ([len ((vector-ref procs 14) s)])
@@ -1570,49 +1135,36 @@
       [(procedure-arity-includes? f 1)
        ((vector-ref procs 10) s f)]
       [else
-       (pvector-stream-for-each/chunks f s procs)])))
+       (pvector-stream-for-each/indexed f s procs)])))
 
 (define (pvector-stream-fold f init s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let chunk-loop ([chunk-pos 0] [acc init])
-      (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-          acc
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let elem-loop ([elem-pos 0] [acc acc])
-              (if (unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                  (chunk-loop (unsafe-fx+ chunk-pos 1) acc)
-                  (elem-loop (unsafe-fx+ elem-pos 1)
-                             (f acc (unsafe-vector-ref chunk elem-pos))))))))))
+  (let ([len (pvector-stream-unsafe-length procs s)])
+    (if (unsafe-fx= len 0)
+        init
+        (let ([acc init])
+          ((vector-ref procs 10)
+           s
+           (lambda (elem)
+             (set! acc (f acc elem))))
+          acc))))
 
 (define (pvector-stream-count f s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let chunk-loop ([chunk-pos 0] [count 0])
-      (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-          count
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let elem-loop ([elem-pos 0] [count count])
-              (cond
-                [(unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                 (chunk-loop (unsafe-fx+ chunk-pos 1) count)]
-                [(f (unsafe-vector-ref chunk elem-pos))
-                 (elem-loop (unsafe-fx+ elem-pos 1) (unsafe-fx+ count 1))]
-                [else
-                 (elem-loop (unsafe-fx+ elem-pos 1) count)])))))))
+  (let ([count 0])
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when (f elem)
+         (set! count (unsafe-fx+ count 1)))))
+    count))
 
 (define (pvector-stream-count-values s procs)
-  (let ([chunks ((vector-ref procs 12) s)])
-    (let chunk-loop ([chunk-pos 0] [count 0])
-      (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-          count
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let elem-loop ([elem-pos 0] [count count])
-              (cond
-                [(unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                 (chunk-loop (unsafe-fx+ chunk-pos 1) count)]
-                [(unsafe-vector-ref chunk elem-pos)
-                 (elem-loop (unsafe-fx+ elem-pos 1) (unsafe-fx+ count 1))]
-                [else
-                 (elem-loop (unsafe-fx+ elem-pos 1) count)])))))))
+  (let ([count 0])
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when elem
+         (set! count (unsafe-fx+ count 1)))))
+    count))
 
 (define (pvector-backed-stream-andmap for-each f s)
   (let/ec return
@@ -1779,27 +1331,18 @@
             [else (loop (stream-rest s))])))])))
 
 (define (pvector-stream-filter-values s procs)
-  (let ([len ((vector-ref procs 2) s)]
-        [chunks ((vector-ref procs 12) s)])
+  (let ([len (pvector-stream-unsafe-length procs s)]
+        [ref (vector-ref procs 15)])
     (define (copy-prefix! out stop-count)
-      (let copy-chunks ([chunk-pos 0] [out-pos 0])
-        (unless (unsafe-fx= out-pos stop-count)
-          (define chunk (unsafe-vector-ref chunks chunk-pos))
-          (let copy-elems ([elem-pos 0] [out-pos out-pos])
-            (unless (unsafe-fx= out-pos stop-count)
-              (unsafe-vector-set! out
-                                  out-pos
-                                  (unsafe-vector-ref chunk elem-pos))
-              (define next-out-pos (unsafe-fx+ out-pos 1))
-              (if (unsafe-fx= elem-pos
-                              (unsafe-fx- (unsafe-vector-length chunk) 1))
-                  (copy-chunks (unsafe-fx+ chunk-pos 1) next-out-pos)
-                  (copy-elems (unsafe-fx+ elem-pos 1) next-out-pos)))))))
-    (let scan-chunks ([chunk-pos 0]
-                      [count 0]
-                      [seen-false? #f]
-                      [out #f])
-      (if (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
+      (let loop ([index 0])
+        (unless (unsafe-fx= index stop-count)
+          (unsafe-vector-set! out index (ref s index))
+          (loop (unsafe-fx+ index 1)))))
+    (let loop ([index 0]
+               [count 0]
+               [seen-false? #f]
+               [out #f])
+      (if (unsafe-fx>= index len)
           (cond
             [(not seen-false?) s]
             [(unsafe-fx= count 0) ((vector-ref procs 6))]
@@ -1808,69 +1351,50 @@
              (define out (make-vector count))
              (copy-prefix! out count)
              ((vector-ref procs 9) out)])
-          (let ([chunk (unsafe-vector-ref chunks chunk-pos)])
-            (let scan-elems ([elem-pos 0]
-                             [count count]
-                             [seen-false? seen-false?]
-                             [out out])
-              (cond
-                [(unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                 (scan-chunks (unsafe-fx+ chunk-pos 1)
-                              count
-                              seen-false?
-                              out)]
-                [else
-                 (define v (unsafe-vector-ref chunk elem-pos))
-                 (cond
-                   [v
-                    (cond
-                      [out
-                       (unsafe-vector-set! out count v)
-                       (scan-elems (unsafe-fx+ elem-pos 1)
-                                   (unsafe-fx+ count 1)
-                                   seen-false?
-                                   out)]
-                      [seen-false?
-                       (define out (make-vector len))
-                       (copy-prefix! out count)
-                       (unsafe-vector-set! out count v)
-                       (scan-elems (unsafe-fx+ elem-pos 1)
-                                   (unsafe-fx+ count 1)
-                                   seen-false?
-                                   out)]
-                      [else
-                       (scan-elems (unsafe-fx+ elem-pos 1)
-                                   (unsafe-fx+ count 1)
-                                   seen-false?
-                                   out)])]
-                   [else
-                    (scan-elems (unsafe-fx+ elem-pos 1)
-                                count
-                                #t
-                                out)])])))))))
+          (let ([v (ref s index)])
+            (cond
+              [v
+               (cond
+                 [out
+                  (unsafe-vector-set! out count v)
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)]
+                 [seen-false?
+                  (define out (make-vector len))
+                  (copy-prefix! out count)
+                  (unsafe-vector-set! out count v)
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)]
+                 [else
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)])]
+              [else
+               (loop (unsafe-fx+ index 1)
+                     count
+                     #t
+                     out)]))))))
 
 (define (pvector-stream-add-between s e procs)
-  (let* ([len ((vector-ref procs 2) s)]
+  (let* ([len (pvector-stream-unsafe-length procs s)]
+         [ref (vector-ref procs 15)]
          [pvector-empty (vector-ref procs 6)])
     (cond
       [(unsafe-fx= len 0) (pvector-empty)]
       [(unsafe-fx= len 1) s]
       [else
-       (let* ([chunks ((vector-ref procs 12) s)]
-              [out-len (unsafe-fx- (unsafe-fx* len 2) 1)]
+       (let* ([out-len (unsafe-fx- (unsafe-fx* len 2) 1)]
               [out (make-vector out-len e)])
-         (let chunk-loop ([chunk-pos 0] [out-pos 0])
-           (unless (unsafe-fx= chunk-pos (unsafe-vector-length chunks))
-             (define chunk (unsafe-vector-ref chunks chunk-pos))
-             (let elem-loop ([elem-pos 0] [out-pos out-pos])
-               (if (unsafe-fx= elem-pos (unsafe-vector-length chunk))
-                   (chunk-loop (unsafe-fx+ chunk-pos 1) out-pos)
-                   (begin
-                     (unsafe-vector-set! out
-                                         out-pos
-                                         (unsafe-vector-ref chunk elem-pos))
-                     (elem-loop (unsafe-fx+ elem-pos 1)
-                                (unsafe-fx+ out-pos 2)))))))
+         (let loop ([index 0] [out-pos 0])
+           (unless (unsafe-fx>= index len)
+             (unsafe-vector-set! out out-pos (ref s index))
+             (loop (unsafe-fx+ index 1)
+                   (unsafe-fx+ out-pos 2))))
         ((vector-ref procs 9) (vector->immutable-vector out)))])))
 
 (define (stream-add-between s e)

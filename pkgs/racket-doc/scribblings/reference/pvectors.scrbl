@@ -3,13 +3,11 @@
           (for-label racket/pvector
                      (submod racket/pvector unsafe)
                      racket/match
-                     racket/serialize
                      racket/stream))
 
 @(define pvector-eval (make-base-eval))
 @(pvector-eval '(require racket/pvector
                          racket/match
-                         racket/serialize
                          racket/stream))
 
 @title[#:tag "pvector"]{Pvectors}
@@ -43,8 +41,13 @@ pvector produces a pvector. Using @racket[stream-filter] with
 Traversal operations such as @racket[stream-for-each],
 @racket[stream-fold], @racket[stream-count], @racket[stream-andmap],
 and @racket[stream-ormap] visit pvector elements in order.
-Pvectors compare with @racket[equal?] element by element, print as
-@racket[(pvector elem ...)], and are serializable.
+Pvectors compare with @racket[equal?] element by element. In the BC
+runtime-native implementation, pvectors print as an unreadable summary
+such as @racketresultfont{#<pvector:3>} and are not serializable in the
+first stage of the native runtime backend. Pvectors are also not
+accepted as @tech{place message}s in this first stage. Compatibility
+backends may print pvectors as @racket[(pvector elem ...)] and may
+support serialization.
 
 @note-lib-only[racket/pvector]
 
@@ -55,7 +58,6 @@ Pvectors compare with @racket[equal?] element by element, print as
 (stream-first items)
 (stream->list (stream-rest items))
 (equal? (pvector 1 2 3) (list->pvector '(1 2 3)))
-(deserialize (serialize items))
 ]
 
 @section{Constructing Pvectors}
@@ -519,15 +521,10 @@ parts of the program and avoiding checks matters.
 @deftogether[(
 @defproc[(unsafe-pvector->list [pv pvector?]) list?]
 @defproc[(unsafe-pvector->vector [pv pvector?]) vector?]
-@defproc[(unsafe-pvector->chunk-vector [pv pvector?]) vector?]
 )]{
 
 Unchecked variants of @racket[pvector->list] and
-@racket[pvector->vector]. The @racket[unsafe-pvector->chunk-vector]
-procedure returns a compatibility vector of immutable element blocks for
-low-level iteration. The block shape is unspecified, may be freshly
-materialized, is not a runtime primitive contract, and is not part of
-the pvector representation.}
+@racket[pvector->vector].}
 
 @deftogether[(
 @defproc[(unsafe-pvector-length [pv pvector?]) exact-nonnegative-integer?]

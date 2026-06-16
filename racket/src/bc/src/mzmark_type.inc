@@ -2387,7 +2387,9 @@ static int pvector_node_obj_SIZE(void *p, struct NewGC *gc) {
 #ifndef GC_NO_SIZE_NEEDED_FROM_PROCS
   ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT)
    ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Digit))
-   : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node)));
+   : ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE)
+      ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node))
+      : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Cursor))));
 #else
   return 0;
 #endif
@@ -2400,12 +2402,18 @@ static int pvector_node_obj_MARK(void *p, struct NewGC *gc) {
     int i;
     for (i = digit->count; i--; )
       gcMARK2(digit->els[i], gc);
-  } else {
+  } else if (SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE) {
     Scheme_PVector_Node *node = (Scheme_PVector_Node *)p;
     gcMARK2(node->a, gc);
     gcMARK2(node->b, gc);
     if (node->arity == 3)
       gcMARK2(node->c, gc);
+  } else {
+    Scheme_PVector_Cursor *cursor = (Scheme_PVector_Cursor *)p;
+    gcMARK2(cursor->pv, gc);
+    gcMARK2(cursor->leaf, gc);
+    gcMARK2(cursor->stack, gc);
+    gcMARK2(cursor->stack_indexes, gc);
   }
 
 # ifdef GC_NO_SIZE_NEEDED_FROM_PROCS
@@ -2414,7 +2422,9 @@ static int pvector_node_obj_MARK(void *p, struct NewGC *gc) {
   return
   ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT)
    ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Digit))
-   : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node)));
+   : ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE)
+      ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node))
+      : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Cursor))));
 # endif
 #endif
 }
@@ -2426,12 +2436,18 @@ static int pvector_node_obj_FIXUP(void *p, struct NewGC *gc) {
     int i;
     for (i = digit->count; i--; )
       gcFIXUP2(digit->els[i], gc);
-  } else {
+  } else if (SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE) {
     Scheme_PVector_Node *node = (Scheme_PVector_Node *)p;
     gcFIXUP2(node->a, gc);
     gcFIXUP2(node->b, gc);
     if (node->arity == 3)
       gcFIXUP2(node->c, gc);
+  } else {
+    Scheme_PVector_Cursor *cursor = (Scheme_PVector_Cursor *)p;
+    gcFIXUP2(cursor->pv, gc);
+    gcFIXUP2(cursor->leaf, gc);
+    gcFIXUP2(cursor->stack, gc);
+    gcFIXUP2(cursor->stack_indexes, gc);
   }
 
 # ifdef GC_NO_SIZE_NEEDED_FROM_PROCS
@@ -2440,7 +2456,9 @@ static int pvector_node_obj_FIXUP(void *p, struct NewGC *gc) {
   return
   ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT)
    ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Digit))
-   : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node)));
+   : ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE)
+      ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node))
+      : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Cursor))));
 # endif
 #endif
 }
@@ -4077,5 +4095,4 @@ static int struct_proc_shape_FIXUP(void *p, struct NewGC *gc) {
 
 #define struct_proc_shape_IS_ATOMIC 0
 #define struct_proc_shape_IS_CONST_SIZE 1
-
 

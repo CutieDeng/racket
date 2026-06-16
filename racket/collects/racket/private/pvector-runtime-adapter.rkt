@@ -30,10 +30,13 @@
          pvector-lookup-chunk
          sequence->pvector
          pvector-length
+         pvector-length/fast
          pvector-ref
          pvector-set
          pvector-view-left
          pvector-view-right
+         pvector-view-left/fast
+         pvector-view-right/fast
          pvector-cons-left
          pvector-cons-right
          pvector-pop-left
@@ -61,7 +64,10 @@
          pvector-set/fast
          pvector-shape-stats
          pvector-runtime-adapter-backend
-         pvector-runtime-adapter-core-available?)
+         pvector-runtime-adapter-core-available?
+         pvector-runtime-adapter-cursor-available?
+         pvector-cursor-start
+         pvector-cursor-next)
 
 (define (maybe-kernel name)
   (with-handlers ([exn:fail? (lambda (_) #f)])
@@ -85,6 +91,20 @@
 (define core-pvector->vector (maybe-kernel 'core-pvector->vector))
 (define core-pvector->list (maybe-kernel 'core-pvector->list))
 (define core-pvector-ref (maybe-kernel 'core-pvector-ref))
+(define core-unsafe-pvector-length (maybe-kernel 'core-unsafe-pvector-length))
+(define core-unsafe-pvector-ref (maybe-kernel 'core-unsafe-pvector-ref))
+(define core-unsafe-pvector-view-left
+  (maybe-kernel 'core-unsafe-pvector-view-left))
+(define core-unsafe-pvector-view-right
+  (maybe-kernel 'core-unsafe-pvector-view-right))
+(define core-unsafe-pvector-first
+  (or (maybe-kernel 'core-unsafe-pvector-first)
+      core-unsafe-pvector-view-left))
+(define core-unsafe-pvector-last
+  (or (maybe-kernel 'core-unsafe-pvector-last)
+      core-unsafe-pvector-view-right))
+(define core-pvector-cursor-start (maybe-kernel 'core-pvector-cursor-start))
+(define core-pvector-cursor-next (maybe-kernel 'core-pvector-cursor-next))
 (define core-pvector-view-left (maybe-kernel 'core-pvector-view-left))
 (define core-pvector-view-right (maybe-kernel 'core-pvector-view-right))
 (define core-pvector-set (maybe-kernel 'core-pvector-set))
@@ -163,8 +183,26 @@
 ;; primitives, and those must stay behind the finger fallback.
 (define core-available? (compiled-core-no-chunk?))
 
+(define core-sequence-available?
+  (and core-available?
+       (procedure? core-unsafe-pvector-length)
+       (procedure? core-unsafe-pvector-ref)))
+
+(define core-fast-view-available?
+  (and core-available?
+       (procedure? core-unsafe-pvector-first)
+       (procedure? core-unsafe-pvector-last)))
+
+(define core-cursor-available?
+  (and core-sequence-available?
+       (procedure? core-pvector-cursor-start)
+       (procedure? core-pvector-cursor-next)))
+
 (define (pvector-runtime-adapter-core-available?)
   core-available?)
+
+(define (pvector-runtime-adapter-cursor-available?)
+  core-cursor-available?)
 
 (define (pvector-runtime-adapter-backend)
   (if core-available? 'core 'finger))
@@ -219,37 +257,37 @@
             vec
             (vector-copy vec 0 len)))])))
 
-(define (small-immutable-vector->pvector chunk len)
+(define (small-immutable-vector->pvector vec len)
   (cond
     [(not core-available?)
      (fallback:vector->pvector
-      (if (= len (vector-length chunk))
-          chunk
-          (vector-copy chunk 0 len)))]
+      (if (= len (vector-length vec))
+          vec
+          (vector-copy vec 0 len)))]
     [(= len 1)
-     (core-make-single-pvector (vector-ref chunk 0))]
+     (core-make-single-pvector (vector-ref vec 0))]
     [(= len 2)
-     (core-make-deep2-pvector (vector-ref chunk 0) (vector-ref chunk 1))]
+     (core-make-deep2-pvector (vector-ref vec 0) (vector-ref vec 1))]
     [(= len 3)
      (core-make-deep3-pvector
-      (vector-ref chunk 0)
-      (vector-ref chunk 1)
-      (vector-ref chunk 2))]
+      (vector-ref vec 0)
+      (vector-ref vec 1)
+      (vector-ref vec 2))]
     [(= len 4)
      (core-make-deep4-pvector
-      (vector-ref chunk 0)
-      (vector-ref chunk 1)
-      (vector-ref chunk 2)
-      (vector-ref chunk 3))]
+      (vector-ref vec 0)
+      (vector-ref vec 1)
+      (vector-ref vec 2)
+      (vector-ref vec 3))]
     [else
      (core-immutable-vector->pvector
       (cond
-        [(= len (vector-length chunk))
-         (if (immutable? chunk)
-             chunk
-             (vector->immutable-vector chunk))]
+        [(= len (vector-length vec))
+         (if (immutable? vec)
+             vec
+             (vector->immutable-vector vec))]
         [else
-         (vector->immutable-vector (vector-copy chunk 0 len))]))]))
+         (vector->immutable-vector (vector-copy vec 0 len))]))]))
 
 (define (single-value->pvector value)
   (if core-available?
@@ -290,6 +328,11 @@
 
 (define pvector-length
   (if core-available? core-pvector-length fallback:pvector-length))
+
+(define pvector-length/fast
+  (if core-sequence-available?
+      core-unsafe-pvector-length
+      pvector-length))
 
 (define vector->pvector/backend
   (if core-available? core-vector->pvector fallback:vector->pvector))
@@ -416,7 +459,7 @@
      (fallback:make-pvector len value)]))
 
 (begin-for-syntax
-  (define pvector-single-chunk-arity-limit 64)
+  (define pvector-inline-vector-arity-limit 64)
   (define pvector-fixed-vector-arity-limit 112)
 
   (define (small-pvector-proc-clause stx len)
@@ -435,7 +478,7 @@
       [(= len 4)
        (with-syntax ([(a b c d) ids])
          #'[(a b c d) (four-values->pvector a b c d)])]
-      [(<= len pvector-single-chunk-arity-limit)
+      [(<= len pvector-inline-vector-arity-limit)
        (with-syntax ([(elem ...) ids]
                      [len (datum->syntax stx len)])
          #'[(elem ...)
@@ -599,7 +642,10 @@
 (define pvector-ref
   (if core-available? core-pvector-ref fallback:pvector-ref))
 
-(define pvector-ref/fast pvector-ref)
+(define pvector-ref/fast
+  (if core-sequence-available?
+      core-unsafe-pvector-ref
+      pvector-ref))
 
 (define pvector-set
   (if core-available? core-pvector-set fallback:pvector-set))
@@ -611,6 +657,26 @@
 
 (define pvector-view-right
   (if core-available? core-pvector-view-right fallback:pvector-view-right))
+
+(define pvector-view-left/fast
+  (if core-fast-view-available?
+      core-unsafe-pvector-first
+      pvector-view-left))
+
+(define pvector-view-right/fast
+  (if core-fast-view-available?
+      core-unsafe-pvector-last
+      pvector-view-right))
+
+(define (pvector-cursor-start pv reverse?)
+  (unless core-cursor-available?
+    (error 'pvector-cursor-start "native pvector cursor is not available"))
+  (core-pvector-cursor-start pv reverse?))
+
+(define (pvector-cursor-next cursor)
+  (unless core-cursor-available?
+    (error 'pvector-cursor-next "native pvector cursor is not available"))
+  (core-pvector-cursor-next cursor))
 
 (define pvector-cons-left
   (if core-available? core-pvector-cons-left fallback:pvector-cons-left))
@@ -671,28 +737,56 @@
   (if core-available? core-pvector-delete fallback:pvector-delete))
 
 (define (in-pvector/proc pv)
-  (define vec (pvector->vector pv))
-  (define len (unsafe-vector-length vec))
-  (make-do-sequence
-   (lambda ()
-     (values (lambda (index) (unsafe-vector-ref vec index))
-             (lambda (index) (unsafe-fx+ index 1))
-             0
-             (lambda (index) (unsafe-fx< index len))
-             (lambda (elem) #t)
-             (lambda (pos elem) #t)))))
+  (cond
+    [core-sequence-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'in-pvector "pvector?" pv))
+     (define len (core-unsafe-pvector-length pv))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index) (core-unsafe-pvector-ref pv index))
+                (lambda (index) (unsafe-fx+ index 1))
+                0
+                (lambda (index) (unsafe-fx< index len))
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
+    [else
+     (define vec (pvector->vector pv))
+     (define len (unsafe-vector-length vec))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index) (unsafe-vector-ref vec index))
+                (lambda (index) (unsafe-fx+ index 1))
+                0
+                (lambda (index) (unsafe-fx< index len))
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]))
 
 (define (in-pvector-reverse/proc pv)
-  (define vec (pvector->vector pv))
-  (define len (unsafe-vector-length vec))
-  (make-do-sequence
-   (lambda ()
-     (values (lambda (index) (unsafe-vector-ref vec index))
-             (lambda (index) (unsafe-fx- index 1))
-             (unsafe-fx- len 1)
-             (lambda (index) (unsafe-fx>= index 0))
-             (lambda (elem) #t)
-             (lambda (pos elem) #t)))))
+  (cond
+    [core-sequence-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'in-pvector-reverse "pvector?" pv))
+     (define len (core-unsafe-pvector-length pv))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index) (core-unsafe-pvector-ref pv index))
+                (lambda (index) (unsafe-fx- index 1))
+                (unsafe-fx- len 1)
+                (lambda (index) (unsafe-fx>= index 0))
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
+    [else
+     (define vec (pvector->vector pv))
+     (define len (unsafe-vector-length vec))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index) (unsafe-vector-ref vec index))
+                (lambda (index) (unsafe-fx- index 1))
+                (unsafe-fx- len 1)
+                (lambda (index) (unsafe-fx>= index 0))
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]))
 
 (define-sequence-syntax in-pvector
   (lambda () #'in-pvector/proc)
@@ -701,13 +795,13 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(vec) (pvector->vector pv-expr)])
+           ([(pv) pv-expr])
            (begin
-             (define len (unsafe-vector-length vec)))
+             (define len (pvector-length pv)))
            ([elem-idx 0])
            (unsafe-fx< elem-idx len)
            ([(elem next-elem-idx)
-             (values (unsafe-vector-ref vec elem-idx)
+             (values (pvector-ref/fast pv elem-idx)
                      (unsafe-fx+ elem-idx 1))])
            #t
            #t
@@ -721,13 +815,13 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(vec) (pvector->vector pv-expr)])
+           ([(pv) pv-expr])
            (begin
-             (define len (unsafe-vector-length vec)))
+             (define len (pvector-length pv)))
            ([elem-idx (unsafe-fx- len 1)])
            (unsafe-fx>= elem-idx 0)
            ([(elem next-elem-idx)
-             (values (unsafe-vector-ref vec elem-idx)
+             (values (pvector-ref/fast pv elem-idx)
                      (unsafe-fx- elem-idx 1))])
            #t
            #t
@@ -735,17 +829,32 @@
       [_ #f])))
 
 (define (in-pvector/index/proc pv)
-  (define vec (pvector->vector pv))
-  (define len (unsafe-vector-length vec))
-  (make-do-sequence
-   (lambda ()
-     (values (lambda (index)
-               (values (unsafe-vector-ref vec index) index))
-             (lambda (index) (unsafe-fx+ index 1))
-             0
-             (lambda (index) (unsafe-fx< index len))
-             (lambda (elem index) #t)
-             (lambda (pos elem index) #t)))))
+  (cond
+    [core-sequence-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'in-pvector/index "pvector?" pv))
+     (define len (core-unsafe-pvector-length pv))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index)
+                  (values (core-unsafe-pvector-ref pv index) index))
+                (lambda (index) (unsafe-fx+ index 1))
+                0
+                (lambda (index) (unsafe-fx< index len))
+                (lambda (elem index) #t)
+                (lambda (pos elem index) #t))))]
+    [else
+     (define vec (pvector->vector pv))
+     (define len (unsafe-vector-length vec))
+     (make-do-sequence
+      (lambda ()
+        (values (lambda (index)
+                  (values (unsafe-vector-ref vec index) index))
+                (lambda (index) (unsafe-fx+ index 1))
+                0
+                (lambda (index) (unsafe-fx< index len))
+                (lambda (elem index) #t)
+                (lambda (pos elem index) #t))))]))
 
 (define-sequence-syntax in-pvector/index
   (lambda () #'in-pvector/index/proc)
@@ -754,13 +863,13 @@
       [[(elem index) (_ pv-expr)]
        #'[(elem index)
           (:do-in
-           ([(vec) (pvector->vector pv-expr)])
+           ([(pv) pv-expr])
            (begin
-             (define len (unsafe-vector-length vec)))
+             (define len (pvector-length pv)))
            ([elem-idx 0])
            (unsafe-fx< elem-idx len)
            ([(elem index next-elem-idx)
-             (values (unsafe-vector-ref vec elem-idx)
+             (values (pvector-ref/fast pv elem-idx)
                      elem-idx
                      (unsafe-fx+ elem-idx 1))])
            #t

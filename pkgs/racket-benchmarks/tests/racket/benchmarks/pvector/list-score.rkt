@@ -34,6 +34,11 @@
 (define cost-metric-name 'academic-result-cost-units/op)
 (define speed-ratio-model-name 'baseline/target)
 (define cost-ratio-model-name 'zero-aware-add1-baseline/target)
+(define run-racket-version (version))
+(define run-vm (system-type 'vm))
+(define run-machine (system-type 'machine))
+(define run-os (system-type 'os))
+(define run-jit-enabled (if (eval-jit-enabled) 'yes 'no))
 
 (define default-ops
   '(build length sum ref-first ref-middle ref-last
@@ -548,6 +553,19 @@
 (define (emit-row cells)
   (displayln (string-join (map cell->string cells) "\t")))
 
+(define run-metadata-header
+  '("racket-version" "vm" "machine" "os" "jit-enabled"))
+
+(define run-metadata-cells
+  (list run-racket-version
+        run-vm
+        run-machine
+        run-os
+        run-jit-enabled))
+
+(define (emit-data-row cells)
+  (emit-row (append cells run-metadata-cells)))
+
 (define (power-score-result impl-name size baseline)
   (define-values (speed cost total samples)
     (power-scores impl-name size baseline))
@@ -559,14 +577,16 @@
   (list speed cost total samples))
 
 (emit-row
- '("kind" "size" "power" "band" "op" "impl" "iterations" "cpu-ms"
-   "real-ms" "real-ns/op" "gc-ms" "live-bytes" "cost-model"
-   "generated-result-cost-units" "result-cost-units/op" "result" "baseline"
-   "speed-score/list" "speed-score/vector" "cost-score/list"
-   "cost-score/vector" "speed-score" "cost-score"
-   "total-score" "sample-count" "weight" "score-profile" "size-weight-model"
-   "operation-weight-model" "interface-model" "score-method" "speed-metric"
-   "cost-metric"))
+ (append
+  '("kind" "size" "power" "band" "op" "impl" "iterations" "cpu-ms"
+    "real-ms" "real-ns/op" "gc-ms" "live-bytes" "cost-model"
+    "generated-result-cost-units" "result-cost-units/op" "result" "baseline"
+    "speed-score/list" "speed-score/vector" "cost-score/list"
+    "cost-score/vector" "speed-score" "cost-score"
+    "total-score" "sample-count" "weight" "score-profile" "size-weight-model"
+    "operation-weight-model" "interface-model" "score-method" "speed-metric"
+    "cost-metric")
+  run-metadata-header))
 
 (for ([r (in-list (reverse rows))])
   (define list-row
@@ -576,7 +596,7 @@
   (define primary-row (baseline-row r baseline-name))
   (define speed-score (row-score r primary-row 'speed))
   (define cost-score (row-score r primary-row 'cost))
-  (emit-row
+  (emit-data-row
    (list 'detail
          (row-size r)
          (size-power-label (row-size r))
@@ -618,7 +638,7 @@
     (define list-score (power-score-result name size 'list))
     (define vector-score (power-score-result name size 'vector))
     (when (list-ref primary 2)
-      (emit-row
+      (emit-data-row
        (list 'power-score
              size
              (size-power-label size)
@@ -646,7 +666,7 @@
   (define primary (total-score-result name baseline-name))
   (define list-score (total-score-result name 'list))
   (define vector-score (total-score-result name 'vector))
-  (emit-row
+  (emit-data-row
    (list 'total-score
          'all
          'all

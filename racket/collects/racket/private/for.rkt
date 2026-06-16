@@ -4,6 +4,7 @@
              "define.rkt"
              "letstx-scheme.rkt"
              (only "pico.rkt" alt-reverse)
+             (only "more-scheme.rkt" with-handlers)
              "sort.rkt"
              "performance-hint.rkt"
              "promise.rkt"
@@ -553,6 +554,53 @@
               s))
            s)))))
 
+  (define core-pvector-procs #f)
+  (define core-pvector-cursor-min-length 32768)
+
+  (define (maybe-core-pvector-proc name)
+    (with-handlers ([exn:fail? (lambda (_) #f)])
+      (dynamic-require ''#%kernel name)))
+
+  (define (load-core-pvector-procs)
+    (unless core-pvector-procs
+      (set! core-pvector-procs
+            (let ([pvector? (maybe-core-pvector-proc 'core-pvector?)]
+                  [empty? (maybe-core-pvector-proc 'core-pvector-empty?)]
+                  [length (or (maybe-core-pvector-proc
+                               'core-unsafe-pvector-length)
+                              (maybe-core-pvector-proc
+                               'core-pvector-length))]
+                  [ref (or (maybe-core-pvector-proc
+                            'core-unsafe-pvector-ref)
+                           (maybe-core-pvector-proc
+                            'core-pvector-ref))]
+                  [drop (maybe-core-pvector-proc 'core-pvector-drop)]
+                  [cursor-start (maybe-core-pvector-proc
+                                 'core-pvector-cursor-start)]
+                  [cursor-next (maybe-core-pvector-proc
+                                'core-pvector-cursor-next)])
+              (or (and (procedure? pvector?)
+                       (procedure? empty?)
+                       (procedure? length)
+                       (procedure? ref)
+                       (procedure? drop)
+                       (vector pvector?
+                               empty?
+                               length
+                               ref
+                               drop
+                               (and (procedure? cursor-start) cursor-start)
+                               (and (procedure? cursor-next) cursor-next)))
+                  'unavailable))))
+    (and (vector? core-pvector-procs)
+         core-pvector-procs))
+
+  (define (core-pvector-procs-for v)
+    (let ([procs (load-core-pvector-procs)])
+      (and procs
+           ((unsafe-vector-ref procs 0) v)
+           procs)))
+
   (define-syntax define-sequence-syntax
     (syntax-rules ()
       [(_ id expr-transformer-expr clause-transformer-expr)
@@ -562,26 +610,34 @@
 
   (define (stream? v)
     (or (list? v)
-        (stream-via-prop? v)))
+        (stream-via-prop? v)
+        (and (core-pvector-procs-for v) #t)))
 
   (define (unsafe-stream-not-empty? v)
-    (if (null? v)
-        #f
-        (or (pair? v)
-            (not ((unsafe-vector-ref (stream-ref v) 0) v)))))
+    (cond
+      [(null? v) #f]
+      [(pair? v) #t]
+      [(core-pvector-procs-for v)
+       => (lambda (procs) (not ((unsafe-vector-ref procs 1) v)))]
+      [else (not ((unsafe-vector-ref (stream-ref v) 0) v))]))
 
   (define (stream-empty? v)
     (or (null? v)
         (if (stream? v)
             (if (pair? v)
                 #f
-                ((unsafe-vector-ref (stream-ref v) 0) v))
+                (let ([procs (core-pvector-procs-for v)])
+                  (if procs
+                      ((unsafe-vector-ref procs 1) v)
+                      ((unsafe-vector-ref (stream-ref v) 0) v))))
             (raise-argument-error 'stream-empty?
                                   "stream?"
                                   v))))
 
   (define (unsafe-stream-first v)
     (cond [(pair? v) (car v)]
+          [(core-pvector-procs-for v)
+           => (lambda (procs) ((unsafe-vector-ref procs 3) v 0))]
           [else ((unsafe-vector-ref (stream-ref v) 1) v)]))
 
   (define (stream-first v)
@@ -594,6 +650,8 @@
 
   (define (unsafe-stream-rest v)
     (cond [(pair? v) (cdr v)]
+          [(core-pvector-procs-for v)
+           => (lambda (procs) ((unsafe-vector-ref procs 4) v 1))]
           [else (let ([r ((unsafe-vector-ref (stream-ref v) 2) v)])
                   (unless (stream? r)
                     (raise-mismatch-error 'stream-rest-guard
@@ -613,8 +671,8 @@
     (or (exact-nonnegative-integer? v)
         (do-sequence? v)
         (sequence-via-prop? v)
-        (stream? v)
         (mpair? v)
+        (list? v)
         (vector? v)
         (flvector? v)
         (fxvector? v)
@@ -622,7 +680,37 @@
         (bytes? v)
         (input-port? v)
         (hash? v)
+        (stream? v)
         (and (:sequence? v) (not (struct-type? v)))))
+
+  (define (:core-pvector-gen v procs)
+    (let ([len ((unsafe-vector-ref procs 2) v)])
+      (cond
+        [(and (unsafe-vector-ref procs 5)
+              (unsafe-vector-ref procs 6)
+              (unsafe-fx>= len core-pvector-cursor-min-length))
+         (let ([state (vector 0 ((unsafe-vector-ref procs 5) v #f))])
+           (values
+            (lambda (state) ((unsafe-vector-ref procs 6)
+                             (unsafe-vector-ref state 1)))
+            #f
+            (lambda (state)
+              (unsafe-vector-set! state 0
+                                  (unsafe-fx+ (unsafe-vector-ref state 0) 1))
+              state)
+            state
+            (lambda (state) (unsafe-fx< (unsafe-vector-ref state 0) len))
+            #f
+            #f))]
+        [else
+         (values
+          (lambda (index) ((unsafe-vector-ref procs 3) v index))
+          #f
+          (lambda (index) (unsafe-fx+ index 1))
+          0
+          (lambda (index) (unsafe-fx< index len))
+          #f
+          #f)])))
 
   (define (make-sequence who v)
     (cond
@@ -647,6 +735,7 @@
                               hash-iterate-next)]
       [(sequence-via-prop? v) ((sequence-ref v) v)]
       [(:sequence? v) (make-sequence who ((:sequence-ref v) v))]
+      [(core-pvector-procs-for v) => (lambda (procs) (:core-pvector-gen v procs))]
       [(stream? v) (:stream-gen v)]
       [else (raise
              (exn:fail:contract

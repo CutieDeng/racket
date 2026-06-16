@@ -575,6 +575,17 @@ static int common1b(mz_jit_state *jitter, void *_data)
   CHECK_LIMIT();
   scheme_jit_register_sub_func(jitter, sjc.bad_vector_star_length_code, scheme_false);
 
+  /* *** bad_pvector_length_code *** */
+  /* R0 is argument */
+  sjc.bad_pvector_length_code = jit_get_ip();
+  mz_prolog(JIT_R1);
+  JIT_UPDATE_THREAD_RSPTR();
+  jit_prepare(1);
+  jit_pusharg_p(JIT_R0);
+  (void)mz_finish_lwe(ts_scheme_pvector_length, ref);
+  CHECK_LIMIT();
+  scheme_jit_register_sub_func(jitter, sjc.bad_pvector_length_code, scheme_false);
+
   /* *** bad_flvector_length_code *** */
   /* R0 is argument */
   sjc.bad_flvector_length_code = jit_get_ip();

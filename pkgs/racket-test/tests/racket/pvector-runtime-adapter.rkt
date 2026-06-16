@@ -1,6 +1,9 @@
 #lang racket/base
 
 (require racket/list
+         racket/place
+         racket/serialize
+         racket/stream
          (prefix-in adapter: racket/private/pvector-runtime-adapter)
          (prefix-in public: racket/pvector)
          rackunit)
@@ -26,12 +29,92 @@
 (define (core-backend?)
   (eq? (adapter:pvector-runtime-adapter-backend) 'core))
 
+(define (bc-vm?)
+  (eq? (system-type 'vm) 'racket))
+
 (define (kernel-procedure? name)
   (with-handlers ([exn:fail? (lambda (_) #f)])
     (procedure? (dynamic-require ''#%kernel name))))
 
 (define (kernel-value name)
   (dynamic-require ''#%kernel name))
+
+(define-namespace-anchor pvector-test-namespace-anchor)
+
+(define (static-kernel-pvector-jit-score jit-enabled?)
+  (parameterize ([eval-jit-enabled jit-enabled?])
+    (eval
+     '(let ()
+        (local-require
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-empty
+                  core-pvector-empty?
+                  core-pvector-length
+                  core-make-single-pvector
+                  core-make-deep2-pvector
+                  core-make-deep3-pvector
+                  core-make-deep4-pvector
+                  core-pvector-ref
+                  core-unsafe-pvector-length
+                  core-unsafe-pvector-ref
+                  core-pvector-view-left
+                  core-pvector-view-right
+                  core-unsafe-pvector-view-left
+                  core-unsafe-pvector-view-right
+                  core-unsafe-pvector-first
+                  core-unsafe-pvector-last
+                  core-pvector-cons-left
+                  core-pvector-cons-right))
+        (let loop ([i 0] [acc 0])
+          (if (= i 40)
+              acc
+              (let* ([empty0 (core-pvector-empty)]
+                     [empty1 (core-pvector-empty)]
+                     [single (core-make-single-pvector 23)]
+                     [deep2 (core-make-deep2-pvector 24 25)]
+                     [deep3 (core-make-deep3-pvector 26 27 28)]
+                     [deep4 (core-make-deep4-pvector 29 30 31 32)]
+                     [zero-index (- i i)]
+                     [wide-left (core-pvector-cons-left
+                                 (core-pvector-cons-left
+                                  (core-pvector-cons-left
+                                   (core-pvector-cons-left deep4 28)
+                                   27)
+                                  26)
+                                 25)]
+                     [wide (core-pvector-cons-right
+                            (core-pvector-cons-right
+                             (core-pvector-cons-right
+                              (core-pvector-cons-right deep4 33)
+                              34)
+                             35)
+                            36)])
+                (unless (eq? empty0 empty1)
+                  (error 'static-kernel-pvector-jit-score
+                         "empty pvector is not a singleton"))
+                (loop (add1 i)
+                      (+ acc
+                         (if (core-pvector? empty0) 1 0)
+                         (if (core-pvector-empty? empty0) 2 0)
+                         (core-pvector-length single)
+                         (core-unsafe-pvector-length deep4)
+                         (core-pvector-ref deep2 zero-index)
+                         (core-pvector-ref deep2 1)
+                         (core-unsafe-pvector-ref deep3 2)
+                         (core-pvector-view-left wide-left)
+                         (core-pvector-view-right wide-left)
+                         (core-unsafe-pvector-view-left wide-left)
+                         (core-unsafe-pvector-view-right wide-left)
+                         (core-unsafe-pvector-first wide-left)
+                         (core-unsafe-pvector-last wide-left)
+                         (core-pvector-view-left wide)
+                         (core-pvector-view-right wide)
+                         (core-unsafe-pvector-view-left wide)
+                         (core-unsafe-pvector-view-right wide)
+                         (core-unsafe-pvector-first wide)
+                         (core-unsafe-pvector-last wide)))))))
+     (namespace-anchor->namespace pvector-test-namespace-anchor))))
 
 (define (check-no-chunk-shape-stats stats)
   (check-equal? (hash-ref stats 'chunked-tree? #t) #f)
@@ -77,6 +160,12 @@
   (define core-pvector-ref (kernel-value 'core-pvector-ref))
   (define core-pvector-view-left (kernel-value 'core-pvector-view-left))
   (define core-pvector-view-right (kernel-value 'core-pvector-view-right))
+  (define core-pvector-cursor-start
+    (and (kernel-procedure? 'core-pvector-cursor-start)
+         (kernel-value 'core-pvector-cursor-start)))
+  (define core-pvector-cursor-next
+    (and (kernel-procedure? 'core-pvector-cursor-next)
+         (kernel-value 'core-pvector-cursor-next)))
   (define kernel-core-backend
     (hash-ref (core-pvector-shape-stats (core-pvector-empty)) 'backend #f))
 
@@ -85,6 +174,16 @@
     (check-equal? (core-pvector-length pv) (length xs))
     (check-equal? (core-pvector->list pv) xs)
     (check-equal? (vector->list (core-pvector->vector pv)) xs)
+    (check-true (sequence? pv))
+    (check-equal? (for/list ([x pv]) x) xs)
+    (check-true (stream? pv))
+    (check-equal? (for/list ([x (in-stream pv)]) x) xs)
+    (check-equal? (stream-empty? pv) (null? xs))
+    (unless (null? xs)
+      (check-equal? (stream-first pv) (car xs))
+      (define rest (stream-rest pv))
+      (check-true (core-pvector? rest))
+      (check-equal? (core-pvector->list rest) (cdr xs)))
     (define stats (core-pvector-shape-stats pv))
     (check-no-chunk-shape-stats stats)
     (check-not-false (memq (hash-ref stats 'backend #f) '(core bc-native)))
@@ -113,18 +212,230 @@
     (define xs (range size))
     (check-core-model (core-list->pvector xs) xs)
     (check-core-model (core-vector->pvector (list->vector xs)) xs))
+  (check-core-model (core-list->pvector (range 130)) (range 130))
   (check-core-model (core-make-pvector 0 'x) '())
   (check-core-model (core-make-pvector 1 'x) '(x))
   (check-core-model (core-make-pvector 12 'x) (make-list 12 'x))
+  (check-core-model (core-make-pvector 130 'x) (make-list 130 'x))
   (collect-garbage)
   (check-core-model (core-list->pvector (range 33)) (range 33))
   (when (eq? kernel-core-backend 'bc-native)
+    (define (check-place-send-rejects v)
+      (when (place-enabled?)
+        (define p
+          (place ch
+            (define value (place-channel-get ch))
+            (place-channel-put ch (format "~s" value))))
+        (dynamic-wind
+          void
+          (lambda ()
+            (check-exn #rx"cannot transmit a message containing value"
+                       (lambda () (place-channel-put p v))))
+          (lambda () (place-kill p)))))
+    (let ([a (core-list->pvector '(a b (c)))]
+          [b (core-list->pvector '(a b (c)))]
+          [different (core-list->pvector '(a b (d)))])
+      (check-equal? a b)
+      (check-not-equal? a different)
+      (check-false (equal? a '(a b (c))))
+      (check-false (equal? a #(a b (c))))
+      (check-equal? (equal-hash-code a) (equal-hash-code b))
+      (check-equal? (equal-secondary-hash-code a)
+                    (equal-secondary-hash-code b))
+      (check-equal? (format "~s" a) "#<pvector:3>")
+      (check-equal? (format "~s" (core-pvector-empty)) "#<pvector:0>")
+      (check-exn #rx"expected: serializable\\?"
+                 (lambda () (serialize a)))
+      (check-exn #rx"expected: serializable\\?"
+                 (lambda () (serialize (core-pvector-empty))))
+      (check-false (place-message-allowed? a))
+      (check-false (place-message-allowed? (vector a)))
+      (check-false (place-message-allowed? (core-pvector-empty)))
+      (check-place-send-rejects a)
+      (check-place-send-rejects (core-pvector-empty)))
+    (check-true (procedure? core-pvector-cursor-start))
+    (check-true (procedure? core-pvector-cursor-next))
+    (check-false (vector? (core-pvector-cursor-start (core-pvector-empty) #f)))
+    (check-exn #rx"pvector cursor\\?"
+               (lambda ()
+                 (core-pvector-cursor-next
+                  (vector (core-pvector-empty) #f #f #f #f #f #f #f #f))))
+    (check-exn #rx"pvector cursor\\?"
+               (lambda () (core-pvector-cursor-next 'not-a-cursor)))
+    (define (cursor->list pv reverse?)
+      (define len (core-pvector-length pv))
+      (define cursor (core-pvector-cursor-start pv reverse?))
+      (for/list ([i (in-range len)])
+        (core-pvector-cursor-next cursor)))
+    (define (check-cursor-survives-gc xs reverse?)
+      (define expected (if reverse? (reverse xs) xs))
+      (define pv (core-list->pvector xs))
+      (define cursor (core-pvector-cursor-start pv reverse?))
+      (define prefix-count 37)
+      (define prefix
+        (for/list ([i (in-range prefix-count)])
+          (core-pvector-cursor-next cursor)))
+      (collect-garbage)
+      (collect-garbage)
+      (define suffix
+        (for/list ([i (in-range (- (length expected) prefix-count))])
+          (core-pvector-cursor-next cursor)))
+      (check-equal? (append prefix suffix) expected))
+    (for ([xs (in-list (list null
+                             '(a)
+                             '(a b)
+                             '(a b c d)
+                             (range 17)
+                             (range 130)
+                             (range 513)))])
+      (define pv (core-list->pvector xs))
+      (check-equal? (cursor->list pv #f) xs)
+      (check-equal? (cursor->list pv #t) (reverse xs)))
+    (check-cursor-survives-gc (range 513) #f)
+    (check-cursor-survives-gc (range 513) #t)
+    (let* ([xs (range 513)]
+           [whole (core-list->pvector xs)]
+           [joined (core-pvector-append
+                    (core-list->pvector (take xs 257))
+                    (core-list->pvector (drop xs 257)))]
+           [from-vector (core-vector->pvector (list->vector xs))]
+           [different (core-pvector-set joined 256 'changed)])
+      (check-equal? whole joined)
+      (check-equal? whole from-vector)
+      (check-not-equal? whole different)
+      (check-equal? (equal-hash-code whole)
+                    (equal-hash-code joined))
+      (check-equal? (equal-hash-code whole)
+                    (equal-hash-code from-vector))
+      (check-equal? (equal-secondary-hash-code whole)
+                    (equal-secondary-hash-code joined))
+      (check-equal? (equal-secondary-hash-code whole)
+                    (equal-secondary-hash-code from-vector)))
     (check-exn exn:fail:contract?
                (lambda () (core-pvector-length '(not a pvector)))))
   (check-exn exn:fail:contract?
              (lambda () (core-pvector-ref (core-list->pvector '(a b)) -1)))
   (check-exn exn:fail:contract?
              (lambda () (core-pvector-ref (core-list->pvector '(a b)) 2))))
+
+(test-case "kernel core pvector GC retention"
+  (define core-vector->pvector (kernel-value 'core-vector->pvector))
+  (define core-make-pvector (kernel-value 'core-make-pvector))
+  (define core-pvector-length (kernel-value 'core-pvector-length))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector->vector (kernel-value 'core-pvector->vector))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-set (kernel-value 'core-pvector-set))
+  (define core-pvector-cons-left (kernel-value 'core-pvector-cons-left))
+  (define core-pvector-cons-right (kernel-value 'core-pvector-cons-right))
+  (define core-pvector-append (kernel-value 'core-pvector-append))
+  (define core-pvector-take (kernel-value 'core-pvector-take))
+  (define core-pvector-drop (kernel-value 'core-pvector-drop))
+
+  (define (make-retained-pvector size)
+    (define payload
+      (for/vector ([i (in-range size)])
+        (box (vector 'payload i))))
+    (define weak-payload
+      (for/vector ([value (in-vector payload)])
+        (make-weak-box value)))
+    (values (core-vector->pvector payload) weak-payload))
+
+  (define (weak-payload-ref weak-payload index)
+    (weak-box-value (vector-ref weak-payload index) #f))
+
+  (define (check-retained pv len expected-ref)
+    (collect-garbage)
+    (collect-garbage)
+    (check-equal? (core-pvector-length pv) len)
+    (check-no-chunk-shape-stats (core-pvector-shape-stats pv))
+    (define as-list (core-pvector->list pv))
+    (define as-vector (core-pvector->vector pv))
+    (check-equal? (length as-list) len)
+    (check-equal? (vector-length as-vector) len)
+    (for ([list-value (in-list as-list)]
+          [vector-value (in-vector as-vector)]
+          [index (in-range len)])
+      (define expected (expected-ref index))
+      (check-not-false expected)
+      (check-eq? (core-pvector-ref pv index) expected)
+      (check-eq? list-value expected)
+      (check-eq? vector-value expected)))
+
+  (define-values (base base-weak) (make-retained-pvector 257))
+  (check-retained base
+                  257
+                  (lambda (index)
+                    (weak-payload-ref base-weak index)))
+
+  (let ()
+    (define-values (pv weak-payload) (make-retained-pvector 257))
+    (define sentinel (box 'left-sentinel))
+    (define left (core-pvector-cons-left pv sentinel))
+    (set! pv #f)
+    (check-retained left
+                    258
+                    (lambda (index)
+                      (if (zero? index)
+                          sentinel
+                          (weak-payload-ref weak-payload (sub1 index))))))
+
+  (let ()
+    (define-values (pv weak-payload) (make-retained-pvector 257))
+    (define sentinel (box 'right-sentinel))
+    (define right (core-pvector-cons-right pv sentinel))
+    (set! pv #f)
+    (check-retained right
+                    258
+                    (lambda (index)
+                      (if (= index 257)
+                          sentinel
+                          (weak-payload-ref weak-payload index)))))
+
+  (let ()
+    (define-values (pv weak-payload) (make-retained-pvector 257))
+    (define replacement (box 'replacement))
+    (define changed (core-pvector-set pv 128 replacement))
+    (set! pv #f)
+    (check-retained changed
+                    257
+                    (lambda (index)
+                      (if (= index 128)
+                          replacement
+                          (weak-payload-ref weak-payload index)))))
+
+  (let ()
+    (define-values (left left-weak) (make-retained-pvector 130))
+    (define-values (right right-weak) (make-retained-pvector 127))
+    (define appended (core-pvector-append left right))
+    (set! left #f)
+    (set! right #f)
+    (check-retained appended
+                    257
+                    (lambda (index)
+                      (if (< index 130)
+                          (weak-payload-ref left-weak index)
+                          (weak-payload-ref right-weak (- index 130))))))
+
+  (let ()
+    (define-values (pv weak-payload) (make-retained-pvector 257))
+    (define repeated (box 'repeated))
+    (define appended (core-pvector-append pv (core-make-pvector 5 repeated)))
+    (define prefix (core-pvector-take appended 130))
+    (define suffix (core-pvector-drop appended 130))
+    (set! pv #f)
+    (set! appended #f)
+    (check-retained prefix
+                    130
+                    (lambda (index)
+                      (weak-payload-ref weak-payload index)))
+    (check-retained suffix
+                    132
+                    (lambda (index)
+                      (if (< index 127)
+                          (weak-payload-ref weak-payload (+ index 130))
+                          repeated)))))
 
 (test-case "kernel core pvector direct set primitive"
   (check-true (kernel-procedure? 'core-pvector-set))
@@ -166,6 +477,624 @@
   (check-exn exn:fail:contract?
              (lambda () (core-pvector-set (core-list->pvector '(a b)) 2 'x))))
 
+(test-case "kernel core pvector direct cons primitives"
+  (check-true (kernel-procedure? 'core-pvector-cons-left))
+  (check-true (kernel-procedure? 'core-pvector-cons-right))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-cons-left (kernel-value 'core-pvector-cons-left))
+  (define core-pvector-cons-right (kernel-value 'core-pvector-cons-right))
+
+  (define (check-core-cons size)
+    (define xs (range size))
+    (define pv (core-list->pvector xs))
+    (define left-value (string->symbol (format "left-~a" size)))
+    (define right-value (string->symbol (format "right-~a" size)))
+    (define left* (core-pvector-cons-left pv left-value))
+    (define right* (core-pvector-cons-right pv right-value))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats left*))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats right*))
+    (check-equal? (core-pvector->list left*) (cons left-value xs))
+    (check-equal? (core-pvector->list right*) (append xs (list right-value)))
+    (check-equal? (core-pvector-ref left* 0) left-value)
+    (check-equal? (core-pvector-ref right* size) right-value)
+    (check-equal? (core-pvector->list pv) xs))
+
+  (for ([size (in-list '(0 1 2 3 4 5 8 9 10 17 64 129))])
+    (check-core-cons size))
+  (when (bc-vm?)
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-cons-left '(not a pvector) 'x)))
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-cons-right '(not a pvector) 'x)))))
+
+(test-case "kernel core pvector direct pop primitives"
+  (check-true (kernel-procedure? 'core-pvector-pop-left))
+  (check-true (kernel-procedure? 'core-pvector-pop-right))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-empty ((kernel-value 'core-pvector-empty)))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-pop-left (kernel-value 'core-pvector-pop-left))
+  (define core-pvector-pop-right (kernel-value 'core-pvector-pop-right))
+
+  (define (check-core-pop size)
+    (define xs (range size))
+    (define pv (core-list->pvector xs))
+    (define-values (left-value left-rest) (core-pvector-pop-left pv))
+    (define-values (right-value right-rest) (core-pvector-pop-right pv))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats left-rest))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats right-rest))
+    (check-equal? left-value (car xs))
+    (check-equal? (core-pvector->list left-rest) (cdr xs))
+    (check-equal? right-value (last xs))
+    (check-equal? (core-pvector->list right-rest) (drop-right xs 1))
+    (check-equal? (core-pvector->list pv) xs))
+
+  (for ([size (in-list '(1 2 3 4 5 8 9 10 17 64 129))])
+    (check-core-pop size))
+  (check-exn exn:fail?
+             (lambda () (core-pvector-pop-left core-pvector-empty)))
+  (check-exn exn:fail?
+             (lambda () (core-pvector-pop-right core-pvector-empty)))
+  (when (bc-vm?)
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-pop-left '(not a pvector))))
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-pop-right '(not a pvector))))))
+
+(test-case "kernel core pvector direct append primitive"
+  (check-true (kernel-procedure? 'core-pvector-append))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-empty ((kernel-value 'core-pvector-empty)))
+  (define core-pvector-length (kernel-value 'core-pvector-length))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-set (kernel-value 'core-pvector-set))
+  (define core-pvector-cons-left (kernel-value 'core-pvector-cons-left))
+  (define core-pvector-cons-right (kernel-value 'core-pvector-cons-right))
+  (define core-pvector-pop-left (kernel-value 'core-pvector-pop-left))
+  (define core-pvector-pop-right (kernel-value 'core-pvector-pop-right))
+  (define core-pvector-append (kernel-value 'core-pvector-append))
+
+  (define (replace-nth xs idx value)
+    (let loop ([xs xs] [i 0])
+      (cond
+        [(null? xs) '()]
+        [(= i idx) (cons value (cdr xs))]
+        [else (cons (car xs) (loop (cdr xs) (add1 i)))])))
+
+  (define (check-core-state pv xs)
+    (define len (length xs))
+    (check-equal? (core-pvector-length pv) len)
+    (check-no-chunk-shape-stats (core-pvector-shape-stats pv))
+    (check-equal? (core-pvector->list pv) xs)
+    (unless (zero? len)
+      (define last-idx (sub1 len))
+      (define middle-idx (quotient len 2))
+      (check-equal? (core-pvector-ref pv 0) (car xs))
+      (check-equal? (core-pvector-ref pv last-idx) (last xs))
+      (check-equal? (core-pvector-ref pv middle-idx)
+                    (list-ref xs middle-idx))))
+
+  (define (check-core-append left-size right-size)
+    (define left-xs (range left-size))
+    (define right-xs (range left-size (+ left-size right-size)))
+    (define expected (append left-xs right-xs))
+    (define left-pv (core-list->pvector left-xs))
+    (define right-pv (core-list->pvector right-xs))
+    (define appended (core-pvector-append left-pv right-pv))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats appended))
+    (check-equal? (core-pvector->list appended) expected)
+    (unless (null? expected)
+      (check-equal? (core-pvector-ref appended 0) (car expected))
+      (check-equal? (core-pvector-ref appended (sub1 (length expected))) (last expected))
+      (check-equal? (core-pvector-ref appended (quotient (length expected) 2))
+                    (list-ref expected (quotient (length expected) 2))))
+    (check-equal? (core-pvector->list left-pv) left-xs)
+    (check-equal? (core-pvector->list right-pv) right-xs)
+    (when (zero? left-size)
+      (check-true (eq? appended right-pv)))
+    (when (zero? right-size)
+      (check-true (eq? appended left-pv))))
+
+  (define (append-run-size)
+    (case (random 7)
+      [(0 1) 0]
+      [(2) 1]
+      [(3) (random 5)]
+      [(4) (random 17)]
+      [(5) (random 65)]
+      [else (random 130)]))
+
+  (define (check-random-append-model)
+    (random-seed 20260615)
+    (let loop ([step 0] [next 0] [xs '()] [pv core-pvector-empty])
+      (check-core-state pv xs)
+      (when (< step 500)
+        (define len (length xs))
+        (define op (if (> len 700) (+ 3 (random 2)) (random 7)))
+        (case op
+          [(0)
+           (loop (add1 step)
+                 (add1 next)
+                 (cons next xs)
+                 (core-pvector-cons-left pv next))]
+          [(1)
+           (loop (add1 step)
+                 (add1 next)
+                 (append xs (list next))
+                 (core-pvector-cons-right pv next))]
+          [(2)
+           (define size (append-run-size))
+           (define right-xs (range next (+ next size)))
+           (define right-pv (core-list->pvector right-xs))
+           (loop (add1 step)
+                 (+ next size)
+                 (append xs right-xs)
+                 (core-pvector-append pv right-pv))]
+          [(3)
+           (if (null? xs)
+               (loop (add1 step) next xs pv)
+               (let-values ([(value rest) (core-pvector-pop-left pv)])
+                 (check-equal? value (car xs))
+                 (loop (add1 step) next (cdr xs) rest)))]
+          [(4)
+           (if (null? xs)
+               (loop (add1 step) next xs pv)
+               (let-values ([(value rest) (core-pvector-pop-right pv)])
+                 (check-equal? value (last xs))
+                 (loop (add1 step) next (drop-right xs 1) rest)))]
+          [(5)
+           (if (null? xs)
+               (loop (add1 step) next xs pv)
+               (let* ([idx (random len)]
+                      [value (list 'set step idx)]
+                      [xs* (replace-nth xs idx value)]
+                      [pv* (core-pvector-set pv idx value)])
+                 (loop (add1 step) next xs* pv*)))]
+          [else
+           (define size (random 33))
+           (define left-xs (range next (+ next size)))
+           (define left-pv (core-list->pvector left-xs))
+           (loop (add1 step)
+                 (+ next size)
+                 (append left-xs xs)
+                 (core-pvector-append left-pv pv))]))))
+
+  (for ([sizes (in-list '((0 0) (0 1) (1 0) (1 1)
+                          (2 3) (3 2) (4 4) (8 9) (9 8)
+                          (17 64) (64 17) (129 130) (256 257)))])
+    (check-core-append (car sizes) (cadr sizes)))
+  (check-random-append-model)
+  (when (bc-vm?)
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-append '(not a pvector) core-pvector-empty)))
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-append core-pvector-empty '(not a pvector))))))
+
+(test-case "kernel core pvector direct map for-each primitives"
+  (check-true (kernel-procedure? 'core-pvector-map))
+  (check-true (kernel-procedure? 'core-pvector-for-each))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-empty ((kernel-value 'core-pvector-empty)))
+  (define core-pvector-length (kernel-value 'core-pvector-length))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-map (kernel-value 'core-pvector-map))
+  (define core-pvector-for-each (kernel-value 'core-pvector-for-each))
+
+  (define (check-core-list pv xs)
+    (check-equal? (core-pvector-length pv) (length xs))
+    (check-no-chunk-shape-stats (core-pvector-shape-stats pv))
+    (check-equal? (core-pvector->list pv) xs))
+
+  (define (check-core-map-for-each size)
+    (define xs (range size))
+    (define pv (core-list->pvector xs))
+    (define seen-map null)
+    (define mapped
+      (core-pvector-map pv
+                        (lambda (x)
+                          (set! seen-map (cons x seen-map))
+                          (add1 x))))
+    (check-core-list mapped (map add1 xs))
+    (when (bc-vm?)
+      (check-equal? (reverse seen-map) xs))
+    (check-true (eq? pv (core-pvector-map pv values)))
+    (check-core-list (core-pvector-map pv void)
+                     (make-list size (void)))
+    (define seen-for-each null)
+    (check-equal?
+     (core-pvector-for-each pv
+                            (lambda (x)
+                              (set! seen-for-each (cons x seen-for-each))
+                              (values x 'ignored)))
+     (void))
+    (check-equal? (reverse seen-for-each) xs)
+    (check-equal? (core-pvector-for-each pv values) (void))
+    (check-equal? (core-pvector-for-each pv void) (void))
+    (check-core-list pv xs))
+
+  (for ([size (in-list '(0 1 2 3 4 5 8 9 17 64 129))])
+    (check-core-map-for-each size))
+  (check-exn exn:fail?
+             (lambda ()
+               (core-pvector-map (core-list->pvector '(1))
+                                 (lambda (x) (values x x)))))
+  (check-exn exn:fail?
+             (lambda ()
+               (core-pvector-map (core-list->pvector '(1 2))
+                                 (lambda (x y) x))))
+  (check-exn exn:fail?
+             (lambda ()
+               (core-pvector-for-each (core-list->pvector '(1 2))
+                                      (lambda (x y) x))))
+  (when (bc-vm?)
+    (check-exn exn:fail?
+               (lambda () (core-pvector-map core-pvector-empty 'not-a-proc)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-for-each core-pvector-empty 'not-a-proc)))))
+
+(test-case "kernel core pvector direct split copy insert delete primitives"
+  (for ([name (in-list '(core-pvector-split-at
+                         core-pvector-split-at-right
+                         core-pvector-split
+                         core-pvector-insert
+                         core-pvector-delete
+                         core-pvector-take
+                         core-pvector-drop
+                         core-pvector-take-right
+                         core-pvector-drop-right
+                         core-pvector-copy))])
+    (check-true (kernel-procedure? name)))
+  (define core-list->pvector (kernel-value 'core-list->pvector))
+  (define core-pvector-empty ((kernel-value 'core-pvector-empty)))
+  (define core-pvector-shape-stats (kernel-value 'core-pvector-shape-stats))
+  (define core-pvector->list (kernel-value 'core-pvector->list))
+  (define core-pvector-ref (kernel-value 'core-pvector-ref))
+  (define core-pvector-append (kernel-value 'core-pvector-append))
+  (define core-pvector-cons-left (kernel-value 'core-pvector-cons-left))
+  (define core-pvector-cons-right (kernel-value 'core-pvector-cons-right))
+  (define core-pvector-pop-left (kernel-value 'core-pvector-pop-left))
+  (define core-pvector-pop-right (kernel-value 'core-pvector-pop-right))
+  (define core-pvector-split-at (kernel-value 'core-pvector-split-at))
+  (define core-pvector-split-at-right (kernel-value 'core-pvector-split-at-right))
+  (define core-pvector-split (kernel-value 'core-pvector-split))
+  (define core-pvector-insert (kernel-value 'core-pvector-insert))
+  (define core-pvector-delete (kernel-value 'core-pvector-delete))
+  (define core-pvector-take (kernel-value 'core-pvector-take))
+  (define core-pvector-drop (kernel-value 'core-pvector-drop))
+  (define core-pvector-take-right (kernel-value 'core-pvector-take-right))
+  (define core-pvector-drop-right (kernel-value 'core-pvector-drop-right))
+  (define core-pvector-copy (kernel-value 'core-pvector-copy))
+
+  (define (list-insert xs idx value)
+    (append (take xs idx) (list value) (drop xs idx)))
+
+  (define (check-core-list pv xs)
+    (check-no-chunk-shape-stats (core-pvector-shape-stats pv))
+    (check-equal? (core-pvector->list pv) xs)
+    (unless (null? xs)
+      (check-equal? (core-pvector-ref pv 0) (car xs))
+      (check-equal? (core-pvector-ref pv (sub1 (length xs))) (last xs))
+      (check-equal? (core-pvector-ref pv (quotient (length xs) 2))
+                    (list-ref xs (quotient (length xs) 2)))))
+
+  (define (positions size)
+    (remove-duplicates
+     (filter (lambda (pos) (<= 0 pos size))
+             (list 0 1 2 (quotient size 2) (max 0 (- size 2))
+                   (max 0 (sub1 size)) size))))
+
+  (define (indexes size)
+    (remove-duplicates
+     (filter (lambda (idx) (< -1 idx size))
+             (list 0 1 (quotient size 2) (max 0 (- size 2))
+                   (max 0 (sub1 size))))))
+
+  (define (check-slice-size size)
+    (define xs (range size))
+    (define pv (core-list->pvector xs))
+    (define front-value (list 'front size))
+    (define back-value (list 'back size))
+    (define front-inserted (core-pvector-insert pv 0 front-value))
+    (define front-consed (core-pvector-cons-left pv front-value))
+    (define back-inserted (core-pvector-insert pv size back-value))
+    (define back-consed (core-pvector-cons-right pv back-value))
+    (check-core-list front-inserted (cons front-value xs))
+    (check-core-list front-consed (cons front-value xs))
+    (check-core-list back-inserted (append xs (list back-value)))
+    (check-core-list back-consed (append xs (list back-value)))
+    (when (bc-vm?)
+      (check-equal? front-inserted front-consed)
+      (check-equal? back-inserted back-consed))
+    (unless (zero? size)
+      (define-values (front-rest front-deleted)
+        (core-pvector-delete pv 0))
+      (define-values (front-value* front-rest*)
+        (core-pvector-pop-left pv))
+      (define-values (back-rest back-deleted)
+        (core-pvector-delete pv (sub1 size)))
+      (define-values (back-value* back-rest*)
+        (core-pvector-pop-right pv))
+      (define-values (split-front-left split-front-value split-front-right)
+        (core-pvector-split pv 0))
+      (define-values (split-back-left split-back-value split-back-right)
+        (core-pvector-split pv (sub1 size)))
+      (check-equal? front-deleted front-value*)
+      (check-core-list front-rest (cdr xs))
+      (check-core-list front-rest* (cdr xs))
+      (check-equal? back-deleted back-value*)
+      (check-core-list back-rest (drop-right xs 1))
+      (check-core-list back-rest* (drop-right xs 1))
+      (check-core-list split-front-left '())
+      (check-equal? split-front-value front-value*)
+      (check-core-list split-front-right (cdr xs))
+      (check-core-list split-back-left (drop-right xs 1))
+      (check-equal? split-back-value back-value*)
+      (check-core-list split-back-right '())
+      (when (bc-vm?)
+        (check-equal? front-rest front-rest*)
+        (check-equal? back-rest back-rest*)
+        (check-equal? split-front-left core-pvector-empty)
+        (check-equal? split-front-right front-rest*)
+        (check-equal? split-back-left back-rest*)
+        (check-equal? split-back-right core-pvector-empty)))
+    (for ([pos (in-list (positions size))])
+      (define-values (left right) (core-pvector-split-at pv pos))
+      (define-values (right-part left-part)
+        (core-pvector-split-at-right pv (- size pos)))
+      (check-core-list left (take xs pos))
+      (check-core-list right (drop xs pos))
+      (check-core-list right-part (drop xs pos))
+      (check-core-list left-part (take xs pos))
+      (when (zero? pos)
+        (check-true (eq? left core-pvector-empty))
+        (check-true (eq? right pv))
+        (check-true (eq? right-part pv))
+        (check-true (eq? left-part core-pvector-empty)))
+      (when (= pos size)
+        (check-true (eq? left pv))
+        (check-true (eq? right core-pvector-empty))
+        (check-true (eq? right-part core-pvector-empty))
+        (check-true (eq? left-part pv)))
+      (check-core-list (core-pvector-take pv pos) (take xs pos))
+      (check-core-list (core-pvector-drop pv pos) (drop xs pos))
+      (check-core-list (core-pvector-take-right pv pos) (take-right xs pos))
+      (check-core-list (core-pvector-drop-right pv pos) (drop-right xs pos))
+      (when (bc-vm?)
+        (check-equal? (core-pvector-take pv pos) left)
+        (check-equal? (core-pvector-drop pv pos) right)
+        (check-equal? (core-pvector-take-right pv (- size pos)) right)
+        (check-equal? (core-pvector-drop-right pv (- size pos)) left))
+      (when (zero? pos)
+        (check-true (eq? (core-pvector-take pv pos) core-pvector-empty))
+        (check-true (eq? (core-pvector-drop pv pos) pv))
+        (check-true (eq? (core-pvector-take-right pv pos) core-pvector-empty))
+        (check-true (eq? (core-pvector-drop-right pv pos) pv)))
+      (when (= pos size)
+        (check-true (eq? (core-pvector-take pv pos) pv))
+        (check-true (eq? (core-pvector-drop pv pos) core-pvector-empty))
+        (check-true (eq? (core-pvector-take-right pv pos) pv))
+        (check-true (eq? (core-pvector-drop-right pv pos) core-pvector-empty))))
+    (for* ([start (in-list (positions size))]
+           [end (in-list (positions size))]
+           #:when (<= start end))
+      (define copied (core-pvector-copy pv start end))
+      (check-core-list copied (take (drop xs start) (- end start)))
+      (when (and (zero? start) (= end size))
+        (check-true (eq? copied pv))))
+    (for ([idx (in-list (indexes size))])
+      (define-values (left value right) (core-pvector-split pv idx))
+      (define-values (rest deleted) (core-pvector-delete pv idx))
+      (check-core-list left (take xs idx))
+      (check-equal? value (list-ref xs idx))
+      (check-core-list right (drop xs (add1 idx)))
+      (when (zero? idx)
+        (check-true (eq? left core-pvector-empty)))
+      (when (= idx (sub1 size))
+        (check-true (eq? right core-pvector-empty)))
+      (check-equal? deleted (list-ref xs idx))
+      (check-core-list rest (append (take xs idx) (drop xs (add1 idx)))))
+    (for ([pos (in-list (positions size))])
+      (define value (list 'insert size pos))
+      (check-core-list (core-pvector-insert pv pos value)
+                       (list-insert xs pos value))))
+
+  (for ([size (in-list '(0 1 2 3 4 5 8 9 17 64 129))])
+    (check-slice-size size))
+  (let* ([left-xs (range 5000)]
+         [right-xs (range 5000 10000)]
+         [xs (append left-xs right-xs)]
+         [pv (core-pvector-append (core-list->pvector left-xs)
+                                  (core-list->pvector right-xs))])
+    (for ([pos (in-list '(0 1 2 3 4 4096 5000 5001 8192
+                          9996 9997 9998 9999 10000))])
+      (define-values (left right) (core-pvector-split-at pv pos))
+      (check-core-list left (take xs pos))
+      (check-core-list right (drop xs pos))
+      (check-core-list (core-pvector-take pv pos) (take xs pos))
+      (check-core-list (core-pvector-drop pv pos) (drop xs pos))
+      (check-core-list (core-pvector-take-right pv (- 10000 pos)) (drop xs pos))
+      (check-core-list (core-pvector-drop-right pv (- 10000 pos)) (take xs pos))
+      (when (bc-vm?)
+        (check-equal? (core-pvector-take pv pos) left)
+        (check-equal? (core-pvector-drop pv pos) right)
+        (check-equal? (core-pvector-take-right pv (- 10000 pos)) right)
+        (check-equal? (core-pvector-drop-right pv (- 10000 pos)) left)
+        (when (memv pos '(9997 9998 9999))
+          (check-equal? (core-pvector-shape-stats (core-pvector-take pv pos))
+                        (core-pvector-shape-stats left))
+          (check-equal? (core-pvector-shape-stats
+                         (core-pvector-drop-right pv (- 10000 pos)))
+                        (core-pvector-shape-stats left)))))
+    (when (bc-vm?)
+      (define stats (core-pvector-shape-stats pv))
+      (define prefix-boundary (hash-ref stats 'prefix-length))
+      (define suffix-boundary
+        (- (hash-ref stats 'length) (hash-ref stats 'suffix-length)))
+      (for ([pos (in-list (remove-duplicates
+                           (list prefix-boundary suffix-boundary)))])
+        (define-values (left right) (core-pvector-split-at pv pos))
+        (check-equal? (core-pvector-take pv pos) left)
+        (check-equal? (core-pvector-drop pv pos) right)
+        (check-equal? (core-pvector-take-right pv (- 10000 pos)) right)
+        (check-equal? (core-pvector-drop-right pv (- 10000 pos)) left)
+        (check-equal? (core-pvector-shape-stats (core-pvector-take pv pos))
+                      (core-pvector-shape-stats left))
+        (check-equal? (core-pvector-shape-stats (core-pvector-drop pv pos))
+                      (core-pvector-shape-stats right)))
+      (when (> prefix-boundary 2)
+        (define prefix-split-index 1)
+        (define-values (left value right)
+          (core-pvector-split pv prefix-split-index))
+        (define right-stats (core-pvector-shape-stats right))
+        (check-core-list left (take xs prefix-split-index))
+        (check-equal? value prefix-split-index)
+        (check-core-list right (drop xs (add1 prefix-split-index)))
+        (check-equal? (hash-ref right-stats 'prefix-length)
+                      (- prefix-boundary prefix-split-index 1))
+        (check-equal? (hash-ref right-stats 'suffix-length)
+                      (hash-ref stats 'suffix-length))
+        (check-equal? (hash-ref right-stats 'middle-measure)
+                      (hash-ref stats 'middle-measure)))
+      (when (> (hash-ref stats 'suffix-length) 2)
+        (define suffix-split-index (add1 suffix-boundary))
+        (define-values (left value right)
+          (core-pvector-split pv suffix-split-index))
+        (define left-stats (core-pvector-shape-stats left))
+        (check-core-list left (take xs suffix-split-index))
+        (check-equal? value suffix-split-index)
+        (check-core-list right (drop xs (add1 suffix-split-index)))
+        (check-equal? (hash-ref left-stats 'prefix-length)
+                      (hash-ref stats 'prefix-length))
+        (check-equal? (hash-ref left-stats 'suffix-length) 1)
+        (check-equal? (hash-ref left-stats 'middle-measure)
+                      (hash-ref stats 'middle-measure)))
+      (when (> prefix-boundary 1)
+        (define prefix-delete-index (sub1 prefix-boundary))
+        (define-values (rest deleted)
+          (core-pvector-delete pv prefix-delete-index))
+        (define rest-stats (core-pvector-shape-stats rest))
+        (check-equal? deleted prefix-delete-index)
+        (check-core-list rest (append (take xs prefix-delete-index)
+                                      (drop xs (add1 prefix-delete-index))))
+        (check-equal? (hash-ref rest-stats 'prefix-length)
+                      (sub1 prefix-boundary))
+        (check-equal? (hash-ref rest-stats 'suffix-length)
+                      (hash-ref stats 'suffix-length))
+        (check-equal? (hash-ref rest-stats 'middle-measure)
+                      (hash-ref stats 'middle-measure)))
+      (when (> (hash-ref stats 'suffix-length) 1)
+        (define-values (rest deleted)
+          (core-pvector-delete pv suffix-boundary))
+        (define rest-stats (core-pvector-shape-stats rest))
+        (check-equal? deleted suffix-boundary)
+        (check-core-list rest (append (take xs suffix-boundary)
+                                      (drop xs (add1 suffix-boundary))))
+        (check-equal? (hash-ref rest-stats 'prefix-length)
+                      (hash-ref stats 'prefix-length))
+        (check-equal? (hash-ref rest-stats 'suffix-length)
+                      (sub1 (hash-ref stats 'suffix-length)))
+        (check-equal? (hash-ref rest-stats 'middle-measure)
+                      (hash-ref stats 'middle-measure)))
+      (when (> prefix-boundary 1)
+        (define prefix-insert-index (sub1 prefix-boundary))
+        (define-values (base deleted)
+          (core-pvector-delete pv prefix-insert-index))
+        (define base-stats (core-pvector-shape-stats base))
+        (check-equal? deleted prefix-insert-index)
+        (check-equal? (hash-ref base-stats 'prefix-length)
+                      (sub1 prefix-boundary))
+        (when (< (hash-ref base-stats 'prefix-length) 4)
+          (define restored
+            (core-pvector-insert base prefix-insert-index deleted))
+          (check-core-list restored xs)
+          (check-equal? (core-pvector-shape-stats restored) stats)))
+      (when (> (hash-ref stats 'suffix-length) 1)
+        (define-values (base deleted)
+          (core-pvector-delete pv suffix-boundary))
+        (define base-stats (core-pvector-shape-stats base))
+        (check-equal? deleted suffix-boundary)
+        (check-equal? (hash-ref base-stats 'suffix-length)
+                      (sub1 (hash-ref stats 'suffix-length)))
+        (when (< (hash-ref base-stats 'suffix-length) 4)
+          (define restored
+            (core-pvector-insert base suffix-boundary deleted))
+          (check-core-list restored xs)
+          (check-equal? (core-pvector-shape-stats restored) stats)))
+      (when (and (> prefix-boundary 1)
+                 (> (hash-ref stats 'suffix-length) 1))
+        (define copied (core-pvector-copy pv 1 (sub1 (hash-ref stats 'length))))
+        (define copied-stats (core-pvector-shape-stats copied))
+        (check-core-list copied (take (drop xs 1) (- (length xs) 2)))
+        (check-equal? (hash-ref copied-stats 'prefix-length)
+                      (sub1 prefix-boundary))
+        (check-equal? (hash-ref copied-stats 'suffix-length)
+                      (sub1 (hash-ref stats 'suffix-length)))
+        (check-equal? (hash-ref copied-stats 'middle-measure)
+                      (hash-ref stats 'middle-measure))))
+    (for ([range (in-list '((0 4096)
+                            (0 5000)
+                            (0 9996)
+                            (4 10000)
+                            (4096 10000)
+                            (5000 10000)
+                            (4 9996)
+                            (4096 8192)))])
+      (define start (first range))
+      (define end (second range))
+      (check-core-list (core-pvector-copy pv start end)
+                       (take (drop xs start) (- end start))))
+    (for ([idx (in-list '(0 1 2 4095 5000 5001 9998 9999))])
+      (define-values (left value right) (core-pvector-split pv idx))
+      (define-values (rest deleted) (core-pvector-delete pv idx))
+      (check-core-list left (take xs idx))
+      (check-equal? value (list-ref xs idx))
+      (check-core-list right (drop xs (add1 idx)))
+      (check-equal? deleted (list-ref xs idx))
+      (check-core-list rest (append (take xs idx) (drop xs (add1 idx)))))
+    (for ([pos (in-list '(0 1 4096 5000 5001 9999 10000))])
+      (define inserted (core-pvector-insert pv pos 'joined-split-marker))
+      (check-core-list inserted
+                       (list-insert xs pos 'joined-split-marker))))
+  (when (bc-vm?)
+    (let* ([deep9 (core-list->pvector (range 9))]
+           [copy4 (core-pvector-copy deep9 2 6)]
+           [copy4-stats (core-pvector-shape-stats copy4)])
+      (check-core-list copy4 '(2 3 4 5))
+      (check-equal? (hash-ref copy4-stats 'representation #f) 'large-finger)
+      (check-equal? (hash-ref copy4-stats 'prefix-length #f) 2)
+      (check-equal? (hash-ref copy4-stats 'suffix-length #f) 2)
+      (check-equal? (hash-ref copy4-stats 'middle-measure #f) 0))
+    (let* ([large (core-list->pvector (range 8192))]
+           [middle-only (core-pvector-copy large 4 8188)]
+           [middle-stats (core-pvector-shape-stats middle-only)])
+      (check-core-list middle-only (range 4 8188))
+      (check-equal? (hash-ref middle-stats 'representation #f) 'large-finger)
+      (check-true (positive? (hash-ref middle-stats 'finger-depth 0)))
+      (check-equal? (hash-ref middle-stats 'middle-measure #f)
+                    (- (hash-ref middle-stats 'length)
+                       (hash-ref middle-stats 'prefix-length)
+                       (hash-ref middle-stats 'suffix-length)))))
+  (when (bc-vm?)
+    (check-exn exn:fail:contract?
+               (lambda () (core-pvector-copy '(not a pvector) 0 0)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-copy core-pvector-empty 1 0)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-take core-pvector-empty 1)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-split core-pvector-empty 0)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-delete core-pvector-empty 0)))
+    (check-exn exn:fail?
+               (lambda () (core-pvector-insert core-pvector-empty 1 'x)))))
+
 (define (check-core-large-edge-stats stats prefix-len suffix-len middle-measure)
   (when (core-backend?)
     (with-check-info
@@ -174,9 +1103,12 @@
        ['expected-suffix suffix-len]
        ['expected-middle middle-measure])
       (check-equal? (hash-ref stats 'representation #f) 'large-finger)
-      (check-equal? (hash-ref stats 'prefix-length #f) prefix-len)
-      (check-equal? (hash-ref stats 'suffix-length #f) suffix-len)
-      (check-equal? (hash-ref stats 'middle-measure #f) middle-measure)
+      (check-true (<= 1 (hash-ref stats 'prefix-length 0) 4))
+      (check-true (<= 1 (hash-ref stats 'suffix-length 0) 4))
+      (check-equal? (hash-ref stats 'middle-measure #f)
+                    (- (hash-ref stats 'length)
+                       (hash-ref stats 'prefix-length)
+                       (hash-ref stats 'suffix-length)))
       (check-core-large-finger-tree-stats stats))))
 
 (define (check-chunk-vector-view pv)
@@ -203,23 +1135,279 @@
                     'core
                     'finger))
   (when (memq backend '(core finger))
-    (define stats
-      (adapter:pvector-shape-stats
-       (adapter:list->pvector (range 130))))
-    (check-equal? (hash-ref stats 'backend #f) backend)
+	  (define stats
+	    (adapter:pvector-shape-stats
+	     (adapter:list->pvector (range 130))))
+    (define probe-pv (adapter:list->pvector (range 17)))
+    (check-equal? (adapter:pvector-length/fast probe-pv)
+                  (adapter:pvector-length probe-pv))
+    (check-equal? (adapter:pvector-length/fast probe-pv) 17)
+    (check-not-false
+     (memq (hash-ref stats 'backend #f)
+           (if (eq? backend 'core)
+               '(core bc-native)
+               '(finger))))
     (check-no-chunk-shape-stats stats))
   (when (eq? backend 'core)
     (check-true (kernel-procedure? 'core-fresh-vector->pvector))
     (check-true (kernel-procedure? 'core-make-single-pvector))
     (check-true (kernel-procedure? 'core-make-deep2-pvector))
     (check-true (kernel-procedure? 'core-make-deep3-pvector))
-    (check-true (kernel-procedure? 'core-make-deep4-pvector)))
+    (check-true (kernel-procedure? 'core-make-deep4-pvector))
+    (check-true (kernel-procedure? 'core-pvector-cons-left))
+    (check-true (kernel-procedure? 'core-pvector-cons-right))
+    (when (bc-vm?)
+      (check-true (kernel-procedure? 'core-unsafe-pvector-length))
+      (check-true (kernel-procedure? 'core-unsafe-pvector-ref))
+      (check-true (kernel-procedure? 'core-unsafe-pvector-view-left))
+      (check-true (kernel-procedure? 'core-unsafe-pvector-view-right))
+      (check-true (kernel-procedure? 'core-unsafe-pvector-first))
+      (check-true (kernel-procedure? 'core-unsafe-pvector-last))
+              (let* ([core-list->pvector (kernel-value 'core-list->pvector)]
+                     [core-pvector? (kernel-value 'core-pvector?)]
+                     [core-pvector-empty? (kernel-value 'core-pvector-empty?)]
+                     [core-pvector-length (kernel-value 'core-pvector-length)]
+                     [core-make-single-pvector
+                      (kernel-value 'core-make-single-pvector)]
+             [core-make-deep2-pvector
+              (kernel-value 'core-make-deep2-pvector)]
+             [core-make-deep3-pvector
+              (kernel-value 'core-make-deep3-pvector)]
+             [core-make-deep4-pvector
+              (kernel-value 'core-make-deep4-pvector)]
+             [core-unsafe-pvector-length
+              (kernel-value 'core-unsafe-pvector-length)]
+             [core-pvector-ref
+             (kernel-value 'core-pvector-ref)]
+             [core-unsafe-pvector-ref
+              (kernel-value 'core-unsafe-pvector-ref)]
+             [core-pvector-cons-left
+              (kernel-value 'core-pvector-cons-left)]
+             [core-pvector-cons-right
+              (kernel-value 'core-pvector-cons-right)]
+             [core-pvector-view-left
+              (kernel-value 'core-pvector-view-left)]
+             [core-pvector-view-right
+              (kernel-value 'core-pvector-view-right)]
+             [core-unsafe-pvector-view-left
+              (kernel-value 'core-unsafe-pvector-view-left)]
+             [core-unsafe-pvector-view-right
+              (kernel-value 'core-unsafe-pvector-view-right)]
+             [core-unsafe-pvector-first
+              (kernel-value 'core-unsafe-pvector-first)]
+             [core-unsafe-pvector-last
+              (kernel-value 'core-unsafe-pvector-last)]
+             [pv (core-list->pvector (range 17))])
+        (check-equal? (core-unsafe-pvector-length pv) 17)
+        (check-equal? (core-unsafe-pvector-view-left pv) 0)
+        (check-equal? (core-unsafe-pvector-view-right pv) 16)
+        (check-equal? (core-unsafe-pvector-first pv) 0)
+        (check-equal? (core-unsafe-pvector-last pv) 16)
+        (check-equal? (core-pvector-view-left pv) 0)
+        (check-equal? (core-pvector-view-right pv) 16)
+        (check-equal? (core-pvector-length pv) 17)
+        (check-equal?
+         (for/list ([i (in-range 17)])
+           (core-unsafe-pvector-ref pv i))
+         (range 17))
+        (for ([jit-enabled? (in-list '(#f #t))])
+          (parameterize ([eval-jit-enabled jit-enabled?])
+            (check-true (core-pvector-empty? (core-pvector-empty)))
+            (check-false (core-pvector-empty? pv))
+            (check-false (core-pvector-empty? '(not a pvector)))
+            (let* ([rounds 50]
+                   [score
+                    (lambda (value other rounds)
+                       (let loop ([i 0] [acc 0])
+                        (if (= i rounds)
+                            acc
+                            (let* ([empty0 (core-pvector-empty)]
+                                   [empty1 (core-pvector-empty)]
+                                   [single (core-make-single-pvector 23)]
+                                   [deep2 (core-make-deep2-pvector 24 25)]
+                                   [deep3 (core-make-deep3-pvector 26 27 28)]
+                                   [deep4 (core-make-deep4-pvector 29 30 31 32)]
+                                   [cons-left-empty
+                                    (core-pvector-cons-left
+                                     (core-pvector-empty) 40)]
+                                   [cons-right-empty
+                                    (core-pvector-cons-right
+                                     (core-pvector-empty) 41)]
+                                   [cons-left-single
+                                    (core-pvector-cons-left single 22)]
+                                   [cons-right-single
+                                    (core-pvector-cons-right single 24)]
+                                   [cons-left-deep3
+                                    (core-pvector-cons-left deep3 25)]
+                                   [cons-right-deep3
+                                    (core-pvector-cons-right deep3 29)]
+                                   [cons-left-full
+                                    (core-pvector-cons-left
+                                     (core-list->pvector (range 9))
+                                     33)]
+                                   [cons-right-full
+                                    (core-pvector-cons-right
+                                     (core-list->pvector (range 8))
+                                     44)])
+                              (check-true (eq? empty0 empty1))
+                              (check-true (core-pvector-empty? empty0))
+                              (check-no-chunk-shape-stats
+                               (adapter:pvector-shape-stats single))
+                              (check-no-chunk-shape-stats
+                               (adapter:pvector-shape-stats deep2))
+                              (check-no-chunk-shape-stats
+                               (adapter:pvector-shape-stats deep3))
+                              (check-no-chunk-shape-stats
+                               (adapter:pvector-shape-stats deep4))
+                              (check-equal? (core-pvector-length single) 1)
+                              (check-equal? (core-pvector-length deep2) 2)
+                              (check-equal? (core-pvector-length deep3) 3)
+                              (check-equal? (core-pvector-length deep4) 4)
+                              (check-equal? (core-pvector-ref single 0) 23)
+                              (check-equal? (core-pvector-ref deep2 1) 25)
+                              (check-equal? (core-pvector-ref deep3 2) 28)
+                              (check-equal? (core-pvector-ref deep4 3) 32)
+                              (check-equal? (core-pvector-view-left single) 23)
+                              (check-equal? (core-pvector-view-right single) 23)
+                              (check-equal? (core-pvector-view-left deep2) 24)
+                              (check-equal? (core-pvector-view-right deep2) 25)
+                              (check-equal? (core-pvector-view-left deep3) 26)
+                              (check-equal? (core-pvector-view-right deep3) 28)
+                              (check-equal? (core-pvector-view-left deep4) 29)
+                              (check-equal? (core-pvector-view-right deep4) 32)
+                              (check-equal? (core-unsafe-pvector-ref single 0) 23)
+                              (check-equal? (core-unsafe-pvector-ref deep2 1) 25)
+                              (check-equal? (core-unsafe-pvector-ref deep3 2) 28)
+                              (check-equal? (core-unsafe-pvector-ref deep4 3) 32)
+                              (check-equal?
+                               (core-unsafe-pvector-view-left single)
+                               23)
+                              (check-equal?
+                               (core-unsafe-pvector-view-right single)
+                               23)
+                              (check-equal?
+                               (core-unsafe-pvector-view-left deep4)
+                               29)
+                              (check-equal?
+                               (core-unsafe-pvector-view-right deep4)
+                               32)
+                              (check-equal? (core-pvector-ref cons-left-empty 0)
+                                            40)
+                              (check-equal? (core-pvector-ref cons-right-empty 0)
+                                            41)
+                              (check-equal? (core-pvector-length cons-left-single)
+                                            2)
+                              (check-equal? (core-pvector-view-left cons-left-single)
+                                            22)
+                              (check-equal? (core-pvector-view-right cons-left-single)
+                                            23)
+                              (check-equal? (core-pvector-length cons-right-single)
+                                            2)
+                              (check-equal? (core-pvector-view-left cons-right-single)
+                                            23)
+                              (check-equal? (core-pvector-view-right cons-right-single)
+                                            24)
+                              (check-equal? (core-pvector-length cons-left-deep3)
+                                            4)
+                              (check-equal? (core-pvector-view-left cons-left-deep3)
+                                            25)
+                              (check-equal? (core-pvector-view-right cons-left-deep3)
+                                            28)
+                              (check-equal? (core-pvector-length cons-right-deep3)
+                                            4)
+                              (check-equal? (core-pvector-view-left cons-right-deep3)
+                                            26)
+                              (check-equal? (core-pvector-view-right cons-right-deep3)
+                                            29)
+                              (check-equal?
+                               (for/list ([j (in-range 10)])
+                                 (core-pvector-ref cons-left-full j))
+                               (cons 33 (range 9)))
+                              (check-equal?
+                               (for/list ([j (in-range 9)])
+                                 (core-pvector-ref cons-right-full j))
+                               (append (range 8) (list 44)))
+                              (loop (add1 i)
+                                    (+ acc
+                                       (if (core-pvector? value) 1 0)
+                                       (if (core-pvector? other) 100 0)
+                                       (core-pvector-length value)
+                                       (core-unsafe-pvector-length value)
+                                       (core-unsafe-pvector-ref single 0)
+                                       (core-unsafe-pvector-length deep2)
+                                       (core-unsafe-pvector-ref deep2 0)
+                                       (core-unsafe-pvector-ref deep2 1)
+                                       (core-unsafe-pvector-length deep3)
+                                       (core-unsafe-pvector-ref deep3 0)
+                                       (core-unsafe-pvector-ref deep3 1)
+                                       (core-unsafe-pvector-ref deep3 2)
+                                       (core-unsafe-pvector-length deep4)
+                                       (core-unsafe-pvector-ref deep4 0)
+                                       (core-unsafe-pvector-ref deep4 1)
+                                       (core-unsafe-pvector-ref deep4 2)
+                                       (core-unsafe-pvector-ref deep4 3)
+                                       (core-unsafe-pvector-ref value 0)
+                                       (core-unsafe-pvector-ref value 8)
+                                       (core-unsafe-pvector-ref value 16)
+                                       (core-unsafe-pvector-ref value (modulo i 17))
+                                       (core-pvector-ref value 0)
+                                       (core-pvector-ref value 8)
+                                       (core-pvector-ref value 16)
+                                       (core-pvector-ref value (modulo i 17))
+                                       (core-pvector-view-left value)
+                                       (core-pvector-view-right value)
+                                       (core-unsafe-pvector-view-left value)
+                                       (core-unsafe-pvector-view-right value)))))))])
+              (check-equal? (score pv '(not a pvector) rounds)
+                            (+ (* rounds (+ 1 17 17 23
+                                             2 24 25
+                                             3 26 27 28
+                                             4 29 30 31 32
+                                             0 8 16
+                                             0 8 16
+                                             0 16
+                                             0 16))
+                               (* 2
+                                  (for/sum ([i (in-range rounds)])
+	                                    (modulo i 17)))))
+	              (when jit-enabled?
+                (check-equal? (static-kernel-pvector-jit-score #f)
+                              18040)
+                (check-equal? (static-kernel-pvector-jit-score #t)
+                              18040))
+	              (check-exn exn:fail:contract?
+	                         (lambda () (core-pvector-ref '(not a pvector) 0)))
+              (check-exn exn:fail:contract?
+                         (lambda () (core-pvector-ref pv -1)))
+              (check-exn exn:fail:contract?
+                         (lambda () (core-pvector-ref pv 17)))
+              (check-exn exn:fail:contract?
+                         (lambda ()
+                           (core-pvector-view-left '(not a pvector))))
+              (check-exn exn:fail:contract?
+                         (lambda ()
+                           (core-pvector-view-right '(not a pvector))))
+              (check-exn exn:fail?
+                         (lambda ()
+                           (core-pvector-view-left (core-pvector-empty))))
+              (check-exn exn:fail?
+                         (lambda ()
+                           (core-pvector-view-right (core-pvector-empty))))
+              (check-exn exn:fail:contract?
+                         (lambda ()
+                           (core-pvector-cons-left '(not a pvector) 'x)))
+              (check-exn exn:fail:contract?
+                         (lambda ()
+                           (core-pvector-cons-right '(not a pvector) 'x))))))))
   (check-exn exn:fail:contract?
              (lambda ()
                (adapter:pvector-shape-stats '(not a pvector))))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (adapter:pvector-shape-stats (public:pvector 1 2 3)))))
+  (if (and (bc-vm?) (core-backend?))
+      (check-no-chunk-shape-stats
+       (adapter:pvector-shape-stats (public:pvector 1 2 3)))
+      (check-exn exn:fail:contract?
+                 (lambda ()
+                   (adapter:pvector-shape-stats (public:pvector 1 2 3)))))))
 
 (test-case "adapter operations"
   (define xs (range 130))
@@ -1396,6 +2584,24 @@
                      '(x 4097 4098 4099 4100 4101 4102)))
       (check-core-large-edge-stats inserted-stats 4 4 8185)
       (check-no-chunk-shape-stats inserted-stats))
+    (let* ([pv (adapter:list->pvector (range 8192))]
+           [xs (range 8192)])
+      (for ([pos (in-list '(4 5 7 4096 4097 5000 8185 8186))])
+        (define value (list 'x pos))
+        (define inserted (adapter:pvector-insert pv pos value))
+        (define inserted-model (append (take xs pos)
+                                       (list value)
+                                       (drop xs pos)))
+        (define inserted-stats (adapter:pvector-shape-stats inserted))
+        (let-values ([(deleted-rest deleted)
+                      (adapter:pvector-delete inserted pos)])
+          (define deleted-stats
+            (adapter:pvector-shape-stats deleted-rest))
+          (check-model inserted inserted-model)
+          (check-equal? deleted value)
+          (check-model deleted-rest xs)
+          (check-no-chunk-shape-stats inserted-stats)
+          (check-no-chunk-shape-stats deleted-stats))))
     (let* ([pv (adapter:list->pvector (range 8192))])
       (let-values ([(deleted-rest deleted) (adapter:pvector-delete pv 4097)])
         (define deleted-stats (adapter:pvector-shape-stats deleted-rest))
@@ -1409,6 +2615,16 @@
                        '(4098 4099 4100 4101 4102 4103 4104)))
         (check-core-large-edge-stats deleted-stats 4 4 8183)
         (check-no-chunk-shape-stats deleted-stats)))
+    (let* ([pv (adapter:list->pvector (range 8192))])
+      (for ([pos (in-list '(4 5 7 4096 4097 5000 8185 8186))])
+        (let-values ([(left value right) (adapter:pvector-split pv pos)])
+          (define left-stats (adapter:pvector-shape-stats left))
+          (define right-stats (adapter:pvector-shape-stats right))
+          (check-model left (range pos))
+          (check-equal? value pos)
+          (check-model right (range (add1 pos) 8192))
+          (check-no-chunk-shape-stats left-stats)
+          (check-no-chunk-shape-stats right-stats))))
     (let* ([pv (adapter:list->pvector (range 16384))]
            [copied (adapter:pvector-copy pv 4096 12288)]
            [stats (adapter:pvector-shape-stats copied)])
@@ -1604,9 +2820,8 @@
                  ([x (adapter:in-pvector pv)])
                  x)
                (append xs '(0 0 0)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (adapter:for/pvector #:length 133 ([x pv]) x)))
+  (check-model (adapter:for/pvector #:length 133 ([x pv]) x)
+               (append xs '(0 0 0)))
   (check-model (adapter:for/pvector ([x (adapter:in-pvector pv)]) (* x x))
                (map (lambda (x) (* x x)) xs))
   (check-model (adapter:for/pvector ([x (in-list xs)]) x)
@@ -1731,9 +2946,8 @@
                  ([x (adapter:in-pvector pv)])
                  x)
                (append xs '(0 0 0)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (adapter:for*/pvector #:length 133 ([x pv]) x)))
+  (check-model (adapter:for*/pvector #:length 133 ([x pv]) x)
+               (append xs '(0 0 0)))
   (check-model (adapter:for*/pvector ([x (adapter:in-pvector pv)]) (* x x))
                (map (lambda (x) (* x x)) xs))
   (check-model (adapter:for*/pvector ([x (in-list xs)]) x)

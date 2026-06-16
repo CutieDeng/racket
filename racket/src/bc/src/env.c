@@ -328,6 +328,7 @@ static void init_startup_env(void)
   init_unsafe(env);
   init_foreign(env);
   init_unsafe_internal(env);
+  scheme_init_pvector_late(env);
   
 #if USE_COMPILED_STARTUP
   if (builtin_ref_counter != EXPECTED_PRIM_COUNT) {

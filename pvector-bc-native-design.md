@@ -342,8 +342,10 @@ printer：
 sequence/stream：
 
 - public 层提供 `prop:sequence` 等价能力或 `in-pvector`。
-- runtime 提供直接 iterator state：pvector + index + length。
-- `for` 遍历不应每步重新做 public bounds/type check。
+- 常规 `for` 遍历优先使用 `unsafe-pvector-ref`/length 的 checked-once 路径，
+  利用 JIT inline 避免每步 public bounds/type check。
+- runtime cursor 保留为 BC-native 内部对象，作为超大 pvector 的 sequence fallback；
+  当前阈值为 32768，低于该阈值时不应为了 cursor 分配固定对象。
 
 serialization/place：
 

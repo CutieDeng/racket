@@ -637,18 +637,26 @@ pvector_node_obj {
     int i;
     for (i = digit->count; i--; )
       gcMARK2(digit->els[i], gc);
-  } else {
+  } else if (SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE) {
     Scheme_PVector_Node *node = (Scheme_PVector_Node *)p;
     gcMARK2(node->a, gc);
     gcMARK2(node->b, gc);
     if (node->arity == 3)
       gcMARK2(node->c, gc);
+  } else {
+    Scheme_PVector_Cursor *cursor = (Scheme_PVector_Cursor *)p;
+    gcMARK2(cursor->pv, gc);
+    gcMARK2(cursor->leaf, gc);
+    gcMARK2(cursor->stack, gc);
+    gcMARK2(cursor->stack_indexes, gc);
   }
 
  size:
   ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT)
    ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Digit))
-   : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node)));
+   : ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE)
+      ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node))
+      : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Cursor))));
 }
 
 fxvector_obj {

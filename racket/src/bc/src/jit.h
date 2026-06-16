@@ -320,6 +320,7 @@ struct scheme_jit_common_record {
   void *unbox_code, *set_box_code, *unbox_star_fail_code, *set_box_star_fail_code, *box_cas_fail_code, *weak_box_value_code;
   void *vector_cas_fail_code;
   void *bad_vector_length_code, *bad_vector_star_length_code;
+  void *bad_pvector_length_code;
   void *bad_flvector_length_code;
   void *bad_fxvector_length_code;
   void *bad_string_length_code;

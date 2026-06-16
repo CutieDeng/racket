@@ -414,6 +414,7 @@ typedef struct Scheme_Vector {
 
 #define SCHEME_PVECTOR_NODE_DIGIT 1
 #define SCHEME_PVECTOR_NODE_TREE 2
+#define SCHEME_PVECTOR_NODE_CURSOR 3
 
 typedef struct Scheme_PVector {
   Scheme_Inclhash_Object iso;
@@ -448,6 +449,20 @@ typedef struct Scheme_PVector_Node {
   Scheme_Object *b;
   Scheme_Object *c;
 } Scheme_PVector_Node;
+
+typedef struct Scheme_PVector_Cursor {
+  Scheme_Object so;
+  unsigned char kind;
+  unsigned char segment;
+  unsigned char offset;
+  unsigned char count;
+  int depth;
+  Scheme_Object *pv;
+  Scheme_Object *leaf;
+  Scheme_Object *stack;
+  Scheme_Object *stack_indexes;
+  int reverse;
+} Scheme_PVector_Cursor;
 
 # define SHARED_ALLOCATED 0x2
 # define SHARED_ALLOCATEDP(so) (MZ_OPT_HASH_KEY((Scheme_Inclhash_Object *)(so)) & SHARED_ALLOCATED)
@@ -725,6 +740,8 @@ typedef intptr_t (*Scheme_Secondary_Hash_Proc)(Scheme_Object *obj, void *cycle_d
 #define SCHEME_PVECTOR_NODE_A(obj) (((Scheme_PVector_Node *)(obj))->a)
 #define SCHEME_PVECTOR_NODE_B(obj) (((Scheme_PVector_Node *)(obj))->b)
 #define SCHEME_PVECTOR_NODE_C(obj) (((Scheme_PVector_Node *)(obj))->c)
+
+#define SCHEME_PVECTOR_CURSORP(obj) (SCHEME_PVECTOR_NODEP(obj) && (SCHEME_PVECTOR_NODE_KIND(obj) == SCHEME_PVECTOR_NODE_CURSOR))
 
 #define SCHEME_FLVEC_SIZE(obj) (((Scheme_Double_Vector *)(obj))->size)
 #define SCHEME_FLVEC_ELS(obj)  (((Scheme_Double_Vector *)(obj))->els)

@@ -15,37 +15,37 @@
          racket/unsafe/ops
          (for-syntax racket/base))
 
-(provide pvector?
-         pvector-empty
-         pvector-empty?
+(provide (rename-out [exported-pvector? pvector?]
+                     [exported-pvector-empty pvector-empty]
+                     [exported-pvector-empty? pvector-empty?]
+                     [exported-pvector->list pvector->list]
+                     [exported-pvector->vector pvector->vector]
+                     [exported-pvector-length pvector-length]
+                     [exported-pvector-ref pvector-ref]
+                     [exported-pvector-set pvector-set]
+                     [exported-pvector-first pvector-first]
+                     [exported-pvector-last pvector-last]
+                     [exported-pvector-cons-left pvector-cons-left]
+                     [exported-pvector-cons-right pvector-cons-right]
+                     [exported-pvector-pop-left pvector-pop-left]
+                     [exported-pvector-pop-right pvector-pop-right]
+                     [exported-pvector-append pvector-append]
+                     [exported-pvector-map pvector-map]
+                     [exported-pvector-for-each pvector-for-each]
+                     [exported-pvector-insert pvector-insert]
+                     [exported-pvector-delete pvector-delete]
+                     [exported-pvector-take pvector-take]
+                     [exported-pvector-drop pvector-drop]
+                     [exported-pvector-take-right pvector-take-right]
+                     [exported-pvector-drop-right pvector-drop-right]
+                     [exported-pvector-split pvector-split]
+                     [exported-pvector-split-at pvector-split-at])
          pvector
          make-pvector
          list->pvector
-         pvector->list
          vector->pvector
-         pvector->vector
          sequence->pvector
-         pvector-length
-         pvector-ref
-         pvector-set
-         pvector-first
-         pvector-last
-         pvector-cons-left
-         pvector-cons-right
-         pvector-pop-left
-         pvector-pop-right
-         pvector-append
-         pvector-map
-         pvector-for-each
-         pvector-insert
-         pvector-delete
-         pvector-take
-         pvector-drop
-         pvector-take-right
-         pvector-drop-right
          pvector-subvector
-         pvector-split
-         pvector-split-at
          in-pvector
          in-pvector-reverse
          for/pvector
@@ -66,14 +66,14 @@
   (lambda (pv) (in-pvector pv))
   #:property prop:stream
   (vector
-   (lambda (pv) (unsafe-fx= 0 (pvector-wrapper-length/unsafe pv)))
-   (lambda (pv) (raw:pvector-view-left (pvector-wrapper-tree/unsafe pv)))
+   (lambda (pv) (unsafe-fx= 0 (pvector-length/unsafe pv)))
+   (lambda (pv) (raw:pvector-view-left/fast (pvector-tree/unsafe pv)))
    (lambda (pv)
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (if (unsafe-fx= len 1)
          empty-pvector
          (let-values ([(_ rest)
-                       (raw:pvector-pop-left (pvector-wrapper-tree/unsafe pv))])
+                       (raw:pvector-pop-left (pvector-tree/unsafe pv))])
            (wrap/len rest (unsafe-fx- len 1))))))
   #:property prop:serializable
   (make-serialize-info
@@ -97,34 +97,56 @@
      (lambda () (error "should not get here; cycles not supported"))))
   (module declare-preserve-for-embedding racket/kernel))
 
+(define direct-raw-sequence?
+  (raw:pvector-runtime-adapter-core-available?))
+
+(define bc-native-public?
+  (and direct-raw-sequence?
+       (eq? (system-type 'vm) 'racket)))
+
 (define empty-pvector
-  (pvector-wrapper (raw:pvector-empty) 0))
+  (if bc-native-public?
+      (raw:pvector-empty)
+      (pvector-wrapper (raw:pvector-empty) 0)))
 
-(define pvector? pvector-wrapper?)
+(define (raw-core-pvector? v)
+  (and bc-native-public?
+       (raw:pvector? v)))
 
-(define (pvector-wrapper-tree/unsafe pv)
-  (unsafe-struct-ref pv 0))
+(define (pvector? v)
+  (if bc-native-public?
+      (raw:pvector? v)
+      (pvector-wrapper? v)))
 
-(define (pvector-wrapper-length/unsafe pv)
-  (unsafe-struct-ref pv 1))
+(define (pvector-tree/unsafe pv)
+  (if (pvector-wrapper? pv)
+      (unsafe-struct-ref pv 0)
+      pv))
+
+(define (pvector-length/unsafe pv)
+  (if (pvector-wrapper? pv)
+      (unsafe-struct-ref pv 1)
+      (raw:pvector-length/fast pv)))
 
 (define (wrap/len tree len)
-  (if (zero? len)
-      empty-pvector
-      (pvector-wrapper tree len)))
+  (cond
+    [bc-native-public? tree]
+    [(zero? len) empty-pvector]
+    [else (pvector-wrapper tree len)]))
 
 (define (wrap tree)
-  (if (raw:pvector-empty? tree)
-      empty-pvector
-      (pvector-wrapper tree (raw:pvector-length tree))))
+  (cond
+    [bc-native-public? tree]
+    [(raw:pvector-empty? tree) empty-pvector]
+    [else (pvector-wrapper tree (raw:pvector-length tree))]))
 
 (define (check-pvector who v)
-  (unless (pvector-wrapper? v)
+  (unless (pvector? v)
     (raise-argument-error who "pvector?" v))
   v)
 
 (define (unwrap who v)
-  (pvector-wrapper-tree/unsafe (check-pvector who v)))
+  (pvector-tree/unsafe (check-pvector who v)))
 
 (define (check-nonnegative-integer who n)
   (unless (exact-nonnegative-integer? n)
@@ -133,7 +155,7 @@
 
 (define (checked-wrapper+length who pv)
   (define pv* (check-pvector who pv))
-  (values pv* (pvector-wrapper-length/unsafe pv*)))
+  (values pv* (pvector-length/unsafe pv*)))
 
 (define (check-index/wrapper who pv index)
   (check-nonnegative-integer who index)
@@ -171,56 +193,30 @@
 (define (pvector-empty? v)
   (eq? v empty-pvector))
 
-(define (regular-chunk-size chunks chunk-count)
-  (cond
-    [(unsafe-fx= chunk-count 0) 1]
-    [else
-     (define size (unsafe-vector-length (unsafe-vector-ref chunks 0)))
-     (and (unsafe-fx> size 0)
-          (let loop ([chunk-pos 1])
-            (cond
-              [(unsafe-fx= chunk-pos chunk-count) size]
-              [(unsafe-fx= chunk-pos (unsafe-fx- chunk-count 1))
-               (and (unsafe-fx<= (unsafe-vector-length (unsafe-vector-ref chunks chunk-pos))
-                                  size)
-                    size)]
-              [(unsafe-fx= (unsafe-vector-length (unsafe-vector-ref chunks chunk-pos))
-                           size)
-               (loop (unsafe-fx+ chunk-pos 1))]
-              [else #f])))]))
-
-(define (shifted-regular-chunk-layout chunks chunk-count)
-  (and (unsafe-fx> chunk-count 1)
-       (let ([first-len (unsafe-vector-length (unsafe-vector-ref chunks 0))]
-             [size (unsafe-vector-length (unsafe-vector-ref chunks 1))])
-         (and (unsafe-fx> first-len 0)
-              (unsafe-fx> size 0)
-              (unsafe-fx<= first-len size)
-              (let loop ([chunk-pos 2])
-                (cond
-                  [(unsafe-fx= chunk-pos chunk-count) (cons first-len size)]
-                  [(unsafe-fx= chunk-pos (unsafe-fx- chunk-count 1))
-                   (and (unsafe-fx<=
-                         (unsafe-vector-length (unsafe-vector-ref chunks chunk-pos))
-                         size)
-                        (cons first-len size))]
-                  [(unsafe-fx= (unsafe-vector-length
-                                (unsafe-vector-ref chunks chunk-pos))
-                               size)
-                   (loop (unsafe-fx+ chunk-pos 1))]
-                  [else #f]))))))
-
 (define (pvector-gen-sequence pv)
-  (define vec (raw:pvector->vector (pvector-wrapper-tree/unsafe pv)))
-  (define len (unsafe-vector-length vec))
-  (values
-   (lambda (index) (unsafe-vector-ref vec index))
-   #f
-   (lambda (index) (unsafe-fx+ index 1))
-   0
-   (lambda (index) (unsafe-fx< index len))
-   #f
-   #f))
+  (define tree (pvector-tree/unsafe pv))
+  (cond
+    [direct-raw-sequence?
+     (define len (pvector-length/unsafe pv))
+     (values
+      (lambda (index) (raw:pvector-ref/fast tree index))
+      #f
+      (lambda (index) (unsafe-fx+ index 1))
+      0
+      (lambda (index) (unsafe-fx< index len))
+      #f
+      #f)]
+    [else
+     (define vec (raw:pvector->vector tree))
+     (define len (unsafe-vector-length vec))
+     (values
+      (lambda (index) (unsafe-vector-ref vec index))
+      #f
+      (lambda (index) (unsafe-fx+ index 1))
+      0
+      (lambda (index) (unsafe-fx< index len))
+      #f
+      #f)]))
 
 (define (small-immutable-vector->pvector vec len)
   (wrap/len (raw:small-immutable-vector->pvector vec len) len))
@@ -245,7 +241,7 @@
             len))
 
 (begin-for-syntax
-  (define pvector-single-chunk-arity-limit 64)
+  (define pvector-inline-vector-arity-limit 64)
   (define pvector-fixed-vector-arity-limit 112)
 
   (define (direct-small-values->pvector elem-stxs)
@@ -281,7 +277,7 @@
       [(= len 4)
        (with-syntax ([(a b c d) ids])
          #'[(a b c d) (four-values->pvector a b c d)])]
-      [(<= len pvector-single-chunk-arity-limit)
+      [(<= len pvector-inline-vector-arity-limit)
        (with-syntax ([(elem ...) ids]
                      [len (datum->syntax stx len)])
          #'[(elem ...)
@@ -397,19 +393,19 @@
 (define (pvector->list pv)
   (cond
     [(eq? pv empty-pvector) null]
-    [(pvector-wrapper? pv)
-     (define tree (pvector-wrapper-tree/unsafe pv))
-     (case (pvector-wrapper-length/unsafe pv)
-       [(1) (list (raw:pvector-view-left tree))]
-       [(2) (list (raw:pvector-view-left tree)
-                  (raw:pvector-view-right tree))]
-       [(3) (list (raw:pvector-view-left tree)
-                  (raw:pvector-ref tree 1)
-                  (raw:pvector-view-right tree))]
-       [(4) (list (raw:pvector-view-left tree)
-                  (raw:pvector-ref tree 1)
-                  (raw:pvector-ref tree 2)
-                  (raw:pvector-view-right tree))]
+    [(pvector? pv)
+     (define tree (pvector-tree/unsafe pv))
+     (case (pvector-length/unsafe pv)
+       [(1) (list (raw:pvector-view-left/fast tree))]
+       [(2) (list (raw:pvector-view-left/fast tree)
+                  (raw:pvector-view-right/fast tree))]
+       [(3) (list (raw:pvector-view-left/fast tree)
+                  (raw:pvector-ref/fast tree 1)
+                  (raw:pvector-view-right/fast tree))]
+       [(4) (list (raw:pvector-view-left/fast tree)
+                  (raw:pvector-ref/fast tree 1)
+                  (raw:pvector-ref/fast tree 2)
+                  (raw:pvector-view-right/fast tree))]
        [else (raw:pvector->list tree)])]
     [else
      (raw:pvector->list (unwrap 'pvector->list pv))]))
@@ -444,19 +440,19 @@
 (define (pvector->vector pv)
   (cond
     [(eq? pv empty-pvector) (make-vector 0)]
-    [(pvector-wrapper? pv)
-     (define tree (pvector-wrapper-tree/unsafe pv))
-     (case (pvector-wrapper-length/unsafe pv)
-       [(1) (vector (raw:pvector-view-left tree))]
-       [(2) (vector (raw:pvector-view-left tree)
-                    (raw:pvector-view-right tree))]
-       [(3) (vector (raw:pvector-view-left tree)
-                    (raw:pvector-ref tree 1)
-                    (raw:pvector-view-right tree))]
-       [(4) (vector (raw:pvector-view-left tree)
-                    (raw:pvector-ref tree 1)
-                    (raw:pvector-ref tree 2)
-                    (raw:pvector-view-right tree))]
+    [(pvector? pv)
+     (define tree (pvector-tree/unsafe pv))
+     (case (pvector-length/unsafe pv)
+       [(1) (vector (raw:pvector-view-left/fast tree))]
+       [(2) (vector (raw:pvector-view-left/fast tree)
+                    (raw:pvector-view-right/fast tree))]
+       [(3) (vector (raw:pvector-view-left/fast tree)
+                    (raw:pvector-ref/fast tree 1)
+                    (raw:pvector-view-right/fast tree))]
+       [(4) (vector (raw:pvector-view-left/fast tree)
+                    (raw:pvector-ref/fast tree 1)
+                    (raw:pvector-ref/fast tree 2)
+                    (raw:pvector-view-right/fast tree))]
        [else (raw:pvector->vector tree)])]
     [else
      (raw:pvector->vector (unwrap 'pvector->vector pv))]))
@@ -614,7 +610,7 @@
   (let ()
     (define (sequence->pvector seq)
       (cond
-        [(pvector-wrapper? seq) seq]
+        [(pvector? seq) seq]
         [(list? seq) (list->pvector seq)]
         [(vector? seq) (vector->pvector seq)]
         [(exact-nonnegative-integer? seq)
@@ -636,13 +632,13 @@
   (syntax-case stx (in-range in-list in-vector in-pvector in-pvector-reverse)
     [(_ (in-pvector pv-expr))
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
+         (if (pvector? pv)
              pv
              (sequence->pvector/proc (in-pvector pv))))]
     [(_ (in-pvector-reverse pv-expr))
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
-             (for/pvector #:length (pvector-wrapper-length/unsafe pv)
+         (if (pvector? pv)
+             (for/pvector #:length (pvector-length/unsafe pv)
                           ([elem (in-pvector-reverse pv)])
                elem)
              (sequence->pvector/proc (in-pvector-reverse pv))))]
@@ -683,61 +679,61 @@
 
 (begin-encourage-inline
   (define (pvector-length pv)
-    (unless (pvector-wrapper? pv)
+    (unless (pvector? pv)
       (raise-argument-error 'pvector-length "pvector?" pv))
-    (pvector-wrapper-length/unsafe pv))
+    (pvector-length/unsafe pv))
 
   (define (pvector-ref pv index)
     (cond
       [(and (fixnum? index) (unsafe-fx>= index 0))
-       (unless (pvector-wrapper? pv)
+       (unless (pvector? pv)
          (raise-argument-error 'pvector-ref "pvector?" pv))
        (if (unsafe-fx= index 0)
            (begin
              (when (eq? pv empty-pvector)
                (raise-range-error 'pvector-ref "pvector" "" index pv 0 -1))
-             (raw:pvector-view-left (pvector-wrapper-tree/unsafe pv)))
-           (let ([len (pvector-wrapper-length/unsafe pv)])
+             (raw:pvector-view-left/fast (pvector-tree/unsafe pv)))
+           (let ([len (pvector-length/unsafe pv)])
              (when (unsafe-fx>= index len)
                (raise-range-error 'pvector-ref "pvector" "" index pv 0 (sub1 len)))
-             (define tree (pvector-wrapper-tree/unsafe pv))
+             (define tree (pvector-tree/unsafe pv))
              (if (unsafe-fx= index (unsafe-fx- len 1))
-                 (raw:pvector-view-right tree)
-                 (raw:pvector-ref tree index))))]
+                 (raw:pvector-view-right/fast tree)
+                 (raw:pvector-ref/fast tree index))))]
       [else
        (check-nonnegative-integer 'pvector-ref index)
-       (unless (pvector-wrapper? pv)
+       (unless (pvector? pv)
          (raise-argument-error 'pvector-ref "pvector?" pv))
-       (define len (pvector-wrapper-length/unsafe pv))
+       (define len (pvector-length/unsafe pv))
        (when (>= index len)
          (raise-range-error 'pvector-ref "pvector" "" index pv 0 (sub1 len)))
-       (define tree (pvector-wrapper-tree/unsafe pv))
+       (define tree (pvector-tree/unsafe pv))
        (cond
-         [(zero? index) (raw:pvector-view-left tree)]
-         [(= index (sub1 len)) (raw:pvector-view-right tree)]
+         [(zero? index) (raw:pvector-view-left/fast tree)]
+         [(= index (sub1 len)) (raw:pvector-view-right/fast tree)]
          [else (raw:pvector-ref tree index)])]))
 
   (define (pvector-set pv index value)
     (cond
       [(and (fixnum? index) (unsafe-fx>= index 0))
-       (unless (pvector-wrapper? pv)
+       (unless (pvector? pv)
          (raise-argument-error 'pvector-set "pvector?" pv))
-       (define len (pvector-wrapper-length/unsafe pv))
+       (define len (pvector-length/unsafe pv))
        (when (unsafe-fx>= index len)
          (raise-range-error 'pvector-set "pvector" "" index pv 0 (sub1 len)))
-       (define tree (pvector-wrapper-tree/unsafe pv))
+       (define tree (pvector-tree/unsafe pv))
        (define tree^ (raw:pvector-set tree index value))
        (if (eq? tree^ tree)
            pv
            (wrap/len tree^ len))]
       [else
        (check-nonnegative-integer 'pvector-set index)
-       (unless (pvector-wrapper? pv)
+       (unless (pvector? pv)
          (raise-argument-error 'pvector-set "pvector?" pv))
-       (define len (pvector-wrapper-length/unsafe pv))
+       (define len (pvector-length/unsafe pv))
        (when (>= index len)
          (raise-range-error 'pvector-set "pvector" "" index pv 0 (sub1 len)))
-       (define tree (pvector-wrapper-tree/unsafe pv))
+       (define tree (pvector-tree/unsafe pv))
        (define tree^ (raw:pvector-set tree index value))
        (if (eq? tree^ tree)
            pv
@@ -746,39 +742,39 @@
   (define (pvector-first pv)
     (when (eq? pv empty-pvector)
       (raise-arguments-error 'pvector-first "pvector is empty" "pvector" pv))
-    (unless (pvector-wrapper? pv)
+    (unless (pvector? pv)
       (raise-argument-error 'pvector-first "pvector?" pv))
-    (raw:pvector-view-left (pvector-wrapper-tree/unsafe pv)))
+    (raw:pvector-view-left/fast (pvector-tree/unsafe pv)))
 
   (define (pvector-last pv)
     (when (eq? pv empty-pvector)
       (raise-arguments-error 'pvector-last "pvector is empty" "pvector" pv))
-    (unless (pvector-wrapper? pv)
+    (unless (pvector? pv)
       (raise-argument-error 'pvector-last "pvector?" pv))
-    (raw:pvector-view-right (pvector-wrapper-tree/unsafe pv)))
+    (raw:pvector-view-right/fast (pvector-tree/unsafe pv)))
 
   (define (pvector-cons-left pv value)
-    (unless (pvector-wrapper? pv)
+    (unless (pvector? pv)
       (raise-argument-error 'pvector-cons-left "pvector?" pv))
-    (wrap/len (raw:pvector-cons-left (pvector-wrapper-tree/unsafe pv) value)
-              (unsafe-fx+ (pvector-wrapper-length/unsafe pv) 1)))
+    (wrap/len (raw:pvector-cons-left (pvector-tree/unsafe pv) value)
+              (unsafe-fx+ (pvector-length/unsafe pv) 1)))
 
   (define (pvector-cons-right pv value)
-    (unless (pvector-wrapper? pv)
+    (unless (pvector? pv)
       (raise-argument-error 'pvector-cons-right "pvector?" pv))
-    (wrap/len (raw:pvector-cons-right (pvector-wrapper-tree/unsafe pv) value)
-              (unsafe-fx+ (pvector-wrapper-length/unsafe pv) 1)))
+    (wrap/len (raw:pvector-cons-right (pvector-tree/unsafe pv) value)
+              (unsafe-fx+ (pvector-length/unsafe pv) 1)))
 
   (define (pvector-pop-left pv)
     (cond
-      [(pvector-wrapper? pv)
-       (define len (pvector-wrapper-length/unsafe pv))
-       (define tree (pvector-wrapper-tree/unsafe pv))
+      [(pvector? pv)
+       (define len (pvector-length/unsafe pv))
+       (define tree (pvector-tree/unsafe pv))
        (cond
          [(unsafe-fx= len 0)
           (raise-arguments-error 'pvector-pop-left "pvector is empty" "pvector" pv)]
          [(unsafe-fx= len 1)
-          (values (raw:pvector-view-left tree) empty-pvector)]
+          (values (raw:pvector-view-left/fast tree) empty-pvector)]
          [else
           (let-values ([(value rest) (raw:pvector-pop-left tree)])
             (values value (wrap/len rest (unsafe-fx- len 1))))])]
@@ -787,14 +783,14 @@
 
   (define (pvector-pop-right pv)
     (cond
-      [(pvector-wrapper? pv)
-       (define len (pvector-wrapper-length/unsafe pv))
-       (define tree (pvector-wrapper-tree/unsafe pv))
+      [(pvector? pv)
+       (define len (pvector-length/unsafe pv))
+       (define tree (pvector-tree/unsafe pv))
        (cond
          [(unsafe-fx= len 0)
           (raise-arguments-error 'pvector-pop-right "pvector is empty" "pvector" pv)]
          [(unsafe-fx= len 1)
-          (values (raw:pvector-view-right tree) empty-pvector)]
+          (values (raw:pvector-view-right/fast tree) empty-pvector)]
          [else
           (let-values ([(value rest) (raw:pvector-pop-right tree)])
             (values value (wrap/len rest (unsafe-fx- len 1))))])]
@@ -803,27 +799,27 @@
 
 (define (pvector-append pv0 pv1)
   (cond
-    [(and (pvector-wrapper? pv0) (pvector-wrapper? pv1))
-     (define left-len (pvector-wrapper-length/unsafe pv0))
-     (define right-len (pvector-wrapper-length/unsafe pv1))
+    [(and (pvector? pv0) (pvector? pv1))
+     (define left-len (pvector-length/unsafe pv0))
+     (define right-len (pvector-length/unsafe pv1))
      (cond
        [(unsafe-fx= left-len 0) pv1]
        [(unsafe-fx= right-len 0) pv0]
        [else
-        (wrap/len (raw:pvector-append (pvector-wrapper-tree/unsafe pv0)
-                                      (pvector-wrapper-tree/unsafe pv1))
+        (wrap/len (raw:pvector-append (pvector-tree/unsafe pv0)
+                                      (pvector-tree/unsafe pv1))
                   (unsafe-fx+ left-len right-len))])]
     [else
      (define left (check-pvector 'pvector-append pv0))
      (define right (check-pvector 'pvector-append pv1))
-     (define left-len (pvector-wrapper-length/unsafe left))
-     (define right-len (pvector-wrapper-length/unsafe right))
+     (define left-len (pvector-length/unsafe left))
+     (define right-len (pvector-length/unsafe right))
      (cond
        [(unsafe-fx= left-len 0) right]
        [(unsafe-fx= right-len 0) left]
        [else
-        (wrap/len (raw:pvector-append (pvector-wrapper-tree/unsafe left)
-                                      (pvector-wrapper-tree/unsafe right))
+        (wrap/len (raw:pvector-append (pvector-tree/unsafe left)
+                                      (pvector-tree/unsafe right))
                   (unsafe-fx+ left-len right-len))])]))
 
 (define (check-unary-procedure who proc)
@@ -837,78 +833,78 @@
 
 (define (pvector-map pv proc)
   (cond
-    [(and (eq? proc values) (pvector-wrapper? pv)) pv]
+    [(and (eq? proc values) (pvector? pv)) pv]
     [else
      (define pv* (check-pvector 'pvector-map pv))
      (if (eq? proc values)
          pv*
-         (let ([len (pvector-wrapper-length/unsafe pv*)])
+         (let ([len (pvector-length/unsafe pv*)])
            (cond
              [(eq? proc void) (make-pvector/known-length len (void))]
              [else
               (check-unary-procedure 'pvector-map proc)
               (cond
                 [(unsafe-fx> len 0)
-                 (wrap/len (raw:pvector-map (pvector-wrapper-tree/unsafe pv*) proc) len)]
+                 (wrap/len (raw:pvector-map (pvector-tree/unsafe pv*) proc) len)]
                 [else empty-pvector])])))]))
 
 (define (pvector-for-each pv proc)
   (cond
     [(and (or (eq? proc void)
               (eq? proc values))
-          (pvector-wrapper? pv))
+          (pvector? pv))
      (void)]
     [else
      (define pv* (check-pvector 'pvector-for-each pv))
      (unless (or (eq? proc void)
                  (eq? proc values))
        (check-unary-procedure 'pvector-for-each proc)
-       (define len (pvector-wrapper-length/unsafe pv*))
+       (define len (pvector-length/unsafe pv*))
        (cond
          [(unsafe-fx> len 1)
-          (raw:pvector-for-each (pvector-wrapper-tree/unsafe pv*) proc)]
+          (raw:pvector-for-each (pvector-tree/unsafe pv*) proc)]
          [(unsafe-fx= len 1)
-          (proc (raw:pvector-view-left (pvector-wrapper-tree/unsafe pv*)))]))
+          (proc (raw:pvector-view-left/fast (pvector-tree/unsafe pv*)))]))
      (void)]))
 
 (define (pvector-insert pv index value)
   (cond
     [(and (fixnum? index) (unsafe-fx>= index 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-insert "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (when (unsafe-fx> index len)
        (raise-range-error 'pvector-insert "pvector" "" index pv 0 len))
-     (wrap/len (raw:pvector-insert (pvector-wrapper-tree/unsafe pv) index value)
+     (wrap/len (raw:pvector-insert (pvector-tree/unsafe pv) index value)
                (unsafe-fx+ len 1))]
     [else
      (define-values (pv* len) (check-end-index/wrapper 'pvector-insert pv index))
-     (wrap/len (raw:pvector-insert (pvector-wrapper-tree/unsafe pv*) index value)
+     (wrap/len (raw:pvector-insert (pvector-tree/unsafe pv*) index value)
                (unsafe-fx+ len 1))]))
 
 (define (pvector-delete pv index)
   (cond
-    [(and (eqv? index 0) (pvector-wrapper? pv))
-     (define len (pvector-wrapper-length/unsafe pv))
-     (define tree (pvector-wrapper-tree/unsafe pv))
+    [(and (eqv? index 0) (pvector? pv))
+     (define len (pvector-length/unsafe pv))
+     (define tree (pvector-tree/unsafe pv))
      (cond
        [(unsafe-fx= len 0)
         (raise-range-error 'pvector-delete "pvector" "" index pv 0 -1)]
        [(unsafe-fx= len 1)
-        (values empty-pvector (raw:pvector-view-left tree))]
+        (values empty-pvector (raw:pvector-view-left/fast tree))]
        [else
         (let-values ([(value rest) (raw:pvector-pop-left tree)])
           (values (wrap/len rest (unsafe-fx- len 1)) value))])]
     [(and (fixnum? index) (unsafe-fx>= index 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-delete "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
-     (define tree (pvector-wrapper-tree/unsafe pv))
+     (define len (pvector-length/unsafe pv))
+     (define tree (pvector-tree/unsafe pv))
      (cond
        [(unsafe-fx>= index len)
         (raise-range-error 'pvector-delete "pvector" "" index pv 0 (unsafe-fx- len 1))]
        [(unsafe-fx= len 1)
-        (values empty-pvector (raw:pvector-view-left tree))]
+        (values empty-pvector (raw:pvector-view-left/fast tree))]
        [(unsafe-fx= index 0)
         (let-values ([(value rest) (raw:pvector-pop-left tree)])
           (values (wrap/len rest (unsafe-fx- len 1)) value))]
@@ -920,106 +916,106 @@
           (values (wrap/len rest (unsafe-fx- len 1)) value))])]
     [else
      (define-values (pv* len) (check-index/wrapper 'pvector-delete pv index))
-     (define tree (pvector-wrapper-tree/unsafe pv*))
+     (define tree (pvector-tree/unsafe pv*))
      (if (unsafe-fx= len 1)
-         (values empty-pvector (raw:pvector-view-left tree))
+         (values empty-pvector (raw:pvector-view-left/fast tree))
          (let-values ([(rest value) (raw:pvector-delete tree index)])
            (values (wrap/len rest (unsafe-fx- len 1)) value)))]))
 
 (define (pvector-take pv pos)
   (cond
     [(eqv? pos 0)
-     (if (pvector-wrapper? pv)
+     (if (pvector? pv)
          empty-pvector
          (begin
            (check-pvector 'pvector-take pv)
            empty-pvector))]
     [(and (fixnum? pos) (unsafe-fx>= pos 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-take "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (cond
        [(unsafe-fx> pos len)
         (raise-range-error 'pvector-take "pvector" "" pos pv 0 len)]
        [(unsafe-fx= pos len) pv]
-       [else (wrap/len (raw:pvector-take (pvector-wrapper-tree/unsafe pv) pos) pos)])]
+       [else (wrap/len (raw:pvector-take (pvector-tree/unsafe pv) pos) pos)])]
     [else
      (define-values (pv* len) (check-end-index/wrapper 'pvector-take pv pos))
      (cond
        [(zero? pos) empty-pvector]
        [(= pos len) pv*]
-       [else (wrap/len (raw:pvector-take (pvector-wrapper-tree/unsafe pv*) pos) pos)])]))
+       [else (wrap/len (raw:pvector-take (pvector-tree/unsafe pv*) pos) pos)])]))
 
 (define (pvector-drop pv pos)
   (cond
     [(eqv? pos 0)
-     (if (pvector-wrapper? pv)
+     (if (pvector? pv)
          pv
          (check-pvector 'pvector-drop pv))]
     [(and (fixnum? pos) (unsafe-fx>= pos 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-drop "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (cond
        [(unsafe-fx> pos len)
         (raise-range-error 'pvector-drop "pvector" "" pos pv 0 len)]
        [(unsafe-fx= pos len) empty-pvector]
-       [else (wrap/len (raw:pvector-drop (pvector-wrapper-tree/unsafe pv) pos)
+       [else (wrap/len (raw:pvector-drop (pvector-tree/unsafe pv) pos)
                        (unsafe-fx- len pos))])]
     [else
      (define-values (pv* len) (check-end-index/wrapper 'pvector-drop pv pos))
      (cond
        [(zero? pos) pv*]
        [(= pos len) empty-pvector]
-       [else (wrap/len (raw:pvector-drop (pvector-wrapper-tree/unsafe pv*) pos)
+       [else (wrap/len (raw:pvector-drop (pvector-tree/unsafe pv*) pos)
                        (unsafe-fx- len pos))])]))
 
 (define (pvector-take-right pv pos)
   (cond
     [(eqv? pos 0)
-     (if (pvector-wrapper? pv)
+     (if (pvector? pv)
          empty-pvector
          (begin
            (check-pvector 'pvector-take-right pv)
            empty-pvector))]
     [(and (fixnum? pos) (unsafe-fx>= pos 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-take-right "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (cond
        [(unsafe-fx> pos len)
         (raise-range-error 'pvector-take-right "pvector" "" pos pv 0 len)]
        [(unsafe-fx= pos len) pv]
-       [else (wrap/len (raw:pvector-take-right (pvector-wrapper-tree/unsafe pv) pos) pos)])]
+       [else (wrap/len (raw:pvector-take-right (pvector-tree/unsafe pv) pos) pos)])]
     [else
      (define-values (pv* len) (check-end-index/wrapper 'pvector-take-right pv pos))
      (cond
        [(zero? pos) empty-pvector]
        [(= pos len) pv*]
-       [else (wrap/len (raw:pvector-take-right (pvector-wrapper-tree/unsafe pv*) pos) pos)])]))
+       [else (wrap/len (raw:pvector-take-right (pvector-tree/unsafe pv*) pos) pos)])]))
 
 (define (pvector-drop-right pv pos)
   (cond
     [(eqv? pos 0)
-     (if (pvector-wrapper? pv)
+     (if (pvector? pv)
          pv
          (check-pvector 'pvector-drop-right pv))]
     [(and (fixnum? pos) (unsafe-fx>= pos 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-drop-right "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (cond
        [(unsafe-fx> pos len)
         (raise-range-error 'pvector-drop-right "pvector" "" pos pv 0 len)]
        [(unsafe-fx= pos len) empty-pvector]
-       [else (wrap/len (raw:pvector-drop-right (pvector-wrapper-tree/unsafe pv) pos)
+       [else (wrap/len (raw:pvector-drop-right (pvector-tree/unsafe pv) pos)
                        (unsafe-fx- len pos))])]
     [else
      (define-values (pv* len) (check-end-index/wrapper 'pvector-drop-right pv pos))
      (cond
        [(zero? pos) pv*]
        [(= pos len) empty-pvector]
-       [else (wrap/len (raw:pvector-drop-right (pvector-wrapper-tree/unsafe pv*) pos)
+       [else (wrap/len (raw:pvector-drop-right (pvector-tree/unsafe pv*) pos)
                        (unsafe-fx- len pos))])]))
 
 (define (pvector-subvector/finish pv* len start end)
@@ -1028,10 +1024,10 @@
     [(unsafe-fx= new-len 0) empty-pvector]
     [(and (unsafe-fx= start 0) (unsafe-fx= end len)) pv*]
     [(unsafe-fx= start 0)
-     (wrap/len (raw:pvector-take (pvector-wrapper-tree/unsafe pv*) end) new-len)]
+     (wrap/len (raw:pvector-take (pvector-tree/unsafe pv*) end) new-len)]
     [(unsafe-fx= end len)
-     (wrap/len (raw:pvector-drop (pvector-wrapper-tree/unsafe pv*) start) new-len)]
-    [else (wrap/len (raw:pvector-copy (pvector-wrapper-tree/unsafe pv*) start end)
+     (wrap/len (raw:pvector-drop (pvector-tree/unsafe pv*) start) new-len)]
+    [else (wrap/len (raw:pvector-copy (pvector-tree/unsafe pv*) start end)
                     new-len)]))
 
 (define pvector-subvector
@@ -1039,13 +1035,13 @@
     [(pv start)
      (cond
        [(eqv? start 0)
-       (if (pvector-wrapper? pv)
+       (if (pvector? pv)
            pv
            (check-pvector 'pvector-subvector pv))]
        [(and (fixnum? start) (unsafe-fx>= start 0))
-        (unless (pvector-wrapper? pv)
+        (unless (pvector? pv)
           (raise-argument-error 'pvector-subvector "pvector?" pv))
-        (define len (pvector-wrapper-length/unsafe pv))
+        (define len (pvector-length/unsafe pv))
         (when (unsafe-fx> start len)
           (raise-range-error 'pvector-subvector "pvector" "" start pv 0 len))
         (pvector-subvector/finish pv len start len)]
@@ -1058,17 +1054,17 @@
     [(pv start end)
      (cond
        [(and (eqv? start 0) (eqv? end 0))
-        (if (pvector-wrapper? pv)
+        (if (pvector? pv)
             empty-pvector
             (begin
               (check-pvector 'pvector-subvector pv)
               empty-pvector))]
        [(and (fixnum? start) (unsafe-fx>= start 0)
              (fixnum? end) (unsafe-fx>= end 0))
-        (unless (pvector-wrapper? pv)
+        (unless (pvector? pv)
           (raise-argument-error 'pvector-subvector "pvector?" pv))
         (define pv* pv)
-        (define len (pvector-wrapper-length/unsafe pv*))
+        (define len (pvector-length/unsafe pv*))
         (cond
           [(unsafe-fx= start end)
            (when (unsafe-fx> start len)
@@ -1079,7 +1075,7 @@
              (raise-range-error 'pvector-subvector "pvector" "" end pv 0 len))
            (if (unsafe-fx= end len)
                pv*
-               (wrap/len (raw:pvector-copy (pvector-wrapper-tree/unsafe pv*) start end)
+               (wrap/len (raw:pvector-copy (pvector-tree/unsafe pv*) start end)
                          end))]
           [else
            (when (unsafe-fx> start len)
@@ -1092,7 +1088,7 @@
                                     "starting index" start
                                     "ending index" end
                                     "pvector" pv))
-           (wrap/len (raw:pvector-copy (pvector-wrapper-tree/unsafe pv*) start end)
+           (wrap/len (raw:pvector-copy (pvector-tree/unsafe pv*) start end)
                      (unsafe-fx- end start))])]
        [else
         (define-values (pv* len start* end*)
@@ -1102,14 +1098,14 @@
 (define (pvector-split pv index)
   (cond
     [(and (fixnum? index) (unsafe-fx>= index 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-split "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (when (unsafe-fx>= index len)
        (raise-range-error 'pvector-split "pvector" "" index pv 0 (unsafe-fx- len 1)))
-     (define tree (pvector-wrapper-tree/unsafe pv))
+     (define tree (pvector-tree/unsafe pv))
      (if (unsafe-fx= len 1)
-         (values empty-pvector (raw:pvector-view-left tree) empty-pvector)
+         (values empty-pvector (raw:pvector-view-left/fast tree) empty-pvector)
          (cond
            [(unsafe-fx= index 0)
             (let-values ([(value right) (raw:pvector-pop-left tree)])
@@ -1124,9 +1120,9 @@
                       (wrap/len right (unsafe-fx- (unsafe-fx- len index) 1))))]))]
     [else
      (define-values (pv* len) (check-index/wrapper 'pvector-split pv index))
-     (define tree (pvector-wrapper-tree/unsafe pv*))
+     (define tree (pvector-tree/unsafe pv*))
      (if (unsafe-fx= len 1)
-         (values empty-pvector (raw:pvector-view-left tree) empty-pvector)
+         (values empty-pvector (raw:pvector-view-left/fast tree) empty-pvector)
          (let-values ([(left value right) (raw:pvector-split tree index)])
            (values (wrap/len left index)
                    value
@@ -1135,20 +1131,20 @@
 (define (pvector-split-at pv pos)
   (cond
     [(eqv? pos 0)
-     (if (pvector-wrapper? pv)
+     (if (pvector? pv)
          (values empty-pvector pv)
          (values empty-pvector (check-pvector 'pvector-split-at pv)))]
     [(and (fixnum? pos) (unsafe-fx> pos 0))
-     (unless (pvector-wrapper? pv)
+     (unless (pvector? pv)
        (raise-argument-error 'pvector-split-at "pvector?" pv))
-     (define len (pvector-wrapper-length/unsafe pv))
+     (define len (pvector-length/unsafe pv))
      (cond
        [(unsafe-fx> pos len)
         (raise-range-error 'pvector-split-at "pvector" "" pos pv 0 len)]
        [(unsafe-fx= pos len) (values pv empty-pvector)]
        [else
         (define-values (left right)
-          (raw:pvector-split-at (pvector-wrapper-tree/unsafe pv) pos))
+          (raw:pvector-split-at (pvector-tree/unsafe pv) pos))
         (values (wrap/len left pos)
                 (wrap/len right (unsafe-fx- len pos)))])]
     [else
@@ -1158,51 +1154,69 @@
        [(= pos len) (values pv* empty-pvector)]
        [else
         (define-values (left right)
-          (raw:pvector-split-at (pvector-wrapper-tree/unsafe pv*) pos))
+          (raw:pvector-split-at (pvector-tree/unsafe pv*) pos))
         (values (wrap/len left pos)
                 (wrap/len right (unsafe-fx- len pos)))])]))
 
 (define (raw-tree-in-pvector/proc tree len)
-  (define vec (raw:pvector->vector tree))
-  (make-do-sequence
-   (lambda ()
-     (values (lambda (index) (unsafe-vector-ref vec index))
-             (lambda (index) (unsafe-fx+ index 1))
-             0
-             (lambda (index) (unsafe-fx< index len))
-             (lambda (elem) #t)
-             (lambda (pos elem) #t)))))
+  (if direct-raw-sequence?
+      (make-do-sequence
+       (lambda ()
+         (values (lambda (index) (raw:pvector-ref/fast tree index))
+                 (lambda (index) (unsafe-fx+ index 1))
+                 0
+                 (lambda (index) (unsafe-fx< index len))
+                 (lambda (elem) #t)
+                 (lambda (pos elem) #t))))
+      (let ([vec (raw:pvector->vector tree)])
+        (make-do-sequence
+         (lambda ()
+           (values (lambda (index) (unsafe-vector-ref vec index))
+                   (lambda (index) (unsafe-fx+ index 1))
+                   0
+                   (lambda (index) (unsafe-fx< index len))
+                   (lambda (elem) #t)
+                   (lambda (pos elem) #t)))))))
 
 (define (raw-tree-in-pvector-reverse/proc tree len)
-  (define vec (raw:pvector->vector tree))
-  (make-do-sequence
-   (lambda ()
-     (values (lambda (index) (unsafe-vector-ref vec index))
-             (lambda (index) (unsafe-fx- index 1))
-             (unsafe-fx- len 1)
-             (lambda (index) (unsafe-fx>= index 0))
-             (lambda (elem) #t)
-             (lambda (pos elem) #t)))))
+  (if direct-raw-sequence?
+      (make-do-sequence
+       (lambda ()
+         (values (lambda (index) (raw:pvector-ref/fast tree index))
+                 (lambda (index) (unsafe-fx- index 1))
+                 (unsafe-fx- len 1)
+                 (lambda (index) (unsafe-fx>= index 0))
+                 (lambda (elem) #t)
+                 (lambda (pos elem) #t))))
+      (let ([vec (raw:pvector->vector tree)])
+        (make-do-sequence
+         (lambda ()
+           (values (lambda (index) (unsafe-vector-ref vec index))
+                   (lambda (index) (unsafe-fx- index 1))
+                   (unsafe-fx- len 1)
+                   (lambda (index) (unsafe-fx>= index 0))
+                   (lambda (elem) #t)
+                   (lambda (pos elem) #t)))))))
 
 (define (in-pvector/proc pv)
-  (if (pvector-wrapper? pv)
+  (if (pvector? pv)
       (raw-tree-in-pvector/proc
-       (pvector-wrapper-tree/unsafe pv)
-       (pvector-wrapper-length/unsafe pv))
+       (pvector-tree/unsafe pv)
+       (pvector-length/unsafe pv))
       (let ([pv* (check-pvector 'in-pvector pv)])
         (raw-tree-in-pvector/proc
-         (pvector-wrapper-tree/unsafe pv*)
-         (pvector-wrapper-length/unsafe pv*)))))
+         (pvector-tree/unsafe pv*)
+         (pvector-length/unsafe pv*)))))
 
 (define (in-pvector-reverse/proc pv)
-  (if (pvector-wrapper? pv)
+  (if (pvector? pv)
       (raw-tree-in-pvector-reverse/proc
-       (pvector-wrapper-tree/unsafe pv)
-       (pvector-wrapper-length/unsafe pv))
+       (pvector-tree/unsafe pv)
+       (pvector-length/unsafe pv))
       (let ([pv* (check-pvector 'in-pvector-reverse pv)])
         (raw-tree-in-pvector-reverse/proc
-         (pvector-wrapper-tree/unsafe pv*)
-         (pvector-wrapper-length/unsafe pv*)))))
+         (pvector-tree/unsafe pv*)
+         (pvector-length/unsafe pv*)))))
 
 (define-sequence-syntax in-pvector
   (lambda () #'in-pvector/proc)
@@ -1211,17 +1225,18 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(vec) (raw:pvector->vector
-                    (let ([pv pv-expr])
-                      (if (pvector-wrapper? pv)
-                          (pvector-wrapper-tree/unsafe pv)
-                          (unwrap 'in-pvector pv))))])
+           ([(pv) pv-expr])
            (begin
-             (define len (unsafe-vector-length vec)))
+             (define pv*
+               (if (pvector? pv)
+                   pv
+                   (check-pvector 'in-pvector pv)))
+             (define tree (pvector-tree/unsafe pv*))
+             (define len (pvector-length/unsafe pv*)))
            ([elem-idx 0])
            (unsafe-fx< elem-idx len)
            ([(elem next-elem-idx)
-             (values (unsafe-vector-ref vec elem-idx)
+             (values (raw:pvector-ref/fast tree elem-idx)
                      (unsafe-fx+ elem-idx 1))])
            #t
            #t
@@ -1235,28 +1250,103 @@
       [[(elem) (_ pv-expr)]
        #'[(elem)
           (:do-in
-           ([(vec) (raw:pvector->vector
-                    (let ([pv pv-expr])
-                      (if (pvector-wrapper? pv)
-                          (pvector-wrapper-tree/unsafe pv)
-                          (unwrap 'in-pvector-reverse pv))))])
+           ([(pv) pv-expr])
            (begin
-             (define len (unsafe-vector-length vec)))
+             (define pv*
+               (if (pvector? pv)
+                   pv
+                   (check-pvector 'in-pvector-reverse pv)))
+             (define tree (pvector-tree/unsafe pv*))
+             (define len (pvector-length/unsafe pv*)))
            ([elem-idx (unsafe-fx- len 1)])
            (unsafe-fx>= elem-idx 0)
            ([(elem next-elem-idx)
-             (values (unsafe-vector-ref vec elem-idx)
+             (values (raw:pvector-ref/fast tree elem-idx)
                      (unsafe-fx- elem-idx 1))])
            #t
            #t
            (next-elem-idx))]]
       [_ #f])))
 
+(define exported-pvector?
+  (if bc-native-public? raw:pvector? pvector?))
+
+(define exported-pvector-empty
+  (if bc-native-public? raw:pvector-empty pvector-empty))
+
+(define exported-pvector-empty?
+  (if bc-native-public? raw:pvector-empty? pvector-empty?))
+
+(define exported-pvector->list
+  (if bc-native-public? raw:pvector->list pvector->list))
+
+(define exported-pvector->vector
+  (if bc-native-public? raw:pvector->vector pvector->vector))
+
+(define exported-pvector-length
+  (if bc-native-public? raw:pvector-length pvector-length))
+
+(define exported-pvector-ref
+  (if bc-native-public? raw:pvector-ref pvector-ref))
+
+(define exported-pvector-set
+  (if bc-native-public? raw:pvector-set pvector-set))
+
+(define exported-pvector-first
+  (if bc-native-public? raw:pvector-view-left pvector-first))
+
+(define exported-pvector-last
+  (if bc-native-public? raw:pvector-view-right pvector-last))
+
+(define exported-pvector-cons-left
+  (if bc-native-public? raw:pvector-cons-left pvector-cons-left))
+
+(define exported-pvector-cons-right
+  (if bc-native-public? raw:pvector-cons-right pvector-cons-right))
+
+(define exported-pvector-pop-left
+  (if bc-native-public? raw:pvector-pop-left pvector-pop-left))
+
+(define exported-pvector-pop-right
+  (if bc-native-public? raw:pvector-pop-right pvector-pop-right))
+
+(define exported-pvector-append
+  (if bc-native-public? raw:pvector-append pvector-append))
+
+(define exported-pvector-map
+  (if bc-native-public? raw:pvector-map pvector-map))
+
+(define exported-pvector-for-each
+  (if bc-native-public? raw:pvector-for-each pvector-for-each))
+
+(define exported-pvector-insert
+  (if bc-native-public? raw:pvector-insert pvector-insert))
+
+(define exported-pvector-delete
+  (if bc-native-public? raw:pvector-delete pvector-delete))
+
+(define exported-pvector-take
+  (if bc-native-public? raw:pvector-take pvector-take))
+
+(define exported-pvector-drop
+  (if bc-native-public? raw:pvector-drop pvector-drop))
+
+(define exported-pvector-take-right
+  (if bc-native-public? raw:pvector-take-right pvector-take-right))
+
+(define exported-pvector-drop-right
+  (if bc-native-public? raw:pvector-drop-right pvector-drop-right))
+
+(define exported-pvector-split
+  (if bc-native-public? raw:pvector-split pvector-split))
+
+(define exported-pvector-split-at
+  (if bc-native-public? raw:pvector-split-at pvector-split-at))
+
 (module+ unsafe
   (provide unsafe-pvector-length
            unsafe-pvector->list
            unsafe-pvector->vector
-           unsafe-pvector->chunk-vector
            unsafe-pvector-ref
            unsafe-pvector-set
            unsafe-pvector-first
@@ -1279,202 +1369,247 @@
            unsafe-in-pvector-reverse)
 
   (define (unsafe-tree pv)
-    (pvector-wrapper-tree/unsafe pv))
+    (pvector-tree/unsafe pv))
 
-  (begin-encourage-inline
+  (define-syntax-rule (define-native-unsafe id native-expr fallback-def)
+    (define id
+      (if bc-native-public?
+          native-expr
+          (let ()
+            fallback-def
+            id))))
+
+  (define-native-unsafe unsafe-pvector-length
+    raw:pvector-length/fast
     (define (unsafe-pvector-length pv)
-      (pvector-wrapper-length/unsafe pv)))
+      (pvector-length/unsafe pv)))
 
-  (define (unsafe-pvector->list pv)
-    (if (eq? pv empty-pvector)
-        null
-        (let ([tree (unsafe-tree pv)]
-              [len (pvector-wrapper-length/unsafe pv)])
-          (case len
-            [(1) (list (raw:pvector-view-left tree))]
-            [(2) (list (raw:pvector-view-left tree)
-                       (raw:pvector-view-right tree))]
-            [(3) (list (raw:pvector-view-left tree)
-                       (raw:pvector-ref tree 1)
-                       (raw:pvector-view-right tree))]
-            [(4) (list (raw:pvector-view-left tree)
-                       (raw:pvector-ref tree 1)
-                       (raw:pvector-ref tree 2)
-                       (raw:pvector-view-right tree))]
-            [else (raw:pvector->list tree)]))))
+  (define-native-unsafe unsafe-pvector->list
+    raw:pvector->list
+    (define (unsafe-pvector->list pv)
+      (if (eq? pv empty-pvector)
+          null
+          (let ([tree (unsafe-tree pv)]
+                [len (pvector-length/unsafe pv)])
+            (case len
+              [(1) (list (raw:pvector-view-left/fast tree))]
+              [(2) (list (raw:pvector-view-left/fast tree)
+                         (raw:pvector-view-right/fast tree))]
+              [(3) (list (raw:pvector-view-left/fast tree)
+                         (raw:pvector-ref/fast tree 1)
+                         (raw:pvector-view-right/fast tree))]
+              [(4) (list (raw:pvector-view-left/fast tree)
+                         (raw:pvector-ref/fast tree 1)
+                         (raw:pvector-ref/fast tree 2)
+                         (raw:pvector-view-right/fast tree))]
+              [else (raw:pvector->list tree)])))))
 
-  (define (unsafe-pvector->vector pv)
-    (if (eq? pv empty-pvector)
-        (make-vector 0)
-        (let ([tree (unsafe-tree pv)]
-              [len (pvector-wrapper-length/unsafe pv)])
-          (case len
-            [(1) (vector (raw:pvector-view-left tree))]
-            [(2) (vector (raw:pvector-view-left tree)
-                         (raw:pvector-view-right tree))]
-            [(3) (vector (raw:pvector-view-left tree)
-                         (raw:pvector-ref tree 1)
-                         (raw:pvector-view-right tree))]
-            [(4) (vector (raw:pvector-view-left tree)
-                         (raw:pvector-ref tree 1)
-                         (raw:pvector-ref tree 2)
-                         (raw:pvector-view-right tree))]
-            [else (raw:pvector->vector tree)]))))
+  (define-native-unsafe unsafe-pvector->vector
+    raw:pvector->vector
+    (define (unsafe-pvector->vector pv)
+      (if (eq? pv empty-pvector)
+          (make-vector 0)
+          (let ([tree (unsafe-tree pv)]
+                [len (pvector-length/unsafe pv)])
+            (case len
+              [(1) (vector (raw:pvector-view-left/fast tree))]
+              [(2) (vector (raw:pvector-view-left/fast tree)
+                           (raw:pvector-view-right/fast tree))]
+              [(3) (vector (raw:pvector-view-left/fast tree)
+                           (raw:pvector-ref/fast tree 1)
+                           (raw:pvector-view-right/fast tree))]
+              [(4) (vector (raw:pvector-view-left/fast tree)
+                           (raw:pvector-ref/fast tree 1)
+                           (raw:pvector-ref/fast tree 2)
+                           (raw:pvector-view-right/fast tree))]
+              [else (raw:pvector->vector tree)])))))
 
-  (define (unsafe-pvector->chunk-vector pv)
-    (raw:pvector->chunk-vector (unsafe-tree pv)))
-
-  (begin-encourage-inline
+  (define-native-unsafe unsafe-pvector-ref
+    raw:pvector-ref/fast
     (define (unsafe-pvector-ref pv index)
-      (raw:pvector-ref (unsafe-tree pv) index))
+      (raw:pvector-ref/fast (unsafe-tree pv) index)))
 
+  (define-native-unsafe unsafe-pvector-set
+    raw:pvector-set
     (define (unsafe-pvector-set pv index value)
       (define tree (unsafe-tree pv))
       (define tree^ (raw:pvector-set tree index value))
       (if (eq? tree^ tree)
           pv
-          (wrap/len tree^ (pvector-wrapper-length/unsafe pv))))
+          (wrap/len tree^ (pvector-length/unsafe pv)))))
 
+  (define-native-unsafe unsafe-pvector-first
+    raw:pvector-view-left/fast
     (define (unsafe-pvector-first pv)
-      (raw:pvector-view-left (unsafe-tree pv)))
+      (raw:pvector-view-left/fast (unsafe-tree pv))))
 
+  (define-native-unsafe unsafe-pvector-last
+    raw:pvector-view-right/fast
     (define (unsafe-pvector-last pv)
-      (raw:pvector-view-right (unsafe-tree pv)))
+      (raw:pvector-view-right/fast (unsafe-tree pv))))
 
+  (define-native-unsafe unsafe-pvector-cons-left
+    raw:pvector-cons-left
     (define (unsafe-pvector-cons-left pv value)
       (wrap/len (raw:pvector-cons-left (unsafe-tree pv) value)
-                (unsafe-fx+ (pvector-wrapper-length/unsafe pv) 1)))
+                (unsafe-fx+ (pvector-length/unsafe pv) 1))))
 
+  (define-native-unsafe unsafe-pvector-cons-right
+    raw:pvector-cons-right
     (define (unsafe-pvector-cons-right pv value)
       (wrap/len (raw:pvector-cons-right (unsafe-tree pv) value)
-                (unsafe-fx+ (pvector-wrapper-length/unsafe pv) 1)))
+                (unsafe-fx+ (pvector-length/unsafe pv) 1))))
 
+  (define-native-unsafe unsafe-pvector-pop-left
+    raw:pvector-pop-left
     (define (unsafe-pvector-pop-left pv)
-      (define len (pvector-wrapper-length/unsafe pv))
+      (define len (pvector-length/unsafe pv))
       (define tree (unsafe-tree pv))
       (if (unsafe-fx= len 1)
-          (values (raw:pvector-view-left tree) empty-pvector)
+          (values (raw:pvector-view-left/fast tree) empty-pvector)
           (let-values ([(value rest) (raw:pvector-pop-left tree)])
-            (values value (wrap/len rest (unsafe-fx- len 1))))))
+            (values value (wrap/len rest (unsafe-fx- len 1)))))))
 
+  (define-native-unsafe unsafe-pvector-pop-right
+    raw:pvector-pop-right
     (define (unsafe-pvector-pop-right pv)
-      (define len (pvector-wrapper-length/unsafe pv))
+      (define len (pvector-length/unsafe pv))
       (define tree (unsafe-tree pv))
       (if (unsafe-fx= len 1)
-          (values (raw:pvector-view-right tree) empty-pvector)
+          (values (raw:pvector-view-right/fast tree) empty-pvector)
           (let-values ([(value rest) (raw:pvector-pop-right tree)])
             (values value (wrap/len rest (unsafe-fx- len 1)))))))
 
-  (define (unsafe-pvector-append pv0 pv1)
-    (define left-len (pvector-wrapper-length/unsafe pv0))
-    (define right-len (pvector-wrapper-length/unsafe pv1))
-    (cond
-      [(zero? left-len) pv1]
-      [(zero? right-len) pv0]
-      [else
-       (wrap/len (raw:pvector-append (unsafe-tree pv0)
-                                     (unsafe-tree pv1))
-                 (unsafe-fx+ left-len right-len))]))
+  (define-native-unsafe unsafe-pvector-append
+    raw:pvector-append
+    (define (unsafe-pvector-append pv0 pv1)
+      (define left-len (pvector-length/unsafe pv0))
+      (define right-len (pvector-length/unsafe pv1))
+      (cond
+        [(zero? left-len) pv1]
+        [(zero? right-len) pv0]
+        [else
+         (wrap/len (raw:pvector-append (unsafe-tree pv0)
+                                       (unsafe-tree pv1))
+                   (unsafe-fx+ left-len right-len))])))
 
-  (define (unsafe-pvector-insert pv index value)
-    (wrap/len (raw:pvector-insert (unsafe-tree pv) index value)
-              (unsafe-fx+ (pvector-wrapper-length/unsafe pv) 1)))
+  (define-native-unsafe unsafe-pvector-insert
+    raw:pvector-insert
+    (define (unsafe-pvector-insert pv index value)
+      (wrap/len (raw:pvector-insert (unsafe-tree pv) index value)
+                (unsafe-fx+ (pvector-length/unsafe pv) 1))))
 
-  (define (unsafe-pvector-delete pv index)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (define tree (unsafe-tree pv))
-    (if (unsafe-fx= len 1)
-        (values empty-pvector (raw:pvector-view-left tree))
-        (cond
-          [(zero? index)
-           (let-values ([(value rest) (raw:pvector-pop-left tree)])
-             (values (wrap/len rest (unsafe-fx- len 1)) value))]
-          [(= index (unsafe-fx- len 1))
-           (let-values ([(value rest) (raw:pvector-pop-right tree)])
-             (values (wrap/len rest (unsafe-fx- len 1)) value))]
-          [else
-           (let-values ([(rest value) (raw:pvector-delete tree index)])
-             (values (wrap/len rest (unsafe-fx- len 1)) value))])))
+  (define-native-unsafe unsafe-pvector-delete
+    raw:pvector-delete
+    (define (unsafe-pvector-delete pv index)
+      (define len (pvector-length/unsafe pv))
+      (define tree (unsafe-tree pv))
+      (if (unsafe-fx= len 1)
+          (values empty-pvector (raw:pvector-view-left/fast tree))
+          (cond
+            [(zero? index)
+             (let-values ([(value rest) (raw:pvector-pop-left tree)])
+               (values (wrap/len rest (unsafe-fx- len 1)) value))]
+            [(= index (unsafe-fx- len 1))
+             (let-values ([(value rest) (raw:pvector-pop-right tree)])
+               (values (wrap/len rest (unsafe-fx- len 1)) value))]
+            [else
+             (let-values ([(rest value) (raw:pvector-delete tree index)])
+               (values (wrap/len rest (unsafe-fx- len 1)) value))]))))
 
-  (define (unsafe-pvector-take pv pos)
-    (cond
-      [(zero? pos) empty-pvector]
-      [(= pos (pvector-wrapper-length/unsafe pv)) pv]
-      [else (wrap/len (raw:pvector-take (unsafe-tree pv) pos) pos)]))
+  (define-native-unsafe unsafe-pvector-take
+    raw:pvector-take
+    (define (unsafe-pvector-take pv pos)
+      (cond
+        [(zero? pos) empty-pvector]
+        [(= pos (pvector-length/unsafe pv)) pv]
+        [else (wrap/len (raw:pvector-take (unsafe-tree pv) pos) pos)])))
 
-  (define (unsafe-pvector-drop pv pos)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (cond
-      [(zero? pos) pv]
-      [(= pos len) empty-pvector]
-      [else (wrap/len (raw:pvector-drop (unsafe-tree pv) pos)
-                      (unsafe-fx- len pos))]))
+  (define-native-unsafe unsafe-pvector-drop
+    raw:pvector-drop
+    (define (unsafe-pvector-drop pv pos)
+      (define len (pvector-length/unsafe pv))
+      (cond
+        [(zero? pos) pv]
+        [(= pos len) empty-pvector]
+        [else (wrap/len (raw:pvector-drop (unsafe-tree pv) pos)
+                        (unsafe-fx- len pos))])))
 
-  (define (unsafe-pvector-take-right pv pos)
-    (cond
-      [(zero? pos) empty-pvector]
-      [(= pos (pvector-wrapper-length/unsafe pv)) pv]
-      [else (wrap/len (raw:pvector-take-right (unsafe-tree pv) pos) pos)]))
+  (define-native-unsafe unsafe-pvector-take-right
+    raw:pvector-take-right
+    (define (unsafe-pvector-take-right pv pos)
+      (cond
+        [(zero? pos) empty-pvector]
+        [(= pos (pvector-length/unsafe pv)) pv]
+        [else (wrap/len (raw:pvector-take-right (unsafe-tree pv) pos) pos)])))
 
-  (define (unsafe-pvector-drop-right pv pos)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (cond
-      [(zero? pos) pv]
-      [(= pos len) empty-pvector]
-      [else (wrap/len (raw:pvector-drop-right (unsafe-tree pv) pos)
-                      (unsafe-fx- len pos))]))
+  (define-native-unsafe unsafe-pvector-drop-right
+    raw:pvector-drop-right
+    (define (unsafe-pvector-drop-right pv pos)
+      (define len (pvector-length/unsafe pv))
+      (cond
+        [(zero? pos) pv]
+        [(= pos len) empty-pvector]
+        [else (wrap/len (raw:pvector-drop-right (unsafe-tree pv) pos)
+                        (unsafe-fx- len pos))])))
 
-  (define (unsafe-pvector-subvector pv start end)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (define new-len (unsafe-fx- end start))
-    (cond
-      [(unsafe-fx= new-len 0) empty-pvector]
-      [(and (unsafe-fx= start 0) (unsafe-fx= end len)) pv]
-      [(unsafe-fx= start 0)
-       (wrap/len (raw:pvector-copy (unsafe-tree pv) start end) new-len)]
-      [(unsafe-fx= end len)
-       (wrap/len (raw:pvector-copy (unsafe-tree pv) start end) new-len)]
-      [else (wrap/len (raw:pvector-copy (unsafe-tree pv) start end)
-                      new-len)]))
+  (define-native-unsafe unsafe-pvector-subvector
+    raw:pvector-copy
+    (define (unsafe-pvector-subvector pv start end)
+      (define len (pvector-length/unsafe pv))
+      (define new-len (unsafe-fx- end start))
+      (cond
+        [(unsafe-fx= new-len 0) empty-pvector]
+        [(and (unsafe-fx= start 0) (unsafe-fx= end len)) pv]
+        [(unsafe-fx= start 0)
+         (wrap/len (raw:pvector-copy (unsafe-tree pv) start end) new-len)]
+        [(unsafe-fx= end len)
+         (wrap/len (raw:pvector-copy (unsafe-tree pv) start end) new-len)]
+        [else (wrap/len (raw:pvector-copy (unsafe-tree pv) start end)
+                        new-len)])))
 
-  (define (unsafe-pvector-split pv index)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (define tree (unsafe-tree pv))
-    (cond
-      [(and (unsafe-fx= len 1) (unsafe-fx= index 0))
-       (values empty-pvector (raw:pvector-view-left tree) empty-pvector)]
-      [(zero? index)
-       (let-values ([(value right) (raw:pvector-pop-left tree)])
-         (values empty-pvector value (wrap/len right (unsafe-fx- len 1))))]
-      [(= index (unsafe-fx- len 1))
-       (let-values ([(value left) (raw:pvector-pop-right tree)])
-         (values (wrap/len left (unsafe-fx- len 1)) value empty-pvector))]
-      [else
-       (let-values ([(left value right) (raw:pvector-split tree index)])
-         (values (wrap/len left index)
-                 value
-                 (wrap/len right (unsafe-fx- (unsafe-fx- len index) 1))))]))
+  (define-native-unsafe unsafe-pvector-split
+    raw:pvector-split
+    (define (unsafe-pvector-split pv index)
+      (define len (pvector-length/unsafe pv))
+      (define tree (unsafe-tree pv))
+      (cond
+        [(and (unsafe-fx= len 1) (unsafe-fx= index 0))
+         (values empty-pvector (raw:pvector-view-left/fast tree) empty-pvector)]
+        [(zero? index)
+         (let-values ([(value right) (raw:pvector-pop-left tree)])
+           (values empty-pvector value (wrap/len right (unsafe-fx- len 1))))]
+        [(= index (unsafe-fx- len 1))
+         (let-values ([(value left) (raw:pvector-pop-right tree)])
+           (values (wrap/len left (unsafe-fx- len 1)) value empty-pvector))]
+        [else
+         (let-values ([(left value right) (raw:pvector-split tree index)])
+           (values (wrap/len left index)
+                   value
+                   (wrap/len right (unsafe-fx- (unsafe-fx- len index) 1))))])))
 
-  (define (unsafe-pvector-split-at pv pos)
-    (define len (pvector-wrapper-length/unsafe pv))
-    (cond
-      [(zero? pos) (values empty-pvector pv)]
-      [(= pos len) (values pv empty-pvector)]
-      [else
-       (define-values (left right)
-         (raw:pvector-split-at (unsafe-tree pv) pos))
-       (values (wrap/len left pos)
-               (wrap/len right (unsafe-fx- len pos)))]))
+  (define-native-unsafe unsafe-pvector-split-at
+    raw:pvector-split-at
+    (define (unsafe-pvector-split-at pv pos)
+      (define len (pvector-length/unsafe pv))
+      (cond
+        [(zero? pos) (values empty-pvector pv)]
+        [(= pos len) (values pv empty-pvector)]
+        [else
+         (define-values (left right)
+           (raw:pvector-split-at (unsafe-tree pv) pos))
+         (values (wrap/len left pos)
+                 (wrap/len right (unsafe-fx- len pos)))])))
 
   (define (unsafe-in-pvector/proc pv)
     (raw-tree-in-pvector/proc
      (unsafe-tree pv)
-     (pvector-wrapper-length/unsafe pv)))
+     (pvector-length/unsafe pv)))
 
   (define (unsafe-in-pvector-reverse/proc pv)
     (raw-tree-in-pvector-reverse/proc
      (unsafe-tree pv)
-     (pvector-wrapper-length/unsafe pv)))
+     (pvector-length/unsafe pv)))
 
   (define-sequence-syntax unsafe-in-pvector
     (lambda () #'unsafe-in-pvector/proc)
@@ -1483,13 +1618,14 @@
         [[(elem) (_ pv-expr)]
          #'[(elem)
             (:do-in
-             ([(vec) (raw:pvector->vector (unsafe-tree pv-expr))])
+             ([(pv) pv-expr])
              (begin
-               (define len (unsafe-vector-length vec)))
+               (define tree (unsafe-tree pv))
+               (define len (pvector-length/unsafe pv)))
              ([elem-idx 0])
              (unsafe-fx< elem-idx len)
              ([(elem next-elem-idx)
-               (values (unsafe-vector-ref vec elem-idx)
+               (values (raw:pvector-ref/fast tree elem-idx)
                        (unsafe-fx+ elem-idx 1))])
              #t
              #t
@@ -1503,13 +1639,14 @@
         [[(elem) (_ pv-expr)]
          #'[(elem)
             (:do-in
-             ([(vec) (raw:pvector->vector (unsafe-tree pv-expr))])
+             ([(pv) pv-expr])
              (begin
-               (define len (unsafe-vector-length vec)))
+               (define tree (unsafe-tree pv))
+               (define len (pvector-length/unsafe pv)))
              ([elem-idx (unsafe-fx- len 1)])
              (unsafe-fx>= elem-idx 0)
              ([(elem next-elem-idx)
-               (values (unsafe-vector-ref vec elem-idx)
+               (values (raw:pvector-ref/fast tree elem-idx)
                        (unsafe-fx- elem-idx 1))])
              #t
              #t
@@ -1520,7 +1657,7 @@
   (let loop ([i (sub1 end)] [acc null])
     (if (< i start)
         acc
-        (loop (sub1 i) (cons (raw:pvector-ref tree i) acc)))))
+        (loop (sub1 i) (cons (raw:pvector-ref/fast tree i) acc)))))
 
 (define-syntax (for/pvector stx)
   (syntax-case stx (in-range in-list in-vector in-pvector in-pvector-reverse)
@@ -1591,8 +1728,8 @@
      #'(let ([len length-expr])
          (if (exact-nonnegative-integer? len)
              (let ([pv pv-expr])
-               (if (and (pvector-wrapper? pv)
-                        (= len (pvector-wrapper-length/unsafe pv)))
+               (if (and (pvector? pv)
+                        (= len (pvector-length/unsafe pv)))
                    pv
                    (wrap/len (raw:for/pvector #:length len
                                               ([elem (in-pvector pv)])
@@ -1625,8 +1762,8 @@
          (if (exact-nonnegative-integer? len)
              (let ([seq seq-id])
                (cond
-                 [(and (pvector-wrapper? seq)
-                       (= len (pvector-wrapper-length/unsafe seq)))
+                 [(and (pvector? seq)
+                       (= len (pvector-length/unsafe seq)))
                   seq]
                  [(and (vector? seq)
                        (= len (vector-length seq)))
@@ -1653,14 +1790,14 @@
     [(_ ([elem (in-pvector pv-expr)]) body)
      (same-identifier? #'elem #'body)
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
+         (if (pvector? pv)
              pv
              (wrap (raw:for/pvector ([elem (in-pvector pv)]) elem))))]
     [(_ ([elem (in-pvector-reverse pv-expr)]) body)
      (same-identifier? #'elem #'body)
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
-             (for/pvector #:length (pvector-wrapper-length/unsafe pv)
+         (if (pvector? pv)
+             (for/pvector #:length (pvector-length/unsafe pv)
                           ([elem (in-pvector-reverse pv)])
                elem)
              (wrap (raw:for/pvector ([elem (in-pvector-reverse pv)]) elem))))]
@@ -1680,7 +1817,7 @@
      (and (same-identifier? #'elem #'body)
           (identifier? #'seq-id))
      #'(let ([seq seq-id])
-         (if (pvector-wrapper? seq)
+         (if (pvector? seq)
              seq
              (wrap (raw:for/pvector ([elem seq]) elem))))]
     [(_ ([elem (in-range end)]) body)
@@ -1781,8 +1918,8 @@
      #'(let ([len length-expr])
          (if (exact-nonnegative-integer? len)
              (let ([pv pv-expr])
-               (if (and (pvector-wrapper? pv)
-                        (= len (pvector-wrapper-length/unsafe pv)))
+               (if (and (pvector? pv)
+                        (= len (pvector-length/unsafe pv)))
                    pv
                    (wrap/len (raw:for*/pvector #:length len
                                                ([elem (in-pvector pv)])
@@ -1815,8 +1952,8 @@
          (if (exact-nonnegative-integer? len)
              (let ([seq seq-id])
                (cond
-                 [(and (pvector-wrapper? seq)
-                       (= len (pvector-wrapper-length/unsafe seq)))
+                 [(and (pvector? seq)
+                       (= len (pvector-length/unsafe seq)))
                   seq]
                  [(and (vector? seq)
                        (= len (vector-length seq)))
@@ -1843,14 +1980,14 @@
     [(_ ([elem (in-pvector pv-expr)]) body)
      (same-identifier? #'elem #'body)
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
+         (if (pvector? pv)
              pv
              (wrap (raw:for*/pvector ([elem (in-pvector pv)]) elem))))]
     [(_ ([elem (in-pvector-reverse pv-expr)]) body)
      (same-identifier? #'elem #'body)
      #'(let ([pv pv-expr])
-         (if (pvector-wrapper? pv)
-             (for*/pvector #:length (pvector-wrapper-length/unsafe pv)
+         (if (pvector? pv)
+             (for*/pvector #:length (pvector-length/unsafe pv)
                            ([elem (in-pvector-reverse pv)])
                elem)
              (wrap (raw:for*/pvector ([elem (in-pvector-reverse pv)]) elem))))]
@@ -1870,7 +2007,7 @@
      (and (same-identifier? #'elem #'body)
           (identifier? #'seq-id))
      #'(let ([seq seq-id])
-         (if (pvector-wrapper? seq)
+         (if (pvector? seq)
              seq
              (wrap (raw:for*/pvector ([elem seq]) elem))))]
     [(_ ([elem (in-range end)]) body)
@@ -1936,10 +2073,10 @@
          (pattern-contains-identifier? elem id))]
       [else #f]))
 
-	  (define (simple-final-repetition elems)
-	    (define len (length elems))
-	    (and (>= len 2)
-	         (let* ([ellipsis (list-ref elems (sub1 len))]
+  (define (simple-final-repetition elems)
+    (define len (length elems))
+    (and (>= len 2)
+         (let* ([ellipsis (list-ref elems (sub1 len))]
                 [repeat-pat (list-ref elems (- len 2))]
                 [prefix-elems
                  (for/list ([i (in-range (- len 2))])
@@ -1948,14 +2085,14 @@
                 (identifier? repeat-pat)
                 (not (for/or ([prefix-elem (in-list prefix-elems)])
                        (pattern-contains-identifier? prefix-elem repeat-pat)))
-	                (let ([min-repeat (match-ellipsis-min ellipsis)])
-	                  (and min-repeat
-	                       (list prefix-elems repeat-pat min-repeat)))))))
+                (let ([min-repeat (match-ellipsis-min ellipsis)])
+                  (and min-repeat
+                       (list prefix-elems repeat-pat min-repeat)))))))
 
-		  (define (pvector-pattern-transform stx)
-	    (syntax-case stx ()
-	      [(_) #'(? pvector-empty?)]
-	      [(_ pat ...)
+  (define (pvector-pattern-transform stx)
+    (syntax-case stx ()
+      [(_) #'(? pvector-empty?)]
+      [(_ pat ...)
        (let ([elems (syntax->list #'(pat ...))])
          (cond
            [(top-level-repetition? elems)
@@ -1971,35 +2108,35 @@
                                   [repeat-pat repeat-pat]
                                   [prefix-len (length prefix-elems)]
                                   [min-repeat min-repeat])
-                      #'(? pvector-wrapper?
+                      #'(? pvector?
                            (? (lambda (pv)
-                                (>= (pvector-wrapper-length/unsafe pv)
+                                (>= (pvector-length/unsafe pv)
                                     (+ prefix-len min-repeat)))
                               (and
                                (app (lambda (pv)
-                                      (raw:pvector-ref
-                                       (pvector-wrapper-tree/unsafe pv)
+                                      (raw:pvector-ref/fast
+                                       (pvector-tree/unsafe pv)
                                        idx))
                                     prefix-pat)
                                ...
                                (app (lambda (pv)
                                       (pvector-match-tail->list
-                                       (pvector-wrapper-tree/unsafe pv)
+                                       (pvector-tree/unsafe pv)
                                        prefix-len
-	                                       (pvector-wrapper-length/unsafe pv)))
-	                                    repeat-pat))))))
-		                  #'(? pvector?
-		                       (app pvector->list (list pat ...)))))]
-	           [else
-	            (with-syntax ([(idx ...)
-	                           (for/list ([idx (in-range (length elems))])
+                                       (pvector-length/unsafe pv)))
+                                    repeat-pat))))))
+                  #'(? pvector?
+                       (app pvector->list (list pat ...)))))]
+           [else
+            (with-syntax ([(idx ...)
+                           (for/list ([idx (in-range (length elems))])
                              idx)]
                           [len (length elems)])
-              #'(? pvector-wrapper?
-                   (? (lambda (pv) (= (pvector-wrapper-length/unsafe pv) len))
-                      (app pvector-wrapper-tree/unsafe
+              #'(? pvector?
+                   (? (lambda (pv) (= (pvector-length/unsafe pv) len))
+                      (app pvector-tree/unsafe
                            (and
-                            (app (lambda (tree) (raw:pvector-ref tree idx)) pat)
+                            (app (lambda (tree) (raw:pvector-ref/fast tree idx)) pat)
                             ...)))))]))])))
 
 (define-match-expander pvector
@@ -2012,7 +2149,7 @@
          (cond
            [(zero? len) #'empty-pvector]
            [(direct-small-values->pvector elems)]
-           [(<= len pvector-single-chunk-arity-limit)
+           [(<= len pvector-inline-vector-arity-limit)
             (with-syntax ([len (datum->syntax stx len)])
               #'(small-immutable-vector->pvector
                  (vector-immutable elem ...)
@@ -2128,7 +2265,7 @@
                   (list
                    #`[#,value
                       #,(if element?
-                            #`(raw:pvector-ref tree #,start)
+                            #`(raw:pvector-ref/fast tree #,start)
                             #`(let ([end (+ #,start #,len-expr)])
                                 (cond
                                   [(= #,start end) empty-pvector]
@@ -2152,10 +2289,10 @@
                                  #,success-expr))
                         #`(and (= total-len fixed-total)
                                #,success-expr)))))
-       #`(? pvector-wrapper?
+       #`(? pvector?
             (app (lambda (pv)
-                   (define tree (pvector-wrapper-tree/unsafe pv))
-                   (define total-len (pvector-wrapper-length/unsafe pv))
+                   (define tree (pvector-tree/unsafe pv))
+                   (define total-len (pvector-length/unsafe pv))
                    (let (#,@len-bindings)
                      #,checked-expr))
                  (list #,@pats)))))
@@ -2182,7 +2319,7 @@
 
 (define (pvector-print pv port mode)
   (display "(pvector" port)
-  (for ([elem (raw:in-pvector (pvector-wrapper-tree/unsafe pv))])
+  (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
     (display " " port)
     (case mode
       [(#t) (write elem port)]
@@ -2192,19 +2329,19 @@
 
 (define (pvector-equal? pv other recur)
   (or (eq? pv other)
-      (and (pvector-wrapper? other)
-           (let ([len (pvector-wrapper-length/unsafe pv)]
-                 [other-len (pvector-wrapper-length/unsafe other)])
+      (and (pvector? other)
+           (let ([len (pvector-length/unsafe pv)]
+                 [other-len (pvector-length/unsafe other)])
             (and (unsafe-fx= len other-len)
-                 (let ([tree (pvector-wrapper-tree/unsafe pv)]
-                       [other-tree (pvector-wrapper-tree/unsafe other)])
+                 (let ([tree (pvector-tree/unsafe pv)]
+                       [other-tree (pvector-tree/unsafe other)])
                    (let/ec return
                      (let ([index 0])
                        (raw:pvector-for-each
                         tree
                         (lambda (elem)
                           (define other-elem
-                            (raw:pvector-ref other-tree index))
+                            (raw:pvector-ref/fast other-tree index))
                           (unless (or (eq? elem other-elem)
                                       (recur elem other-elem))
                             (return #f))
@@ -2241,7 +2378,7 @@
              (add1 pos)
              (pvector-hash-combine
               hc
-              (recur (raw:pvector-ref tree pos))))])))
+              (recur (raw:pvector-ref/fast tree pos))))])))
 
 (define (pvector-hash-sampled tree len recur seed)
   (define hc0 (pvector-hash-combine seed len))
@@ -2259,7 +2396,7 @@
          (loop (add1 i)
                (pvector-hash-combine
                 hc
-                (recur (raw:pvector-ref tree pos))))])))
+                (recur (raw:pvector-ref/fast tree pos))))])))
   (pvector-hash-range tree
                       (- len sampled-hash-edge-count)
                       sampled-hash-edge-count
@@ -2274,15 +2411,15 @@
      (set! hc (pvector-hash-combine hc (recur elem)))))
   hc)
 
-(define (pvector-hash/chunks pv recur seed)
-  (define len (pvector-wrapper-length/unsafe pv))
-  (define tree (pvector-wrapper-tree/unsafe pv))
+(define (pvector-hash/tree pv recur seed)
+  (define len (pvector-length/unsafe pv))
+  (define tree (pvector-tree/unsafe pv))
   (if (>= len sampled-hash-total-count)
       (pvector-hash-sampled tree len recur seed)
       (pvector-hash-full tree len recur seed)))
 
 (define (pvector-hash-code pv recur)
-  (pvector-hash/chunks pv recur 16381))
+  (pvector-hash/tree pv recur 16381))
 
 (define (pvector-secondary-hash-code pv recur)
-  (pvector-hash/chunks pv recur 32749))
+  (pvector-hash/tree pv recur 32749))
