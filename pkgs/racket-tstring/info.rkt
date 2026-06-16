@@ -7,7 +7,8 @@
 ) ; end define deps
 
 (define build-deps
-  '("rackunit-lib")
+  '("rackunit-lib"
+    "sandbox-lib")
 ) ; end define build-deps
 
 (define pkg-desc "Structured template strings for Racket")

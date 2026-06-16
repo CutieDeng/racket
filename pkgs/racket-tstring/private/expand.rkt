@@ -69,12 +69,16 @@
 ) ; end define-for-syntax expand-fstring
 
 (define-for-syntax (parse-template-parts who context-stx input-stx)
-  (with-handlers ((exn:fail?
+  (with-handlers ((exn:fail:syntax?
+                   (lambda (exn)
+                     (raise exn)
+                   ) ; end lambda
+                  ) ; end exn:fail:syntax?
+                  (exn:fail?
                    (lambda (exn)
                      (raise-syntax-error who
                                          (exn-message exn)
                                          context-stx
-                                         input-stx
                      ) ; end raise-syntax-error
                    ) ; end lambda
                   ) ; end exn:fail?
