@@ -1266,31 +1266,34 @@
   (lambda (stx)
     (syntax-case stx ()
       [[(elem) (_ pv-expr)]
-       #'[(elem)
-          (:do-in
-           ([(pv) pv-expr])
-           (begin
-             (define pv*
-               (if (pvector? pv)
-                   pv
-                   (check-pvector 'in-pvector pv)))
-             (define tree (pvector-tree/unsafe pv*))
-             (define use-cursor? direct-raw-cursor?)
-             (define len (and (not use-cursor?) (pvector-length/unsafe pv*))))
-           ([elem-pos (if use-cursor?
-                          (raw:pvector-cursor-start/fast tree #f)
-                          0)])
-           (if use-cursor?
-               elem-pos
-               (unsafe-fx< elem-pos len))
-           ([(elem next-elem-pos)
-             (if use-cursor?
-                 (raw:pvector-cursor-value+next/fast elem-pos)
-                 (values (raw:pvector-ref/fast tree elem-pos)
-                         (unsafe-fx+ elem-pos 1)))])
-           #t
-           #t
-           (next-elem-pos))]]
+       (syntax-property
+        #'[(elem)
+           (:do-in
+            ([(pv) pv-expr])
+            (begin
+              (define pv*
+                (if (pvector? pv)
+                    pv
+                    (check-pvector 'in-pvector pv)))
+              (define tree (pvector-tree/unsafe pv*))
+              (define use-cursor? direct-raw-cursor?)
+              (define len (and (not use-cursor?) (pvector-length/unsafe pv*))))
+            ([elem-pos (if use-cursor?
+                           (raw:pvector-cursor-start/fast tree #f)
+                           0)])
+            (if use-cursor?
+                elem-pos
+                (unsafe-fx< elem-pos len))
+            ([(elem next-elem-pos)
+              (if use-cursor?
+                  (raw:pvector-cursor-value+next/fast elem-pos)
+                  (values (raw:pvector-ref/fast tree elem-pos)
+                          (unsafe-fx+ elem-pos 1)))])
+            #t
+            #t
+            (next-elem-pos))]
+        'pvector-direct-fold
+        #t)]
       [_ #f])))
 
 (define-sequence-syntax in-pvector-reverse

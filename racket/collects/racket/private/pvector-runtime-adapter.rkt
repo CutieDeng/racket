@@ -876,30 +876,33 @@
   (lambda (stx)
     (syntax-case stx ()
       [[(elem) (_ pv-expr)]
-       #'[(elem)
-          (:do-in
-           ([(pv) pv-expr])
-           (begin
-             (define pv*
-               (if (pvector? pv)
-                   pv
-                   (raise-argument-error 'in-pvector "pvector?" pv)))
-             (define use-cursor? core-cursor-available?)
-             (define len (and (not use-cursor?) (pvector-length pv*))))
-           ([elem-pos (if use-cursor?
-                          (core-pvector-cursor-start pv* #f)
-                          0)])
-           (if use-cursor?
-               elem-pos
-               (unsafe-fx< elem-pos len))
-           ([(elem next-elem-pos)
-             (if use-cursor?
-                 (pvector-cursor-value+next/fast elem-pos)
-                 (values (pvector-ref/fast pv* elem-pos)
-                         (unsafe-fx+ elem-pos 1)))])
-           #t
-           #t
-           (next-elem-pos))]]
+       (syntax-property
+        #'[(elem)
+           (:do-in
+            ([(pv) pv-expr])
+            (begin
+              (define pv*
+                (if (pvector? pv)
+                    pv
+                    (raise-argument-error 'in-pvector "pvector?" pv)))
+              (define use-cursor? core-cursor-available?)
+              (define len (and (not use-cursor?) (pvector-length pv*))))
+            ([elem-pos (if use-cursor?
+                           (core-pvector-cursor-start pv* #f)
+                           0)])
+            (if use-cursor?
+                elem-pos
+                (unsafe-fx< elem-pos len))
+            ([(elem next-elem-pos)
+              (if use-cursor?
+                  (pvector-cursor-value+next/fast elem-pos)
+                  (values (pvector-ref/fast pv* elem-pos)
+                          (unsafe-fx+ elem-pos 1)))])
+            #t
+            #t
+            (next-elem-pos))]
+        'pvector-direct-fold
+        #t)]
       [_ #f])))
 
 (define-sequence-syntax in-pvector-reverse

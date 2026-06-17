@@ -257,7 +257,11 @@
                pre-guard
                post-guard
                (loop-arg ...))
-              #'body]
+              (let ([r #'body])
+                (cond
+                  [(syntax-property clause 'pvector-direct-fold)
+                   => (lambda (v) (syntax-property r 'pvector-direct-fold v))]
+                  [else r]))]
              [(([(outer-id ...) outer-rhs] ...)
                outer-check
                ([loop-id loop-expr] ...)
@@ -266,15 +270,19 @@
                pre-guard
                post-guard
                (loop-arg ...))
-              #'(([(outer-id ...) outer-rhs] ...)
-                 outer-check
-                 ([loop-id loop-expr] ...)
-                 pos-guard
-                 ([(inner-id ...) inner-rhs] ...)
-                 (begin)
-                 pre-guard
-                 post-guard
-                 (loop-arg ...))]
+              (let ([r #'(([(outer-id ...) outer-rhs] ...)
+                          outer-check
+                          ([loop-id loop-expr] ...)
+                          pos-guard
+                          ([(inner-id ...) inner-rhs] ...)
+                          (begin)
+                          pre-guard
+                          post-guard
+                          (loop-arg ...))])
+                (cond
+                  [(syntax-property clause 'pvector-direct-fold)
+                   => (lambda (v) (syntax-property r 'pvector-direct-fold v))]
+                  [else r]))]
              [else (raise-syntax-error #f "bad :do-in clause" orig-stx clause)])]
           [[(id) (values rhs)]
            (expand-clause orig-stx #'[(id) rhs] flatten-ok?)]
@@ -575,6 +583,8 @@
                            (maybe-core-pvector-proc
                             'core-pvector-ref))]
                   [drop (maybe-core-pvector-proc 'core-pvector-drop)]
+                  [for-each (maybe-core-pvector-proc
+                             'core-pvector-for-each)]
                   [cursor-start (maybe-core-pvector-proc
                                  'core-pvector-cursor-start)]
                   [cursor-next (maybe-core-pvector-proc
@@ -590,7 +600,8 @@
                                ref
                                drop
                                (and (procedure? cursor-start) cursor-start)
-                               (and (procedure? cursor-next) cursor-next)))
+                               (and (procedure? cursor-next) cursor-next)
+                               (and (procedure? for-each) for-each)))
                   'unavailable))))
     (and (vector? core-pvector-procs)
          core-pvector-procs))
@@ -600,6 +611,10 @@
       (and procs
            ((unsafe-vector-ref procs 0) v)
            procs)))
+
+  (define (core-pvector-direct-for-each-proc-for v)
+    (let ([procs (core-pvector-procs-for v)])
+      (and procs (unsafe-vector-ref procs 7))))
 
   (define-syntax define-sequence-syntax
     (syntax-rules ()
@@ -1826,6 +1841,55 @@
       [(bind ...) #`(letrec-syntax (bind ...)
                       #,body)]))
 
+  (define-for-syntax (direct-pvector-rest-supported? rest)
+    (let loop ([rest rest])
+      (syntax-case rest ()
+        [() #t]
+        [(#:do (form ...) . more)
+         (loop #'more)]
+        [(kw expr . more)
+         (let ([kw (syntax-e #'kw)])
+           (cond
+             [(or (eq? kw '#:when)
+                  (eq? kw '#:unless)
+                  (eq? kw '#:break)
+                  (eq? kw '#:final))
+              (loop #'more)]
+             [else #f]))]
+        [_ #f])))
+
+  (define-for-syntax (direct-pvector-inner-recur-supported? inner-recur)
+    (or (not (syntax-e inner-recur))
+        (and (identifier? inner-recur)
+             (free-identifier=? inner-recur #'inner-recur/fold))))
+
+  (define-for-syntax (direct-pvector-fold-values rest body next-k done final?)
+    (let loop ([rest rest])
+      (syntax-case rest ()
+        [()
+         #`(let () . #,body)]
+        [(#:do (form ...) . more)
+         #`(let ()
+             form ...
+             #,(loop #'more))]
+        [(#:when expr . more)
+         #`(if expr
+               #,(loop #'more)
+               #,next-k)]
+        [(#:unless expr . more)
+         #`(if expr
+               #,next-k
+               #,(loop #'more))]
+        [(#:break expr . more)
+         #`(if expr
+               (call-with-values (lambda () #,next-k) #,done)
+               #,(loop #'more))]
+        [(#:final expr . more)
+         #`(let ([final-value (or expr #,final?)])
+             (set! #,final? final-value)
+             #,(loop #'more))]
+        [_ #`(let () . #,body)])))
+
   ;; For checking that parallel sequences end together; `state` for each sequence
   ;; got to `#f` when it has terminated
   (define-syntax (if/c stx)
@@ -2058,9 +2122,123 @@
                                                                     [(#:on-length-mismatch . _) #f]
                                                                     [(kw . _) (keyword? (syntax-e #'kw)) #t]
                                                                     [(_ . rest) (loop #'rest)]))))])
-         (let ([r #`(for/foldX/derived [orig-stx inner-recur nested? nested? (bind . binds) ragged]
-                      fold-bind bind-init next-k break-k final?-id rest . body)]
-               [d (syntax-property #'bind 'disappeared-use)])
+         (let* ([generic-r
+                 #`(for/foldX/derived [orig-stx inner-recur nested? nested? (bind . binds) ragged]
+                     fold-bind bind-init next-k break-k final?-id rest . body)]
+                [direct-pvector?
+                 (and (syntax-property #'bind 'pvector-direct-fold)
+                      (null? (syntax-e #'binds))
+                      (direct-pvector-rest-supported? #'rest)
+                      (direct-pvector-inner-recur-supported? #'inner-recur)
+                      (not (syntax-e #'nested?)))]
+                [r (if direct-pvector?
+                       (syntax-case #'bind ()
+                         [(([(pv-id) pv-rhs] outer-binding ...)
+                           outer-check
+                           (loop-binding ...)
+                           pos-guard
+                           ([(elem elem-extra ...) inner-rhs] inner-binding ...)
+                           inner-check
+                           pre-guard
+                           post-guard
+                           (loop-arg ...))
+                          (syntax-case #'fold-bind ()
+                            [()
+                             (with-syntax ([generic-bind
+                                            #'(()
+                                               (begin)
+                                               (loop-binding ...)
+                                               pos-guard
+                                               ([(elem elem-extra ...) inner-rhs] inner-binding ...)
+                                               inner-check
+                                               pre-guard
+                                               post-guard
+                                               (loop-arg ...))]
+                                           [(direct-done direct-final?)
+                                            (generate-temporaries
+                                             #'(direct-done direct-final?))])
+                               (with-syntax ([direct-values
+                                              (direct-pvector-fold-values
+                                               #'rest
+                                               #'body
+                                               #'next-k
+                                               #'direct-done
+                                               #'direct-final?)])
+                               (quasisyntax/loc #'orig-stx
+                                 (let-values ([(pv-id) pv-rhs] outer-binding ...)
+                                   outer-check
+                                   (let ([direct-for-each
+                                          (core-pvector-direct-for-each-proc-for pv-id)])
+                                     (if direct-for-each
+                                         #,(wrap-init
+                                            #'bind-init
+                                            #`(let ()
+                                                (let/ec direct-done
+                                                  (direct-for-each
+                                                   pv-id
+                                                   (lambda (elem)
+                                                     (let ([direct-final? #f])
+                                                       (call-with-values
+                                                        (lambda () direct-values)
+                                                        (lambda results
+                                                          (when direct-final?
+                                                            (call-with-values
+                                                             (lambda () next-k)
+                                                             direct-done))
+                                                          (void))))))
+                                                  next-k)))
+                                         (for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
+                                           fold-bind bind-init next-k break-k final?-id rest . body)))))))]
+                            [([int-var fold-var] ...)
+                             (with-syntax ([generic-bind
+                                            #'(()
+                                               (begin)
+                                               (loop-binding ...)
+                                               pos-guard
+                                               ([(elem elem-extra ...) inner-rhs] inner-binding ...)
+                                               inner-check
+                                               pre-guard
+                                               post-guard
+                                               (loop-arg ...))]
+                                           [(direct-done direct-final?)
+                                            (generate-temporaries
+                                             #'(direct-done direct-final?))])
+                               (with-syntax ([direct-values
+                                              (direct-pvector-fold-values
+                                               #'rest
+                                               #'body
+                                               #'next-k
+                                               #'direct-done
+                                               #'direct-final?)])
+                               (quasisyntax/loc #'orig-stx
+                                 (let-values ([(pv-id) pv-rhs] outer-binding ...)
+                                   outer-check
+                                   (let ([direct-for-each
+                                          (core-pvector-direct-for-each-proc-for pv-id)])
+                                     (if direct-for-each
+                                         #,(wrap-init
+                                            #'bind-init
+                                            #`(let ()
+                                                (let/ec direct-done
+                                                  (direct-for-each
+                                                   pv-id
+                                                   (lambda (elem)
+                                                     (let ([direct-final? #f])
+                                                       (let-values ([(fold-var ...)
+                                                                     direct-values])
+                                                         (set! int-var fold-var) ...
+                                                         (when direct-final?
+                                                           (call-with-values
+                                                            (lambda () next-k)
+                                                            direct-done))
+                                                         (void)))))
+                                                  next-k)))
+                                         (for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
+                                           fold-bind bind-init next-k break-k final?-id rest . body)))))))]
+                            [_ generic-r])]
+                         [_ generic-r])
+                       generic-r)]
+                [d (syntax-property #'bind 'disappeared-use)])
            (if d
                (syntax-property r 'disappeared-use d)
                r)))]
