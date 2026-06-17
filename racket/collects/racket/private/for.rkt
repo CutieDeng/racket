@@ -585,6 +585,9 @@
                   [drop (maybe-core-pvector-proc 'core-pvector-drop)]
                   [for-each (maybe-core-pvector-proc
                              'core-pvector-for-each)]
+                  [unsafe-for-each
+                   (maybe-core-pvector-proc
+                    'core-unsafe-pvector-for-each)]
                   [cursor-start (maybe-core-pvector-proc
                                  'core-pvector-cursor-start)]
                   [cursor-next (maybe-core-pvector-proc
@@ -593,7 +596,10 @@
                    (maybe-core-pvector-proc
                     'core-pvector-cursor-value+next)]
                   [fold-left (maybe-core-pvector-proc
-                              'core-pvector-fold-left)])
+                              'core-pvector-fold-left)]
+                  [unsafe-fold-left
+                   (maybe-core-pvector-proc
+                    'core-unsafe-pvector-fold-left)])
               (or (and (procedure? pvector?)
                        (procedure? empty?)
                        (procedure? length)
@@ -609,7 +615,11 @@
                                (and (procedure? for-each) for-each)
                                (and (procedure? cursor-value+next)
                                     cursor-value+next)
-                               (and (procedure? fold-left) fold-left)))
+                               (and (procedure? fold-left) fold-left)
+                               (and (procedure? unsafe-for-each)
+                                    unsafe-for-each)
+                               (and (procedure? unsafe-fold-left)
+                                    unsafe-fold-left)))
                   'unavailable))))
     (and (vector? core-pvector-procs)
          core-pvector-procs))
@@ -2049,7 +2059,9 @@
                       fallback)])
         #`(let ([direct-procs (core-pvector-procs-for pv-id)])
             (if direct-procs
-                (let ([direct-for-each (unsafe-vector-ref direct-procs 7)])
+                (let ([direct-for-each
+                       (or (unsafe-vector-ref direct-procs 10)
+                           (unsafe-vector-ref direct-procs 7))])
                   (if direct-for-each
                       #,(wrap-init
                          bind-init
@@ -2081,7 +2093,9 @@
                   [(body ...) body])
       #`(let ([direct-procs (core-pvector-procs-for pv-id)])
           (if direct-procs
-              (let ([direct-fold-left (unsafe-vector-ref direct-procs 9)])
+              (let ([direct-fold-left
+                     (or (unsafe-vector-ref direct-procs 11)
+                         (unsafe-vector-ref direct-procs 9))])
                 (if direct-fold-left
                     #,(wrap-init
                        bind-init

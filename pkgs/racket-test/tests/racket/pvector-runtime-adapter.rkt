@@ -691,6 +691,12 @@
   (define core-pvector-fold-left
     (and (kernel-procedure? 'core-pvector-fold-left)
          (kernel-value 'core-pvector-fold-left)))
+  (define core-unsafe-pvector-for-each
+    (and (kernel-procedure? 'core-unsafe-pvector-for-each)
+         (kernel-value 'core-unsafe-pvector-for-each)))
+  (define core-unsafe-pvector-fold-left
+    (and (kernel-procedure? 'core-unsafe-pvector-fold-left)
+         (kernel-value 'core-unsafe-pvector-fold-left)))
 
   (define (check-core-list pv xs)
     (check-equal? (core-pvector-length pv) (length xs))
@@ -722,10 +728,28 @@
     (check-equal? (reverse seen-for-each) xs)
     (check-equal? (core-pvector-for-each pv values) (void))
     (check-equal? (core-pvector-for-each pv void) (void))
+    (when core-unsafe-pvector-for-each
+      (define seen-unsafe-for-each null)
+      (check-equal?
+       (core-unsafe-pvector-for-each
+        pv
+        (lambda (x)
+          (set! seen-unsafe-for-each (cons x seen-unsafe-for-each))
+          (values x 'ignored)))
+       (void))
+      (check-equal? (reverse seen-unsafe-for-each) xs))
     (when core-pvector-fold-left
       (check-equal? (core-pvector-fold-left pv 0 +)
                     (apply + xs))
       (check-equal? (core-pvector-fold-left
+                     pv
+                     null
+                     (lambda (acc x) (cons x acc)))
+                    (reverse xs)))
+    (when core-unsafe-pvector-fold-left
+      (check-equal? (core-unsafe-pvector-fold-left pv 0 +)
+                    (apply + xs))
+      (check-equal? (core-unsafe-pvector-fold-left
                      pv
                      null
                      (lambda (acc x) (cons x acc)))

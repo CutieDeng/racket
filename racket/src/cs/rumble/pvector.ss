@@ -3728,41 +3728,40 @@
         (core-pvector-map-range!/known-length vec 0 pv len 0 len proc)
         (core-vector->pvector/no-copy vec))])))
 
+(define (core-unsafe-pvector-for-each pv proc)
+  (let ([len (core-pvector-length/unchecked pv)])
+    (unless (or (eq? proc values) (eq? proc void))
+      (cond
+       [(fx= len 0) (void)]
+       [(fx= len 1)
+        (proc (core-pvector-view-left pv))]
+       [(fx= len 2)
+        (proc (core-pvector-large-finger-ref/known-length pv len 0))
+        (proc (core-pvector-large-finger-ref/known-length pv len 1))]
+       [(fx= len 3)
+        (proc (core-pvector-large-finger-ref/known-length pv len 0))
+        (proc (core-pvector-large-finger-ref/known-length pv len 1))
+        (proc (core-pvector-large-finger-ref/known-length pv len 2))]
+       [(fx= len 4)
+        (proc (core-pvector-large-finger-ref/known-length pv len 0))
+        (proc (core-pvector-large-finger-ref/known-length pv len 1))
+        (proc (core-pvector-large-finger-ref/known-length pv len 2))
+        (proc (core-pvector-large-finger-ref/known-length pv len 3))]
+       [else
+        (core-pvector-for-each-range/known-length pv len 0 len proc)])))
+  (void))
+
 (define (core-pvector-for-each pv proc)
   (unless (procedure? proc)
     (raise-argument-error 'core-pvector-for-each "procedure?" proc))
   (unless (procedure-arity-includes? proc 1)
     (error 'core-pvector-for-each "procedure does not accept one argument"))
-  (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-for-each pv))])
-  (unless (or (eq? proc values) (eq? proc void))
-      (cond
-       [(fx= len 0) (void)]
-       [(fx= len 1)
-        (proc (core-pvector-view-left pv))]
-     [(fx= len 2)
-      (proc (core-pvector-large-finger-ref/known-length pv len 0))
-      (proc (core-pvector-large-finger-ref/known-length pv len 1))]
-     [(fx= len 3)
-      (proc (core-pvector-large-finger-ref/known-length pv len 0))
-      (proc (core-pvector-large-finger-ref/known-length pv len 1))
-      (proc (core-pvector-large-finger-ref/known-length pv len 2))]
-     [(fx= len 4)
-      (proc (core-pvector-large-finger-ref/known-length pv len 0))
-      (proc (core-pvector-large-finger-ref/known-length pv len 1))
-      (proc (core-pvector-large-finger-ref/known-length pv len 2))
-      (proc (core-pvector-large-finger-ref/known-length pv len 3))]
-       [else
-        (core-pvector-for-each-range/known-length pv len 0 len proc)])))
-  (void))
+  (core-unsafe-pvector-for-each
+   (core-check-pvector 'core-pvector-for-each pv)
+   proc))
 
-(define (core-pvector-fold-left pv init proc)
-  (unless (procedure? proc)
-    (raise-argument-error 'core-pvector-fold-left "procedure?" proc))
-  (unless (procedure-arity-includes? proc 2)
-    (error 'core-pvector-fold-left "procedure does not accept two arguments"))
-  (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-fold-left pv))])
+(define (core-unsafe-pvector-fold-left pv init proc)
+  (let ([len (core-pvector-length/unchecked pv)])
     (cond
      [(fx= len 0) init]
      [(fx= len 1)
@@ -3798,6 +3797,16 @@
       (core-pvector-large-finger-fold-left-all/known-length
        pv len init proc)]
      [else init])))
+
+(define (core-pvector-fold-left pv init proc)
+  (unless (procedure? proc)
+    (raise-argument-error 'core-pvector-fold-left "procedure?" proc))
+  (unless (procedure-arity-includes? proc 2)
+    (error 'core-pvector-fold-left "procedure does not accept two arguments"))
+  (core-unsafe-pvector-fold-left
+   (core-check-pvector 'core-pvector-fold-left pv)
+   init
+   proc))
 
 (define (core-pvector->list pv)
   (let ([len (core-pvector-length pv)])

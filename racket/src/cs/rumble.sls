@@ -444,6 +444,8 @@
           core-pvector-map
           core-pvector-for-each
           core-pvector-fold-left
+          core-unsafe-pvector-for-each
+          core-unsafe-pvector-fold-left
           core-pvector-split-at
           core-pvector-split-at-right
           core-pvector-split
