@@ -14,6 +14,8 @@
 (define max-size 1024)
 (define explicit-sizes #f)
 (define impl-names '(list vector treelist pvector adapter-pvector))
+(define cutie-module
+  (string->path "/Users/cutiedeng/Y2026/M03/D28/cutie-ftree.rkt/pvector.rkt"))
 (define ops #f)
 (define baseline-name 'list)
 (define speed-score-weight 0.7)
@@ -99,8 +101,10 @@
                  (set! max-size (parse-count '--max-size n))]
  [("--sizes") s "Explicit comma-separated sizes; overrides --max-size"
               (set! explicit-sizes (parse-size-list '--sizes s))]
- [("--impls") s "Comma-separated implementations: list,vector,treelist,pvector,adapter-pvector"
+ [("--impls") s "Comma-separated implementations: list,vector,treelist,cutie-pvector,pvector,adapter-pvector"
               (set! impl-names (parse-symbol-list s))]
+ [("--cutie-module") p "Path to the original cutie-ftree pvector.rkt"
+                     (set! cutie-module (string->path p))]
  [("--ops") s "Comma-separated operations"
            (set! ops (parse-symbol-list s))]
  [("--baseline") s "Primary scoring baseline implementation"
@@ -157,6 +161,14 @@
   #:transparent)
 
 (define current-repeat-count (make-parameter M))
+
+(define cutie-pvector? (lambda (_) #f))
+(define cutie-pvector-length
+  (lambda (v)
+    (error 'cutie-pvector-length "cutie pvector support has not been loaded")))
+
+(define (load-cutie name)
+  (dynamic-require cutie-module name))
 
 (define list-impl
   (impl 'list
@@ -238,16 +250,51 @@
         adapter:pvector-map
         adapter:pvector->list))
 
-(define all-impls
+(define (make-cutie-pvector-impl)
+  (define cutie:pvector? (load-cutie 'pvector?))
+  (define cutie:pvector-empty (load-cutie 'pvector-empty))
+  (define cutie:pvector-length* (load-cutie 'pvector-length))
+  (define cutie:pvector-ref (load-cutie 'pvector-ref))
+  (define cutie:pvector-cons-left (load-cutie 'pvector-cons-left))
+  (define cutie:pvector-cons-right (load-cutie 'pvector-cons-right))
+  (define cutie:pvector-append (load-cutie 'pvector-append))
+  (define cutie:pvector-take (load-cutie 'pvector-take))
+  (define cutie:pvector-drop (load-cutie 'pvector-drop))
+  (define cutie:pvector->list (load-cutie 'pvector->list))
+  (define cutie:in-pvector (load-cutie 'in-pvector))
+  (set! cutie-pvector? cutie:pvector?)
+  (set! cutie-pvector-length cutie:pvector-length*)
+  (impl 'cutie-pvector
+        (lambda (len)
+          (for/fold ([pv (cutie:pvector-empty)]) ([i (in-range len)])
+            (cutie:pvector-cons-right pv i)))
+        cutie:pvector-length*
+        cutie:pvector-ref
+        (lambda (pv)
+          (for/fold ([sum 0]) ([x (cutie:in-pvector pv)]) (+ sum x)))
+        (lambda (value pv) (cutie:pvector-cons-left pv value))
+        (lambda (value pv) (cutie:pvector-cons-right pv value))
+        cutie:pvector-append
+        cutie:pvector-take
+        cutie:pvector-drop
+        (lambda (pv proc)
+          (for/fold ([out (cutie:pvector-empty)]) ([x (cutie:in-pvector pv)])
+            (cutie:pvector-cons-right out (proc x))))
+        cutie:pvector->list))
+
+(define (available-impls)
   (list list-impl
         vector-impl
         treelist-impl
+        (and (enabled-impl? 'cutie-pvector)
+             (make-cutie-pvector-impl))
         pvector-impl
         adapter-pvector-impl))
 
 (define selected-impls
-  (for/list ([candidate (in-list all-impls)]
-             #:when (enabled-impl? (impl-name candidate)))
+  (for/list ([candidate (in-list (available-impls))]
+             #:when (and candidate
+                         (enabled-impl? (impl-name candidate))))
     candidate))
 
 (define (repeat-result m proc)
@@ -259,6 +306,8 @@
     [(list? result) (format "list:~a" (length result))]
     [(vector? result) (format "vector:~a" (vector-length result))]
     [(treelist? result) (format "treelist:~a" (treelist-length result))]
+    [(cutie-pvector? result)
+     (format "cutie-pvector:~a" (cutie-pvector-length result))]
     [(pvector? result) (format "pvector:~a" (pvector-length result))]
     [(adapter:pvector? result)
      (format "adapter-pvector:~a" (adapter:pvector-length result))]
@@ -293,6 +342,8 @@
     [(list? result) (* 3 (length result))]
     [(vector? result) (+ 1 (vector-length result))]
     [(treelist? result) (+ 1 (treelist-length result))]
+    [(cutie-pvector? result)
+     (pvector-academic-cost-units (cutie-pvector-length result))]
     [(pvector? result) (pvector-academic-cost-units (pvector-length result))]
     [(adapter:pvector? result) (adapter-pvector-cost-units result)]
     [else 0]))

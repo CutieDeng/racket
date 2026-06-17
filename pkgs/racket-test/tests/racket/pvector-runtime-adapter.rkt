@@ -132,7 +132,9 @@
   (when (and (core-backend?)
              (eq? (hash-ref stats 'representation #f) 'large-finger))
     (check-equal? (hash-ref stats 'payload-vectors #f) 0)
-    (check-equal? (hash-ref stats 'digit-vectors #f) 2)
+    (check-equal? (hash-ref stats 'digit-storage #f) 'inline)
+    (check-equal? (hash-ref stats 'inline-digits #f) 2)
+    (check-equal? (hash-ref stats 'digit-vectors #f) 0)
     (check-true (<= 1 (hash-ref stats 'prefix-length 0) 4))
     (check-true (<= 1 (hash-ref stats 'suffix-length 0) 4))
     (when (positive? (hash-ref stats 'middle-measure 0))
@@ -1402,7 +1404,9 @@
   (check-exn exn:fail:contract?
              (lambda ()
                (adapter:pvector-shape-stats '(not a pvector))))
-  (if (and (bc-vm?) (core-backend?))
+  (if (and core-backend?
+           (or (bc-vm?)
+               (adapter:pvector-runtime-adapter-public-properties-available?)))
       (check-no-chunk-shape-stats
        (adapter:pvector-shape-stats (public:pvector 1 2 3)))
       (check-exn exn:fail:contract?

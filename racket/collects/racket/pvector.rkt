@@ -100,9 +100,16 @@
 (define direct-raw-sequence?
   (raw:pvector-runtime-adapter-core-available?))
 
+(define direct-raw-cursor?
+  (raw:pvector-runtime-adapter-cursor-available?))
+
+;; Historically, the raw-public path was enabled only for BC, whose native
+;; pvector values already carried the public struct properties. CS can use the
+;; same raw-public path once the runtime exposes a safe property-install hook.
 (define bc-native-public?
   (and direct-raw-sequence?
-       (eq? (system-type 'vm) 'racket)))
+       (or (eq? (system-type 'vm) 'racket)
+           (raw:pvector-runtime-adapter-public-properties-available?))))
 
 (define empty-pvector
   (if bc-native-public?
@@ -196,6 +203,15 @@
 (define (pvector-gen-sequence pv)
   (define tree (pvector-tree/unsafe pv))
   (cond
+    [direct-raw-cursor?
+     (values
+      raw:pvector-cursor-value/fast
+      #f
+      raw:pvector-cursor-next/fast
+      (raw:pvector-cursor-start/fast tree #f)
+      (lambda (cursor) cursor)
+      #f
+      #f)]
     [direct-raw-sequence?
      (define len (pvector-length/unsafe pv))
      (values
@@ -676,6 +692,11 @@
                #'(sequence->pvector/proc len-expr))
            #'(sequence->pvector/proc len-expr)))]
     [_ #'sequence->pvector/proc]))
+
+(define (in-range-end->pvector end)
+  (if (exact-nonnegative-integer? end)
+      (sequence->pvector end)
+      (sequence->pvector (in-range end))))
 
 (begin-encourage-inline
   (define (pvector-length pv)
@@ -1159,7 +1180,17 @@
                 (wrap/len right (unsafe-fx- len pos)))])]))
 
 (define (raw-tree-in-pvector/proc tree len)
-  (if direct-raw-sequence?
+  (cond
+    [direct-raw-cursor?
+     (make-do-sequence
+      (lambda ()
+        (values raw:pvector-cursor-value/fast
+                raw:pvector-cursor-next/fast
+                (raw:pvector-cursor-start/fast tree #f)
+                (lambda (cursor) cursor)
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
+    [direct-raw-sequence?
       (make-do-sequence
        (lambda ()
          (values (lambda (index) (raw:pvector-ref/fast tree index))
@@ -1167,7 +1198,8 @@
                  0
                  (lambda (index) (unsafe-fx< index len))
                  (lambda (elem) #t)
-                 (lambda (pos elem) #t))))
+                 (lambda (pos elem) #t))))]
+    [else
       (let ([vec (raw:pvector->vector tree)])
         (make-do-sequence
          (lambda ()
@@ -1176,10 +1208,20 @@
                    0
                    (lambda (index) (unsafe-fx< index len))
                    (lambda (elem) #t)
-                   (lambda (pos elem) #t)))))))
+                   (lambda (pos elem) #t)))))]))
 
 (define (raw-tree-in-pvector-reverse/proc tree len)
-  (if direct-raw-sequence?
+  (cond
+    [direct-raw-cursor?
+     (make-do-sequence
+      (lambda ()
+        (values raw:pvector-cursor-value/fast
+                raw:pvector-cursor-next/fast
+                (raw:pvector-cursor-start/fast tree #t)
+                (lambda (cursor) cursor)
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
+    [direct-raw-sequence?
       (make-do-sequence
        (lambda ()
          (values (lambda (index) (raw:pvector-ref/fast tree index))
@@ -1187,7 +1229,8 @@
                  (unsafe-fx- len 1)
                  (lambda (index) (unsafe-fx>= index 0))
                  (lambda (elem) #t)
-                 (lambda (pos elem) #t))))
+                 (lambda (pos elem) #t))))]
+    [else
       (let ([vec (raw:pvector->vector tree)])
         (make-do-sequence
          (lambda ()
@@ -1196,7 +1239,7 @@
                    (unsafe-fx- len 1)
                    (lambda (index) (unsafe-fx>= index 0))
                    (lambda (elem) #t)
-                   (lambda (pos elem) #t)))))))
+                   (lambda (pos elem) #t)))))]))
 
 (define (in-pvector/proc pv)
   (if (pvector? pv)
@@ -1232,15 +1275,22 @@
                    pv
                    (check-pvector 'in-pvector pv)))
              (define tree (pvector-tree/unsafe pv*))
-             (define len (pvector-length/unsafe pv*)))
-           ([elem-idx 0])
-           (unsafe-fx< elem-idx len)
-           ([(elem next-elem-idx)
-             (values (raw:pvector-ref/fast tree elem-idx)
-                     (unsafe-fx+ elem-idx 1))])
+             (define use-cursor? direct-raw-cursor?)
+             (define len (and (not use-cursor?) (pvector-length/unsafe pv*))))
+           ([elem-pos (if use-cursor?
+                          (raw:pvector-cursor-start/fast tree #f)
+                          0)])
+           (if use-cursor?
+               elem-pos
+               (unsafe-fx< elem-pos len))
+           ([(elem next-elem-pos)
+             (if use-cursor?
+                 (raw:pvector-cursor-value+next/fast elem-pos)
+                 (values (raw:pvector-ref/fast tree elem-pos)
+                         (unsafe-fx+ elem-pos 1)))])
            #t
            #t
-           (next-elem-idx))]]
+           (next-elem-pos))]]
       [_ #f])))
 
 (define-sequence-syntax in-pvector-reverse
@@ -1257,15 +1307,22 @@
                    pv
                    (check-pvector 'in-pvector-reverse pv)))
              (define tree (pvector-tree/unsafe pv*))
-             (define len (pvector-length/unsafe pv*)))
-           ([elem-idx (unsafe-fx- len 1)])
-           (unsafe-fx>= elem-idx 0)
-           ([(elem next-elem-idx)
-             (values (raw:pvector-ref/fast tree elem-idx)
-                     (unsafe-fx- elem-idx 1))])
+             (define use-cursor? direct-raw-cursor?)
+             (define len (and (not use-cursor?) (pvector-length/unsafe pv*))))
+           ([elem-pos (if use-cursor?
+                          (raw:pvector-cursor-start/fast tree #t)
+                          (unsafe-fx- len 1))])
+           (if use-cursor?
+               elem-pos
+               (unsafe-fx>= elem-pos 0))
+           ([(elem next-elem-pos)
+             (if use-cursor?
+                 (raw:pvector-cursor-value+next/fast elem-pos)
+                 (values (raw:pvector-ref/fast tree elem-pos)
+                         (unsafe-fx- elem-pos 1)))])
            #t
            #t
-           (next-elem-idx))]]
+           (next-elem-pos))]]
       [_ #f])))
 
 (define exported-pvector?
@@ -1617,19 +1674,26 @@
       (syntax-case stx ()
         [[(elem) (_ pv-expr)]
          #'[(elem)
-            (:do-in
-             ([(pv) pv-expr])
-             (begin
+             (:do-in
+              ([(pv) pv-expr])
+              (begin
                (define tree (unsafe-tree pv))
-               (define len (pvector-length/unsafe pv)))
-             ([elem-idx 0])
-             (unsafe-fx< elem-idx len)
-             ([(elem next-elem-idx)
-               (values (raw:pvector-ref/fast tree elem-idx)
-                       (unsafe-fx+ elem-idx 1))])
+               (define use-cursor? direct-raw-cursor?)
+               (define len (and (not use-cursor?) (pvector-length/unsafe pv))))
+             ([elem-pos (if use-cursor?
+                            (raw:pvector-cursor-start/fast tree #f)
+                            0)])
+             (if use-cursor?
+                 elem-pos
+                 (unsafe-fx< elem-pos len))
+             ([(elem next-elem-pos)
+               (if use-cursor?
+                   (raw:pvector-cursor-value+next/fast elem-pos)
+                   (values (raw:pvector-ref/fast tree elem-pos)
+                           (unsafe-fx+ elem-pos 1)))])
              #t
              #t
-             (next-elem-idx))]]
+             (next-elem-pos))]]
         [_ #f])))
 
   (define-sequence-syntax unsafe-in-pvector-reverse
@@ -1638,19 +1702,26 @@
       (syntax-case stx ()
         [[(elem) (_ pv-expr)]
          #'[(elem)
-            (:do-in
-             ([(pv) pv-expr])
-             (begin
+             (:do-in
+              ([(pv) pv-expr])
+              (begin
                (define tree (unsafe-tree pv))
-               (define len (pvector-length/unsafe pv)))
-             ([elem-idx (unsafe-fx- len 1)])
-             (unsafe-fx>= elem-idx 0)
-             ([(elem next-elem-idx)
-               (values (raw:pvector-ref/fast tree elem-idx)
-                       (unsafe-fx- elem-idx 1))])
+               (define use-cursor? direct-raw-cursor?)
+               (define len (and (not use-cursor?) (pvector-length/unsafe pv))))
+             ([elem-pos (if use-cursor?
+                            (raw:pvector-cursor-start/fast tree #t)
+                            (unsafe-fx- len 1))])
+             (if use-cursor?
+                 elem-pos
+                 (unsafe-fx>= elem-pos 0))
+             ([(elem next-elem-pos)
+               (if use-cursor?
+                   (raw:pvector-cursor-value+next/fast elem-pos)
+                   (values (raw:pvector-ref/fast tree elem-pos)
+                           (unsafe-fx- elem-pos 1)))])
              #t
              #t
-             (next-elem-idx))]]
+             (next-elem-pos))]]
         [_ #f]))))
 
 (define (pvector-match-tail->list tree start end)
@@ -1840,6 +1911,12 @@
      (and (same-identifier? #'elem #'body)
           (small-literal-in-range->pvector stx #'start #'end #'step))
      (small-literal-in-range->pvector stx #'start #'end #'step)]
+    [(_ ([elem (in-range end)]) body)
+     (same-identifier? #'elem #'body)
+     #'(in-range-end->pvector end)]
+    [(_ ([elem (in-range range-arg ...)]) body)
+     (same-identifier? #'elem #'body)
+     #'(sequence->pvector (in-range range-arg ...))]
     [(_ ([elem (in-range end)]) body ...)
      (small-length-literal? #'end)
      #'(wrap/len (raw:for/pvector #:length end
@@ -2030,6 +2107,12 @@
      (and (same-identifier? #'elem #'body)
           (small-literal-in-range->pvector stx #'start #'end #'step))
      (small-literal-in-range->pvector stx #'start #'end #'step)]
+    [(_ ([elem (in-range end)]) body)
+     (same-identifier? #'elem #'body)
+     #'(in-range-end->pvector end)]
+    [(_ ([elem (in-range range-arg ...)]) body)
+     (same-identifier? #'elem #'body)
+     #'(sequence->pvector (in-range range-arg ...))]
     [(_ ([elem (in-range end)]) body ...)
      (small-length-literal? #'end)
      #'(wrap/len (raw:for*/pvector #:length end
@@ -2423,3 +2506,44 @@
 
 (define (pvector-secondary-hash-code pv recur)
   (pvector-hash/tree pv recur 32749))
+
+(define (install-native-public-properties!)
+  (when (and bc-native-public?
+             (raw:pvector-runtime-adapter-public-properties-available?))
+    (raw:pvector-install-struct-property!
+     prop:custom-print-quotable
+     'never)
+    (raw:pvector-install-struct-property!
+     prop:custom-write
+     (lambda (pv port mode) (pvector-print pv port mode)))
+    (raw:pvector-install-struct-property!
+     prop:gen-sequence
+     (lambda (pv) (pvector-gen-sequence pv)))
+    (raw:pvector-install-struct-property!
+     prop:sequence
+     (lambda (pv) (in-pvector pv)))
+    (raw:pvector-install-struct-property!
+     prop:stream
+     (vector
+      (lambda (pv) (unsafe-fx= 0 (pvector-length/unsafe pv)))
+      (lambda (pv) (raw:pvector-view-left/fast (pvector-tree/unsafe pv)))
+      (lambda (pv)
+        (define len (pvector-length/unsafe pv))
+        (if (unsafe-fx= len 1)
+            empty-pvector
+            (let-values ([(_ rest)
+                          (raw:pvector-pop-left (pvector-tree/unsafe pv))])
+              (wrap/len rest (unsafe-fx- len 1)))))))
+    (raw:pvector-install-struct-property!
+     prop:serializable
+     (make-serialize-info
+      (lambda (pv) (vector (pvector->vector pv)))
+      (cons 'deserialize-pvector
+            (module-path-index-join '(submod "." deserialize)
+                                    (variable-reference->module-path-index
+                                     (#%variable-reference))))
+      #f
+      (or (current-load-relative-directory)
+          (current-directory))))))
+
+(install-native-public-properties!)

@@ -66,8 +66,15 @@
          pvector-runtime-adapter-backend
          pvector-runtime-adapter-core-available?
          pvector-runtime-adapter-cursor-available?
+         pvector-runtime-adapter-public-properties-available?
+         pvector-install-struct-property!
          pvector-cursor-start
-         pvector-cursor-next)
+         pvector-cursor-value
+         pvector-cursor-next
+         pvector-cursor-start/fast
+         pvector-cursor-value/fast
+         pvector-cursor-next/fast
+         pvector-cursor-value+next/fast)
 
 (define (maybe-kernel name)
   (with-handlers ([exn:fail? (lambda (_) #f)])
@@ -104,7 +111,10 @@
   (or (maybe-kernel 'core-unsafe-pvector-last)
       core-unsafe-pvector-view-right))
 (define core-pvector-cursor-start (maybe-kernel 'core-pvector-cursor-start))
+(define core-pvector-cursor-value (maybe-kernel 'core-pvector-cursor-value))
 (define core-pvector-cursor-next (maybe-kernel 'core-pvector-cursor-next))
+(define core-pvector-cursor-value+next
+  (maybe-kernel 'core-pvector-cursor-value+next))
 (define core-pvector-view-left (maybe-kernel 'core-pvector-view-left))
 (define core-pvector-view-right (maybe-kernel 'core-pvector-view-right))
 (define core-pvector-set (maybe-kernel 'core-pvector-set))
@@ -125,6 +135,8 @@
 (define core-pvector-take-right (maybe-kernel 'core-pvector-take-right))
 (define core-pvector-drop-right (maybe-kernel 'core-pvector-drop-right))
 (define core-pvector-copy (maybe-kernel 'core-pvector-copy))
+(define core-pvector-install-struct-property!
+  (maybe-kernel 'core-pvector-install-struct-property!))
 
 (define core-bindings
   (list core-pvector?
@@ -196,7 +208,16 @@
 (define core-cursor-available?
   (and core-sequence-available?
        (procedure? core-pvector-cursor-start)
+       (procedure? core-pvector-cursor-value)
        (procedure? core-pvector-cursor-next)))
+
+(define core-cursor-combined-available?
+  (and core-cursor-available?
+       (procedure? core-pvector-cursor-value+next)))
+
+(define core-public-properties-available?
+  (and core-available?
+       (procedure? core-pvector-install-struct-property!)))
 
 (define (pvector-runtime-adapter-core-available?)
   core-available?)
@@ -204,8 +225,17 @@
 (define (pvector-runtime-adapter-cursor-available?)
   core-cursor-available?)
 
+(define (pvector-runtime-adapter-public-properties-available?)
+  core-public-properties-available?)
+
 (define (pvector-runtime-adapter-backend)
   (if core-available? 'core 'finger))
+
+(define (pvector-install-struct-property! prop value)
+  (unless core-public-properties-available?
+    (error 'pvector-install-struct-property!
+           "native pvector public properties are not available"))
+  (core-pvector-install-struct-property! prop value))
 
 (define core-builder-block-size 64)
 
@@ -671,12 +701,43 @@
 (define (pvector-cursor-start pv reverse?)
   (unless core-cursor-available?
     (error 'pvector-cursor-start "native pvector cursor is not available"))
+  (unless (core-pvector? pv)
+    (raise-argument-error 'pvector-cursor-start "pvector?" pv))
   (core-pvector-cursor-start pv reverse?))
+
+(define (pvector-cursor-value cursor)
+  (unless core-cursor-available?
+    (error 'pvector-cursor-value "native pvector cursor is not available"))
+  (core-pvector-cursor-value cursor))
 
 (define (pvector-cursor-next cursor)
   (unless core-cursor-available?
     (error 'pvector-cursor-next "native pvector cursor is not available"))
   (core-pvector-cursor-next cursor))
+
+(define pvector-cursor-start/fast
+  (if core-cursor-available?
+      core-pvector-cursor-start
+      pvector-cursor-start))
+
+(define pvector-cursor-value/fast
+  (if core-cursor-available?
+      core-pvector-cursor-value
+      pvector-cursor-value))
+
+(define pvector-cursor-next/fast
+  (if core-cursor-available?
+      core-pvector-cursor-next
+      pvector-cursor-next))
+
+(define (pvector-cursor-value+next/fallback cursor)
+  (values (pvector-cursor-value/fast cursor)
+          (pvector-cursor-next/fast cursor)))
+
+(define pvector-cursor-value+next/fast
+  (if core-cursor-combined-available?
+      core-pvector-cursor-value+next
+      pvector-cursor-value+next/fallback))
 
 (define pvector-cons-left
   (if core-available? core-pvector-cons-left fallback:pvector-cons-left))
@@ -738,6 +799,17 @@
 
 (define (in-pvector/proc pv)
   (cond
+    [core-cursor-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'in-pvector "pvector?" pv))
+     (make-do-sequence
+      (lambda ()
+        (values core-pvector-cursor-value
+                core-pvector-cursor-next
+                (core-pvector-cursor-start pv #f)
+                (lambda (cursor) cursor)
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
     [core-sequence-available?
      (unless (core-pvector? pv)
        (raise-argument-error 'in-pvector "pvector?" pv))
@@ -764,6 +836,17 @@
 
 (define (in-pvector-reverse/proc pv)
   (cond
+    [core-cursor-available?
+     (unless (core-pvector? pv)
+       (raise-argument-error 'in-pvector-reverse "pvector?" pv))
+     (make-do-sequence
+      (lambda ()
+        (values core-pvector-cursor-value
+                core-pvector-cursor-next
+                (core-pvector-cursor-start pv #t)
+                (lambda (cursor) cursor)
+                (lambda (elem) #t)
+                (lambda (pos elem) #t))))]
     [core-sequence-available?
      (unless (core-pvector? pv)
        (raise-argument-error 'in-pvector-reverse "pvector?" pv))
@@ -797,15 +880,26 @@
           (:do-in
            ([(pv) pv-expr])
            (begin
-             (define len (pvector-length pv)))
-           ([elem-idx 0])
-           (unsafe-fx< elem-idx len)
-           ([(elem next-elem-idx)
-             (values (pvector-ref/fast pv elem-idx)
-                     (unsafe-fx+ elem-idx 1))])
+             (define pv*
+               (if (pvector? pv)
+                   pv
+                   (raise-argument-error 'in-pvector "pvector?" pv)))
+             (define use-cursor? core-cursor-available?)
+             (define len (and (not use-cursor?) (pvector-length pv*))))
+           ([elem-pos (if use-cursor?
+                          (core-pvector-cursor-start pv* #f)
+                          0)])
+           (if use-cursor?
+               elem-pos
+               (unsafe-fx< elem-pos len))
+           ([(elem next-elem-pos)
+             (if use-cursor?
+                 (pvector-cursor-value+next/fast elem-pos)
+                 (values (pvector-ref/fast pv* elem-pos)
+                         (unsafe-fx+ elem-pos 1)))])
            #t
            #t
-           (next-elem-idx))]]
+           (next-elem-pos))]]
       [_ #f])))
 
 (define-sequence-syntax in-pvector-reverse
@@ -817,15 +911,26 @@
           (:do-in
            ([(pv) pv-expr])
            (begin
-             (define len (pvector-length pv)))
-           ([elem-idx (unsafe-fx- len 1)])
-           (unsafe-fx>= elem-idx 0)
-           ([(elem next-elem-idx)
-             (values (pvector-ref/fast pv elem-idx)
-                     (unsafe-fx- elem-idx 1))])
+             (define pv*
+               (if (pvector? pv)
+                   pv
+                   (raise-argument-error 'in-pvector-reverse "pvector?" pv)))
+             (define use-cursor? core-cursor-available?)
+             (define len (and (not use-cursor?) (pvector-length pv*))))
+           ([elem-pos (if use-cursor?
+                          (core-pvector-cursor-start pv* #t)
+                          (unsafe-fx- len 1))])
+           (if use-cursor?
+               elem-pos
+               (unsafe-fx>= elem-pos 0))
+           ([(elem next-elem-pos)
+             (if use-cursor?
+                 (pvector-cursor-value+next/fast elem-pos)
+                 (values (pvector-ref/fast pv* elem-pos)
+                         (unsafe-fx- elem-pos 1)))])
            #t
            #t
-           (next-elem-idx))]]
+           (next-elem-pos))]]
       [_ #f])))
 
 (define (in-pvector/index/proc pv)

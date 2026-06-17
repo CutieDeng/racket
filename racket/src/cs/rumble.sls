@@ -405,13 +405,13 @@
           vector->list
 	  vector-extend
 
-          ;; pvector runtime candidate; not used by public `racket/pvector` yet
+          ;; pvector runtime candidate
           core-pvector?
           core-pvector-empty
           core-pvector-empty?
           core-pvector-length
-	          core-pvector-shape-stats
-	          core-vector->pvector
+          core-pvector-shape-stats
+          core-vector->pvector
           core-immutable-vector->pvector
           core-fresh-vector->pvector
           core-list->pvector
@@ -423,14 +423,24 @@
           core-pvector->vector
           core-pvector->list
           core-pvector-ref
+          core-unsafe-pvector-length
+          core-unsafe-pvector-ref
+          core-unsafe-pvector-view-left
+          core-unsafe-pvector-view-right
+          core-unsafe-pvector-first
+          core-unsafe-pvector-last
+          core-pvector-cursor-start
+          core-pvector-cursor-value
+          core-pvector-cursor-next
+          core-pvector-cursor-value+next
           core-pvector-view-left
           core-pvector-view-right
           core-pvector-set
-	          core-pvector-cons-left
-	          core-pvector-cons-right
-	          core-pvector-pop-left
-	          core-pvector-pop-right
-	          core-pvector-append
+          core-pvector-cons-left
+          core-pvector-cons-right
+          core-pvector-pop-left
+          core-pvector-pop-right
+          core-pvector-append
           core-pvector-map
           core-pvector-for-each
           core-pvector-split-at
@@ -443,6 +453,7 @@
           core-pvector-take-right
           core-pvector-drop-right
           core-pvector-copy
+          core-pvector-install-struct-property!
 
           vector*-length
           vector*-ref
@@ -1009,6 +1020,7 @@
   (set-impersonator-applicables!)
   (set-mpair-hash!)
   (set-hash-hash!)
+  (set-core-pvector-record-properties!)
   (set-extflonum-print!)
   (set-impersonator-hash!)
   (set-procedure-impersonator-hash!)
