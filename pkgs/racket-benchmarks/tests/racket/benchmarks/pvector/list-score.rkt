@@ -15,7 +15,8 @@
 (define explicit-sizes #f)
 (define impl-names '(list vector treelist pvector adapter-pvector))
 (define cutie-module
-  (string->path "/Users/cutiedeng/Y2026/M03/D28/cutie-ftree.rkt/pvector.rkt"))
+  (let ([p (getenv "PLT_PVECTOR_CUTIE_MODULE")])
+    (and p (string->path p))))
 (define ops #f)
 (define baseline-name 'list)
 (define speed-score-weight 0.7)
@@ -103,7 +104,7 @@
               (set! explicit-sizes (parse-size-list '--sizes s))]
  [("--impls") s "Comma-separated implementations: list,vector,treelist,cutie-pvector,pvector,adapter-pvector"
               (set! impl-names (parse-symbol-list s))]
- [("--cutie-module") p "Path to the original cutie-ftree pvector.rkt"
+ [("--cutie-module") p "Optional path to the original cutie-ftree pvector.rkt"
                      (set! cutie-module (string->path p))]
  [("--ops") s "Comma-separated operations"
            (set! ops (parse-symbol-list s))]
@@ -168,6 +169,10 @@
     (error 'cutie-pvector-length "cutie pvector support has not been loaded")))
 
 (define (load-cutie name)
+  (unless cutie-module
+    (raise-user-error
+     'pvector-list-score
+     "cutie-pvector was requested, but no cutie module was supplied; use --cutie-module or PLT_PVECTOR_CUTIE_MODULE"))
   (dynamic-require cutie-module name))
 
 (define list-impl

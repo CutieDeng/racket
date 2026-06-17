@@ -3,7 +3,6 @@
 (require racket/cmdline
          racket/list
          racket/match
-         (prefix-in cutie: (file "/Users/cutiedeng/Y2026/M03/D28/cutie-ftree.rkt/pvector.rkt"))
          racket/pvector
          (prefix-in adapter: racket/private/pvector-runtime-adapter)
          (prefix-in raw: racket/private/pvector)
@@ -16,8 +15,82 @@
 (define M 20)
 (define N 1000)
 (define list-limit 2000)
-(define impls '(list vector treelist cutie-pvector raw-pvector adapter-pvector pvector unsafe-pvector))
+(define impls '(list vector treelist raw-pvector adapter-pvector pvector unsafe-pvector))
 (define ops #f)
+(define cutie-module
+  (let ([p (getenv "PLT_PVECTOR_CUTIE_MODULE")])
+    (and p (string->path p))))
+
+(define (unloaded-cutie name)
+  (lambda args
+    (raise-user-error
+     'pvector-bm
+     "cutie-pvector operation ~a was used before cutie support was loaded"
+     name)))
+
+(define cutie:pvector? (lambda (_) #f))
+(define cutie:pvector (unloaded-cutie 'pvector))
+(define cutie:pvector-empty (unloaded-cutie 'pvector-empty))
+(define cutie:pvector-length (unloaded-cutie 'pvector-length))
+(define cutie:pvector-ref (unloaded-cutie 'pvector-ref))
+(define cutie:pvector-set (unloaded-cutie 'pvector-set))
+(define cutie:pvector-cons-left (unloaded-cutie 'pvector-cons-left))
+(define cutie:pvector-cons-right (unloaded-cutie 'pvector-cons-right))
+(define cutie:pvector-pop-left (unloaded-cutie 'pvector-pop-left))
+(define cutie:pvector-pop-right (unloaded-cutie 'pvector-pop-right))
+(define cutie:pvector-append (unloaded-cutie 'pvector-append))
+(define cutie:pvector-take (unloaded-cutie 'pvector-take))
+(define cutie:pvector-drop (unloaded-cutie 'pvector-drop))
+(define cutie:pvector-copy (unloaded-cutie 'pvector-copy))
+(define cutie:pvector-insert (unloaded-cutie 'pvector-insert))
+(define cutie:pvector-delete (unloaded-cutie 'pvector-delete))
+(define cutie:pvector-split-at (unloaded-cutie 'pvector-split-at))
+(define cutie:pvector-view-left (unloaded-cutie 'pvector-view-left))
+(define cutie:pvector-view-right (unloaded-cutie 'pvector-view-right))
+(define cutie:pvector->list (unloaded-cutie 'pvector->list))
+(define cutie:pvector->vector (unloaded-cutie 'pvector->vector))
+(define cutie:list->pvector (unloaded-cutie 'list->pvector))
+(define cutie:vector->pvector (unloaded-cutie 'vector->pvector))
+(define cutie:in-pvector (unloaded-cutie 'in-pvector))
+(define cutie:in-pvector-reverse (unloaded-cutie 'in-pvector-reverse))
+
+(define cutie-loaded? #f)
+
+(define (load-cutie name)
+  (unless cutie-module
+    (raise-user-error
+     'pvector-bm
+     "cutie-pvector was requested, but no cutie module was supplied; use --cutie-module or PLT_PVECTOR_CUTIE_MODULE"))
+  (dynamic-require cutie-module name))
+
+(define (load-cutie-support!)
+  (unless cutie-loaded?
+    (set! cutie:pvector? (load-cutie 'pvector?))
+    (set! cutie:pvector (load-cutie 'pvector))
+    (set! cutie:pvector-empty (load-cutie 'pvector-empty))
+    (set! cutie:pvector-length (load-cutie 'pvector-length))
+    (set! cutie:pvector-ref (load-cutie 'pvector-ref))
+    (set! cutie:pvector-set (load-cutie 'pvector-set))
+    (set! cutie:pvector-cons-left (load-cutie 'pvector-cons-left))
+    (set! cutie:pvector-cons-right (load-cutie 'pvector-cons-right))
+    (set! cutie:pvector-pop-left (load-cutie 'pvector-pop-left))
+    (set! cutie:pvector-pop-right (load-cutie 'pvector-pop-right))
+    (set! cutie:pvector-append (load-cutie 'pvector-append))
+    (set! cutie:pvector-take (load-cutie 'pvector-take))
+    (set! cutie:pvector-drop (load-cutie 'pvector-drop))
+    (set! cutie:pvector-copy (load-cutie 'pvector-copy))
+    (set! cutie:pvector-insert (load-cutie 'pvector-insert))
+    (set! cutie:pvector-delete (load-cutie 'pvector-delete))
+    (set! cutie:pvector-split-at (load-cutie 'pvector-split-at))
+    (set! cutie:pvector-view-left (load-cutie 'pvector-view-left))
+    (set! cutie:pvector-view-right (load-cutie 'pvector-view-right))
+    (set! cutie:pvector->list (load-cutie 'pvector->list))
+    (set! cutie:pvector->vector (load-cutie 'pvector->vector))
+    (set! cutie:list->pvector (load-cutie 'list->pvector))
+    (set! cutie:vector->pvector (load-cutie 'vector->pvector))
+    (set! cutie:in-pvector (load-cutie 'in-pvector))
+    (set! cutie:in-pvector-reverse (load-cutie 'in-pvector-reverse))
+    (set! cutie-loaded? #t)))
 
 (define (parse-count who s)
   (define n (string->number s))
@@ -41,6 +114,8 @@
                    (set! list-limit (parse-count '--list-limit n))]
  [("--impls") s "Comma-separated implementations: list,vector,treelist,cutie-pvector,raw-pvector,adapter-pvector,pvector,unsafe-pvector"
               (set! impls (parse-symbol-list s))]
+ [("--cutie-module") p "Optional path to the original cutie-ftree pvector.rkt"
+                     (set! cutie-module (string->path p))]
  [("--ops") s "Comma-separated benchmark names"
            (set! ops (parse-symbol-list s))])
 
@@ -88,6 +163,9 @@
 (define (measure m n)
   (printf "M=~a N=~a\n" m n)
   (printf "op\timpl\tcpu-ms\treal-ms\tgc-ms\tresult\n")
+  (define cutie-enabled? (memq 'cutie-pvector impls))
+  (when cutie-enabled?
+    (load-cutie-support!))
 
 	  (define base-list (build-list-data n))
 	  (define base-uniform-list
@@ -101,7 +179,8 @@
   (define base-uniform-vector (make-vector n builder-constant-value))
   (define base-treelist (list->treelist base-list))
   (define base-filter-treelist (list->treelist base-filter-list))
-  (define base-cutie-pvector (cutie:list->pvector base-list))
+  (define base-cutie-pvector
+    (and cutie-enabled? (cutie:list->pvector base-list)))
   (define base-raw-pvector (raw:list->pvector base-list))
   (define base-adapter-pvector (adapter:list->pvector base-list))
   (define base-pvector (list->pvector base-list))
@@ -188,8 +267,10 @@
   (define right-vector (vector-copy base-vector half n))
   (define left-treelist (treelist-take base-treelist half))
   (define right-treelist (treelist-drop base-treelist half))
-  (define left-cutie-pvector (cutie:pvector-take base-cutie-pvector half))
-  (define right-cutie-pvector (cutie:pvector-drop base-cutie-pvector half))
+  (define left-cutie-pvector
+    (and cutie-enabled? (cutie:pvector-take base-cutie-pvector half)))
+  (define right-cutie-pvector
+    (and cutie-enabled? (cutie:pvector-drop base-cutie-pvector half)))
   (define left-raw-pvector (raw:pvector-take base-raw-pvector half))
   (define right-raw-pvector (raw:pvector-drop base-raw-pvector half))
   (define left-pvector (pvector-take base-pvector half))
@@ -333,7 +414,8 @@
   (bench 'build-native 'cutie-pvector
          (lambda ()
            (for/fold ([r (cutie:pvector-empty)]) ([j (in-range m)])
-             (cutie:for/pvector ([i (in-range n)]) i))))
+             (for/fold ([pv (cutie:pvector-empty)]) ([i (in-range n)])
+               (cutie:pvector-cons-right pv i)))))
   (bench 'build-native 'pvector
          (lambda ()
            (for/fold ([r (pvector-empty)]) ([j (in-range m)])
