@@ -865,7 +865,17 @@
     (collect-garbage)
     (check-equal? cursor-prefix (range 8))
     (check-equal? (for/fold ([last #f]) ([x cursor-threshold-pv]) x)
-                  39999))
+                  39999)
+    (check-equal? (for/fold ([last #f]) ([x (in-pvector cursor-threshold-pv)]) x)
+                  39999)
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector cursor-threshold-pv)]
+                                       #:break (= x 100))
+                    (+ sum x))
+                  (apply + (range 100)))
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector cursor-threshold-pv)]
+                                       #:final (= x 100))
+                    (+ sum x))
+                  (apply + (range 101))))
   (define sliced (pvector-drop (list->pvector (range 130)) 3))
   (check-equal? (for/list ([x sliced]) x) (range 3 130))
   (check-equal? (for/list ([x (in-pvector sliced)]) x) (range 3 130))

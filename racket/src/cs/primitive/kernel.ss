@@ -241,6 +241,7 @@
   [core-pvector-append (known-procedure/single-valued 4)]
   [core-pvector-map (known-procedure/single-valued 4)]
   [core-pvector-for-each (known-procedure/single-valued 4)]
+  [core-pvector-fold-left (known-procedure/single-valued 8)]
   [core-pvector-split-at (known-procedure/no-prompt/multi 4)]
   [core-pvector-split-at-right (known-procedure/no-prompt/multi 4)]
   [core-pvector-split (known-procedure/no-prompt/multi 4)]

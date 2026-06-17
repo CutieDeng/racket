@@ -2812,6 +2812,68 @@
    end
    proc))
 
+(define (core-pvector-large-finger-edge-fold-left-range
+         pv prefix? start end acc proc)
+  (let loop ([i start] [acc acc])
+    (if (fx= i end)
+        acc
+        (loop (fx+ i 1)
+              (proc acc
+                    (core-pvector-large-finger-edge-ref
+                     pv prefix? i))))))
+
+(define (core-pvector-node-leaf-fold-left-all node acc proc)
+  (if (core-pvector-node2? node)
+      (let ([acc (proc acc (core-pvector-node2-a node))])
+        (proc acc (core-pvector-node2-b node)))
+      (let* ([acc (proc acc (core-pvector-node3-a node))]
+             [acc (proc acc (core-pvector-node3-b node))])
+        (proc acc (core-pvector-node3-c node)))))
+
+(define (core-pvector-node-fold-left-all node acc proc)
+  (let ([level (core-pvector-node-level node)])
+    (if (fx= level 1)
+        (core-pvector-node-leaf-fold-left-all node acc proc)
+        (if (core-pvector-node2? node)
+            (let ([acc
+                   (core-pvector-node-fold-left-all
+                    (core-pvector-node2-a node)
+                    acc
+                    proc)])
+              (core-pvector-node-fold-left-all
+               (core-pvector-node2-b node)
+               acc
+               proc))
+            (let* ([acc
+                    (core-pvector-node-fold-left-all
+                     (core-pvector-node3-a node)
+                     acc
+                     proc)]
+                   [acc
+                    (core-pvector-node-fold-left-all
+                     (core-pvector-node3-b node)
+                     acc
+                     proc)])
+              (core-pvector-node-fold-left-all
+               (core-pvector-node3-c node)
+               acc
+               proc))))))
+
+(define (core-pvector-large-finger-fold-left-all/known-length pv len acc proc)
+  (let* ([prefix-len (core-pvector-large-finger-prefix-length pv)]
+         [acc (core-pvector-large-finger-edge-fold-left-range
+               pv #t 0 prefix-len acc proc)]
+         [suffix-len (core-pvector-large-finger-suffix-length pv)]
+         [suffix-start (fx- len suffix-len)]
+         [acc (if (fx= suffix-start prefix-len)
+                  acc
+                  (core-pvector-node-fold-left-all
+                   (core-pvector-large-finger-middle pv)
+                   acc
+                   proc))])
+    (core-pvector-large-finger-edge-fold-left-range
+     pv #f 0 suffix-len acc proc)))
+
 (define (core-pvector-large-finger->list-range/known-length pv len start end acc)
   (let ([prefix-len (core-pvector-large-finger-prefix-length pv)])
     (cond
@@ -3693,6 +3755,49 @@
        [else
         (core-pvector-for-each-range/known-length pv len 0 len proc)])))
   (void))
+
+(define (core-pvector-fold-left pv init proc)
+  (unless (procedure? proc)
+    (raise-argument-error 'core-pvector-fold-left "procedure?" proc))
+  (unless (procedure-arity-includes? proc 2)
+    (error 'core-pvector-fold-left "procedure does not accept two arguments"))
+  (let ([len (core-pvector-length/unchecked
+              (core-check-pvector 'core-pvector-fold-left pv))])
+    (cond
+     [(fx= len 0) init]
+     [(fx= len 1)
+      (proc init (core-pvector-view-left pv))]
+     [(fx= len 2)
+      (let ([acc
+             (proc init
+                   (core-pvector-large-finger-ref/known-length pv len 0))])
+        (proc acc
+              (core-pvector-large-finger-ref/known-length pv len 1)))]
+     [(fx= len 3)
+      (let* ([acc
+              (proc init
+                    (core-pvector-large-finger-ref/known-length pv len 0))]
+             [acc
+              (proc acc
+                    (core-pvector-large-finger-ref/known-length pv len 1))])
+        (proc acc
+              (core-pvector-large-finger-ref/known-length pv len 2)))]
+     [(fx= len 4)
+      (let* ([acc
+              (proc init
+                    (core-pvector-large-finger-ref/known-length pv len 0))]
+             [acc
+              (proc acc
+                    (core-pvector-large-finger-ref/known-length pv len 1))]
+             [acc
+              (proc acc
+                    (core-pvector-large-finger-ref/known-length pv len 2))])
+        (proc acc
+              (core-pvector-large-finger-ref/known-length pv len 3)))]
+     [(core-pvector-large-finger? pv)
+      (core-pvector-large-finger-fold-left-all/known-length
+       pv len init proc)]
+     [else init])))
 
 (define (core-pvector->list pv)
   (let ([len (core-pvector-length pv)])

@@ -678,7 +678,7 @@
     (check-exn exn:fail:contract?
                (lambda () (core-pvector-append core-pvector-empty '(not a pvector))))))
 
-(test-case "kernel core pvector direct map for-each primitives"
+(test-case "kernel core pvector direct map for-each fold primitives"
   (check-true (kernel-procedure? 'core-pvector-map))
   (check-true (kernel-procedure? 'core-pvector-for-each))
   (define core-list->pvector (kernel-value 'core-list->pvector))
@@ -688,6 +688,9 @@
   (define core-pvector->list (kernel-value 'core-pvector->list))
   (define core-pvector-map (kernel-value 'core-pvector-map))
   (define core-pvector-for-each (kernel-value 'core-pvector-for-each))
+  (define core-pvector-fold-left
+    (and (kernel-procedure? 'core-pvector-fold-left)
+         (kernel-value 'core-pvector-fold-left)))
 
   (define (check-core-list pv xs)
     (check-equal? (core-pvector-length pv) (length xs))
@@ -719,6 +722,14 @@
     (check-equal? (reverse seen-for-each) xs)
     (check-equal? (core-pvector-for-each pv values) (void))
     (check-equal? (core-pvector-for-each pv void) (void))
+    (when core-pvector-fold-left
+      (check-equal? (core-pvector-fold-left pv 0 +)
+                    (apply + xs))
+      (check-equal? (core-pvector-fold-left
+                     pv
+                     null
+                     (lambda (acc x) (cons x acc)))
+                    (reverse xs)))
     (check-core-list pv xs))
 
   (for ([size (in-list '(0 1 2 3 4 5 8 9 17 64 129))])
@@ -735,6 +746,12 @@
              (lambda ()
                (core-pvector-for-each (core-list->pvector '(1 2))
                                       (lambda (x y) x))))
+  (when core-pvector-fold-left
+    (check-exn exn:fail?
+               (lambda ()
+                 (core-pvector-fold-left (core-list->pvector '(1 2))
+                                         0
+                                         (lambda (x) x)))))
   (when (bc-vm?)
     (check-exn exn:fail?
                (lambda () (core-pvector-map core-pvector-empty 'not-a-proc)))

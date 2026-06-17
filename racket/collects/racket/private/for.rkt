@@ -588,7 +588,12 @@
                   [cursor-start (maybe-core-pvector-proc
                                  'core-pvector-cursor-start)]
                   [cursor-next (maybe-core-pvector-proc
-                                'core-pvector-cursor-next)])
+                                'core-pvector-cursor-next)]
+                  [cursor-value+next
+                   (maybe-core-pvector-proc
+                    'core-pvector-cursor-value+next)]
+                  [fold-left (maybe-core-pvector-proc
+                              'core-pvector-fold-left)])
               (or (and (procedure? pvector?)
                        (procedure? empty?)
                        (procedure? length)
@@ -601,7 +606,10 @@
                                drop
                                (and (procedure? cursor-start) cursor-start)
                                (and (procedure? cursor-next) cursor-next)
-                               (and (procedure? for-each) for-each)))
+                               (and (procedure? for-each) for-each)
+                               (and (procedure? cursor-value+next)
+                                    cursor-value+next)
+                               (and (procedure? fold-left) fold-left)))
                   'unavailable))))
     (and (vector? core-pvector-procs)
          core-pvector-procs))
@@ -611,10 +619,6 @@
       (and procs
            ((unsafe-vector-ref procs 0) v)
            procs)))
-
-  (define (core-pvector-direct-for-each-proc-for v)
-    (let ([procs (core-pvector-procs-for v)])
-      (and procs (unsafe-vector-ref procs 7))))
 
   (define-syntax define-sequence-syntax
     (syntax-rules ()
@@ -1890,6 +1894,248 @@
              #,(loop #'more))]
         [_ #`(let () . #,body)])))
 
+  (define-for-syntax (direct-pvector-loop-step fold-bind direct-values next-k done final? continue)
+    (syntax-case fold-bind ()
+      [()
+       #`(let ([#,final? #f])
+           (call-with-values
+            (lambda () #,direct-values)
+            (lambda results
+              (when #,final?
+                (call-with-values
+                 (lambda () #,next-k)
+                 #,done))
+              #,continue)))]
+      [([int-var fold-var] ...)
+       #`(let ([#,final? #f])
+           (let-values ([(fold-var ...) #,direct-values])
+             (set! int-var fold-var) ...
+             (when #,final?
+               (call-with-values
+                (lambda () #,next-k)
+                #,done))
+             #,continue))]))
+
+  (define-for-syntax (direct-pvector-inline-traversal fold-bind
+                                                      bind-init
+                                                      pv-id
+                                                      elem
+                                                      direct-values
+                                                      next-k
+                                                      done
+                                                      final?
+                                                      fallback)
+    (with-syntax ([(direct-procs direct-len direct-ref direct-cursor-start
+                                  direct-cursor-value+next direct-index
+                                  direct-cursor direct-next-cursor
+                                  direct-index-loop direct-cursor-loop)
+                   (generate-temporaries
+                    #'(direct-procs direct-len direct-ref direct-cursor-start
+                                    direct-cursor-value+next direct-index
+                                    direct-cursor direct-next-cursor
+                                    direct-index-loop direct-cursor-loop))]
+                  [pv-id pv-id]
+                  [elem elem])
+      (with-syntax ([index-step
+                     (direct-pvector-loop-step
+                      fold-bind
+                      direct-values
+                      next-k
+                      done
+                      final?
+                      #'(direct-index-loop (unsafe-fx+ direct-index 1)))]
+                    [cursor-step
+                     (direct-pvector-loop-step
+                      fold-bind
+                      direct-values
+                      next-k
+                      done
+                      final?
+                      #'(direct-cursor-loop direct-next-cursor))])
+        #`(let ([direct-procs (core-pvector-procs-for pv-id)])
+            (if direct-procs
+                #,(wrap-init
+                   bind-init
+                   #`(let ()
+                       (let/ec #,done
+                         (let ([direct-len
+                                ((unsafe-vector-ref direct-procs 2) pv-id)]
+                               [direct-ref
+                                (unsafe-vector-ref direct-procs 3)]
+                               [direct-cursor-start
+                                (unsafe-vector-ref direct-procs 5)]
+                               [direct-cursor-value+next
+                                (unsafe-vector-ref direct-procs 8)])
+                           (if (and direct-cursor-start
+                                    direct-cursor-value+next)
+                               (let direct-cursor-loop
+                                   ([direct-cursor
+                                     (direct-cursor-start pv-id #f)])
+                                 (if direct-cursor
+                                     (let-values ([(elem direct-next-cursor)
+                                                   (direct-cursor-value+next
+                                                    direct-cursor)])
+                                       cursor-step)
+                                     #,next-k))
+                               (let direct-index-loop ([direct-index 0])
+                                 (if (unsafe-fx< direct-index direct-len)
+                                     (let ([elem (direct-ref pv-id direct-index)])
+                                       index-step)
+                                     #,next-k)))))))
+                #,fallback)))))
+
+  (define-for-syntax (direct-pvector-for-each-step fold-bind rest body direct-values next-k done final?)
+    (syntax-case rest ()
+      [()
+       (syntax-case fold-bind ()
+         [()
+          #`(let ()
+              (let () . #,body)
+              (void))]
+         [([int-var fold-var])
+          #`(let ()
+              (set! int-var (let () . #,body))
+              (void))]
+         [_ (direct-pvector-loop-step
+             fold-bind
+             direct-values
+             next-k
+             done
+             final?
+             #'(void))])]
+      [_ (direct-pvector-loop-step
+          fold-bind
+          direct-values
+          next-k
+          done
+          final?
+          #'(void))]))
+
+  (define-for-syntax (direct-pvector-for-each-traversal fold-bind
+                                                        bind-init
+                                                        rest
+                                                        body
+                                                        pv-id
+                                                        elem
+                                                        direct-values
+                                                        next-k
+                                                        done
+                                                        final?
+                                                        fallback)
+    (with-syntax ([(direct-procs direct-for-each)
+                   (generate-temporaries
+                    #'(direct-procs direct-for-each))]
+                  [pv-id pv-id]
+                  [elem elem])
+      (with-syntax ([direct-step
+                     (direct-pvector-for-each-step
+                      fold-bind
+                      rest
+                      body
+                      direct-values
+                      next-k
+                      done
+                      final?)]
+                    [inline-fallback
+                     (direct-pvector-inline-traversal
+                      fold-bind
+                      bind-init
+                      #'pv-id
+                      #'elem
+                      direct-values
+                      next-k
+                      done
+                      final?
+                      fallback)])
+        #`(let ([direct-procs (core-pvector-procs-for pv-id)])
+            (if direct-procs
+                (let ([direct-for-each (unsafe-vector-ref direct-procs 7)])
+                  (if direct-for-each
+                      #,(wrap-init
+                         bind-init
+                         #`(let ()
+                             (let/ec #,done
+                               (direct-for-each
+                                pv-id
+                                (lambda (elem)
+                                  direct-step))
+                               #,next-k)))
+                      inline-fallback))
+                #,fallback)))))
+
+  (define-for-syntax (direct-pvector-fold-left-traversal bind-init
+                                                         body
+                                                         pv-id
+                                                         elem
+                                                         int-var
+                                                         fold-var
+                                                         next-k
+                                                         fallback)
+    (with-syntax ([(direct-procs direct-fold-left)
+                   (generate-temporaries
+                    #'(direct-procs direct-fold-left))]
+                  [pv-id pv-id]
+                  [elem elem]
+                  [int-var int-var]
+                  [fold-var fold-var]
+                  [(body ...) body])
+      #`(let ([direct-procs (core-pvector-procs-for pv-id)])
+          (if direct-procs
+              (let ([direct-fold-left (unsafe-vector-ref direct-procs 9)])
+                (if direct-fold-left
+                    #,(wrap-init
+                       bind-init
+                       #`(let ()
+                           (set! int-var
+                                 (direct-fold-left
+                                  pv-id
+                                  int-var
+                                  (lambda (fold-var elem)
+                                    body ...)))
+                           #,next-k))
+                    #,fallback))
+              #,fallback))))
+
+  (define-for-syntax (direct-pvector-traversal fold-bind
+                                               bind-init
+                                               rest
+                                               body
+                                               pv-id
+                                               elem
+                                               direct-values
+                                               next-k
+                                               done
+                                               final?
+                                               fallback)
+    (let ([for-each-loop
+           (direct-pvector-for-each-traversal
+            fold-bind
+            bind-init
+            rest
+            body
+            pv-id
+            elem
+            direct-values
+            next-k
+            done
+            final?
+            fallback)])
+      (syntax-case rest ()
+        [()
+         (syntax-case fold-bind ()
+           [([int-var fold-var])
+            (direct-pvector-fold-left-traversal
+             bind-init
+             body
+             pv-id
+             elem
+             #'int-var
+             #'fold-var
+             next-k
+             for-each-loop)]
+           [_ for-each-loop])]
+        [_ for-each-loop])))
+
   ;; For checking that parallel sequences end together; `state` for each sequence
   ;; got to `#f` when it has terminated
   (define-syntax (if/c stx)
@@ -2164,31 +2410,24 @@
                                                #'next-k
                                                #'direct-done
                                                #'direct-final?)])
-                               (quasisyntax/loc #'orig-stx
-                                 (let-values ([(pv-id) pv-rhs] outer-binding ...)
-                                   outer-check
-                                   (let ([direct-for-each
-                                          (core-pvector-direct-for-each-proc-for pv-id)])
-                                     (if direct-for-each
-                                         #,(wrap-init
-                                            #'bind-init
-                                            #`(let ()
-                                                (let/ec direct-done
-                                                  (direct-for-each
-                                                   pv-id
-                                                   (lambda (elem)
-                                                     (let ([direct-final? #f])
-                                                       (call-with-values
-                                                        (lambda () direct-values)
-                                                        (lambda results
-                                                          (when direct-final?
-                                                            (call-with-values
-                                                             (lambda () next-k)
-                                                             direct-done))
-                                                          (void))))))
-                                                  next-k)))
-                                         (for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
-                                           fold-bind bind-init next-k break-k final?-id rest . body)))))))]
+                                 (with-syntax ([direct-loop
+                                               (direct-pvector-traversal
+                                                 #'()
+                                                 #'bind-init
+                                                 #'rest
+                                                 #'body
+                                                 #'pv-id
+                                                 #'elem
+                                                 #'direct-values
+                                                 #'next-k
+                                                 #'direct-done
+                                                 #'direct-final?
+                                                 #'(for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
+                                                     fold-bind bind-init next-k break-k final?-id rest . body))])
+                                   (quasisyntax/loc #'orig-stx
+                                     (let-values ([(pv-id) pv-rhs] outer-binding ...)
+                                       outer-check
+                                       direct-loop)))))]
                             [([int-var fold-var] ...)
                              (with-syntax ([generic-bind
                                             #'(()
@@ -2210,31 +2449,24 @@
                                                #'next-k
                                                #'direct-done
                                                #'direct-final?)])
-                               (quasisyntax/loc #'orig-stx
-                                 (let-values ([(pv-id) pv-rhs] outer-binding ...)
-                                   outer-check
-                                   (let ([direct-for-each
-                                          (core-pvector-direct-for-each-proc-for pv-id)])
-                                     (if direct-for-each
-                                         #,(wrap-init
-                                            #'bind-init
-                                            #`(let ()
-                                                (let/ec direct-done
-                                                  (direct-for-each
-                                                   pv-id
-                                                   (lambda (elem)
-                                                     (let ([direct-final? #f])
-                                                       (let-values ([(fold-var ...)
-                                                                     direct-values])
-                                                         (set! int-var fold-var) ...
-                                                         (when direct-final?
-                                                           (call-with-values
-                                                            (lambda () next-k)
-                                                            direct-done))
-                                                         (void)))))
-                                                  next-k)))
-                                         (for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
-                                           fold-bind bind-init next-k break-k final?-id rest . body)))))))]
+                                 (with-syntax ([direct-loop
+                                               (direct-pvector-traversal
+                                                 #'([int-var fold-var] ...)
+                                                 #'bind-init
+                                                 #'rest
+                                                 #'body
+                                                 #'pv-id
+                                                 #'elem
+                                                 #'direct-values
+                                                 #'next-k
+                                                 #'direct-done
+                                                 #'direct-final?
+                                                 #'(for/foldX/derived [orig-stx inner-recur nested? #t (generic-bind) ragged]
+                                                     fold-bind bind-init next-k break-k final?-id rest . body))])
+                                   (quasisyntax/loc #'orig-stx
+                                     (let-values ([(pv-id) pv-rhs] outer-binding ...)
+                                       outer-check
+                                       direct-loop)))))]
                             [_ generic-r])]
                          [_ generic-r])
                        generic-r)]
