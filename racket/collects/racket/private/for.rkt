@@ -562,67 +562,24 @@
               s))
            s)))))
 
-  (define core-pvector-procs #f)
   (define core-pvector-cursor-min-length 32768)
 
-  (define (maybe-core-pvector-proc name)
-    (with-handlers ([exn:fail? (lambda (_) #f)])
-      (dynamic-require ''#%kernel name)))
+  (define core-pvector-procs
+    (vector core-pvector?
+            core-pvector-empty?
+            core-unsafe-pvector-length
+            core-unsafe-pvector-ref
+            core-pvector-drop
+            core-pvector-cursor-start
+            core-pvector-cursor-next
+            core-pvector-for-each
+            core-pvector-cursor-value+next
+            core-pvector-fold-left
+            core-unsafe-pvector-for-each
+            core-unsafe-pvector-fold-left))
 
   (define (load-core-pvector-procs)
-    (unless core-pvector-procs
-      (set! core-pvector-procs
-            (let ([pvector? (maybe-core-pvector-proc 'core-pvector?)]
-                  [empty? (maybe-core-pvector-proc 'core-pvector-empty?)]
-                  [length (or (maybe-core-pvector-proc
-                               'core-unsafe-pvector-length)
-                              (maybe-core-pvector-proc
-                               'core-pvector-length))]
-                  [ref (or (maybe-core-pvector-proc
-                            'core-unsafe-pvector-ref)
-                           (maybe-core-pvector-proc
-                            'core-pvector-ref))]
-                  [drop (maybe-core-pvector-proc 'core-pvector-drop)]
-                  [for-each (maybe-core-pvector-proc
-                             'core-pvector-for-each)]
-                  [unsafe-for-each
-                   (maybe-core-pvector-proc
-                    'core-unsafe-pvector-for-each)]
-                  [cursor-start (maybe-core-pvector-proc
-                                 'core-pvector-cursor-start)]
-                  [cursor-next (maybe-core-pvector-proc
-                                'core-pvector-cursor-next)]
-                  [cursor-value+next
-                   (maybe-core-pvector-proc
-                    'core-pvector-cursor-value+next)]
-                  [fold-left (maybe-core-pvector-proc
-                              'core-pvector-fold-left)]
-                  [unsafe-fold-left
-                   (maybe-core-pvector-proc
-                    'core-unsafe-pvector-fold-left)])
-              (or (and (procedure? pvector?)
-                       (procedure? empty?)
-                       (procedure? length)
-                       (procedure? ref)
-                       (procedure? drop)
-                       (vector pvector?
-                               empty?
-                               length
-                               ref
-                               drop
-                               (and (procedure? cursor-start) cursor-start)
-                               (and (procedure? cursor-next) cursor-next)
-                               (and (procedure? for-each) for-each)
-                               (and (procedure? cursor-value+next)
-                                    cursor-value+next)
-                               (and (procedure? fold-left) fold-left)
-                               (and (procedure? unsafe-for-each)
-                                    unsafe-for-each)
-                               (and (procedure? unsafe-fold-left)
-                                    unsafe-fold-left)))
-                  'unavailable))))
-    (and (vector? core-pvector-procs)
-         core-pvector-procs))
+    core-pvector-procs)
 
   (define (core-pvector-procs-for v)
     (let ([procs (load-core-pvector-procs)])
@@ -1855,6 +1812,12 @@
       [(bind ...) #`(letrec-syntax (bind ...)
                       #,body)]))
 
+  (define-for-syntax static-core-unsafe-pvector-for-each?
+    (identifier-binding #'core-unsafe-pvector-for-each))
+
+  (define-for-syntax static-core-unsafe-pvector-fold-left?
+    (identifier-binding #'core-unsafe-pvector-fold-left))
+
   (define-for-syntax (direct-pvector-rest-supported? rest)
     (let loop ([rest rest])
       (syntax-case rest ()
@@ -2059,20 +2022,30 @@
                       fallback)])
         #`(let ([direct-procs (core-pvector-procs-for pv-id)])
             (if direct-procs
-                (let ([direct-for-each
-                       (or (unsafe-vector-ref direct-procs 10)
-                           (unsafe-vector-ref direct-procs 7))])
-                  (if direct-for-each
-                      #,(wrap-init
-                         bind-init
-                         #`(let ()
-                             (let/ec #,done
-                               (direct-for-each
-                                pv-id
-                                (lambda (elem)
-                                  direct-step))
-                               #,next-k)))
-                      inline-fallback))
+                #,(if static-core-unsafe-pvector-for-each?
+                      (wrap-init
+                       bind-init
+                       #`(let ()
+                           (let/ec #,done
+                             (core-unsafe-pvector-for-each
+                              pv-id
+                              (lambda (elem)
+                                direct-step))
+                             #,next-k)))
+                      #`(let ([direct-for-each
+                               (or (unsafe-vector-ref direct-procs 10)
+                                   (unsafe-vector-ref direct-procs 7))])
+                          (if direct-for-each
+                              #,(wrap-init
+                                 bind-init
+                                 #`(let ()
+                                     (let/ec #,done
+                                       (direct-for-each
+                                        pv-id
+                                        (lambda (elem)
+                                          direct-step))
+                                       #,next-k)))
+                              inline-fallback)))
                 #,fallback)))))
 
   (define-for-syntax (direct-pvector-fold-left-traversal bind-init
@@ -2093,21 +2066,32 @@
                   [(body ...) body])
       #`(let ([direct-procs (core-pvector-procs-for pv-id)])
           (if direct-procs
-              (let ([direct-fold-left
-                     (or (unsafe-vector-ref direct-procs 11)
-                         (unsafe-vector-ref direct-procs 9))])
-                (if direct-fold-left
-                    #,(wrap-init
-                       bind-init
-                       #`(let ()
-                           (set! int-var
-                                 (direct-fold-left
-                                  pv-id
-                                  int-var
-                                  (lambda (fold-var elem)
-                                    body ...)))
-                           #,next-k))
-                    #,fallback))
+              #,(if static-core-unsafe-pvector-fold-left?
+                    (wrap-init
+                     bind-init
+                     #`(let ()
+                         (set! int-var
+                               (core-unsafe-pvector-fold-left
+                                pv-id
+                                int-var
+                                (lambda (fold-var elem)
+                                  body ...)))
+                         #,next-k))
+                    #`(let ([direct-fold-left
+                             (or (unsafe-vector-ref direct-procs 11)
+                                 (unsafe-vector-ref direct-procs 9))])
+                        (if direct-fold-left
+                            #,(wrap-init
+                               bind-init
+                               #`(let ()
+                                   (set! int-var
+                                         (direct-fold-left
+                                          pv-id
+                                          int-var
+                                          (lambda (fold-var elem)
+                                            body ...)))
+                                   #,next-k))
+                            #,fallback)))
               #,fallback))))
 
   (define-for-syntax (direct-pvector-traversal fold-bind

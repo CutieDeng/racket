@@ -9,7 +9,8 @@
          "lambda.rkt"
          "fold.rkt"
          "ffi-static-core.rkt"
-         "unwrap-let.rkt")
+         "unwrap-let.rkt"
+         "gensym.rkt")
 
 (provide optimize
          optimize*)
@@ -18,6 +19,61 @@
 ;; forms. The `schemify` pass calls `optimize` on each schemified
 ;; form, which means that subexpressions of the immediate expression
 ;; have already been optimized.
+
+(define pvector-fold-left-inline-limit 4)
+
+(define (try-core-unsafe-pvector-fold-left-inline v rands)
+  (match rands
+    [`(,pv ,init ,proc)
+     (match proc
+       [`(lambda (,fold-id ,elem-id) ,body ...)
+        (define u-fold-id (unwrap fold-id))
+        (define u-elem-id (unwrap elem-id))
+        (and (symbol? u-fold-id)
+             (symbol? u-elem-id)
+             (reannotate
+              v
+              (build-core-unsafe-pvector-fold-left-inline
+               pv init proc u-fold-id u-elem-id body)))]
+       [`,_ #f])]
+    [`,_ #f]))
+
+(define (build-core-unsafe-pvector-fold-left-inline
+         pv init proc fold-id elem-id body)
+  (define pv-id (deterministic-gensym 'pv))
+  (define acc-id (deterministic-gensym 'acc))
+  (define len-id (deterministic-gensym 'len))
+
+  (define (step acc-expr index)
+    `(let ([,fold-id ,acc-expr])
+       (let ([,elem-id (core-unsafe-pvector-ref ,pv-id ,index)])
+         ,@body)))
+
+  (define (unroll n)
+    (let loop ([index 0] [acc-expr acc-id])
+      (cond
+        [(= index n) acc-expr]
+        [(= index (sub1 n))
+         (step acc-expr index)]
+        [else
+         (define next-acc-id (deterministic-gensym 'acc))
+         `(let ([,next-acc-id ,(step acc-expr index)])
+            ,(loop (add1 index) next-acc-id))])))
+
+  (define fallback
+    `(core-unsafe-pvector-fold-left ,pv-id ,acc-id ,proc))
+
+  (define len-dispatch
+    (for/fold ([else-expr fallback])
+              ([n (in-range pvector-fold-left-inline-limit -1 -1)])
+      `(if (eqv? ,len-id ,n)
+           ,(unroll n)
+           ,else-expr)))
+
+  `(let ([,pv-id ,pv])
+     (let ([,acc-id ,init])
+       (let ([,len-id (core-unsafe-pvector-length ,pv-id)])
+         ,len-dispatch))))
 
 (define (optimize v prim-knowns primitives knowns imports mutated target compiler-query)
   (let ([v (unwrap-let v #:keep-unsafe-begin? #t)])
@@ -156,6 +212,9 @@
        (define u-rator (unwrap rator))
        (define k (and (symbol? u-rator) (hash-ref prim-knowns u-rator #f)))
        (cond
+         [(and (eq? u-rator 'core-unsafe-pvector-fold-left)
+               (try-core-unsafe-pvector-fold-left-inline v rands))
+          => (lambda (inline-v) inline-v)]
          [(and k
                (or (known-procedure/folding? k)
                    (known-procedure/pure/folding? k)

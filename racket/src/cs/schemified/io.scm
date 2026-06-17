@@ -1922,7 +1922,7 @@
  (make-struct-type
   'stream
   #f
-  3
+  5
   0
   #f
   (list
@@ -1938,7 +1938,7 @@
               (let ((app_0 (|#%app| range-ref v_0 1)))
                 (|#%app| app_0 (|#%app| range-ref v_0 0)))))
          (let ((app_1 (|#%app| range-ref v_0 1)))
-           (make-range app_0 app_1 (|#%app| range-ref v_0 2)))))))
+           (make-range app_0 app_1 (|#%app| range-ref v_0 2) #f #f))))))
    (cons
     prop:gen-sequence
     (lambda (v_0)

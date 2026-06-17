@@ -36,6 +36,21 @@
   (and (raw:pvector-runtime-adapter-core-available?)
        (eq? (system-type 'vm) 'racket)))
 
+(define (kernel-procedure? name)
+  (with-handlers ([exn:fail? (lambda (_) #f)])
+    (procedure? (dynamic-require ''#%kernel name))))
+
+(define (datum-contains-symbol? v sym)
+  (cond
+    [(eq? v sym) #t]
+    [(pair? v)
+     (or (datum-contains-symbol? (car v) sym)
+         (datum-contains-symbol? (cdr v) sym))]
+    [(vector? v)
+     (for/or ([elem (in-vector v)])
+       (datum-contains-symbol? elem sym))]
+    [else #f]))
+
 (define-namespace-anchor pvector-test-namespace-anchor)
 
 (define (public-pvector-jit-score jit-enabled?)
@@ -1391,6 +1406,35 @@
                        "10 11 12 13 14 15 16 17 18 19 "
                        "20 21 22 23 24 25 26 27 28 29 "
                        "30 31 32 33 34 35 36 37 38 39)")))))
+
+(test-case "pvector direct for/fold expansion shape"
+  (define (expanded-datum form)
+    (syntax->datum (expand form)))
+  (when (kernel-procedure? 'core-unsafe-pvector-fold-left)
+    (define simple-fold
+      (expanded-datum
+       #'(lambda (pv)
+           (for/fold ([sum 0]) ([x (in-pvector pv)])
+             (+ sum x)))))
+    (define filtered-fold
+      (expanded-datum
+       #'(lambda (pv)
+           (for/fold ([sum 0]) ([x (in-pvector pv)]
+                                #:when (odd? x))
+             (+ sum x)))))
+    (check-true
+     (datum-contains-symbol? simple-fold 'core-unsafe-pvector-fold-left))
+    (check-false
+     (datum-contains-symbol? filtered-fold 'core-unsafe-pvector-fold-left)))
+  (when (kernel-procedure? 'core-unsafe-pvector-for-each)
+    (define filtered-for
+      (expanded-datum
+       #'(lambda (pv)
+           (for ([x (in-pvector pv)]
+                 #:when (odd? x))
+             (void x)))))
+    (check-true
+     (datum-contains-symbol? filtered-for 'core-unsafe-pvector-for-each))))
 
 (test-case "stream"
   (define pv (pvector 1 2 3))

@@ -2737,36 +2737,70 @@
                "procedure (value of prop:sequence) produced a non-sequence: "
                s_0))
             s_0)))))))
+(define core-pvector-cursor-min-length 32768)
+(define core-pvector-procs
+  (vector
+   core-pvector?
+   core-pvector-empty?
+   core-unsafe-pvector-length
+   core-unsafe-pvector-ref
+   core-pvector-drop
+   core-pvector-cursor-start
+   core-pvector-cursor-next
+   core-pvector-for-each
+   core-pvector-cursor-value+next
+   core-pvector-fold-left
+   core-unsafe-pvector-for-each
+   core-unsafe-pvector-fold-left))
+(define load-core-pvector-procs (lambda () core-pvector-procs))
+(define core-pvector-procs-for
+  (lambda (v_0)
+    (if core-pvector-procs
+      (if (|#%app| (unsafe-vector-ref core-pvector-procs 0) v_0)
+        core-pvector-procs
+        #f)
+      #f)))
 (define stream?
   (lambda (v_0)
     (let ((or-part_0 (list? v_0)))
-      (if or-part_0 or-part_0 (stream-via-prop? v_0)))))
+      (if or-part_0
+        or-part_0
+        (let ((or-part_1 (stream-via-prop? v_0)))
+          (if or-part_1 or-part_1 (if (core-pvector-procs-for v_0) #t #f)))))))
 (define unsafe-stream-not-empty?
   (lambda (v_0)
     (if (null? v_0)
       #f
-      (let ((or-part_0 (pair? v_0)))
-        (if or-part_0
-          or-part_0
-          (not (|#%app| (unsafe-vector-ref (stream-ref v_0) 0) v_0)))))))
+      (if (pair? v_0)
+        #t
+        (let ((cond-val_0 (core-pvector-procs-for v_0)))
+          (if cond-val_0
+            (not (|#%app| (unsafe-vector-ref cond-val_0 1) v_0))
+            (not (|#%app| (unsafe-vector-ref (stream-ref v_0) 0) v_0))))))))
 (define unsafe-stream-first
   (lambda (v_0)
     (if (pair? v_0)
       (car v_0)
-      (|#%app| (unsafe-vector-ref (stream-ref v_0) 1) v_0))))
+      (let ((cond-val_0 (core-pvector-procs-for v_0)))
+        (if cond-val_0
+          (|#%app| (unsafe-vector-ref cond-val_0 3) v_0 0)
+          (|#%app| (unsafe-vector-ref (stream-ref v_0) 1) v_0))))))
 (define unsafe-stream-rest
   (lambda (v_0)
     (if (pair? v_0)
       (cdr v_0)
-      (let ((r_0 (|#%app| (unsafe-vector-ref (stream-ref v_0) 2) v_0)))
-        (begin
-          (if (stream? r_0)
-            (void)
-            (raise-mismatch-error
-             'stream-rest-guard
-             "result is not a stream: "
-             r_0))
-          r_0)))))
+      (let ((cond-val_0 (core-pvector-procs-for v_0)))
+        (if cond-val_0
+          (|#%app| (unsafe-vector-ref cond-val_0 4) v_0 1)
+          (let ((r_0 (|#%app| (unsafe-vector-ref (stream-ref v_0) 2) v_0)))
+            (begin
+              (if (stream? r_0)
+                (void)
+                (raise-mismatch-error
+                 'stream-rest-guard
+                 "result is not a stream: "
+                 r_0))
+              r_0)))))))
 (define sequence?
   (lambda (v_0)
     (let ((or-part_0 (exact-nonnegative-integer? v_0)))
@@ -2778,10 +2812,10 @@
             (let ((or-part_2 (sequence-via-prop? v_0)))
               (if or-part_2
                 or-part_2
-                (let ((or-part_3 (stream? v_0)))
+                (let ((or-part_3 (mpair? v_0)))
                   (if or-part_3
                     or-part_3
-                    (let ((or-part_4 (mpair? v_0)))
+                    (let ((or-part_4 (list? v_0)))
                       (if or-part_4
                         or-part_4
                         (let ((or-part_5 (vector? v_0)))
@@ -2806,9 +2840,46 @@
                                                 (let ((or-part_11 (hash? v_0)))
                                                   (if or-part_11
                                                     or-part_11
-                                                    (if (:sequence? v_0)
-                                                      (not (struct-type? v_0))
-                                                      #f)))))))))))))))))))))))))))
+                                                    (let ((or-part_12
+                                                           (stream? v_0)))
+                                                      (if or-part_12
+                                                        or-part_12
+                                                        (if (:sequence? v_0)
+                                                          (not
+                                                           (struct-type? v_0))
+                                                          #f)))))))))))))))))))))))))))))
+(define :core-pvector-gen
+  (lambda (v_0 procs_0)
+    (let ((len_0 (|#%app| (unsafe-vector-ref procs_0 2) v_0)))
+      (if (if (unsafe-vector-ref procs_0 5)
+            (if (unsafe-vector-ref procs_0 6) (unsafe-fx>= len_0 32768) #f)
+            #f)
+        (let ((state_0
+               (vector 0 (|#%app| (unsafe-vector-ref procs_0 5) v_0 #f))))
+          (values
+           (lambda (state_1)
+             (let ((app_0 (unsafe-vector-ref procs_0 6)))
+               (|#%app| app_0 (unsafe-vector-ref state_1 1))))
+           #f
+           (lambda (state_1)
+             (begin
+               (unsafe-vector-set!
+                state_1
+                0
+                (unsafe-fx+ (unsafe-vector-ref state_1 0) 1))
+               state_1))
+           state_0
+           (lambda (state_1) (unsafe-fx< (unsafe-vector-ref state_1 0) len_0))
+           #f
+           #f))
+        (values
+         (lambda (index_0) (|#%app| (unsafe-vector-ref procs_0 3) v_0 index_0))
+         #f
+         (lambda (index_0) (unsafe-fx+ index_0 1))
+         0
+         (lambda (index_0) (unsafe-fx< index_0 len_0))
+         #f
+         #f)))))
 (define make-sequence
   (lambda (who_0 v_0)
     (if (exact-nonnegative-integer? v_0)
@@ -2869,26 +2940,29 @@
                               (make-sequence
                                who_0
                                (|#%app| (:sequence-ref v_0) v_0))
-                              (if (stream? v_0)
-                                (:stream-gen v_0)
-                                (raise
-                                 (let ((app_0
-                                        (format
-                                         "for: expected a sequence for ~a, got something else: ~v"
-                                         (if (= 1 (length who_0))
-                                           (car who_0)
-                                           who_0)
-                                         v_0)))
-                                   (|#%app|
-                                    exn:fail:contract
-                                    app_0
-                                    (current-continuation-marks))))))))))))))))))))
+                              (let ((cond-val_0 (core-pvector-procs-for v_0)))
+                                (if cond-val_0
+                                  (:core-pvector-gen v_0 cond-val_0)
+                                  (if (stream? v_0)
+                                    (:stream-gen v_0)
+                                    (raise
+                                     (let ((app_0
+                                            (format
+                                             "for: expected a sequence for ~a, got something else: ~v"
+                                             (if (= 1 (length who_0))
+                                               (car who_0)
+                                               who_0)
+                                             v_0)))
+                                       (|#%app|
+                                        exn:fail:contract
+                                        app_0
+                                        (current-continuation-marks))))))))))))))))))))))
 (define-values
  (struct:range make-range range? range-ref range-set!)
  (make-struct-type
   'stream
   #f
-  3
+  5
   0
   #f
   (list
@@ -2904,7 +2978,7 @@
               (let ((app_0 (|#%app| range-ref v_0 1)))
                 (|#%app| app_0 (|#%app| range-ref v_0 0)))))
          (let ((app_1 (|#%app| range-ref v_0 1)))
-           (make-range app_0 app_1 (|#%app| range-ref v_0 2)))))))
+           (make-range app_0 app_1 (|#%app| range-ref v_0 2) #f #f))))))
    (cons
     prop:gen-sequence
     (lambda (v_0)
@@ -19212,7 +19286,7 @@
                   (lambda (s_0) (error "bad syntax:" s_0)))))
             (lambda (t_0) v_0))))))))
 (define 1/make-set!-transformer
-  (let ((finish912
+  (let ((finish913
          (make-struct-type-install-properties
           '(set!-transformer)
           1
@@ -19232,7 +19306,7 @@
             #f
             #f
             '(1 . 0))))
-      (let ((effect913 (finish912 struct:set!-transformer_0)))
+      (let ((effect914 (finish913 struct:set!-transformer_0)))
         (let ((set!-transformer1_0
                (|#%name|
                 set!-transformer
