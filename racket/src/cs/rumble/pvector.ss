@@ -208,6 +208,202 @@
       (core-pvector-large-finger-prefix-ref pv index)
       (core-pvector-large-finger-suffix-ref pv index)))
 
+(define (core-pvector-large-finger-prefix->list-all pv len acc)
+  (cond
+   [(fx= len 0) acc]
+   [(fx= len 1)
+    (cons (core-pvector-large-finger-p0 pv) acc)]
+   [(fx= len 2)
+    (cons (core-pvector-large-finger-p0 pv)
+          (cons (core-pvector-large-finger-p1 pv) acc))]
+   [(fx= len 3)
+    (cons (core-pvector-large-finger-p0 pv)
+          (cons (core-pvector-large-finger-p1 pv)
+                (cons (core-pvector-large-finger-p2 pv) acc)))]
+   [else
+    (cons (core-pvector-large-finger-p0 pv)
+          (cons (core-pvector-large-finger-p1 pv)
+                (cons (core-pvector-large-finger-p2 pv)
+                      (cons (core-pvector-large-finger-p3 pv) acc))))]))
+
+(define (core-pvector-large-finger-suffix->list-all pv len acc)
+  (cond
+   [(fx= len 0) acc]
+   [(fx= len 1)
+    (cons (core-pvector-large-finger-s0 pv) acc)]
+   [(fx= len 2)
+    (cons (core-pvector-large-finger-s0 pv)
+          (cons (core-pvector-large-finger-s1 pv) acc))]
+   [(fx= len 3)
+    (cons (core-pvector-large-finger-s0 pv)
+          (cons (core-pvector-large-finger-s1 pv)
+                (cons (core-pvector-large-finger-s2 pv) acc)))]
+   [else
+    (cons (core-pvector-large-finger-s0 pv)
+          (cons (core-pvector-large-finger-s1 pv)
+                (cons (core-pvector-large-finger-s2 pv)
+                      (cons (core-pvector-large-finger-s3 pv) acc))))]))
+
+(define (core-pvector-large-finger-prefix-fill-all! dest offset pv len)
+  (cond
+   [(fx= len 0) offset]
+   [(fx= len 1)
+    (#3%vector-set! dest offset (core-pvector-large-finger-p0 pv))
+    (fx+ offset 1)]
+   [(fx= len 2)
+    (#3%vector-set! dest offset (core-pvector-large-finger-p0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-p1 pv))
+    (fx+ offset 2)]
+   [(fx= len 3)
+    (#3%vector-set! dest offset (core-pvector-large-finger-p0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-p1 pv))
+    (#3%vector-set! dest (fx+ offset 2) (core-pvector-large-finger-p2 pv))
+    (fx+ offset 3)]
+   [else
+    (#3%vector-set! dest offset (core-pvector-large-finger-p0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-p1 pv))
+    (#3%vector-set! dest (fx+ offset 2) (core-pvector-large-finger-p2 pv))
+    (#3%vector-set! dest (fx+ offset 3) (core-pvector-large-finger-p3 pv))
+    (fx+ offset 4)]))
+
+(define (core-pvector-large-finger-suffix-fill-all! dest offset pv len)
+  (cond
+   [(fx= len 0) offset]
+   [(fx= len 1)
+    (#3%vector-set! dest offset (core-pvector-large-finger-s0 pv))
+    (fx+ offset 1)]
+   [(fx= len 2)
+    (#3%vector-set! dest offset (core-pvector-large-finger-s0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-s1 pv))
+    (fx+ offset 2)]
+   [(fx= len 3)
+    (#3%vector-set! dest offset (core-pvector-large-finger-s0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-s1 pv))
+    (#3%vector-set! dest (fx+ offset 2) (core-pvector-large-finger-s2 pv))
+    (fx+ offset 3)]
+   [else
+    (#3%vector-set! dest offset (core-pvector-large-finger-s0 pv))
+    (#3%vector-set! dest (fx+ offset 1) (core-pvector-large-finger-s1 pv))
+    (#3%vector-set! dest (fx+ offset 2) (core-pvector-large-finger-s2 pv))
+    (#3%vector-set! dest (fx+ offset 3) (core-pvector-large-finger-s3 pv))
+    (fx+ offset 4)]))
+
+(define (core-pvector-large-finger-prefix-map-all! dest offset pv len proc)
+  (cond
+   [(fx= len 0) offset]
+   [(fx= len 1)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-p0 pv)))
+    (fx+ offset 1)]
+   [(fx= len 2)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-p0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-p1 pv)))
+    (fx+ offset 2)]
+   [(fx= len 3)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-p0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-p1 pv)))
+    (#3%vector-set! dest (fx+ offset 2) (proc (core-pvector-large-finger-p2 pv)))
+    (fx+ offset 3)]
+   [else
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-p0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-p1 pv)))
+    (#3%vector-set! dest (fx+ offset 2) (proc (core-pvector-large-finger-p2 pv)))
+    (#3%vector-set! dest (fx+ offset 3) (proc (core-pvector-large-finger-p3 pv)))
+    (fx+ offset 4)]))
+
+(define (core-pvector-large-finger-suffix-map-all! dest offset pv len proc)
+  (cond
+   [(fx= len 0) offset]
+   [(fx= len 1)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-s0 pv)))
+    (fx+ offset 1)]
+   [(fx= len 2)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-s0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-s1 pv)))
+    (fx+ offset 2)]
+   [(fx= len 3)
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-s0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-s1 pv)))
+    (#3%vector-set! dest (fx+ offset 2) (proc (core-pvector-large-finger-s2 pv)))
+    (fx+ offset 3)]
+   [else
+    (#3%vector-set! dest offset (proc (core-pvector-large-finger-s0 pv)))
+    (#3%vector-set! dest (fx+ offset 1) (proc (core-pvector-large-finger-s1 pv)))
+    (#3%vector-set! dest (fx+ offset 2) (proc (core-pvector-large-finger-s2 pv)))
+    (#3%vector-set! dest (fx+ offset 3) (proc (core-pvector-large-finger-s3 pv)))
+    (fx+ offset 4)]))
+
+(define (core-pvector-large-finger-prefix-for-each-all pv len proc)
+  (cond
+   [(fx= len 0) (void)]
+   [(fx= len 1)
+    (proc (core-pvector-large-finger-p0 pv))]
+   [(fx= len 2)
+    (proc (core-pvector-large-finger-p0 pv))
+    (proc (core-pvector-large-finger-p1 pv))]
+   [(fx= len 3)
+    (proc (core-pvector-large-finger-p0 pv))
+    (proc (core-pvector-large-finger-p1 pv))
+    (proc (core-pvector-large-finger-p2 pv))]
+   [else
+    (proc (core-pvector-large-finger-p0 pv))
+    (proc (core-pvector-large-finger-p1 pv))
+    (proc (core-pvector-large-finger-p2 pv))
+    (proc (core-pvector-large-finger-p3 pv))]))
+
+(define (core-pvector-large-finger-suffix-for-each-all pv len proc)
+  (cond
+   [(fx= len 0) (void)]
+   [(fx= len 1)
+    (proc (core-pvector-large-finger-s0 pv))]
+   [(fx= len 2)
+    (proc (core-pvector-large-finger-s0 pv))
+    (proc (core-pvector-large-finger-s1 pv))]
+   [(fx= len 3)
+    (proc (core-pvector-large-finger-s0 pv))
+    (proc (core-pvector-large-finger-s1 pv))
+    (proc (core-pvector-large-finger-s2 pv))]
+   [else
+    (proc (core-pvector-large-finger-s0 pv))
+    (proc (core-pvector-large-finger-s1 pv))
+    (proc (core-pvector-large-finger-s2 pv))
+    (proc (core-pvector-large-finger-s3 pv))]))
+
+(define (core-pvector-large-finger-prefix-fold-left-all pv len acc proc)
+  (cond
+   [(fx= len 0) acc]
+   [(fx= len 1)
+    (proc acc (core-pvector-large-finger-p0 pv))]
+   [(fx= len 2)
+    (let ([acc (proc acc (core-pvector-large-finger-p0 pv))])
+      (proc acc (core-pvector-large-finger-p1 pv)))]
+   [(fx= len 3)
+    (let* ([acc (proc acc (core-pvector-large-finger-p0 pv))]
+           [acc (proc acc (core-pvector-large-finger-p1 pv))])
+      (proc acc (core-pvector-large-finger-p2 pv)))]
+   [else
+    (let* ([acc (proc acc (core-pvector-large-finger-p0 pv))]
+           [acc (proc acc (core-pvector-large-finger-p1 pv))]
+           [acc (proc acc (core-pvector-large-finger-p2 pv))])
+      (proc acc (core-pvector-large-finger-p3 pv)))]))
+
+(define (core-pvector-large-finger-suffix-fold-left-all pv len acc proc)
+  (cond
+   [(fx= len 0) acc]
+   [(fx= len 1)
+    (proc acc (core-pvector-large-finger-s0 pv))]
+   [(fx= len 2)
+    (let ([acc (proc acc (core-pvector-large-finger-s0 pv))])
+      (proc acc (core-pvector-large-finger-s1 pv)))]
+   [(fx= len 3)
+    (let* ([acc (proc acc (core-pvector-large-finger-s0 pv))]
+           [acc (proc acc (core-pvector-large-finger-s1 pv))])
+      (proc acc (core-pvector-large-finger-s2 pv)))]
+   [else
+    (let* ([acc (proc acc (core-pvector-large-finger-s0 pv))]
+           [acc (proc acc (core-pvector-large-finger-s1 pv))]
+           [acc (proc acc (core-pvector-large-finger-s2 pv))])
+      (proc acc (core-pvector-large-finger-s3 pv)))]))
+
 (define (core-pvector-large-finger-edge-copy-range/immutable
          pv prefix? start end)
   (let ([len (fx- end start)])
@@ -2425,9 +2621,9 @@
         (cond
          [(and (fx= start 0)
                (fx= end len))
-          (let ([offset (core-pvector-large-finger-edge-fill-range!
-                         dest dest-offset pv #t 0 prefix-len)])
-            (core-pvector-large-finger-edge-fill-range!
+          (let ([offset (core-pvector-large-finger-prefix-fill-all!
+                         dest dest-offset pv prefix-len)])
+            (core-pvector-large-finger-suffix-fill-all!
              dest
              (if (fx= suffix-start prefix-len)
                  offset
@@ -2436,8 +2632,6 @@
                   offset
                   (core-pvector-large-finger-middle pv)))
              pv
-             #f
-             0
              suffix-len))]
          [(fx>= start suffix-start)
           (core-pvector-large-finger-edge-fill-range!
@@ -2508,9 +2702,9 @@
         (cond
          [(and (fx= start 0)
                (fx= end len))
-          (let ([offset (core-pvector-large-finger-edge-map-range!
-                         dest dest-offset pv #t 0 prefix-len proc)])
-            (core-pvector-large-finger-edge-map-range!
+          (let ([offset (core-pvector-large-finger-prefix-map-all!
+                         dest dest-offset pv prefix-len proc)])
+            (core-pvector-large-finger-suffix-map-all!
              dest
              (if (fx= suffix-start prefix-len)
                  offset
@@ -2520,8 +2714,6 @@
                   (core-pvector-large-finger-middle pv)
                   proc))
              pv
-             #f
-             0
              suffix-len
              proc))]
          [(fx>= start suffix-start)
@@ -2764,12 +2956,12 @@
         (cond
          [(and (fx= start 0)
                (fx= end len))
-          (core-pvector-large-finger-edge-for-each-range pv #t 0 prefix-len proc)
+          (core-pvector-large-finger-prefix-for-each-all pv prefix-len proc)
           (unless (fx= suffix-start prefix-len)
             (core-pvector-node-for-each-all
              (core-pvector-large-finger-middle pv)
              proc))
-          (core-pvector-large-finger-edge-for-each-range pv #f 0 suffix-len proc)]
+          (core-pvector-large-finger-suffix-for-each-all pv suffix-len proc)]
          [(fx>= start suffix-start)
           (core-pvector-large-finger-edge-for-each-range
            pv
@@ -2861,8 +3053,8 @@
 
 (define (core-pvector-large-finger-fold-left-all/known-length pv len acc proc)
   (let* ([prefix-len (core-pvector-large-finger-prefix-length pv)]
-         [acc (core-pvector-large-finger-edge-fold-left-range
-               pv #t 0 prefix-len acc proc)]
+         [acc (core-pvector-large-finger-prefix-fold-left-all
+               pv prefix-len acc proc)]
          [suffix-len (core-pvector-large-finger-suffix-length pv)]
          [suffix-start (fx- len suffix-len)]
          [acc (if (fx= suffix-start prefix-len)
@@ -2871,8 +3063,8 @@
                    (core-pvector-large-finger-middle pv)
                    acc
                    proc))])
-    (core-pvector-large-finger-edge-fold-left-range
-     pv #f 0 suffix-len acc proc)))
+    (core-pvector-large-finger-suffix-fold-left-all
+     pv suffix-len acc proc)))
 
 (define (core-pvector-large-finger->list-range/known-length pv len start end acc)
   (let ([prefix-len (core-pvector-large-finger-prefix-length pv)])
@@ -2887,13 +3079,11 @@
         (cond
          [(and (fx= start 0)
                (fx= end len))
-          (core-pvector-large-finger-edge->list-range
+          (core-pvector-large-finger-prefix->list-all
            pv
-           #t
-           0
            prefix-len
-           (let ([acc (core-pvector-large-finger-edge->list-range
-                       pv #f 0 suffix-len acc)])
+           (let ([acc (core-pvector-large-finger-suffix->list-all
+                       pv suffix-len acc)])
              (if (fx= suffix-start prefix-len)
                  acc
                  (core-pvector-node->list-all

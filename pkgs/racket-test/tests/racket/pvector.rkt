@@ -1427,6 +1427,11 @@
     (check-false
      (datum-contains-symbol? filtered-fold 'core-unsafe-pvector-fold-left)))
   (when (kernel-procedure? 'core-unsafe-pvector-for-each)
+    (define simple-for
+      (expanded-datum
+       #'(lambda (pv)
+           (for ([x (in-pvector pv)])
+             (void x)))))
     (define filtered-for
       (expanded-datum
        #'(lambda (pv)
@@ -1434,7 +1439,18 @@
                  #:when (odd? x))
              (void x)))))
     (check-true
+     (datum-contains-symbol? simple-for 'core-unsafe-pvector-for-each))
+    (check-true
      (datum-contains-symbol? filtered-for 'core-unsafe-pvector-for-each))))
+
+(test-case "pvector direct for ignores body values"
+  (define sum 0)
+  (define result
+    (for ([x (in-pvector (pvector 1 2 3))])
+      (set! sum (+ sum x))
+      (values x x)))
+  (check-equal? sum 6)
+  (check-true (void? result)))
 
 (test-case "stream"
   (define pv (pvector 1 2 3))
