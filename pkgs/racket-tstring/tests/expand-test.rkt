@@ -37,11 +37,13 @@
 ) ; end check-exn unbound t-string interpolation
 (define t "T")
 (define bang! "bang")
+(define name= "name-equals")
 (check-true (template? (tpl "{t}")))
 (check-equal? (interpolation-value (car (template-interpolations (tpl "{t}")))) "T")
 (check-equal? (interpolation-format-spec (car (template-interpolations (tpl "{t}")))) #f)
 (check-equal? (interpolation-conversion (car (template-interpolations (tpl "{t}")))) "")
 (check-equal? (fpl "{bang!}") "bang")
+(check-equal? (fpl "{name=}") "name-equals")
 
 (define formatted-template
   (tpl "{1!r:.2f}")
@@ -61,6 +63,8 @@
 (check-equal? (fpl "{-123:<010}") "-123000000")
 (check-equal? (fpl "{123:#010x}") "0x0000007b")
 (check-equal? (fpl "{-123:#010x}") "-0x000007b")
+(check-equal? (fpl "{#;ignored 123:04d}") "0123")
+(check-equal? (fpl "{#;(ignored :not-a-suffix) 7:03d}") "007")
 (check-equal? (fpl "{10:>2d}") "10")
 (check-equal? (fpl "{7:>3d}") "  7")
 (check-equal? (fpl "{7:<3d}") "7  ")
@@ -128,6 +132,17 @@
    ) ; end eval
  ) ; end lambda
 ) ; end check-exn empty format suffix
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{123#010x}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn missing format delimiter before alternate flag
 
 (define evaluation-order '())
 

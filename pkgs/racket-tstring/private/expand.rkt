@@ -168,6 +168,11 @@
                 depth
           ) ; end loop
          ) ; end character literal
+         ((datum-comment-at? source index)
+          (loop (find-datum-comment-end source index)
+                depth
+          ) ; end loop
+         ) ; end datum comment
          ((line-comment-at? source index)
           (loop (find-line-comment-end source index)
                 depth
@@ -273,6 +278,31 @@
        (char=? (string-ref source (add1 index)) #\\)
   ) ; end and
 ) ; end define-for-syntax char-literal-at?
+
+(define-for-syntax (datum-comment-at? source index)
+  (and (< (add1 index) (string-length source))
+       (char=? (string-ref source index) #\#)
+       (char=? (string-ref source (add1 index)) #\;)
+  ) ; end and
+) ; end define-for-syntax datum-comment-at?
+
+(define-for-syntax (find-datum-comment-end source index)
+  (define length (string-length source))
+  (define comment-source (substring source (+ index 2)))
+  (define port (open-input-string comment-source))
+  (with-handlers ((exn:fail?
+                   (lambda (_exn)
+                     length
+                   ) ; end lambda
+                  ) ; end exn:fail?
+                 ) ; end handlers
+    (define commented-stx (read-syntax 'template-interpolation port))
+    (if (eof-object? commented-stx)
+        length
+        (+ index 2 (file-position port))
+    ) ; end if
+  ) ; end with-handlers
+) ; end define-for-syntax find-datum-comment-end
 
 (define-for-syntax (find-char-literal-end source index)
   (define length (string-length source))
