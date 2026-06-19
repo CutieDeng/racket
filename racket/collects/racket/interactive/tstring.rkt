@@ -15,6 +15,7 @@
 (define no-interaction (gensym 'no-interaction))
 
 (define (tstring-read-interaction source-name in)
+  (flush-output)
   (let loop ((offset 0)
              (chars '())
         ) ; end loop bindings
