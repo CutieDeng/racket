@@ -3,6 +3,7 @@
           (for-label racket/pvector
                      (submod racket/pvector unsafe)
                      racket/match
+                     racket/place
                      racket/stream))
 
 @(define pvector-eval (make-base-eval))
@@ -45,7 +46,7 @@ Pvectors compare with @racket[equal?] element by element. In the BC
 runtime-native implementation, pvectors print as an unreadable summary
 such as @racketresultfont{#<pvector:3>} and are not serializable in the
 first stage of the native runtime backend. Pvectors are also not
-accepted as @tech{place message}s in this first stage. Compatibility
+accepted by @racket[place-message-allowed?] in this first stage. Compatibility
 backends may print pvectors as @racket[(pvector elem ...)] and may
 support serialization.
 
