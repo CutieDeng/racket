@@ -2,6 +2,7 @@
 
 (provide
  transform-template-prefixes
+ transform-template-prefixes/positions
  find-racket-string-end
  find-template-source-end
  template-prefix-at?
@@ -47,6 +48,77 @@
   ) ; end let loop
 ) ; end define transform-template-prefixes
 
+(define (transform-template-prefixes/positions source)
+  (define length (string-length source))
+  (define out (open-output-string))
+  (define positions-rev '(0))
+  (define (record-position! text source-count)
+    (define byte-count (bytes-length (string->bytes/utf-8 text)))
+    (for ((index (in-range byte-count)))
+      (set! positions-rev (cons source-count positions-rev))
+    ) ; end for
+  ) ; end define record-position!
+  (define (emit-generated-string text source-count)
+    (write-string text out)
+    (record-position! text source-count)
+  ) ; end define emit-generated-string
+  (define (emit-source-char index)
+    (define ch (string-ref source index))
+    (write-char ch out)
+    (record-position! (string ch) (add1 index))
+  ) ; end define emit-source-char
+  (define (emit-source-range start-index end-index)
+    (let loop ((index start-index))
+      (unless (= index end-index)
+        (emit-source-char index)
+        (loop (add1 index))
+      ) ; end unless end
+    ) ; end let loop
+  ) ; end define emit-source-range
+  (let loop ((index 0))
+    (cond
+      ((= index length)
+       (values (get-output-string out)
+               (list->vector (reverse positions-rev))
+       ) ; end values
+      ) ; end end of source
+      (else
+       (define ch (string-ref source index))
+       (cond
+         ((char=? ch #\")
+          (define next-index (find-racket-string-end source index))
+          (emit-source-range index next-index)
+          (loop next-index)
+         ) ; end ordinary string
+         ((char=? ch #\;)
+          (define next-index (find-line-comment-end source index))
+          (emit-source-range index next-index)
+          (loop next-index)
+         ) ; end line comment
+         ((and (char=? ch #\#)
+               (< (add1 index) length)
+               (char=? (string-ref source (add1 index)) #\|)
+          ) ; end and
+          (define next-index (find-block-comment-end source index))
+          (emit-source-range index next-index)
+          (loop next-index)
+         ) ; end block comment
+         ((template-prefix-at? source index)
+          (define next-index
+            (emit-template-form/positions source index emit-generated-string)
+          ) ; end define next-index
+          (loop next-index)
+         ) ; end template prefix
+         (else
+          (emit-source-char index)
+          (loop (add1 index))
+         ) ; end ordinary character
+       ) ; end cond char dispatch
+      ) ; end more source
+    ) ; end cond
+  ) ; end let loop
+) ; end define transform-template-prefixes/positions
+
 (define (template-prefix-at? source index)
   (define length (string-length source))
   (and (< (add1 index) length)
@@ -89,6 +161,27 @@
   (write-string ")" out)
   literal-end
 ) ; end define copy-template-form
+
+(define (emit-template-form/positions source index emit-generated-string)
+  (define prefix (string-ref source index))
+  (define literal-start (add1 index))
+  (define literal-end (find-template-source-end source literal-start))
+  (emit-generated-string
+   (if (char=? prefix #\f)
+       "(#%tstring-fpl "
+       "(#%tstring-tpl "
+   ) ; end if
+   literal-end
+  ) ; end emit-generated-string
+  (emit-generated-string
+   (template-content->string-literal-source
+    (substring source (add1 literal-start) (sub1 literal-end))
+   ) ; end template-content->string-literal-source
+   literal-end
+  ) ; end emit-generated-string
+  (emit-generated-string ")" literal-end)
+  literal-end
+) ; end define emit-template-form/positions
 
 (define (template-content->string-literal-source content)
   (define out (open-output-string))
@@ -263,6 +356,61 @@
     ) ; end cond
   ) ; end let loop
 ) ; end define find-interpolation-source-end
+
+(define (find-line-comment-end source index)
+  (define length (string-length source))
+  (let loop ((index index))
+    (cond
+      ((= index length)
+       index
+      ) ; end end of source
+      ((char=? (string-ref source index) #\newline)
+       (add1 index)
+      ) ; end newline
+      (else
+       (loop (add1 index))
+      ) ; end more comment
+    ) ; end cond
+  ) ; end let loop
+) ; end define find-line-comment-end
+
+(define (find-block-comment-end source index)
+  (define length (string-length source))
+  (let loop ((index index)
+             (depth 0)
+        ) ; end loop bindings
+    (cond
+      ((= index length)
+       index
+      ) ; end end of source
+      ((and (< (add1 index) length)
+            (char=? (string-ref source index) #\#)
+            (char=? (string-ref source (add1 index)) #\|)
+       ) ; end and
+       (loop (+ index 2)
+             (add1 depth)
+       ) ; end loop
+      ) ; end nested open comment
+      ((and (< (add1 index) length)
+            (char=? (string-ref source index) #\|)
+            (char=? (string-ref source (add1 index)) #\#)
+       ) ; end and
+       (define next-depth (sub1 depth))
+       (if (zero? next-depth)
+           (+ index 2)
+           (loop (+ index 2)
+                 next-depth
+           ) ; end loop
+       ) ; end if
+      ) ; end close comment
+      (else
+       (loop (add1 index)
+             depth
+       ) ; end loop
+      ) ; end ordinary comment character
+    ) ; end cond
+  ) ; end let loop
+) ; end define find-block-comment-end
 
 (define (copy-line-comment source index out)
   (define length (string-length source))

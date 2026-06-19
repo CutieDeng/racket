@@ -2,9 +2,16 @@
 
 (require
  rackunit
+ (only-in racket-tstring/private/read-syntax
+          read/tstring
+          read-syntax/tstring
+          read-interaction/tstring
+ ) ; end only-in
 ) ; end require
 
 (dynamic-require 'racket/interactive/tstring #f)
+
+(check-eq? (current-read-interaction) read-interaction/tstring)
 
 (define read-interaction (current-read-interaction))
 
@@ -16,6 +23,17 @@
   ) ; end if
 ) ; end define read-datum
 
+(check-equal? (read/tstring (open-input-string "f\"hi\""))
+              '(#%tstring-fpl "hi")
+) ; end direct read/tstring
+
+(let ((in (open-input-string "f\"hi\" 2\n")))
+  (check-equal? (syntax->datum (read-syntax/tstring 'test in))
+                '(#%tstring-fpl "hi")
+  ) ; end check-equal?
+  (check-equal? (syntax->datum (read-syntax/tstring 'test in)) 2)
+) ; end let direct read-syntax/tstring
+
 (let ((in (open-input-string "1 2\n")))
   (check-equal? (read-datum in) 1)
   (check-equal? (read-datum in) 2)
@@ -26,6 +44,15 @@
   (check-equal? (read-datum in) 1)
   (check-equal? (read-datum in) eof)
 ) ; end let leading blank line
+
+(let ((in (open-input-string "; just a comment\n")))
+  (check-equal? (read-datum in) eof)
+) ; end let comment-only interaction
+
+(let ((in (open-input-string "; just a comment\n1\n")))
+  (check-equal? (read-datum in) 1)
+  (check-equal? (read-datum in) eof)
+) ; end let comment then interaction
 
 (let ((in (open-input-string "1 (2)\n")))
   (check-equal? (read-datum in) 1)
@@ -43,6 +70,11 @@
   (check-equal? (read-datum in) eof)
 ) ; end let eof after incomplete interaction
 
+(let ((in (open-input-string "(+ 1\n 2) 3\n")))
+  (check-equal? (read-datum in) '(+ 1 2))
+  (check-equal? (read-datum in) 3)
+) ; end let multiline interaction
+
 (let ((in (open-input-string "#\\a2\n")))
   (check-equal? (read-datum in) #\a)
   (check-equal? (read-datum in) 2)
@@ -56,10 +88,51 @@
   ) ; end check-exn
 ) ; end let reader token extension
 
+(let ((in (open-input-string "#t2\n3\n")))
+  (check-exn exn:fail:read?
+             (lambda ()
+               (read-datum in)
+             ) ; end lambda
+  ) ; end check-exn
+  (check-equal? (read-datum in) 3)
+) ; end let reader error consumes bad interaction
+
+(let ((in (open-input-string "#reader racket/base 1\n")))
+  (parameterize ((read-accept-reader #f)
+                 (read-accept-lang #t)
+                ) ; end parameterize bindings
+    (check-equal? (read-datum in) 1)
+    (check-equal? (read-datum in) eof)
+  ) ; end parameterize
+) ; end let read-accept-reader follows standard interaction
+
+(let ((in (open-input-string "#lang racket/base\n")))
+  (parameterize ((read-accept-lang #t))
+    (check-exn (lambda (exn)
+                 (and (exn:fail:read? exn)
+                      (regexp-match? #rx"`#lang` not enabled"
+                                     (exn-message exn)
+                      ) ; end regexp-match?
+                 ) ; end and
+               ) ; end lambda
+               (lambda ()
+                 (read-datum in)
+               ) ; end lambda
+    ) ; end check-exn
+    (check-equal? (read-datum in) 'racket/base)
+  ) ; end parameterize
+) ; end let read-accept-lang disabled for interaction
+
 (let ((in (open-input-string "f\"hi\" 2\n")))
   (check-equal? (read-datum in) '(#%tstring-fpl "hi"))
   (check-equal? (read-datum in) 2)
 ) ; end let template string
+
+(let ((in (open-input-string (string-append "\u03BB f\"\u00E9\" 2\n"))))
+  (check-equal? (read-datum in) (string->symbol "\u03BB"))
+  (check-equal? (read-datum in) '(#%tstring-fpl "\u00E9"))
+  (check-equal? (read-datum in) 2)
+) ; end let unicode source position mapping
 
 (let ((first-in (open-input-string "1 2\n"))
       (second-in (open-input-string "3\n"))
