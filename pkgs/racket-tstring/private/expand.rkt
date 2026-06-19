@@ -246,7 +246,7 @@
 (define-for-syntax (format-start-char? ch)
   (or (char-numeric? ch)
       (memv ch '(#\. #\< #\> #\^ #\= #\+ #\- #\space
-                 #\s #\d #\b #\o #\x #\X #\f #\F #\e #\E #\g #\G #\%))
+                 #\# #\s #\d #\b #\o #\x #\X #\f #\F #\e #\E #\g #\G #\%))
   ) ; end or
 ) ; end define-for-syntax format-start-char?
 

@@ -110,14 +110,36 @@
   (not (equal? conversion ""))
 ) ; end define converted-by-string-conversion?
 
-(struct format-options (fill align sign zero? width precision type) #:transparent)
+(struct format-options (fill align sign zero? width precision type explicit-fill? alternate?) #:transparent)
 
 (define (format-value value spec)
   (define options (parse-format-spec spec))
   (define type (format-options-type options))
   (cond
-    ((memv type '(#f #\s))
-     (format-string-value (~a value) spec)
+    ((not type)
+     (cond
+       ((integer? value)
+        (format-integer-value value options)
+       ) ; end integer
+       ((real? value)
+        (format-real-value value options)
+       ) ; end real
+       (else
+        (format-string-value (~a value) spec)
+       ) ; end string-like fallback
+     ) ; end cond
+    ) ; end default type
+    ((eqv? type #\s)
+     (if (string? value)
+         (format-string-value value spec)
+         (raise-arguments-error 'format-fstring-value
+                                "unknown format code 's' for non-string value"
+                                "format-spec"
+                                spec
+                                "value"
+                                value
+         ) ; end raise-arguments-error
+     ) ; end if
     ) ; end string-like format
     ((memv type '(#\d #\b #\o #\x #\X))
      (format-integer-value value options)
@@ -145,6 +167,35 @@
                            spec
     ) ; end raise-arguments-error
   ) ; end unless string type
+  (when (format-options-sign options)
+    (raise-arguments-error 'format-fstring-value
+                           (if (eqv? (format-options-sign options) #\space)
+                               "space not allowed in string format specifier"
+                               "sign not allowed in string format specifier"
+                           ) ; end if
+                           "format-spec"
+                           spec
+    ) ; end raise-arguments-error
+  ) ; end when sign
+  (when (format-options-alternate? options)
+    (raise-arguments-error 'format-fstring-value
+                           "alternate form (#) not allowed in string format specifier"
+                           "format-spec"
+                           spec
+    ) ; end raise-arguments-error
+  ) ; end when alternate
+  (when (or (eqv? (format-options-align options) #\=)
+            (and (format-options-zero? options)
+                 (not (format-options-align options))
+                 (not (format-options-explicit-fill? options))
+            ) ; end and
+        ) ; end or
+    (raise-arguments-error 'format-fstring-value
+                           "= alignment is not allowed in string format specifier"
+                           "format-spec"
+                           spec
+    ) ; end raise-arguments-error
+  ) ; end when sign-aware alignment
   (define text (if (format-options-precision options)
                    (substring value
                               0
@@ -162,6 +213,13 @@
   (unless (integer? value)
     (raise-argument-error 'format-fstring-value "integer?" value)
   ) ; end unless integer
+  (when (format-options-precision options)
+    (raise-arguments-error 'format-fstring-value
+                           "precision not allowed in integer format specifier"
+                           "precision"
+                           (format-options-precision options)
+    ) ; end raise-arguments-error
+  ) ; end when precision
   (define type (format-options-type options))
   (define base
     (case type
@@ -179,11 +237,10 @@
         digits
     ) ; end if
   ) ; end define cased-digits
-  (apply-alignment (string-append (sign-prefix is-negative? (format-options-sign options))
-                                  cased-digits
-                   ) ; end string-append
-                   options
-                   #t
+  (apply-number-alignment (sign-prefix is-negative? (format-options-sign options))
+                          (integer-prefix type (format-options-alternate? options))
+                          cased-digits
+                          options
   ) ; end apply-alignment
 ) ; end define format-integer-value
 
@@ -191,6 +248,13 @@
   (unless (real? value)
     (raise-argument-error 'format-fstring-value "real?" value)
   ) ; end unless real
+  (when (format-options-alternate? options)
+    (raise-arguments-error 'format-fstring-value
+                           "alternate form (#) is not supported for real format specifier"
+                           "format-type"
+                           (format-options-type options)
+    ) ; end raise-arguments-error
+  ) ; end when alternate
   (define type (format-options-type options))
   (define percent? (eqv? type #\%))
   (define base-value (if percent? (* value 100) value))
@@ -230,11 +294,10 @@
         with-percent
     ) ; end if
   ) ; end define unsigned-text
-  (apply-alignment (string-append (sign-prefix is-negative? (format-options-sign options))
-                                  unsigned-text
-                   ) ; end string-append
-                   options
-                   #t
+  (apply-number-alignment (sign-prefix is-negative? (format-options-sign options))
+                          ""
+                          unsigned-text
+                          options
   ) ; end apply-alignment
 ) ; end define format-real-value
 
@@ -247,6 +310,17 @@
   ) ; end cond
 ) ; end define sign-prefix
 
+(define (integer-prefix type alternate?)
+  (cond
+    ((not alternate?) "")
+    ((eqv? type #\b) "0b")
+    ((eqv? type #\o) "0o")
+    ((eqv? type #\x) "0x")
+    ((eqv? type #\X) "0X")
+    (else "")
+  ) ; end cond
+) ; end define integer-prefix
+
 (define (parse-format-spec spec)
   (unless (string? spec)
     (raise-argument-error 'format-fstring-value "string?" spec)
@@ -255,11 +329,13 @@
   (define index 0)
   (define fill #\space)
   (define align #f)
+  (define explicit-fill? #f)
   (when (and (< 1 length)
              (alignment-char? (string-ref spec 1))
         ) ; end and
     (set! fill (string-ref spec 0))
     (set! align (string-ref spec 1))
+    (set! explicit-fill? #t)
     (set! index 2)
   ) ; end when fill align
   (when (and (not align)
@@ -276,6 +352,13 @@
     (set! sign (string-ref spec index))
     (set! index (add1 index))
   ) ; end when sign
+  (define alternate? #f)
+  (when (and (< index length)
+             (char=? (string-ref spec index) #\#)
+        ) ; end and
+    (set! alternate? #t)
+    (set! index (add1 index))
+  ) ; end when alternate
   (define zero? #f)
   (when (and (< index length)
              (char=? (string-ref spec index) #\0)
@@ -314,7 +397,7 @@
                            spec
     ) ; end raise-arguments-error
   ) ; end unless fully parsed
-  (format-options fill align sign zero? width precision type)
+  (format-options fill align sign zero? width precision type explicit-fill? alternate?)
 ) ; end define parse-format-spec
 
 (define (read-digits spec index)
@@ -350,15 +433,62 @@
   (memv ch '(#\+ #\- #\space))
 ) ; end define sign-char?
 
+(define (apply-number-alignment sign prefix digits options)
+  (define text (string-append sign prefix digits))
+  (define width (format-options-width options))
+  (cond
+    ((or (not width) (<= width (string-length text))) text)
+    (else
+     (define fill-string
+       (string (if (and (format-options-zero? options)
+                        (not (format-options-explicit-fill? options))
+                   ) ; end and
+                   #\0
+                   (format-options-fill options)
+               ) ; end if
+       ) ; end string
+     ) ; end define fill-string
+     (define align (or (format-options-align options) #\>))
+     (define pad-count (- width (string-length text)))
+     (cond
+       ((or (eqv? align #\=)
+            (and (format-options-zero? options)
+                 (not (format-options-align options))
+            ) ; end and
+        ) ; end or
+        (string-append sign
+                       prefix
+                       (make-padding fill-string pad-count)
+                       digits
+        ) ; end string-append
+       ) ; end sign-aware padding
+       ((eqv? align #\<)
+        (string-append text (make-padding fill-string pad-count))
+       ) ; end left align
+       ((eqv? align #\^)
+        (define left-count (quotient pad-count 2))
+        (define right-count (- pad-count left-count))
+        (string-append (make-padding fill-string left-count)
+                       text
+                       (make-padding fill-string right-count)
+        ) ; end string-append
+       ) ; end center align
+       (else
+        (string-append (make-padding fill-string pad-count) text)
+       ) ; end right align
+     ) ; end cond
+    ) ; end needs padding
+  ) ; end cond
+) ; end define apply-number-alignment
+
 (define (apply-alignment text options numeric?)
   (define width (format-options-width options))
   (cond
     ((or (not width) (<= width (string-length text))) text)
     (else
      (define fill-string
-       (string (if (and numeric?
-                        (format-options-zero? options)
-                        (not (format-options-align options))
+       (string (if (and (format-options-zero? options)
+                        (not (format-options-explicit-fill? options))
                    ) ; end and
                    #\0
                    (format-options-fill options)
