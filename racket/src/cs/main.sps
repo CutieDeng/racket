@@ -32,7 +32,9 @@
                module-declared?
                module->language-info
                module-path-index-join
+               syntax?
                identifier-binding
+               namespace-syntax-introduce
                namespace-datum-introduce
                datum->kernel-syntax
                namespace-variable-value
@@ -255,6 +257,12 @@
          (when (module-declared? main-m #t)
            (dynamic-require main-m #f)))))
 
+   (define (install-command-line-interaction-reader! config)
+     (when (and command-line-interaction-reader?
+                (equal? (hash-ref config 'interactive-file #f)
+                        'racket/interactive/tstring))
+       (dynamic-require 'racket/interactive/tstring-reader #f)))
+
    (define (get-repl-init-filename config)
      (or (let ([p (build-path (find-system-path 'addon-dir)
                               (if gracket?
@@ -270,6 +278,7 @@
                             '(lib "racket/gui/init")
                             '(lib "racket/init")))
    (define loads '())
+   (define command-line-interaction-reader? #f)
    (define repl? #f)
    (define repl-init? #t)
    (define version? #f)
@@ -392,6 +401,8 @@
                 (flags-loop (cons "--" rest-args) (see saw 'non-config 'lib)))]
              [("-f" "--load")
               (let-values ([(file-name rest-args) (next-arg "file name" arg within-arg args)])
+                (when (equal? file-name "-")
+                  (set! command-line-interaction-reader? #t))
                 (set! loads (cons (lambda ()
                                     (if (equal? file-name "-")
                                         (eval-all (current-input-port))
@@ -407,6 +418,7 @@
                 (flags-loop (cons "--" rest-args) (see saw 'non-config 'top)))]
              [("-e" "--eval")
               (let-values ([(expr rest-args) (next-arg "expression" arg within-arg args)])
+                (set! command-line-interaction-reader? #t)
                 (set! loads
                       (cons
                        (lambda ()
@@ -958,6 +970,8 @@
 
          (when init-library
            (namespace-require+ init-library))
+
+         (install-command-line-interaction-reader! config)
          
          (call-with-continuation-prompt
           (lambda ()

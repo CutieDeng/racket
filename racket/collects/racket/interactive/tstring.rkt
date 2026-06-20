@@ -1,15 +1,8 @@
 #lang racket/base
 
 (require
- racket-tstring/private/read-syntax
+ racket/interactive/tstring-reader
 ) ; end require
-
-(namespace-require '(lib "tstring/main.rkt"))
-(namespace-require '(only (lib "racket-tstring/private/expand.rkt")
-                          #%tstring-tpl
-                          #%tstring-fpl
-                    ) ; end only
-) ; end namespace-require
 
 (when (collection-file-path "main.rkt" "xrepl"
                             #:fail (lambda _ #f)
@@ -24,5 +17,3 @@
     (load init-file)
   ) ; end when init file
 ) ; end let init-file
-
-(current-read-interaction read-interaction/tstring)
