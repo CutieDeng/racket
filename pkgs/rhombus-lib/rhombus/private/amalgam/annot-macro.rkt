@@ -1,0 +1,264 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre
+                     enforest/transformer-result
+                     enforest/proc-name
+                     "name-root.rkt"
+                     "pack.rkt"
+                     "static-info-pack.rkt"
+                     (submod "syntax-class-primitive.rkt" for-syntax-class)
+                     (submod "syntax-class-primitive.rkt" for-syntax-class-syntax)
+                     "tail-returner.rkt"
+                     "macro-result.rkt"
+                     "realm.rkt"
+                     "annotation-failure.rkt"
+                     "define-arity.rkt"
+                     (submod "syntax-object.rkt" for-quasiquote)
+                     "call-result-key.rkt"
+                     "values-key.rkt"
+                     "srcloc.rkt"
+                     "syntax-wrap.rkt"
+                     "annot-context-meta.rkt"
+                     "origin.rkt"
+                     "origin-check.rkt"
+                     (for-syntax racket/base))
+         (only-in "space.rkt" space-syntax)
+         "space-provide.rkt"
+         (only-in "binding.rkt" :binding-form)
+         (submod "annotation.rkt" for-class)
+         "macro-macro.rkt"
+         "wrap-expression.rkt"
+         "annot-delayed.rkt"
+         "operator-compare.rkt")
+
+(provide (for-syntax (for-space rhombus/namespace
+                                annot_meta)))
+
+(module+ for-class
+  (provide (for-syntax make-annotation-prefix-operator)))
+
+(define+provide-space annot rhombus/annot
+  #:fields
+  (macro
+   ;; "annot-delayed.rkt"
+   delayed_declare
+   delayed_complete))
+
+(begin-for-syntax
+  (define-name-root annot_meta
+    #:fields
+    (space
+     [is_always_satisfied annot_meta.is_always_satisfied]
+     [is_predicate annot_meta.is_predicate]
+     [pack_predicate annot_meta.pack_predicate]
+     [unpack_predicate annot_meta.unpack_predicate]
+     [is_converter annot_meta.is_converter]
+     [pack_converter annot_meta.pack_converter]
+     [unpack_converter annot_meta.unpack_converter]
+     [parse_to_packed_statinfo annot_meta.parse_to_packed_statinfo]
+     [relative_precedence annot_meta.relative_precedence]
+     [ends_parse annot_meta.ends_parse]
+     Parsed
+     AfterPrefixParsed
+     AfterInfixParsed
+     NameStart
+     BindOp
+     [Context annot_meta.Context]
+     [Dependencies annot_meta.Dependencies])))
+
+(define-for-syntax space
+  (space-syntax rhombus/annot))
+
+(define-operator-definition-transformer macro
+  'macro
+  rhombus/annot
+  #:extra ([#:context get-annotation-context-static-infos value])
+  #'make-annotation-prefix-operator
+  #'make-annotation-infix-operator
+  #'annotation-prefix+infix-operator)
+
+(begin-for-syntax
+  (define-operator-syntax-classes
+    Parsed :annotation #:rhombus/annot
+    NameStart in-annotation-space
+    AfterPrefixParsed :annotation-prefix-op+form+tail
+    AfterInfixParsed :annotation-infix-op+form+tail
+    #:extra-arity-mask 3))
+
+(begin-for-syntax
+  (define-syntax-class-syntax BindOp
+    (make-syntax-class #':annotate-op
+                       #:kind 'term
+                       #:fields #'((is_checked #f is_checked 0 unpack-element* ())))))
+
+(begin-for-syntax
+  (struct annotation-prefix+infix-operator (prefix infix)
+    #:property prop:annotation-prefix-operator (lambda (self) (annotation-prefix+infix-operator-prefix self))
+    #:property prop:annotation-infix-operator (lambda (self) (annotation-prefix+infix-operator-infix self))))
+
+(define-for-syntax (wrap-parsed stx)
+  (no-srcloc #`(parsed #:rhombus/annot #,stx)))
+
+(define-for-syntax (parse-annotation-macro-result form proc
+                                                  #:srcloc [loc (and (syntax*? form)
+                                                                     (maybe-respan form))]
+                                                  #:origins [origins null])
+  (transfer-origins
+   origins
+   (syntax-parse (and (syntax*? form)
+                      (unpack-group form #f #f))
+     [c::annotation (relocate+reraw loc #'c.parsed)]
+     [_ (raise-bad-macro-result (proc-name proc) "annotation" form)])))
+
+(define-for-syntax (make-annotation-infix-operator order prec protocol proc assc)
+  (annotation-infix-operator
+   order
+   prec
+   protocol
+   (if (eq? protocol 'macro)
+       (lambda (form1 tail ctx)
+         (define-values (form new-tail)
+           (tail-returner
+            proc
+            (syntax-parse tail
+              [(head . tail) (proc (wrap-parsed form1) (pack-tail #'tail #:after #'head) #'head ctx)])))
+         (check-transformer-result (parse-annotation-macro-result form proc)
+                                   (unpack-tail new-tail proc #f)
+                                   proc))
+       (lambda (form1 form2 stx ctx)
+         (parse-annotation-macro-result (proc (wrap-parsed form1) (wrap-parsed form2) stx ctx)
+                                        proc
+                                        #:srcloc (datum->syntax #f (list form1 stx form2))
+                                        #:origins (list form1 form2))))
+   assc))
+
+(define-for-syntax (make-annotation-prefix-operator order prec protocol proc)
+  (annotation-prefix-operator
+   order
+   prec
+   protocol
+   (if (eq? protocol 'macro)
+       (lambda (tail ctx)
+         (define-values (form new-tail)
+           (tail-returner
+            proc
+            (syntax-parse tail
+              [(head . tail) (proc (pack-tail #'tail #:after #'head) #'head ctx)])))
+         (check-transformer-result (parse-annotation-macro-result form proc)
+                                   (unpack-tail new-tail proc #f)
+                                   proc))
+       (lambda (form stx ctx)
+         (parse-annotation-macro-result (proc (wrap-parsed form) stx ctx)
+                                        proc
+                                        #:srcloc (datum->syntax #f (list stx form))
+                                        #:origins (list form))))))
+
+(define-for-syntax (check-syntax who s)
+  (unless (syntax*? s)
+    (raise-annotation-failure who s "Syntax")))
+
+(define-for-syntax (annotation-kind stx who)
+  (check-syntax who stx)
+  (syntax-parse (unpack-term stx who #f)
+    #:datum-literals (parsed)
+    [(parsed #:rhombus/annot a::annotation-predicate-form) 'predicate]
+    [(parsed #:rhombus/annot a::annotation-binding-form) 'converter]
+    [_ (raise-arguments-error* who rhombus-realm
+                               "not a parsed annotation"
+                               "syntax object" stx)]))
+
+(begin-for-syntax
+  (define/arity (annot_meta.is_predicate stx)
+    (eq? (annotation-kind stx who) 'predicate))
+
+  (define/arity (annot_meta.is_always_satisfied stx)
+    (and (eq? (annotation-kind stx who) 'predicate)
+         (syntax-parse stx
+           [(parsed #:rhombus/annot a::annotation-predicate-form)
+            (always-satisfied-annotation? #'a)]
+           [_ #f])))
+
+  (define/arity (annot_meta.pack_predicate predicate [static-infos #'(parens)]
+                                           #:track [components-in null])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (check-syntax who predicate)
+    (check-syntax who static-infos)
+    (define components (check-origins who components-in))
+    (no-srcloc #`(parsed #:rhombus/annot
+                         #,(transfer-origins
+                            components
+                            (annotation-predicate-form
+                             (wrap-expression predicate)
+                             (pack-static-infos who (unpack-term static-infos who #f)))))))
+
+  (define/arity (annot_meta.unpack_predicate stx)
+    #:static-infos ((#%call-result ((#%values (#,(get-syntax-static-infos)
+                                               #,(get-syntax-static-infos))))))
+    (check-syntax who stx)
+    (syntax-parse (unpack-term stx who #f)
+      #:datum-literals (parsed)
+      [(parsed #:rhombus/annot a::annotation-predicate-form)
+       (values (no-srcloc #'(parsed #:rhombus/expr a.predicate))
+               (unpack-static-infos who #'a.static-infos))]
+      [_ (raise-arguments-error* who rhombus-realm
+                                 "not a parsed predicate annotation"
+                                 "syntax object" stx)]))
+
+  (define/arity (annot_meta.is_converter stx)
+    (eq? (annotation-kind stx who) 'converter))
+
+  (define/arity (annot_meta.pack_converter binding body [static-infos #'(parens)]
+                                           #:track [components-in null])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (check-syntax who binding)
+    (check-syntax who body)
+    (check-syntax who static-infos)
+    (define components (check-origins who components-in))
+    (syntax-parse binding
+      #:datum-literals (parsed)
+      [(parsed #:rhombus/bind b::binding-form)
+       (no-srcloc
+        #`(parsed #:rhombus/annot
+                  #,(transfer-origins
+                     components
+                     (annotation-binding-form
+                      #'b
+                      (wrap-expression body)
+                      (pack-static-infos who (unpack-term static-infos who #f))))))]
+      [_ (raise-arguments-error* who rhombus-realm
+                                 "not a parsed binding form"
+                                 "syntax object" binding)]))
+  (define/arity (annot_meta.unpack_converter stx)
+    #:static-infos ((#%call-result ((#%values (#,(get-syntax-static-infos)
+                                               #,(get-syntax-static-infos)
+                                               #,(get-syntax-static-infos))))))
+    (check-syntax who stx)
+    (syntax-parse (unpack-term stx who #f)
+      #:datum-literals (parsed)
+      [(parsed #:rhombus/annot a::annotation-binding-form)
+       (values (no-srcloc #'(parsed #:rhombus/bind a.binding))
+               (no-srcloc #'(parsed #:rhombus/expr a.body))
+               (unpack-static-infos who #'a.static-infos))]
+      [_ (raise-arguments-error* who rhombus-realm
+                                 "not a parsed converter annotation"
+                                 "syntax object" stx)]))
+
+  (define/arity (annot_meta.parse_to_packed_statinfo stx)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (define group (unpack-group stx #f #f))
+    (unless group
+      (raise-annotation-failure who stx "Group"))
+    (syntax-parse group
+      [a::annotation
+       #:with ab::annotation-binding-form #'a.parsed
+       #'ab.static-infos]))
+
+  (define/arity (annot_meta.relative_precedence left-mode left-stx right-stx)
+    (get-relative-precedence who left-mode left-stx right-stx
+                             'rhombus/annot annotation-relative-precedence))
+
+  (define/arity (annot_meta.ends_parse left-mode left-stx tail)
+    (ends-parse? who left-mode left-stx tail
+                 'rhombus/annot
+                 annotation-relative-precedence
+                 annotation-infix-operator-ref)))

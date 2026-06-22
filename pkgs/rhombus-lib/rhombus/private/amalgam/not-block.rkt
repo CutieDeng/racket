@@ -1,0 +1,19 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre))
+
+(provide (for-syntax :not-block))
+
+(begin-for-syntax
+  (define-syntax-class :not-block
+    #:description "a non-block term"
+    #:opaque
+    #:datum-literals (op parens braces brackets quotes parsed)
+    (pattern _:identifier)
+    (pattern _:keyword)
+    (pattern (op . _))
+    (pattern (parens . _))
+    (pattern (braces . _))
+    (pattern (brackets . _))
+    (pattern (quotes . _))
+    (pattern (parsed . _))))

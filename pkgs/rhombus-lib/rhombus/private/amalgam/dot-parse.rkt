@@ -1,0 +1,126 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre
+                     "srcloc.rkt"
+                     "statically-str.rkt")
+         "parens.rkt"
+         (submod "assign.rkt" for-assign)
+         (only-in "repetition.rkt"
+                  identifier-repetition-use)
+         "op-literal.rkt"
+         "function-arity.rkt"
+         "static-info.rkt")
+
+(provide (for-syntax dot-parse-dispatch
+                     set-parse-function-call!))
+
+(define-for-syntax (dot-parse-dispatch k)
+  (lambda (lhs dot field-stx tail more-static? repetition? success-k fail-k)
+    (define (ary mask n-k no-k)
+      (define (success-call/dynamic)
+        (success-k (no-k (lambda (e)
+                           (relocate+reraw
+                            (respan (datum->syntax #f (list lhs dot field-stx)))
+                            e)))
+                   tail))
+      (syntax-parse tail
+        [((~and args (p-tag::parens g ...)) . new-tail)
+         (define (success-call/static)
+           (success-k (n-k #'(p-tag g ...)
+                           (lambda (e)
+                             (relocate+reraw
+                              (respan (datum->syntax #f (list lhs dot field-stx #'args)))
+                              e)))
+                      #'new-tail))
+         (define-values (n kws rsts? kwrsts?)
+           (for/fold ([n 0] [kws null] [rsts? #f] [kwrsts? #f])
+                     ([g (in-list (syntax->list #'(g ...)))])
+             (syntax-parse g
+               #:datum-literals (group op)
+               [(group kw:keyword . _)
+                (values n (cons #'kw kws) rsts? kwrsts?)]
+               [(group _::&-expr . _)
+                (values n kws #t kwrsts?)]
+               [(group _::~&-expr . _)
+                (values n kws rsts? #t)]
+               [_
+                (values (add1 n) kws rsts? kwrsts?)])))
+         (cond
+           [more-static?
+            ;; check correct call
+            (check-arity field-stx #f mask n kws rsts? kwrsts? 'method #:always? #t)
+            (success-call/static)]
+           ;; dynamic mode, method is correctly called
+           [(check-arity #f #f mask n kws rsts? kwrsts? #f #:always? #t)
+            (success-call/static)]
+           [else
+            (success-call/dynamic)])]
+        [_
+         (when more-static?
+           (raise-syntax-error #f
+                               (string-append "method must be called" statically-str)
+                               field-stx))
+         (success-call/dynamic)]))
+
+    (define (make-rator direct-id)
+      (cond
+        [repetition? (identifier-repetition-use direct-id)]
+        [else direct-id]))
+
+    (define (nary mask direct-id id)
+      (ary mask
+           (lambda (args reloc)
+             (define-values (proc tail to-anon-function?)
+               (parse-function-call (make-rator direct-id) (list lhs) #`(ignored #,args)
+                                    #:srcloc (reloc #'#f)
+                                    #:static? more-static?
+                                    #:can-anon-function? #t
+                                    #:repetition? repetition?))
+             proc)
+           ;; return partially applied method
+           (lambda (reloc)
+             (reloc #`(#,id #,(discard-static-infos lhs))))))
+
+    (define (field direct-id mutable?)
+      (define rator (make-rator direct-id))
+      (define srcloc (relocate+reraw
+                      (respan (datum->syntax #f (list lhs dot field-stx)))
+                      #'#f))
+      (define (access lhs)
+        (define-values (proc tail to-anon-function?)
+          (parse-function-call rator (list lhs) #'(ignored (parens))
+                               #:srcloc srcloc
+                               #:static? #t
+                               #:repetition? repetition?))
+        proc)
+      (define (mutate lhs v)
+        (define-values (proc tail to-anon-function?)
+          (parse-function-call rator (list lhs v) #'(ignored (parens))
+                               #:srcloc srcloc
+                               #:static? #t
+                               #:repetition? repetition?))
+        proc)
+      (if mutable?
+          (syntax-parse tail
+            [assign::assign-op-seq
+             (define-values (assign-expr new-tail)
+               (build-assign
+                (attribute assign.op)
+                #'assign.op-name
+                #'assign.name
+                #`(lambda () #,(access #'lhs))
+                #`(lambda (v) #,(mutate #'lhs #'v))
+                #'value
+                #'assign.tail))
+             (success-k #`(let ([lhs #,(discard-static-infos lhs)])
+                            #,assign-expr)
+                        new-tail)]
+            [_
+             (success-k (access lhs) tail)])
+          (success-k (access lhs) tail)))
+
+    (k (syntax-e field-stx) field ary nary repetition? fail-k)))
+
+(define-for-syntax parse-function-call #f)
+(define-for-syntax (set-parse-function-call! proc)
+  (set! parse-function-call proc))

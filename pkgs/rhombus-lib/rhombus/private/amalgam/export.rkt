@@ -1,0 +1,546 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     racket/symbol
+                     syntax/parse/pre
+                     enforest/operator
+                     enforest/property
+                     enforest/transformer
+                     enforest/name-parse
+                     enforest/hier-name-parse
+                     enforest/proc-name
+                     enforest/syntax-local
+                     "srcloc.rkt"
+                     "name-path-op.rkt"
+                     "introducer.rkt"
+                     "group.rkt"
+                     "macro-result.rkt"
+                     "id-binding.rkt"
+                     "dotted-sequence.rkt"
+                     "syntax-wrap.rkt"
+                     "realm.rkt"
+                     (for-syntax racket/base))
+         "enforest.rkt"
+         "all-spaces-out.rkt"
+         "only-spaces-out.rkt"
+         "only-meta-out.rkt"
+         "name-root-ref.rkt"
+         "name-root-space.rkt"
+         "declaration.rkt"
+         "nestable-declaration.rkt"
+         "dotted-sequence-parse.rkt"
+         (submod "module-path.rkt" for-import-export)
+         "space-parse.rkt"
+         "parens.rkt"
+         "parse.rkt"
+         "forwarding-sequence.rkt")
+
+(provide (for-space rhombus/decl
+                    export)
+
+         (for-space rhombus/expo
+                    rename
+                    as
+                    except
+                    meta
+                    meta_label
+                    only_space
+                    except_space
+                    only_meta
+                    only_meta_label
+                    except_meta
+                    except_meta_label
+                    names
+                    all_from
+                    all_defined
+                    |.|
+                    #%juxtapose
+                    #%parens))
+
+(module+ for-meta
+  (provide (for-syntax export-modifier
+                       in-export-space
+                       expo-quote
+                       :export
+                       :export-prefix-op+form+tail
+                       :export-infix-op+form+tail
+                       :export-modifier
+                       :modified-export)
+           define-export-syntax)
+  (begin-for-syntax
+    (provide (property-out export-prefix-operator)
+             (property-out export-infix-operator)
+             export-prefix+infix-operator)))
+
+(begin-for-syntax
+  (property export-prefix-operator prefix-operator)
+  (property export-infix-operator infix-operator)
+
+  (struct export-prefix+infix-operator (prefix infix)
+    #:property prop:export-prefix-operator (lambda (self) (export-prefix+infix-operator-prefix self))
+    #:property prop:export-infix-operator (lambda (self) (export-prefix+infix-operator-infix self)))
+
+  (property export-modifier transformer)
+
+  (define in-export-space (make-interned-syntax-introducer/add 'rhombus/expo))
+  (define-syntax (expo-quote stx)
+    (syntax-case stx ()
+      [(_ id) #`(quote-syntax #,((make-interned-syntax-introducer 'rhombus/expo) #'id))]))
+
+  (define (check-export-result form proc)
+    (unless (syntax? form) (raise-bad-macro-result (proc-name proc) "export" form))
+    form)
+
+  (define namespace-syntax-property-key (gensym 'namespace))
+
+  (define (make-identifier-export id)
+    (cond
+      [(syntax-property id namespace-syntax-property-key)
+       => (lambda (dot-names)
+            #`(all-spaces-dots-out #,id #,@(map syntax-local-introduce dot-names)))]
+      [else #`(all-spaces-out #,id)]))
+
+  (define (export-extension-combine dot-names id)
+    (syntax-property id namespace-syntax-property-key (map syntax-local-introduce dot-names)))
+
+  (define name-root-export-ref
+    (make-name-root-ref #:binding-ref (lambda (v)
+                                        (or (export-prefix-operator-ref v)
+                                            (export-infix-operator-ref v)))
+                        #:dot-name-construction export-extension-combine))
+
+  (define-rhombus-enforest
+    #:syntax-class :export
+    #:prefix-more-syntax-class :export-prefix-op+form+tail
+    #:infix-more-syntax-class :export-infix-op+form+tail
+    #:desc "export"
+    #:operator-desc "export operator"
+    #:parsed-tag #:rhombus/expo
+    #:in-space in-export-space
+    #:prefix-operator-ref export-prefix-operator-ref
+    #:infix-operator-ref export-infix-operator-ref
+    #:check-result check-export-result
+    #:make-identifier-form make-identifier-export
+    #:make-operator-form make-identifier-export
+    #:name-root-ref name-root-export-ref)
+
+  (define (make-export-modifier-ref parsed-ex)
+    ;; "accessor" closes over unpacked `parsed-ex`
+    (let ([ex (syntax-parse (syntax-unwrap parsed-ex)
+                #:datum-literals (parsed)
+                [(parsed #:rhombus/expo ex) (syntax-local-introduce #'ex)] ; export transformer scope
+                [_ (raise-arguments-error*
+                    'expo_meta.ParsedModifier rhombus-realm
+                    "given export to modify is not parsed"
+                    "base export" parsed-ex)])])
+      (lambda (v)
+        (define mod (export-modifier-ref v))
+        (and mod
+             (transformer (lambda (stx ignored-ex)
+                            ((transformer-proc mod) (syntax-local-introduce ex) ; export-modifier transformer scope
+                                                    stx)))))))
+
+  (define name-root-export-modifier-ref
+    (make-name-root-ref #:binding-ref export-modifier-ref
+                        #:dot-name-construction export-extension-combine))
+
+  (define-rhombus-transform
+    #:syntax-class (:export-modifier parsed-ex)
+    #:desc "export modifier"
+    #:parsed-tag #:rhombus/expo
+    #:in-space in-export-space
+    #:transformer-ref (make-export-modifier-ref parsed-ex)
+    #:name-root-ref name-root-export-modifier-ref)
+
+  (define-syntax-class :modified-export
+    #:attributes (parsed)
+    #:datum-literals (group)
+    (pattern (group mod-id:identifier mod-arg ... (_::block exp ...))
+             #:when (syntax-local-value* (in-export-space #'mod-id) export-modifier-ref)
+             #:with (e::modified-export ...) #'(exp ...)
+             #:with (~var || (:export-modifier #'(parsed #:rhombus/expo (combine-out e.parsed ...))))
+             (regroup #`(mod-id mod-arg ...)))
+    (pattern ::export))
+
+  (define (apply-modifiers mods e-parsed)
+    (cond
+      [(null? mods) e-parsed]
+      [else
+       (syntax-parse (car mods)
+         #:datum-literals (group)
+         [(~var ex (:export-modifier #`(parsed #:rhombus/expo #,e-parsed)))
+          (apply-modifiers (cdr mods) #'ex.parsed)]
+         [(group form . _)
+          (raise-syntax-error #f
+                              "not an export modifier"
+                              #'form)])])))
+
+(define-decl-syntax export
+  (nestable-declaration-transformer
+   (lambda (stx name-prefix effect-id)
+     (syntax-parse stx
+       [(form #:scope_like id:identifier . tail)
+        #:with (~var e (:definition name-prefix effect-id)) (regroup #'tail)
+        #`(#,(relocate+reraw
+              stx
+              #`(rhombus-forward
+                 #:export
+                 #,(relocate-id #'form #'id)
+                 e.parsed)))]
+       [(head . tail)
+        #:with (~var e (:definition name-prefix effect-id)) (regroup #'tail)
+        #`(#,(relocate+reraw
+              stx
+              #`(rhombus-forward
+                 #:export
+                 head
+                 e.parsed)))]
+       [(_ (_::block e::modified-export ...))
+        #`(#,(relocate+reraw
+              stx
+              #'(provide e.parsed ...)))]
+       [(_ term ...)
+        #:with e::modified-export (regroup #`(term ...))
+        #`(#,(relocate+reraw
+              stx
+              #'(provide e.parsed)))]))))
+
+(define-syntax (define-export-syntax stx)
+  (syntax-parse stx
+    [(_ name:id rhs)
+     (quasisyntax/loc stx
+       (define-syntax #,(in-export-space #'name) rhs))]))
+
+(begin-for-syntax
+  (define-syntax-class :as-id
+    #:attributes (name)
+    #:description "the literal `as`"
+    #:opaque
+    (pattern ::name
+             #:when (free-identifier=? (in-export-space #'name)
+                                       (expo-quote as))))
+
+  (define-syntax-class :renaming
+    #:datum-literals (group)
+    (pattern (group (~var int-seq :dotted-operator-or-identifier-sequence) . tail)
+             #:with raw-int::raw-dotted-operator-or-identifier #'int-seq
+             #:with int-name (if (null? (syntax-e #'raw-int.prefix))
+                                 #'raw-int.name
+                                 #`(all-spaces-dots-out raw-int.name #,@#'raw-int.prefix raw-int.name))
+             #:with (_::as-id ext::name) #'tail
+             #:with ext-name #'ext.name)))
+
+(define-export-syntax as
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (syntax-parse stx
+       [(self . _)
+        (raise-syntax-error #f
+                            "allowed only in `rename`"
+                            #'self)]))))
+
+(define-export-syntax rename
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (syntax-parse stx
+       [(_ (_::block g ...))
+        #:with ([r.int-name r.ext-name] ...)
+        (for/list ([g (in-list (syntax->list #'(g ...)))])
+          (syntax-parse g
+            [r::renaming #'[r.int-name r.ext-name]]))
+        (values #`(all-spaces-out [r.int-name r.ext-name] ...)
+                #'())]
+       [(_ t ...)
+        #:with r::renaming (regroup #'(t ...))
+        (values #`(all-spaces-out [r.int-name r.ext-name])
+                #'())]))))
+
+(define-export-syntax except
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(_ (_::block e::modified-export ...))
+        #`(except-out #,ex e.parsed ...)]
+       [(_ term ...)
+        #:with e::modified-export (regroup #'(term ...))
+        #`(except-out #,ex e.parsed)]))))
+
+(define-export-syntax meta
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form phase)
+        (define ph (syntax-e #'phase))
+        (unless (exact-integer? ph)
+          (raise-syntax-error #f "not a valid phase" stx #'phase))
+        (datum->syntax ex (list (syntax/loc #'form for-meta) #'phase ex) ex)]
+       [(form)
+        (datum->syntax ex (list (syntax/loc #'form for-meta) #'1 ex) ex)]))))
+
+(define-export-syntax meta_label
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form)
+        (datum->syntax ex (list (syntax/loc #'form for-meta) #f ex) ex)]))))
+
+(define-export-syntax only_space
+  (export-modifier
+   (lambda (ex stx)
+     (define (build form spaces-stx)
+       (define spaces (parse-space-names stx spaces-stx))
+       (datum->syntax ex (list* (syntax/loc form only-spaces-out) ex spaces) ex))
+     (syntax-parse stx
+       #:datum-literals (group)
+       [(form space ...)
+        (build #'form #'((space ...)))]
+       [(form (_::block (group space ...)
+                        ...))
+        (build #'form #'((space ...) ...))]))))
+
+(define-export-syntax except_space
+  (export-modifier
+   (lambda (ex stx)
+     (define (build form spaces-stx)
+       (define spaces (parse-space-names stx spaces-stx))
+       (datum->syntax ex (list* (syntax/loc form except-spaces-out) ex spaces) ex))
+     (syntax-parse stx
+       #:datum-literals (group)
+       [(form space ...)
+        (build #'form #'((space ...)))]
+       [(form (_::block (group space ...)
+                        ...))
+        (build #'form #'((space ...) ...))]))))
+
+(define-export-syntax only_meta
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form phase)
+        (define ph (syntax-e #'phase))
+        (unless (exact-integer? ph)
+          (raise-syntax-error #f "not a valid phase" stx #'phase))
+        (datum->syntax ex (list (syntax/loc #'form only-meta-out) ex #'phase) ex)]))))
+
+(define-export-syntax only_meta_label
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form)
+        (datum->syntax ex (list (syntax/loc #'form only-meta-out) ex #f) ex)]))))
+
+(define-export-syntax except_meta
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form phase)
+        (define ph (syntax-e #'phase))
+        (unless (exact-integer? ph)
+          (raise-syntax-error #f "not a valid phase" stx #'phase))
+        (datum->syntax ex (list (syntax/loc #'form except-meta-out) ex #'phase) ex)]))))
+
+(define-export-syntax except_meta_label
+  (export-modifier
+   (lambda (ex stx)
+     (syntax-parse stx
+       [(form)
+        (datum->syntax ex (list (syntax/loc #'form except-meta-out) ex #f) ex)]))))
+
+(define-export-syntax names
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (syntax-parse stx
+       #:datum-literals (group)
+       [(_ (_::block (group name::name ...) ...)
+           . tail)
+        (values #`(combine-out (all-spaces-out name.name) ... ...)
+                #'tail)]))))
+
+(define-export-syntax all_from
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (parameterize ([current-module-path-context 'export])
+       (syntax-parse stx
+         #:datum-literals (group op |.|)
+         [(_ (_::parens (group (op |.|) . (~var name (:hier-name-seq in-name-root-space in-name-root-space name-path-op name-root-ref))))
+             . tail)
+          (values
+           (cond
+             [(syntax-local-value* (in-name-root-space #'name.name) import-root-ref)
+              => (lambda (i)
+                   (define form
+                     (syntax-parse i
+                       #:datum-literals (parsed nspace)
+                       [(parsed mod-path parsed-r)
+                        #`(all-from-out #,(relocate #'name.name #'mod-path))]
+                       [(nspace _ _ [key val . rule] ...)
+                        (define keys (syntax->list #'(key ...)))
+                        (define vals (syntax->list #'(val ...)))
+                        (define rules (syntax->list #'(rule ...)))
+                        (define all-spaces
+                          #`(all-spaces-out #,@(for/list ([key (in-list keys)]
+                                                          [val (in-list vals)]
+                                                          [rule (in-list rules)]
+                                                          #:when (and (syntax-e key)
+                                                                      (null? (syntax-e rule))))
+                                                 #`[#,val #,key])))
+                        (cond
+                          [(for/and ([rule (in-list rules)]) (null? (syntax-e rule)))
+                           ;; simple case: can group all together
+                           all-spaces]
+                          [else
+                           ;; individual cases to handle spaces
+                           #`(combine-out
+                              #,all-spaces
+                             #,@(for/list ([key (in-list keys)]
+                                           [val (in-list vals)]
+                                           [rule (in-list rules)]
+                                           #:when (and (syntax-e key)
+                                                       (pair? (syntax-e rule))))
+                                  (let loop ([rule rule])
+                                    (syntax-parse rule
+                                      [(#:space ([space space-id] ...) . rule-rest)
+                                       #`(combine-out
+                                          (only-spaces-out space-id space)
+                                          ...
+                                          #,(loop #'rule-rest))]
+                                      [((~and mode (~or* #:only #:except))  space ...)
+                                       #`(#,(if (eq? (syntax-e #'mode) '#:only)
+                                                #'only-spaces-out
+                                                #'except-spaces-out)
+                                          (all-spaces-out [#,val #,key])
+                                          space ...)]))))])]))
+                   (unless (null? (syntax-e #'name.tail))
+                     (raise-syntax-error #f
+                                         "unexpected after `.`"
+                                         #'name.tail))
+                   (define list-name-root-id (extensible-name-root (list #'name.name)))
+                   (cond
+                     [list-name-root-id
+                      (define name-root-id (car list-name-root-id))
+                      (define extensions
+                        (let ns-loop ([base-ht #hasheq()] [int-id #'name.name] [name-root-id name-root-id] [orig-prefix #f])
+                          ;; look for extensions (in all spaces)
+                          (define prefix (string-append (symbol->immutable-string (syntax-e int-id)) "."))
+                          (for*/fold ([ht base-ht]) ([space-sym (in-list (cons #f (syntax-local-module-interned-scope-symbols)))]
+                                                     #:do [(define intro (if space-sym
+                                                                             (make-interned-syntax-introducer/add space-sym)
+                                                                             (lambda (x) x)))]
+                                                     [sym (in-list (syntax-bound-symbols (intro int-id)))])
+                            (define str (symbol->immutable-string sym))
+                            (cond
+                              [(and (> (string-length str) (string-length prefix))
+                                    (string=? prefix (substring str 0 (string-length prefix))))
+                               (define id* (datum->syntax int-id sym int-id))
+                               (define id (intro id*))
+                               (cond
+                                 [(or (not (identifier-binding* id))
+                                      (and space-sym
+                                           (not (identifier-distinct-binding* id id*))))
+                                  ht]
+                                 [(identifier-extension-binding? id name-root-id)
+                                  (define key (string->symbol (substring str (string-length (or orig-prefix prefix)))))
+                                  (define new-ht
+                                    (hash-set ht key id*))
+                                  (if (eq? space-sym 'rhombus/namespace)
+                                      (ns-loop new-ht id* id (or orig-prefix prefix))
+                                      new-ht)]
+                                 [else ht])]
+                              [else ht]))))
+                      (cond
+                        [(= 0 (hash-count extensions))
+                         form]
+                        [else
+                         #`(combine-out
+                            #,form
+                            #,@(for/list ([(key id) (in-hash extensions)])
+                                 #`(all-spaces-out [#,id #,key])))])]
+                     [else form]))]
+             [else
+              (raise-syntax-error #f
+                                  "not bound as a name root"
+                                  #'name.name)])
+           #'tail)]
+         [(_ (_::parens mod-path::module-path)
+             . tail)
+          (values #`(all-from-out #,(convert-symbol-module-path #'mod-path.parsed))
+                  #'tail)])))))
+
+(define-export-syntax all_defined
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (syntax-parse stx
+       [(form #:scope_like id:identifier . tail)
+        (values (datum->syntax #'id (list #'all-spaces-defined-out) #'form #'form)
+                #'tail)]
+       [(form . tail)
+        (values (datum->syntax #'form (list #'all-spaces-defined-out) #'form #'form)
+                #'tail)]))))
+
+(define-export-syntax #%juxtapose
+  (export-infix-operator
+   #f
+   '((default . weaker))
+   'macro
+   (lambda (form1 stx)
+     (syntax-parse stx
+       [(_ (_::block mod ...) . tail)
+        (values (apply-modifiers (syntax->list #'(mod ...))
+                                 form1)
+                #'tail)]
+       [(_ . tail)
+        #:with (~var e (:export-infix-op+form+tail (expo-quote #%juxtapose))) (regroup #'tail)
+        (values #`(combine-out #,form1
+                               e.parsed)
+                #'e.tail)]))
+   'left))
+
+(define-export-syntax #%parens
+  (export-prefix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (stx)
+     (syntax-parse stx
+       [(_ (_::parens ex::modified-export) . tail)
+        (values #'ex.parsed
+                #'tail)]
+       [(_ (~and parens (_::parens ex ...)) . tail)
+        (raise-syntax-error #f
+                            (if (null? (syntax->list #'(ex ...)))
+                                "missing export in parentheses"
+                                "multiple groups in export parentheses")
+                            stx
+                            #'parens)]
+       [(self . tail)
+        ;; not followed by parentheses; as a convenience, treat this is a name export
+        (values (make-identifier-export #'self)
+                #'tail)]))))
+
+(define-export-syntax |.|
+  (export-infix-operator
+   #f
+   '((default . stronger))
+   'macro
+   (lambda (form stx)
+     (syntax-parse stx
+       #:datum-literals (op)
+       [((op form-id) . _)
+        (raise-syntax-error #f
+                            "allowed here only as a name-path separator, used as an operator"
+                            #'form-id)]))
+   'left))

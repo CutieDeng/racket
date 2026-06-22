@@ -1,0 +1,301 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre
+                     "srcloc.rkt")
+         racket/flonum
+         racket/fixnum
+         "provide.rkt"
+         "expression.rkt"
+         "repetition.rkt"
+         "define-operator.rkt"
+         "annotation-failure.rkt"
+         "compare-key.rkt"
+         "static-info.rkt"
+         "flonum-key.rkt"
+         "fixnum-key.rkt"
+         "static-info.rkt"
+         "rhombus-primitive.rkt"
+         "order.rkt"
+         "order-primitive.rkt"
+         "parens.rkt")
+
+(provide (for-spaces (#f
+                      rhombus/repet)
+
+                     (rename-out [rhombus+ +]
+                                 [rhombus- -]
+                                 [rhombus* *]
+                                 [rhombus/ /]
+                                 [rhombus** **])
+                     .<
+                     .<=
+                     .=
+                     .!=
+                     .>=
+                     .>
+
+                     div
+                     mod
+                     rem
+
+                     !
+                     &&
+                     \|\|
+
+                     ==
+                     !=
+
+                     ===
+                     is_now
+                     is_same_number_or_object))
+
+(module+ static-infos
+  (provide (for-syntax get-number-static-infos
+                       get-real-static-infos
+                       get-rational-static-infos
+                       get-int-static-infos
+                       get-fixnum-static-infos
+                       get-flonum-static-infos)))
+
+(module+ parse-not
+  (provide (for-syntax set-parse-not!)))
+
+(define-static-info-syntax number-static-infos
+  ;; comparison actually requires real numbers, but we want to
+  ;; propagate a comparison operation from things like `+`, and
+  ;; so it's simplest (and good enough in practice) to overapproximate
+  ;; by pointing all numbers to `>`, etc.
+  (#%compare ((compare_to compare-to/flfx)
+              (< </flfx)
+              (<= <=/flfx)
+              (= =/flfx)
+              (!= !=/flfx)
+              (>= >=/flfx)
+              (> >/flfx))))
+
+(define-static-info-getter get-number-static-infos
+  (#%indirect-static-info number-static-infos))
+
+(define-for-syntax (get-real-static-infos)
+  (get-number-static-infos))
+(define-for-syntax (get-rational-static-infos)
+  (get-real-static-infos))
+(define-for-syntax (get-int-static-infos)
+  (get-real-static-infos))
+(define-static-info-getter get-fixnum-static-infos
+  (#%fixnum #t)
+  #,@(get-int-static-infos))
+(define-static-info-getter get-flonum-static-infos
+  (#%flonum #t)
+  #,@(get-real-static-infos))
+
+(define-infix rhombus+ +
+  #:order addition
+  #:static-infos #,(get-number-static-infos)
+  #:flonum fl+ #,(get-flonum-static-infos))
+
+(define-prefixes define-values-for-syntax (minus-expr-prefix minus-repet-prefix)
+  -
+  #:order multiplication
+  #:static-infos #,(get-number-static-infos)
+  #:flonum fl- #,(get-flonum-static-infos))
+(define-infixes define-values-for-syntax (minus-expr-infix minus-repet-infix)
+  -
+  #:order addition
+  #:static-infos #,(get-number-static-infos)
+  #:flonum fl- #,(get-flonum-static-infos))
+
+(define-syntax rhombus-
+  (expression-prefix+infix-operator
+   minus-expr-prefix
+   minus-expr-infix))
+
+(define-repetition-syntax rhombus-
+  (repetition-prefix+infix-operator
+   minus-repet-prefix
+   minus-repet-infix))
+
+(define-infix rhombus* *
+  #:order multiplication
+  #:static-infos #,(get-number-static-infos)
+  #:flonum fl* #,(get-flonum-static-infos))
+
+(define-infix rhombus/ /
+  #:order multiplication
+  #:static-infos #,(get-number-static-infos)
+  #:flonum fl/ #,(get-flonum-static-infos))
+
+(define-infix #:who ** rhombus** expt
+  #:order exponentiation
+  #:associate 'right
+  #:static-infos #,(get-number-static-infos)
+  #:flonum flexpt #,(get-flonum-static-infos))
+
+(define-infix #:who div quotient
+  #:order integer_division
+  #:static-infos #,(get-real-static-infos))
+(define-infix #:who mod modulo
+  #:order integer_division
+  #:static-infos #,(get-real-static-infos))
+(define-infix #:who rem remainder
+  #:order integer_division
+  #:static-infos #,(get-real-static-infos))
+
+(begin-for-syntax
+  (define parse-not void)
+  (define (set-parse-not! proc) (set! parse-not proc)))
+
+(define-prefixes define-values-for-syntax (not-expr-prefix not-repet-prefix)
+  not
+  #:order logical_negation)
+(define-values-for-syntax (not-expr-infix not-repet-infix)
+  (values
+   (expression-infix-operator
+    (lambda () (order-quote equivalence))
+    '()
+    'macro
+    (lambda (form1 tail)
+      (parse-not form1 tail #f))
+    'left)
+   (repetition-infix-operator
+    (lambda () (order-quote equivalence))
+    '()
+    'macro
+    (lambda (form1 tail)
+      (parse-not form1 tail #t))
+    'left)))
+
+(define-syntax !
+  (expression-prefix+infix-operator
+   not-expr-prefix
+   not-expr-infix))
+(define-repetition-syntax !
+  (repetition-prefix+infix-operator
+   not-repet-prefix
+   not-repet-infix))
+
+(define-infix && and
+  #:order logical_conjunction
+  #:merge-static-infos (lambda (form1 form2 staticinfos)
+                         (define si (extract-static-infos form2))
+                         (if (not (static-infos-empty? si))
+                             #`((#%maybe #,si))
+                             #'())))
+
+(define-infix \|\| or
+  #:order logical_disjunction
+  #:merge-static-infos (lambda (form1 form2 staticinfos)
+                         (define (demaybe si)
+                           (define maybe-si (static-info-lookup si #'#%maybe))
+                           (if maybe-si
+                               (static-infos-and si maybe-si)
+                               si))
+                         (static-infos-or (demaybe (extract-static-infos form1))
+                                          (extract-static-infos form2))))
+
+(define-syntax (define-comp-infix stx)
+  (syntax-parse stx
+    [(_ (~optional (~and who #:who)) name racket-name flname fxname)
+     #'(define-infix (~? who) name racket-name
+         #:order order_comparison
+         #:flonum flname ()
+         #:fixnum fxname ())]))
+
+(define (number!=? a b)
+  (unless (and (number? a) (number? b))
+    (raise-annotation-failure '.!= (if (number? a) b a) "Number"))
+  (not (= a b)))
+
+(define-syntax-rule (fl!= a b)
+  (not (fl= a b)))
+
+(define-syntax-rule (fx!= a b)
+  (not (fx= a b)))
+
+(define-comp-infix #:who .< < fl< fx<)
+(define-comp-infix #:who .<= <= fl<= fx<=)
+(define-comp-infix #:who .= = fl= fx=)
+(define-comp-infix .!= number!=? fl!= fx!=)
+(define-comp-infix #:who .>= >= fl>= fx>=)
+(define-comp-infix #:who .> > fl> fx>)
+
+(define-for-syntax (make-comparable-op op flop fxop)
+  (expression-transformer
+   (lambda (tail)
+     (syntax-parse tail
+       #:datum-literals (group parsed)
+       [(form-id (~and p (tag::parens
+                          (group (parsed #:rhombus/expr a))
+                          (group (parsed #:rhombus/expr b))))
+                 . new-tail)
+        (define use-op
+          (cond
+            [(and (flonum-statinfo? #'a)
+                  (flonum-statinfo? #'b))
+             flop]
+            [(and (fixnum-statinfo? #'a)
+                  (fixnum-statinfo? #'b))
+             fxop]
+            [else op]))
+        (values
+         (relocate+reraw
+          (respan (datum->syntax #f (list #'form-id #'p)))
+          #`(#,use-op #,(discard-static-infos #'a) #,(discard-static-infos #'b)))
+         #'new-tail)]
+       [(form-id . new-tail)
+        (error "shouldn't get here")]))))
+
+(define-syntax </flfx (make-comparable-op #'< #'fl< #'fx<))
+(define-syntax <=/flfx (make-comparable-op #'<= #'fl<= #'fx<=))
+(define-syntax =/flfx (make-comparable-op #'= #'fl= #'fx=))
+(define-syntax !=/flfx (make-comparable-op #'number!=? #'fl!= #'fx!=))
+(define-syntax >=/flfx (make-comparable-op #'>= #'fl>= #'fx>=))
+(define-syntax >/flfx (make-comparable-op #'> #'fl> #'fx>))
+
+(define-syntax (define-compare-to stx)
+  (syntax-parse stx
+    [(_ name < =)
+     #'(define-syntax-rule (name a-expr b-expr)
+         (let ([a a-expr]
+               [b b-expr])
+           (cond
+             [(= a b) 0]
+             [(a . < . b) -1]
+             [else 1])))]
+    [(_ name pred annot-str < =)
+     #'(define (name a b)
+         (unless (and (pred a) (pred b))
+           (raise-annotation-failure 'compare_to (if (pred a) b a) annot-str))
+         (cond
+           [(= a b) 0]
+           [(a . < . b) -1]
+           [else 1]))]))
+
+(define-compare-to real-compare-to real? "Real" < =)
+(define-compare-to flonum-compare-to fl< fl=)
+(define-compare-to fixnum-compare-to fx< fx=)
+(define-syntax compare-to/flfx
+  (make-comparable-op #'real-compare-to #'flonum-compare-to #'fixnum-compare-to))
+
+(define-syntax (define-eql-infix stx)
+  (syntax-parse stx
+    [(_ name racket-name option ...)
+     #'(define-infix name racket-name
+         #:order equivalence
+         option ...)]))
+
+(define (not-equal-always? a b)
+  (not (equal-always? a b)))
+
+(define-eql-infix == equal-always?)
+(define-eql-infix != not-equal-always?)
+(define-eql-infix === eq?)
+(define-eql-infix is_now equal?
+  #:negatable)
+(define-eql-infix is_same_number_or_object eqv?)
+
+(void (set-primitive-who! 'fl+ '+))
+(void (set-primitive-who! 'fl- '-))
+(void (set-primitive-who! 'fl* '*))
+(void (set-primitive-who! 'fl/ '/))
+(void (set-primitive-who! 'flexpt '**))

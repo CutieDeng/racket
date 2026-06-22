@@ -1,0 +1,387 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     racket/unsafe/undefined
+                     racket/phase+space
+                     racket/treelist
+                     syntax/parse/pre
+                     enforest/name-parse
+                     shrubbery/print
+                     "pack.rkt"
+                     "dotted-sequence.rkt"
+                     "define-arity.rkt"
+                     "call-result-key.rkt"
+                     "name-root.rkt"
+                     (submod "annotation.rkt" for-class)
+                     (only-in "static-info.rkt" #%never)
+                     (for-syntax racket/base)
+                     (submod "syntax-object.rkt" for-quasiquote)
+                     "srcloc.rkt"
+                     "context-stx.rkt"
+                     "syntax-wrap.rkt"
+                     "definition-context.rkt"
+                     "class-primitive.rkt"
+                     "name-equal.rkt"
+                     "origin.rkt"
+                     "origin-check.rkt"
+                     "binding-failure.rkt"
+                     "to-list.rkt")
+         "space.rkt"
+         "is-static.rkt"
+         "operator-compare.rkt"
+         "forwarding-sequence.rkt"
+         "syntax-parameter.rkt"
+         "parse.rkt")
+
+(module+ for-unquote
+  (provide (for-syntax syntax_meta.equal_binding)))
+
+(begin-for-syntax
+  (provide (for-space rhombus/namespace
+                      syntax_meta)
+           (for-space rhombus/annot
+                      SyntaxPhase))
+
+  (define-name-root syntax_meta
+    #:fields
+    ([equal_binding syntax_meta.equal_binding]
+     [equal_name_and_scopes syntax_meta.equal_name_and_scopes]
+     [binding_symbol syntax_meta.binding_symbol]
+     [expanding_phase syntax_meta.expanding_phase]
+     [error syntax_meta.error]
+     [value syntax_meta.value]
+     [flip_introduce syntax_meta.flip_introduce]
+     [space_introduce syntax_meta.space_introduce]
+     [track_origin syntax_meta.track_origin]
+     [track_group_origin syntax_meta.track_group_origin]
+     [track_ephemeral_origin syntax_meta.track_ephemeral_origin]
+     [is_static syntax_meta.is_static]
+     [dynamic_name syntax_meta.dynamic_name]
+     [can_lift_expr_to_before syntax_meta.can_lift_expr_to_before]
+     [lift_expr_to_before syntax_meta.lift_expr_to_before]
+     [can_lift_expr_to_module_end syntax_meta.can_lift_expr_to_module_end]
+     [lift_expr_to_module_end syntax_meta.lift_expr_to_module_end]
+     [parse_dot_expr syntax_meta.parse_dot_expr]
+     [parse_dot_repet syntax_meta.parse_dot_repet]
+     [make_definition_context syntax_meta.make_definition_context]
+     DefinitionContext))
+
+  (define-primitive-class DefinitionContext definition-context
+    #:lift-declaration
+    #:existing
+    #:just-annot
+    #:fields
+    ()
+    #:namespace-fields
+    ()
+    #:properties
+    ()
+    #:methods
+    ([add_definitions DefinitionContext.add_definitions]
+     [add_scopes DefinitionContext.add_scopes]
+     [call_using DefinitionContext.call_using]
+     [call_to_expand_using DefinitionContext.call_to_expand_using]
+     [track_origin DefinitionContext.track_origin]))
+
+  (define expr-space-path (space-syntax #f))
+
+  (define/arity (syntax_meta.value id/op
+                                   [sp expr-space-path]
+                                   [fail (lambda ()
+                                           (raise-syntax-error who "unbound identifier" id/op))])
+    (define id (extract-name/sp who id/op sp))
+    (syntax-local-value id (if (and (procedure? fail)
+                                    (procedure-arity-includes? fail 0))
+                               fail
+                               (lambda () fail))))
+
+  (define (extract-free-name who stx sp)
+    (extract-name/sp who stx sp #:build-dotted? #t))
+
+  (define/arity syntax_meta.equal_binding
+    (case-lambda
+      [(id1 id2)
+       (free-identifier=? (extract-free-name who id1 expr-space-path)
+                          (extract-free-name who id2 expr-space-path))]
+      [(id1 id2 sp)
+       (free-identifier=? (extract-free-name who id1 sp)
+                          (extract-free-name who id2 sp))]
+      [(id1 id2 sp phase1)
+       (free-identifier=? (extract-free-name who id1 sp)
+                          (extract-free-name who id2 sp)
+                          phase1)]
+      [(id1 id2 sp phase1 phase2)
+       (free-identifier=? (extract-free-name who id1 sp)
+                          (extract-free-name who id2 sp)
+                          phase1
+                          phase2)]))
+
+  (define/arity (syntax_meta.equal_name_and_scopes id1
+                                                   id2
+                                                   [phase (syntax-local-phase-level)])
+    (equal-name-and-scopes? who id1 id2 phase))
+
+  (define/arity syntax_meta.binding_symbol
+    (case-lambda
+      [(id)
+       (identifier-binding-symbol (extract-free-name who id expr-space-path))]
+      [(id sp)
+       (identifier-binding-symbol (extract-free-name who id sp))]
+      [(id sp phase)
+       (identifier-binding-symbol (extract-free-name who id sp)) phase]))
+
+  (define (extract-name/sp who stx sp
+                           #:build-dotted? [build-dotted? #f])
+    (unless (space-name? sp) (raise-annotation-failure who sp "SpaceMeta"))
+    (extract-name who stx (space-name-symbol sp)
+                  #:build-dotted? build-dotted?))
+
+  (define/arity (syntax_meta.expanding_phase)
+    (syntax-local-phase-level))
+
+  (define/arity (syntax_meta.error #:who [m-who #f]
+                                   form/msg
+                                   [form unsafe-undefined]
+                                   [detail unsafe-undefined])
+    #:static-infos ((#%call-result ((#%never #t))))
+    (define who-in
+      (cond
+        [(or (not m-who) (symbol? m-who)) m-who]
+        [(string? m-who) (string->symbol m-who)]
+        [else
+         (syntax-parse m-who
+           #:datum-literals (group multi)
+           [_::name #t]
+           [(group _::dotted-operator-or-identifier-sequence) #t]
+           [(multi (group _::dotted-operator-or-identifier-sequence)) #t]
+           [_
+            (raise-annotation-failure who m-who "error.Who")])
+         (string->symbol (shrubbery-syntax->string #:use-raw? #t m-who))]))
+    (cond
+      [(eq? form unsafe-undefined)
+       (define form form/msg)
+       (unless (syntax*? form) (raise-annotation-failure who form "Syntax"))
+       (raise-syntax-error who-in "bad syntax" (maybe-respan (syntax-unwrap form)))]
+      [(eq? detail unsafe-undefined)
+       (define msg form/msg)
+       (unless (string? msg) (raise-annotation-failure who msg "ReadableString"))
+       (unless (syntax*? form) (raise-annotation-failure who form "Syntax"))
+       (raise-syntax-error who-in msg (maybe-respan (syntax-unwrap form)))]
+      [else
+       (define msg form/msg)
+       (unless (string? msg) (raise-annotation-failure who msg "ReadableString"))
+       (define (bad-detail)
+         (raise-annotation-failure who detail "Syntax || List.of(Syntax)"))
+       (define details (map maybe-respan (cond
+                                           [(treelist? detail)
+                                            (define l (treelist->list detail))
+                                            (for ([i (in-list l)])
+                                              (unless (syntax*? i) (bad-detail)))
+                                            (map syntax-unwrap l)]
+                                           [(syntax*? detail)
+                                            (list (syntax-unwrap detail))]
+                                           [else (bad-detail)])))
+       (if (pair? details)
+           (raise-syntax-error who-in msg
+                               (maybe-respan form)
+                               (car details)
+                               (cdr details))
+           (raise-syntax-error who-in msg
+                               (maybe-respan form)))]))
+
+  (define/arity (syntax_meta.flip_introduce stx)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (syntax*? stx) (raise-annotation-failure who stx "Syntax"))
+    (syntax-local-introduce (syntax-unwrap stx)))
+
+  (define/arity (syntax_meta.space_introduce stx-in sp #:mode [mode 'add])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (syntax*? stx-in) (raise-annotation-failure who stx-in "Syntax"))
+    (unless (space-name? sp) (raise-annotation-failure who sp "SpaceMeta"))
+    (unless (memq mode '(add remove flip)) (raise-annotation-failure who mode "Any.of(#'add, 'remove, #'flip)"))
+    (define stx (syntax-unwrap stx-in))
+    (define space-sym (space-name-symbol sp))
+    (if space-sym
+        ((make-interned-syntax-introducer space-sym) stx mode)
+        stx))
+
+  (define (unpack-ids who id-stx-in sp)
+    (unless (space-name? sp) (raise-annotation-failure who sp "SpaceMeta"))
+    (define names (or (let ([t (unpack-term/maybe id-stx-in)])
+                        (and t
+                             (list t)))
+                      (to-list #f id-stx-in)))
+    (define ids (for/fold ([ids (and names null)]) ([name (in-list names)])
+                  (define id (extract-name #f name (space-name-symbol sp)
+                                           #:build-dotted? #t))
+                  (and id
+                       (cons id ids))))
+    (if ids
+        (reverse ids)
+        (raise-annotation-failure who id-stx-in "Name || (Listable.to_list && List.of(Name))")))
+
+  (define/arity (syntax_meta.track_origin stx-in
+                                          [ctx-stx-in null]
+                                          #:add [name-stx-in null]
+                                          #:space [space expr-space-path])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (define stx (unpack-term/maybe stx-in))
+    (unless stx (raise-annotation-failure who stx-in "Term"))
+    (define ctx-stxes (or (let ([t (unpack-term/maybe ctx-stx-in)])
+                            (and t (list t)))
+                          (check-origins #f ctx-stx-in)
+                          (raise-annotation-failure who ctx-stx-in "Term || (Listable.to_list && List.of(Term))")))
+    (define ids (unpack-ids who name-stx-in space))
+    (add-origins ids (transfer-origins ctx-stxes stx)))
+
+  (define/arity (syntax_meta.track_group_origin stx-in
+                                                [ctx-stx-in null]
+                                                #:add [name-stx-in null]
+                                                #:space [space expr-space-path])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (define stx (unpack-group stx-in who #f))
+    (define ctx-stxes (or (let ([g (unpack-group ctx-stx-in #f #f)])
+                            (and g (list g)))
+                          (check-group-origins #f ctx-stx-in)
+                          (raise-annotation-failure who ctx-stx-in "Group || (Listable.to_list && List.of(Group))")))
+    (define ids (unpack-ids who name-stx-in space))
+    (add-origins ids (transfer-origins ctx-stxes stx)))
+
+  (define/arity (syntax_meta.track_ephemeral_origin stx
+                                                    [ctx-stx-in null]
+                                                    #:add [name-stx-in null]
+                                                    #:space [space expr-space-path])
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (syntax? stx) (raise-annotation-failure who stx "Syntax"))
+    (define ctx-stxes (cond
+                        [(syntax? ctx-stx-in) (list ctx-stx-in)]
+                        [else
+                         (define lst (to-list #f ctx-stx-in))
+                         (if (and lst (andmap syntax? lst))
+                             lst
+                             (raise-annotation-failure who ctx-stx-in "Syntax || (Listable.to_list && List.of(Syntax))"))]))
+    (define ids (unpack-ids who name-stx-in space))
+    (add-origins ids (transfer-origins ctx-stxes stx)))
+
+  (define/arity (syntax_meta.is_static ctx-stx)
+    (define ctx (extract-ctx who ctx-stx))
+    (is-static-context? ctx))
+
+  (define/arity (syntax_meta.dynamic_name name-stx
+                                          #:as_static [static? #false]
+                                          #:space [sp expr-space-path])
+    (syntax-parse (unpack-term name-stx #f #f)
+      #:datum-literals (group multi)
+      [n::name
+       (unless (space-name? sp) (raise-annotation-failure who sp "SpaceMeta"))
+       (relocate+reraw name-stx (add-dynamism-context #'n.name static? (space-name-symbol sp)))]
+      [_
+       (raise-annotation-failure who name-stx "Name")]))
+
+  (define/arity (syntax_meta.can_lift_expr_to_before)
+    (syntax-transforming-with-lifts?))
+
+  (define/arity (syntax_meta.lift_expr_to_before stx)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (define g (unpack-group stx #f #f))
+    (unless g (raise-annotation-failure who stx "Group"))
+    (unless (syntax-transforming-with-lifts?)
+      (error who "not currently expanding in a liftable context"))
+    (syntax-local-lift-expression
+     #`(rhombus-expression #,g)))
+
+  (define/arity (syntax_meta.can_lift_expr_to_module_end)
+    (syntax-transforming-module-expression?))
+
+  (define/arity (syntax_meta.lift_expr_to_module_end stx)
+    (define g (unpack-group stx #f #f))
+    (unless g (raise-annotation-failure who stx "Group"))
+    (unless (syntax-transforming-module-expression?)
+      (error who "not currently expanding within a module"))
+    (syntax-local-lift-module-end-declaration
+     #`(rhombus-expression #,g)))
+
+  (define/arity (syntax_meta.make_definition_context [parent #f])
+    #:static-infos ((#%call-result #,(get-definition-context-static-infos)))
+    (unless (or (not parent) (definition-context? parent))
+      (raise-annotation-failure who parent "DefinitionContext"))
+    (definition-context
+      (syntax-local-make-definition-context
+       (and parent (definition-context-def-ctx parent)))
+      (cons (gensym)
+            (if parent
+                (definition-context-expand-context parent)
+                null))
+      (box #hasheq())
+      (box (datum->syntax #f 'track))))
+
+  (define/method (DefinitionContext.add_definitions ctx stx)
+    (unless (definition-context? ctx)
+      (raise-annotation-failure who ctx "DefinitionContext"))
+    (unless (syntax*? stx)
+      (raise-annotation-failure who stx "Syntax"))
+    (define gs (unpack-multi (syntax-unwrap stx) who #f))
+    (expand-bridge-definition-sequence #`(rhombus-body-sequence #,@gs)
+                                       (definition-context-def-ctx ctx)
+                                       (definition-context-expand-context ctx)
+                                       (definition-context-params-box ctx)
+                                       (definition-context-track-box ctx))
+    (void))
+
+  (define/method (DefinitionContext.add_scopes ctx stx)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (definition-context? ctx)
+      (raise-annotation-failure who ctx "DefinitionContext"))
+    (unless (syntax*? stx)
+      (raise-annotation-failure who stx "Syntax"))
+    (internal-definition-context-add-scopes
+     (definition-context-def-ctx ctx)
+     (syntax-unwrap stx)))
+
+  (define/method (DefinitionContext.call_using ctx f)
+    (unless (definition-context? ctx)
+      (raise-annotation-failure who ctx "DefinitionContext"))
+    (unless (and (procedure? f)
+                 (procedure-arity-includes? f 0))
+      (raise-annotation-failure who f "Function.of_arity(0)"))
+    (with-continuation-mark
+     syntax-parameters-key (unbox (definition-context-params-box ctx))
+     (syntax-local-apply-transformer
+      f
+      #'cons
+      (definition-context-expand-context ctx)
+      (definition-context-def-ctx ctx))))
+
+  (define/method (DefinitionContext.track_origin ctx stx-in)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (definition-context? ctx)
+      (raise-annotation-failure who ctx "DefinitionContext"))
+    (define stx (unpack-term/maybe stx-in))
+    (unless stx (raise-annotation-failure who stx-in "Term"))
+    (define track-stx (unbox (definition-context-track-box ctx)))
+    (transfer-origin track-stx stx))
+
+  (define/method (DefinitionContext.call_to_expand_using ctx stx f)
+    #:static-infos ((#%call-result #,(get-syntax-static-infos)))
+    (unless (definition-context? ctx)
+      (raise-annotation-failure who ctx "DefinitionContext"))
+    (unless (and (procedure? f)
+                 (procedure-arity-includes? f 1))
+      (raise-annotation-failure who f "Syntax -> Syntax"))
+    (unless (syntax*? stx)
+      (raise-annotation-failure who stx "Syntax"))
+    (define in-stx (syntax-local-introduce (syntax-unwrap stx)))
+    (define out-stx
+      (DefinitionContext.call_using
+        ctx
+        (lambda ()
+          (define out-stx
+            (f (DefinitionContext.add_scopes
+                 ctx
+                 (syntax-local-introduce in-stx))))
+          (unless (syntax*? out-stx)
+            (raise-binding-failure who "result" out-stx "Syntax"))
+          (syntax-local-introduce out-stx))))
+    (DefinitionContext.track_origin ctx (syntax-local-introduce out-stx)))
+
+  (define-annotation-syntax SyntaxPhase
+    (identifier-annotation phase? ())))

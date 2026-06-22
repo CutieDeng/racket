@@ -1,0 +1,37 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre
+                     "group.rkt")
+         "expression.rkt"
+         "parse.rkt"
+         "parens.rkt"
+         #;(submod "equal.rkt" for-parse))
+
+(provide (rename-out
+          [rhombus-parameterize parameterize]))
+
+(begin-for-syntax
+  (define-syntax-class :binding
+    #:attributes (lhs rhs)
+    #:datum-literals (group)
+    (pattern (group n ... (tag::block body ...))
+             #:with lhs (regroup #`(n ...))
+             #:with rhs #'(rhombus-body-at tag body ...))
+    #;
+    (pattern (~and g
+                   (group n ...+ _::equal expr ...+))
+             #:do [(check-multiple-equals #'g)]
+             #:with lhs (regroup #`(n ...))
+             #:with rhs #`(rhombus-expression (group expr ...)))))
+
+(define-syntax rhombus-parameterize
+  (expression-transformer
+   (lambda (stx)
+     (syntax-parse stx
+       [(form-id (_::braces binding::binding ...)
+                 (tag::block body ...))
+        (values
+         #'(parameterize ([(rhombus-expression binding.lhs) binding.rhs]
+                          ...)
+             (rhombus-body-at tag body ...))
+         #'())]))))

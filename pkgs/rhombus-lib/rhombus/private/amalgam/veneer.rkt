@@ -1,0 +1,639 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     syntax/parse/pre
+                     enforest/syntax-local
+                     shrubbery/print
+                     "class-parse.rkt"
+                     "veneer-parse.rkt"
+                     (submod "veneer-meta.rkt" for-class)
+                     "interface-parse.rkt"
+                     "srcloc.rkt"
+                     "group.rkt"
+                     "annotation-string.rkt"
+                     "origin.rkt")
+         "provide.rkt"
+         "forwarding-sequence.rkt"
+         "definition.rkt"
+         (submod "annotation.rkt" for-class)
+         "static-info.rkt"
+         "binding.rkt"
+         "veneer-clause.rkt"
+         "class-clause-parse.rkt"
+         "class-clause-tag.rkt"
+         "class-step.rkt"
+         "class-dot.rkt"
+         "class-static-info.rkt"
+         "class-method.rkt"
+         "class-top-level.rkt"
+         "dotted-sequence-parse.rkt"
+         "dot-provider-key.rkt"
+         "parens.rkt"
+         (submod "namespace.rkt" for-exports)
+         "class-able.rkt"
+         "if-blocked.rkt"
+         "name-prefix.rkt")
+
+(provide (for-spaces (rhombus/defn)
+                     veneer))
+
+(define-defn-syntax veneer
+  (definition-transformer
+    (lambda (stxes name-prefix effect-id)
+      (syntax-parse stxes
+        #:datum-literals (group block)
+        [(_ name-seq::dotted-identifier-sequence (tag::parens (group (~literal this) ann-op::annotate-op ann-term ...+))
+            options::options-block)
+         #:with full-name::dotted-identifier #'name-seq
+         #:with name #'full-name.name
+         #:with name-extends #'full-name.extends
+         #:with tail-name #'full-name.tail-name
+         #:with orig-stx stxes
+         #:with reflect-name (class-reflect-name #'options.name name-prefix #'name)
+         (define body #'(options.form ...))
+         (define intro (make-syntax-introducer #t))
+         ;; The shape of `finish-data` is recognized in `veneer-annotation+finish`
+         ;; and "veneer-meta.rkt"
+         (define finish-data #`([orig-stx base-stx #,(intro #'scope-stx)
+                                          reflect-name #,effect-id name name-extends tail-name
+                                          #,(attribute ann-op.is_checked) ann-op.name (ann-term ...)]
+                                ;; data accumulated from parsed clauses:
+                                ()))
+         (annotation-to-be-defined! #'name)
+         #`(#,(cond
+                [(null? (syntax-e body))
+                 #`(veneer-annotation+finish #,finish-data [#:ctx base-stx base-stx] ())]
+                [else
+                 #`(rhombus-mixed-nested-forwarding-sequence
+                    (veneer-annotation+finish #,finish-data) rhombus-class
+                    (veneer-body-step #,finish-data . #,(intro body)))]))]))))
+
+(define-class-body-step veneer-body-step
+  :veneer-clause
+  veneer-clause?
+  veneer-expand-data
+  class-clause-accum)
+
+;; First phase of `veneer` output: bind the annotation form, so it can be used
+;; in body fields
+(define-syntax veneer-annotation+finish
+  (lambda (stx)
+    (syntax-parse stx
+      [(_ ([orig-stx base-stx init-scope-stx
+                     reflect-name effect-id name name-extends tail-name
+                     check? ann-op-name ann-terms]
+           . _)
+          [#:ctx forward-base-ctx forward-ctx]
+          exports
+          [option stx-params] ...)
+       #:with scope-stx ((make-syntax-delta-introducer #'forward-ctx #'forward-base-ctx) #'init-scope-stx)
+       (define options (parse-annotation-options #'orig-stx #'(option ...) #'(stx-params ...)))
+       (define parent-name (hash-ref options 'extends #f))
+       (define super (and parent-name
+                          (or (syntax-local-value* (in-class-desc-space parent-name) veneer-desc-ref)
+                              (raise-syntax-error #f "not a veneer name" #'orig-stx parent-name))))
+
+       (define interface-names (reverse (hash-ref options 'implements '())))
+       (define interfaces (interface-names->interfaces #'orig-stx interface-names
+                                                       #:for-veneer? #t))
+       (define-values (private-interfaces protected-interfaces)
+         (extract-private-protected-interfaces #'orig-stx options))
+
+       (define expression-macro-rhs (or (hash-ref options 'expression-rhs #f)
+                                        (let ([c (hash-ref options 'constructor-rhs #f)])
+                                          (and (constructor-as-expression? c)
+                                               c))))
+
+       (define intro (make-syntax-introducer))
+
+       (define converter? (or (hash-ref options 'converter? #f)
+                              (and super
+                                   (veneer-desc-convert-id super))))
+       (define allow-dynamic? (hash-ref options 'allow-dynamic? #f))
+
+       (define name-instance-id (intro (datum->syntax #f (string->symbol (format "~a.instance" (syntax-e #'name))) #'name)))
+
+       (define dot-providers (add-super-dot-providers name-instance-id super interfaces))
+
+       (define-values (call-statinfo-indirect-id
+                       index-statinfo-indirect-id
+                       index-set-statinfo-indirect-id
+                       append-statinfo-indirect-id
+                       compare-statinfo-indirect-id
+                       contains-statinfo-indirect-id
+
+                       super-call-statinfo-indirect-id
+
+                       static-infos-id
+                       static-infos-exprs
+
+                       instance-static-infos-id
+                       instance-static-infos-expr
+                       instance-static-infos
+
+                       internal-instance-static-infos-id
+                       internal-instance-static-infos-expr
+
+                       dot-static-infos-id
+                       dot-static-infos-expr
+
+                       internal-dot-static-infos-id
+                       internal-dot-static-infos-expr
+
+                       all-static-infos
+                       internal-all-static-infos)
+         (extract-instance-static-infoss #'name options super interfaces
+                                         private-interfaces protected-interfaces
+                                         #f
+                                         dot-providers #f
+                                         intro))
+
+       (with-syntax ([name-instance name-instance-id]
+                     [name? (intro (datum->syntax #f (string->symbol (format "~a?" (syntax-e #'name))) #'name))]
+                     [name-convert (and converter?
+                                        (intro (datum->syntax #f (string->symbol (format "~a-convert" (syntax-e #'name))) #'name)))]
+                     [name-of (intro (datum->syntax #f (string->symbol (format "~a-of" (syntax-e #'name))) #'name))]
+                     [call-statinfo-indirect call-statinfo-indirect-id]
+                     [index-statinfo-indirect index-statinfo-indirect-id]
+                     [index-set-statinfo-indirect index-set-statinfo-indirect-id]
+                     [append-statinfo-indirect append-statinfo-indirect-id]
+                     [compare-statinfo-indirect compare-statinfo-indirect-id]
+                     [contains-statinfo-indirect contains-statinfo-indirect-id]
+                     [super-call-statinfo-indirect super-call-statinfo-indirect-id]
+                     [all-static-infos all-static-infos]
+                     [instance-static-infos instance-static-infos]
+                     [dot-providers dot-providers]
+                     [ann-input-statinfo-indirect (and converter?
+                                                       (intro (datum->syntax #f
+                                                                             (string->symbol (format "~a-ann-input-indirect" (syntax-e #'name)))
+                                                                             #'name)))])
+         (values
+          #`(begin
+              #,@(top-level-declare #'(name?))
+              #,@(build-instance-static-infos-defs static-infos-id static-infos-exprs
+                                                   instance-static-infos-id instance-static-infos-expr
+                                                   internal-instance-static-infos-id internal-instance-static-infos-expr
+                                                   dot-static-infos-id dot-static-infos-expr
+                                                   internal-dot-static-infos-id internal-dot-static-infos-expr)
+              #,@(build-veneer-annotation converter? allow-dynamic? super interfaces
+                                          #'(name name-extends name? name-convert
+                                                  all-static-infos ann-input-statinfo-indirect
+                                                  orig-stx))
+              (veneer-finish
+               [orig-stx base-stx scope-stx
+                         reflect-name name name-extends tail-name
+                         name? name-convert name-of check?
+                         name-instance dot-providers
+                         call-statinfo-indirect index-statinfo-indirect index-set-statinfo-indirect
+                         append-statinfo-indirect compare-statinfo-indirect contains-statinfo-indirect
+                         super-call-statinfo-indirect
+                         all-static-infos
+                         instance-static-infos
+                         ann-terms ann-op-name ann-input-statinfo-indirect]
+               exports
+               [option stx-params] ...))))])))
+
+(define-syntax veneer-finish
+  (lambda (stx)
+    (syntax-parse stx
+      [(_ [orig-stx base-stx scope-stx
+                    reflect-name name name-extends tail-name
+                    name? name-convert name-of check?
+                    name-instance dot-providers
+                    call-statinfo-indirect index-statinfo-indirect index-set-statinfo-indirect
+                    append-statinfo-indirect compare-statinfo-indirect contains-statinfo-indirect
+                    super-call-statinfo-indirect
+                    all-static-infos
+                    instance-static-infos
+                    ann-terms ann-op-name ann-input-statinfo-indirect]
+          exports
+          [option stx-params] ...)
+       #:with ann::annotation (regroup #'ann-terms)
+       (define stxes #'orig-stx)
+       (define options (parse-options #'orig-stx #'(option ...) #'(stx-params ...)))
+       (define parent-name (hash-ref options 'extends #f))
+       (define super (and parent-name
+                          (syntax-local-value* (in-class-desc-space parent-name) veneer-desc-ref)))
+       (define interface-names (reverse (hash-ref options 'implements '())))
+       (define-values (all-interfaces interfaces) (interface-names->interfaces stxes interface-names
+                                                                               #:results values))
+       (define-values (private-interfaces protected-interfaces)
+         (extract-private-protected-interfaces #'orig-stx options))
+
+       (define given-expression-macro-rhs (hash-ref options 'expression-rhs #f))
+       (define given-constructor-rhs (hash-ref options 'constructor-rhs #f))
+       (define given-constructor-stx-params (hash-ref options 'constructor-stx-params #f))
+       (define given-constructor-name (hash-ref options 'constructor-name #f))
+       (check-consistent-construction #'orig-stx null null null #'name
+                                      given-constructor-rhs given-constructor-name given-expression-macro-rhs)
+       (define constructor-rhs
+         (and (not (constructor-as-expression? given-constructor-rhs))
+              given-constructor-rhs))
+       (define expression-macro-rhs
+         (or given-expression-macro-rhs
+             (and (constructor-as-expression? given-constructor-rhs)
+                  given-constructor-rhs)))
+
+       (define converter? (or (hash-ref options 'converter? #f)
+                              (and super
+                                   (veneer-desc-convert-id super))))
+
+       (define expose (make-expose #'scope-stx #'base-stx))
+
+       (define intro (make-syntax-introducer))
+
+       (define dots (hash-ref options 'dots '()))
+       (define dot-provider-rhss (map cdr dots))
+       (define parent-dot-providers
+         (for/list ([parent (in-list (if super (cons super interfaces) interfaces))]
+                    #:do [(define dp (objects-desc-dot-provider parent))]
+                    #:when dp)
+           dp))
+
+       (define final? #t)
+
+       (define added-methods (reverse (hash-ref options 'methods '())))
+       (define-values (method-mindex   ; symbol -> mindex
+                       method-names    ; index -> symbol-or-identifier
+                       method-vtable   ; index -> function-identifier or '#:abstract
+                       method-results  ; symbol -> nonempty list of identifiers; first one implies others
+                       method-private  ; symbol -> identifier or (list identifier)
+                       method-private-inherit ; symbol -> (vector ref-id index maybe-result-id)
+                       method-decls    ; symbol -> identifier, intended for checking distinct
+                       abstract-name)  ; #f or identifier for a still-abstract method
+         (extract-method-tables stxes added-methods super interfaces
+                                private-interfaces protected-interfaces
+                                final? #f))
+
+       (check-fields-methods-dots-distinct stxes #hasheq() method-mindex method-names method-decls dots)
+       (check-consistent-unimmplemented stxes final? abstract-name #'name)
+
+       (define exs (parse-exports #'(combine-out . exports) expose))
+       (define replaced-ht (check-exports-distinct stxes exs null method-mindex dots))
+
+       (define has-private?
+         ((hash-count method-private) . > . 0))
+
+       (define-values (indexable? here-indexable? public-indexable?)
+         (able-method-status 'get super interfaces method-mindex method-vtable method-private))
+       (define-values (setable? here-setable? public-setable?)
+         (able-method-status 'set super interfaces method-mindex method-vtable method-private))
+       (define-values (appendable? here-appendable? public-appendable?)
+         (able-method-status 'append super interfaces method-mindex method-vtable method-private))
+       (define-values (comparable? here-comparable? public-comparable?)
+         (able-method-status 'compare super interfaces method-mindex method-vtable method-private
+                             #:name 'compare_to))
+       (define-values (container? here-container? public-container?)
+         (able-method-status 'contains super interfaces method-mindex method-vtable method-private
+                             #:name 'contains))
+
+       (define post-forms (hash-ref options 'post-forms null))
+
+       (define (temporary template)
+         ((make-syntax-introducer) (datum->syntax #f (string->symbol (format template (syntax-e #'name))))))
+
+       (with-syntax ([(export ...) exs])
+         (with-syntax ([constructor-name (and (or (not expression-macro-rhs)
+                                                  constructor-rhs)
+                                              (or (and given-constructor-name
+                                                       (not (bound-identifier=? #'name (expose given-constructor-name)))
+                                                       (expose given-constructor-name))
+                                                  (car (generate-temporaries (list #'name)))))]
+                       [(super-name* ...) (if super #'(super-name) '())]
+                       [(interface-name ...) interface-names]
+                       [(dot-id ...) (map car dots)]
+                       [dot-provider-name (or (and (or (pair? dot-provider-rhss)
+                                                       ((length parent-dot-providers) . > . 1))
+                                                   (temporary "dot-provider-~a"))
+                                              (and (pair? parent-dot-providers)
+                                                   (car parent-dot-providers)))]
+                       [representation-static-infos (extract-representation-static-infos #'ann.parsed)]
+                       [name?/checked (if (syntax-e #'check?) #'name? #f)])
+           (define defns
+             (reorder-for-top-level
+              (append
+               (build-veneer-predicate-or-converter super converter?
+                                                    #'(name name? name-convert check?
+                                                            ann.parsed ann-terms ann-op-name ann-input-statinfo-indirect))
+               (build-methods #:veneer-vtable method-vtable
+                              method-results
+                              added-methods method-mindex method-names method-private method-private-inherit
+                              #f #f #f #f #f #f
+                              private-interfaces protected-interfaces
+                              #'(name reflect-name name?/checked name-convert #f #f
+                                      prop-methods-ref
+                                      representation-static-infos ;; instead of `all-static-infos`
+                                      []
+                                      []
+                                      []
+                                      []
+                                      []
+                                      []
+                                      []
+                                      [super-name* ... interface-name ...]
+                                      []
+                                      #f))
+               ;; includes defining the namespace and constructor name:
+               (build-class-dot-handling #:veneer? #t
+                                         #:veneer-constructor-rhs constructor-rhs
+                                         #:veneer-constructor-stx-params given-constructor-stx-params
+                                         method-mindex method-names method-vtable method-results replaced-ht final?
+                                         has-private? method-private method-private-inherit
+                                         #f #f
+                                         expression-macro-rhs intro given-constructor-name
+                                         #f
+                                         #f
+                                         dot-provider-rhss parent-dot-providers
+                                         #`(name reflect-name name-extends tail-name
+                                                 name?/checked name-convert
+                                                 constructor-name name-instance name-ref name-of
+                                                 #f #f dot-provider-name
+                                                 dot-providers
+                                                 [] [] []
+                                                 [] []
+                                                 []
+                                                 [dot-id ...]
+                                                 []
+                                                 [export ...]
+                                                 base-stx scope-stx))
+               (build-class-static-infos #:veneer? #t
+                                         #f
+                                         super
+                                         (and (not (constructor-as-expression? given-constructor-rhs))
+                                              given-constructor-rhs)
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         null
+                                         #f #f
+                                         #'(name constructor-name name-instance
+                                                 #f #f
+                                                 all-static-infos ()
+                                                 []
+                                                 []
+                                                 []
+                                                 []
+                                                 []
+                                                 []))
+               (build-veneer-desc super options
+                                  parent-name interface-names all-interfaces private-interfaces protected-interfaces
+                                  method-mindex method-names method-vtable method-results method-private
+                                  dots
+                                  public-indexable?
+                                  public-setable?
+                                  public-appendable?
+                                  public-comparable?
+                                  public-container?
+                                  #'(name name-extends class:name constructor-maker-name name-defaults name-ref
+                                          name? name-convert check? converter?
+                                          dot-provider-name prefab-guard-name
+                                          instance-static-infos dot-providers))
+               (build-method-results added-methods
+                                     method-mindex method-vtable method-private
+                                     method-results
+                                     final?
+                                     #'prop-methods-ref
+                                     #f #f
+                                     #'index-statinfo-indirect indexable?
+                                     #'index-set-statinfo-indirect setable?
+                                     #'append-statinfo-indirect appendable?
+                                     #'compare-statinfo-indirect comparable?
+                                     #'contains-statinfo-indirect container?
+                                     #'super-call-statinfo-indirect
+                                     #:checked-append? #f
+                                     #:checked-compare? #f))))
+           (transfer-origins
+            (syntax->list #'(option ...))
+            #`(begin
+                #,@defns
+                #,@post-forms))))])))
+
+(define-for-syntax (build-veneer-annotation converter? allow-dynamic? super interfaces names)
+  (with-syntax ([(name name-extends name? name-convert
+                       all-static-infos ann-input-statinfo-indirect
+                       orig-stx)
+                 names])
+    (cond
+      [(not converter?)
+       (list
+        (build-syntax-definition/maybe-extension
+         'rhombus/annot #'name #'name-extends
+         #`(identifier-annotation name?
+                                  all-static-infos
+                                  #,@(if allow-dynamic? '() '(#:static-only)))
+         #:form #'orig-stx))]
+      [else
+       (list
+        (build-syntax-definition/maybe-extension
+         'rhombus/annot #'name #'name-extends
+         #`(identifier-binding-annotation #,(binding-form #'converter-binding-infoer
+                                                          #'(name name-convert val ann-input-statinfo-indirect))
+                                          val
+                                          all-static-infos
+                                          #,@(if allow-dynamic? '() '(#:static-only)))
+         #:form #'orig-stx))])))
+
+(define-syntax (converter-binding-infoer stx)
+  (syntax-parse stx
+    [(_ static-infos (name name-convert val ann-input-statinfo-indirect))
+     (binding-info (shrubbery-syntax->string #'name)
+                   #'val
+                   #'((#%indirect-static-info ann-input-statinfo-indirect))
+                   #'((val ([#:repet ()])))
+                   #'empty-oncer
+                   #'converter-matcher
+                   #'(convert-committer)
+                   #'converter-committer
+                   #'converter-binder
+                   #'(name-convert convert-committer converted-val val))]))
+
+(define-syntax (converter-matcher stx)
+  (syntax-parse stx
+    [(_ arg-id (name-convert convert-committer converted-val val) IF success fail)
+     #'(begin
+         (define convert-committer (name-convert arg-id #f))
+         (IF convert-committer success fail))]))
+
+(define-syntax (converter-committer stx)
+  (syntax-parse stx
+    [(_ arg-id (evidence/convert-committer) (name-convert convert-committer converted-val val))
+     #'(define converted-val (evidence/convert-committer))]))
+
+(define-syntax (converter-binder stx)
+  (syntax-parse stx
+    [(_ arg-id (evidence/convert-committer) (name-convert convert-committer converted-val val))
+     #'(define val converted-val)]))
+
+(define-for-syntax (build-veneer-predicate-or-converter super converter? names)
+  (with-syntax ([(name name? name-convert check?
+                       ann ann-terms ann-op-name ann-input-statinfo-indirect)
+                 names])
+    (define ann-str (shrubbery-syntax->string (regroup #`ann-terms)))
+    (define all-ann-str
+      (if (and super (veneer-desc-predicate-id super))
+          (annotation-string-and ann-str
+                                 (shrubbery-syntax->string
+                                  (veneer-desc-id super)))
+          ann-str))
+    (syntax-parse #'ann
+      [ann::annotation-predicate-form
+       #:when (or (not super)
+                  (not (veneer-desc-convert-id super)))
+       (define super? (and super
+                           (veneer-desc-predicate-id super)))
+       (if converter?
+           (list
+            #`(define name-convert
+                #,(cond
+                    [(syntax-e #'check?)
+                     #`(let ([name? ann.predicate])
+                         (let ([name? (lambda (v)
+                                        #,(if super?
+                                              #`(and (#,super? v)
+                                                     (name? v))
+                                              #`(name? v)))])
+                           (lambda (v who)
+                             (if (name? v)
+                                 (if who
+                                     v
+                                     (lambda () v))
+                                 (if who
+                                     (raise-binding-failure who "argument" v '#,all-ann-str)
+                                     #f)))))]
+                    [else
+                     #`(lambda (v who)
+                         (if who
+                             v
+                             (lambda () v)))]))
+            #'(define-static-info-syntax ann-input-statinfo-indirect
+                . ann.static-infos))
+           (list
+            #`(define name?
+                #,(cond
+                    [(syntax-e #'check?)
+                     #`(let ([name? ann.predicate])
+                         (let ([name? (lambda (v)
+                                        #,(if super?
+                                              #`(and (#,super? v)
+                                                     (name? v))
+                                              #`(name? v)))])
+                           (case-lambda
+                             [(v) (name? v)]
+                             [(v who) (unless (name? v)
+                                        (raise-binding-failure who "argument" v '#,all-ann-str))])))]
+                    [else
+                     #`(lambda (v)
+                         #t)]))))]
+      [ann::annotation-binding-form
+       #:with arg-parsed::binding-form #'ann.binding
+       #:with arg-impl::binding-impl #'(arg-parsed.infoer-id () arg-parsed.data)
+       #:with arg-info::binding-info #'arg-impl.info
+       (unless (syntax-e #'check?)
+         (raise-unchecked-disallowed #'ann-op-name (respan #'ann-terms)))
+       (unless converter?
+         (raise-syntax-error #f
+                             "converter annotation not allowed without a `converter` clause"
+                             #'ann-op-name (respan #'ann-terms)))
+       (list
+        #'(arg-info.oncer-id arg-info.data)
+        #`(define (name-convert v who)
+            (arg-info.matcher-id v
+                                 arg-info.data
+                                 if/blocked
+                                 #,(cond
+                                     [(and super
+                                           (veneer-desc-predicate-id super))
+                                      #`(let ([cvt1 (let ()
+                                                      (arg-info.committer-id v arg-info.evidence-ids arg-info.data)
+                                                      (arg-info.binder-id v arg-info.evidence-ids arg-info.data)
+                                                      (define-static-info-syntax/maybe arg-info.bind-id
+                                                        arg-info.bind-static-info ...)
+                                                      ...
+                                                      ann.body)])
+                                          #,(cond
+                                              [(veneer-desc-convert-id super)
+                                               => (lambda (id)
+                                                    #`(#,id cvt1 who))]
+                                              [else
+                                               #`(if #`(#,(veneer-desc-predicate-id super) cvt1)
+                                                     (if who
+                                                         cvt1
+                                                         (lambda () cvt1))
+                                                     (if who
+                                                         (raise-binding-failure who "argument" v '#,all-ann-str)
+                                                         #f))]))]
+                                     [else
+                                      #`(let ([commit (lambda ()
+                                                        (arg-info.committer-id v arg-info.evidence-ids arg-info.data)
+                                                        (arg-info.binder-id v arg-info.evidence-ids arg-info.data)
+                                                        (define-static-info-syntax/maybe arg-info.bind-id
+                                                          arg-info.bind-static-info ...)
+                                                        ...
+                                                        ann.body)])
+                                          (if who
+                                              (commit)
+                                              commit))])
+                                 (if who
+                                     (raise-binding-failure who "argument" v '#,all-ann-str)
+                                     #f)))
+        #'(define-static-info-syntax ann-input-statinfo-indirect
+            . arg-info.static-infos))])))
+
+(define-for-syntax (extract-representation-static-infos ann-stx)
+  (syntax-parse ann-stx
+    [ann::annotation-predicate-form
+     #'ann.static-infos]
+    [ann::annotation-binding-form
+     #'ann.static-infos]))
+
+(define-for-syntax (build-veneer-desc super options
+                                      parent-name interface-names all-interfaces private-interfaces protected-interfaces
+                                      method-mindex method-names method-vtable method-results method-private
+                                      dots
+                                      public-indexable?
+                                      public-setable?
+                                      public-appendable?
+                                      public-comparable?
+                                      public-container?
+                                      names)
+  (with-syntax ([(name name-extends class:name constructor-maker-name name-defaults name-ref
+                       name? name-convert check? converter?
+                       dot-provider-name prefab-guard-name
+                       instance-static-infos dot-providers)
+                 names])
+    (let ([method-shapes (build-quoted-method-shapes method-vtable method-names method-mindex)]
+          [method-map (build-quoted-method-map method-mindex)]
+          [method-result-expr (build-method-result-expression method-results)]
+          [flags #`(#,@(if public-indexable? '(get) null)
+                    #,@(if public-setable? '(set) null)
+                    #,@(if public-appendable? '(append) null)
+                    #,@(if public-comparable? '(compare) null)
+                    #,@(if public-container? '(contains) null))]
+          [interface-names (interface-names->quoted-list interface-names all-interfaces
+                                                         private-interfaces protected-interfaces
+                                                         'public)])
+      (list
+       (build-syntax-definition/maybe-extension
+        'rhombus/class #'name #'name-extends
+        #`(veneer-desc (quote-syntax #,interface-names)
+                       '#,method-shapes
+                       (quote-syntax #,method-vtable)
+                       '#,method-map
+                       #,method-result-expr
+                       '#,(map car dots)
+                       (quote-syntax dot-provider-name)
+                       (#,(quote-syntax quasisyntax) instance-static-infos)
+                       '#,flags
+                       ;; ----------------------------------------
+                       (quote-syntax name)
+                       #,(and parent-name #`(quote-syntax #,parent-name))
+                       #,(and (syntax-e #'check?)
+                              #'(quote-syntax name?))
+                       #,(and (syntax-e #'name-convert)
+                              #'(quote-syntax name-convert))
+                       (quote-syntax dot-providers)))))))

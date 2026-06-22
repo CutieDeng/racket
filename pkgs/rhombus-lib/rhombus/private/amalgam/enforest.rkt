@@ -1,0 +1,69 @@
+#lang racket/base
+(require (for-syntax racket/base
+                     enforest
+                     enforest/transformer
+                     enforest/sequence                     
+                     "name-path-op.rkt"
+                     "lookup-space.rkt")
+         "name-root-ref.rkt"
+         "name-root-space.rkt"
+         "../version-case.rkt")
+
+(provide (for-syntax define-rhombus-transform
+                     define-rhombus-sequence-transform
+                     define-rhombus-enforest))
+
+(begin-for-syntax
+  (define-syntax define-rhombus-transform
+    (syntax-rules ()
+      [(_ option ... #:name-root-ref name-root-ref)
+       (define-transform
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref)]
+      [(_ option ...)
+       (define-transform
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref/maybe)]))
+
+  (define-syntax define-rhombus-sequence-transform
+    (syntax-rules ()
+      [(_ option ... #:name-root-ref name-root-ref)
+       (define-sequence-transform
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref)]
+      [(_ option ...)
+       (define-sequence-transform
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref/maybe)]))
+
+  (define-syntax define-rhombus-enforest
+    (syntax-rules ()
+      [(_ option ... #:name-root-ref name-root-ref)
+       (define-enforest
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref
+         #:lookup-space-description lookup-space-description)]
+      [(_ option ...)
+       (define-enforest
+         option ...
+         #:name-path-op name-path-op
+         #:in-name-root-space in-name-root-space
+         #:name-root-ref name-root-ref
+         #:lookup-space-description lookup-space-description)])))
+
+(meta-if-version-at-least
+ "9.0.0.6"
+ (void)
+ ;; works around a demod problem
+ (define-for-syntax hack-toworkaround-demo-bug
+   10))

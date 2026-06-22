@@ -1,0 +1,76 @@
+#lang racket/base
+
+(provide annotation-any-string
+         annotation-string-from-pattern
+         annotation-string-to-pattern
+         annotation-string-and
+         annotation-string-or
+         annotation-string-convert-pair)
+
+(define annotation-any-string "Any")
+(define annotation-never-string "Never")
+
+(define (annotation-string-from-pattern p)
+  (string-append "matching(" p ")"))
+
+(define (annotation-string-to-pattern s)
+  (cond
+    [(regexp-match #rx"^matching[(](.*)[)]$" s)
+     => (lambda (m) (cadr m))]
+    [(equal? s annotation-any-string) "_"]
+    [else
+     (string-append "_ :: " s)]))
+
+(define (annotation-string-and a b)
+  (cond
+    [(or (equal? a annotation-any-string)
+         (equal? b annotation-never-string))
+     b]
+    [(or (equal? a annotation-never-string)
+         (equal? b annotation-any-string))
+     a]
+    [else
+     (string-append a " && " b)]))
+
+(define (annotation-string-or a b)
+  (cond
+    [(or (equal? a annotation-any-string)
+         (equal? b annotation-never-string))
+     a]
+    [(or (equal? a annotation-never-string)
+         (equal? b annotation-any-string))
+     b]
+    [else
+     (string-append a " || " b)]))
+
+(define (annotation-string-convert-pair s)
+  (define p (annotation-string-to-pattern s))
+  (cond
+    [(regexp-match #rx"^Pair[(](.*)[)]$" p)
+     => (lambda (m)
+          ;; s is comma-separated, but outside matching parentheses
+          (define s (cadr m))
+          (let loop ([i 0] [depth 0])
+            (cond
+              [(equal? i (string-length s)) s]
+              [else
+               (define ch (string-ref s i))
+               (case ch
+                 [(#\,)
+                  (cond
+                    [(zero? depth)
+                     (define spaced? (and ((add1 i) . < . (string-length s))
+                                          (char=? #\space (string-ref s (add1 i)))))
+                     (string-append (substring s 0 i)
+                                    ":"
+                                    (if spaced? " " "")
+                                    (substring s (+ i (if spaced? 2 1))))]
+                    [else
+                     (loop (add1 i) depth)])]
+                 [(#\( #\[ #\{)
+                  (loop (add1 i) (add1 depth))]
+                 [(#\) #\] #\})
+                  (loop (add1 i) (sub1 depth))]
+                 [else
+                  (loop (add1 i) depth)])])))]
+    [else s]))
