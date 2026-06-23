@@ -5,7 +5,28 @@
  racket/file
  racket/port
  racket/system
+ (only-in "../private/rhombus-source-transform.rkt"
+          transform-rhombus-template-prefixes)
 ) ; end require
+
+(define (transform-rhombus-source source)
+  (transform-rhombus-template-prefixes source (open-input-string source))
+) ; end define transform-rhombus-source
+
+(check-equal?
+ (transform-rhombus-source "println(f\"{1 /* } */}\")\n")
+ "println(rhombus_tstring_concat(\"\", rhombus_tstring_format((1 /* } */), #false, \"\"), \"\"))\n"
+) ; end check-equal?
+
+(check-equal?
+ (transform-rhombus-source "println(f\"{1 // }\n}\")\n")
+ "println(rhombus_tstring_concat(\"\", rhombus_tstring_format((1 // }\n), #false, \"\"), \"\"))\n"
+) ; end check-equal?
+
+(check-equal?
+ (transform-rhombus-source "println(f\"{1:{2 /* } */}d}\")\n")
+ "println(rhombus_tstring_concat(\"\", rhombus_tstring_format((1), rhombus_tstring_concat(\"\", rhombus_tstring_format((2 /* } */), #false, \"\"), \"d\"), \"\"), \"\"))\n"
+) ; end check-equal?
 
 (define (rhombus-available?)
   (with-handlers ((exn:fail?
