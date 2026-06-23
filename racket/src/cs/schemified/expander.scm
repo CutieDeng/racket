@@ -60279,6 +60279,13 @@
     (if (string? p_0)
       (string->path p_0)
       (if (bytes? p_0) (bytes->path p_0) p_0))))
+(define coerce-to-complete-path
+  (lambda (p_0)
+    (if (string? p_0)
+      (simplify-path (path->complete-path (string->path p_0)))
+      (if (bytes? p_0)
+        (simplify-path (path->complete-path (bytes->path p_0)))
+        (if (path? p_0) (simplify-path (path->complete-path p_0)) #f)))))
 (define coerce-to-path
   (lambda (p_0)
     (if (string? p_0)
@@ -61105,11 +61112,79 @@
                    "hash?"
                    ht_0))
                 (let ((paths_0 (hash-ref ht_0 'compiled-file-roots #f)))
-                  (let ((or-part_0
-                         (if (list? paths_0)
-                           (map_2353 coerce-to-relative-path paths_0)
-                           #f)))
-                    (if or-part_0 or-part_0 (list 'same))))))))))
+                  (let ((base-roots_0
+                         (let ((or-part_0
+                                (if (list? paths_0)
+                                  (map_2353 coerce-to-relative-path paths_0)
+                                  #f)))
+                           (if or-part_0 or-part_0 (list 'same)))))
+                    (let ((cache-root-specs_0
+                           (hash-ref ht_0 'compiled-file-cache-roots #f)))
+                      (let ((system-cache-root_0
+                             (coerce-to-complete-path
+                              (hash-ref
+                               ht_0
+                               'compiled-file-system-cache-root
+                               #f))))
+                        (let ((cache-root_0
+                               (|#%name|
+                                cache-root
+                                (lambda (spec_0)
+                                  (if (eq? spec_0 'user)
+                                    (if (1/use-user-specific-search-paths)
+                                      (build-path
+                                       (find-system-path 'cache-dir)
+                                       "compiled")
+                                      #f)
+                                    (if (eq? spec_0 'system)
+                                      system-cache-root_0
+                                      (coerce-to-complete-path spec_0)))))))
+                          (let ((cache-roots_0
+                                 (if (list? cache-root-specs_0)
+                                   (reverse$1
+                                    (letrec*
+                                     ((for-loop_0
+                                       (|#%name|
+                                        for-loop
+                                        (lambda (fold-var_0 lst_0)
+                                          (if (pair? lst_0)
+                                            (let ((spec_0 (unsafe-car lst_0)))
+                                              (let ((rest_0
+                                                     (unsafe-cdr lst_0)))
+                                                (let ((fold-var_1
+                                                       (let ((root_0
+                                                              (cache-root_0
+                                                               spec_0)))
+                                                         (if root_0
+                                                           (let ((fold-var_1
+                                                                  (cons
+                                                                   root_0
+                                                                   fold-var_0)))
+                                                             (values
+                                                              fold-var_1))
+                                                           fold-var_0))))
+                                                  (for-loop_0
+                                                   fold-var_1
+                                                   rest_0))))
+                                            fold-var_0)))))
+                                     (for-loop_0 null cache-root-specs_0)))
+                                   null)))
+                            (letrec*
+                             ((loop_0
+                               (|#%name|
+                                loop
+                                (lambda (roots_0 seen_0)
+                                  (if (null? roots_0)
+                                    (reverse$1 seen_0)
+                                    (if (member (car roots_0) seen_0)
+                                      (loop_0 (cdr roots_0) seen_0)
+                                      (let ((app_0 (cdr roots_0)))
+                                        (loop_0
+                                         app_0
+                                         (cons (car roots_0) seen_0)))))))))
+                             (loop_0
+                              (append cache-roots_0 base-roots_0)
+                              null))))))))))))))
     (|#%name|
      find-compiled-file-roots
      (case-lambda

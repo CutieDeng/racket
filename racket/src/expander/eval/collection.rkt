@@ -92,6 +92,13 @@
     [(bytes? p) (bytes->path p)]
     [else p]))
 
+(define (coerce-to-complete-path p)
+  (cond
+    [(string? p) (simplify-path (path->complete-path (string->path p)))]
+    [(bytes? p) (simplify-path (path->complete-path (bytes->path p)))]
+    [(path? p) (simplify-path (path->complete-path p))]
+    [else #f]))
+
 (define (coerce-to-path p)
   (cond
     [(string? p) (collects-relative-path->complete-path (string->path p))]
@@ -542,6 +549,34 @@
 (define (find-compiled-file-roots [ht (read-installation-configuration-table)])
   (unless (hash? ht) (raise-argument-error 'find-compiled-file-roots "hash?" ht))
   (define paths (hash-ref ht 'compiled-file-roots #f))
-  (or (and (list? paths)
-           (map coerce-to-relative-path paths))
-      (list 'same)))
+  (define base-roots
+    (or (and (list? paths)
+             (map coerce-to-relative-path paths))
+        (list 'same)))
+  (define cache-root-specs (hash-ref ht 'compiled-file-cache-roots #f))
+  (define system-cache-root
+    (coerce-to-complete-path
+     (hash-ref ht 'compiled-file-system-cache-root #f)))
+  (define (cache-root spec)
+    (cond
+      [(eq? spec 'user)
+       (and (use-user-specific-search-paths)
+            (build-path (find-system-path 'cache-dir) "compiled"))]
+      [(eq? spec 'system)
+       system-cache-root]
+      [else
+       (coerce-to-complete-path spec)]))
+  (define cache-roots
+    (cond
+      [(list? cache-root-specs)
+       (for/list ([spec (in-list cache-root-specs)]
+                  #:do [(define root (cache-root spec))]
+                  #:when root)
+         root)]
+      [else
+       null]))
+  (let loop ([roots (append cache-roots base-roots)] [seen null])
+    (cond
+      [(null? roots) (reverse seen)]
+      [(member (car roots) seen) (loop (cdr roots) seen)]
+      [else (loop (cdr roots) (cons (car roots) seen))])))

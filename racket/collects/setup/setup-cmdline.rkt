@@ -84,6 +84,14 @@
       (add-flags '((recompile-only #t)))]
      [("--recompile-cache") dir "Cache recompiled code in <dir>"
       (add-flags `((recompile-cache ,dir)))]
+     [("--system") "Use the system compiled-file cache for setup"
+      (add-flags '((system-cache #t)))]
+     [("--reset-cache") "Delete compiled-file cache entries for this installation before setup"
+      (add-flags '((reset-cache #t)))]
+     [("--delete-cache") "Delete compiled-file cache entries for this installation and exit"
+      (add-flags '((delete-cache #t)))]
+     [("--unsafe-delete-all") "With --reset-cache or --delete-cache, delete the whole selected compiled-file cache root"
+      (add-flags '((unsafe-delete-all #t)))]
      [("--sync-docs-only") "Sync/move documentation, but do not run or render"
       (add-flags '((sync-docs-only #t)))]
      [("-x" "--no-launcher") "Do not produce launcher programs"
