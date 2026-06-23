@@ -57,19 +57,16 @@
 (define (inject-tstring-requires/syntax stx)
   (syntax-case stx ()
     ((module-form name lang (module-begin . more) . even-more)
-     (with-syntax ((main-req (datum->syntax stx '(require tstring) stx))
-                   (expand-req
-                    (datum->syntax
-                     stx
-                     '(require (only-in racket-tstring/private/expand
-                                        #%tstring-tpl
-                                        #%tstring-fpl))
-                     stx
-                    ) ; end datum->syntax
-                   ) ; end expand-req
-              ) ; end with-syntax bindings
+     (with-syntax (((injected-req ...)
+                    (map (lambda (datum)
+                           (datum->syntax stx datum stx)
+                         ) ; end lambda
+                         (injected-require-datums (syntax->datum #'lang))
+                    ) ; end map
+                   ) ; end injected-req
+                  ) ; end with-syntax bindings
        #'(module-form name lang
-           (module-begin main-req expand-req . more)
+           (module-begin injected-req ... . more)
            . even-more)
      ) ; end with-syntax
     ) ; end module
@@ -82,16 +79,13 @@
 (define (inject-tstring-requires/datum datum)
   (match datum
     ((list* module-form name lang (list* module-begin more) even-more)
+     (define injected-requires (injected-require-datums lang))
      (list* module-form
             name
             lang
-            (list* module-begin
-                   '(require tstring)
-                   '(require (only-in racket-tstring/private/expand
-                                      #%tstring-tpl
-                                      #%tstring-fpl))
-                   more
-            ) ; end list* module body
+            (cons module-begin
+                  (append injected-requires more)
+            ) ; end cons module body
             even-more
      ) ; end list*
     ) ; end module datum
@@ -100,6 +94,93 @@
     ) ; end non-module datum
   ) ; end match
 ) ; end define inject-tstring-requires/datum
+
+(define (injected-require-datums lang)
+  (if (typed-target-language? lang)
+      typed-require-datums
+      untyped-require-datums
+  ) ; end if
+) ; end define injected-require-datums
+
+(define (typed-target-language? lang)
+  (define symbol (language-symbol lang))
+  (and symbol
+       (memq symbol '(typed/racket typed/racket/base))
+  ) ; end and
+) ; end define typed-target-language?
+
+(define (language-symbol lang)
+  (cond
+    ((symbol? lang)
+     lang
+    ) ; end symbol
+    ((and (pair? lang)
+          (eq? (car lang) 'quote)
+          (pair? (cdr lang))
+          (symbol? (cadr lang))
+     ) ; end and
+     (cadr lang)
+    ) ; end quoted symbol
+    (else
+     #f
+    ) ; end unsupported module path
+  ) ; end cond
+) ; end define language-symbol
+
+(define untyped-require-datums
+  '((require tstring)
+    (require (only-in racket-tstring/private/expand
+                      #%tstring-tpl
+                      #%tstring-fpl))
+   ) ; end quote
+) ; end define untyped-require-datums
+
+(define typed-require-datums
+  '((require/typed racket-tstring
+      [#:opaque Template template?]
+      [#:opaque Interpolation interpolation?]
+      [template (-> (Listof String) (Listof Interpolation) Template)]
+      [template-parts (-> Template (Listof (U String Interpolation)))]
+      [template-strings (-> Template (Listof String))]
+      [template-interpolations (-> Template (Listof Interpolation))]
+      [interpolation (->* (Any Syntax (U False String) String)
+                          ((U False String))
+                          Interpolation)]
+      [interpolation-value (-> Interpolation Any)]
+      [interpolation-expression (-> Interpolation (U False String))]
+      [interpolation-format-spec (-> Interpolation (U False String))]
+      [interpolation-conversion (-> Interpolation String)]
+      [render-template (->* (Template)
+                            (#:interpolation->string (-> Interpolation Any)
+                             #:value->string (-> Any String))
+                            String)]
+      [render-fstring (-> Template String)]
+      [template->sql (-> Template (Values String (Listof Any)))]
+      [html-render (->* (Template)
+                        (#:interpolation->string (-> Interpolation Any))
+                        String)]
+      [parse-template-string (-> String (Values (Listof String) (Listof String)))])
+    (require/typed (only-in racket-tstring/private/render
+                            [format-fstring-value #%tstring-format-fstring-value])
+      [#%tstring-format-fstring-value (-> Any (U False String) String String)])
+    (require/typed (only-in racket-tstring/private/template
+                            [template #%tstring-template]
+                            [interpolation #%tstring-interpolation]
+                            [interpolation-syntax #%tstring-raw-interpolation-syntax])
+      [#%tstring-template (-> (Listof String) (Listof Interpolation) Template)]
+      [#%tstring-interpolation (->* (Any Syntax (U False String) String)
+                                    ((U False String))
+                                    Interpolation)]
+      [#%tstring-raw-interpolation-syntax (-> Interpolation Any)])
+    (: interpolation-syntax (-> Interpolation (Syntaxof Any)))
+    (define (interpolation-syntax interpolation-value)
+      (assert (#%tstring-raw-interpolation-syntax interpolation-value) syntax?)
+    ) ; end define interpolation-syntax
+    (require (only-in racket-tstring/private/expand
+                      [typed-tpl #%tstring-tpl]
+                      [typed-fpl #%tstring-fpl]))
+   ) ; end quote
+) ; end define typed-require-datums
 
 (define (split-reader-args args)
   (let loop ((prefix '())

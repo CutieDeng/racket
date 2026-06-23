@@ -16,6 +16,8 @@
 (provide
  tpl
  fpl
+ typed-tpl
+ typed-fpl
  (rename-out (tpl #%tstring-tpl)
              (fpl #%tstring-fpl)
  ) ; end rename-out
@@ -45,30 +47,87 @@
   ) ; end syntax-case
 ) ; end define-syntax fpl
 
-(define-for-syntax (expand-template who context-stx input-stx)
+(define-syntax (typed-tpl stx)
+  (syntax-case stx ()
+    ((_ input)
+     (string? (syntax-e #'input))
+     (expand-template 'tpl
+                      stx
+                      #'input
+                      #:template-id (use-site-id stx '#%tstring-template)
+                      #:interpolation-id (use-site-id stx '#%tstring-interpolation)
+                      #:format-id (use-site-id stx '#%tstring-format-fstring-value)
+     ) ; end expand-template
+    ) ; end literal string case
+    (_
+     (raise-syntax-error 'tpl "expected a string literal" stx)
+    ) ; end invalid syntax
+  ) ; end syntax-case
+) ; end define-syntax typed-tpl
+
+(define-syntax (typed-fpl stx)
+  (syntax-case stx ()
+    ((_ input)
+     (string? (syntax-e #'input))
+     (expand-fstring 'fpl
+                     stx
+                     #'input
+                     #:format-id (use-site-id stx '#%tstring-format-fstring-value)
+     ) ; end expand-fstring
+    ) ; end literal string case
+    (_
+     (raise-syntax-error 'fpl "expected a string literal" stx)
+    ) ; end invalid syntax
+  ) ; end syntax-case
+) ; end define-syntax typed-fpl
+
+(define-for-syntax (use-site-id context-stx symbol)
+  (datum->syntax context-stx symbol context-stx context-stx)
+) ; end define-for-syntax use-site-id
+
+(define-for-syntax (expand-template who context-stx input-stx
+                                    #:template-id (template-id #'template)
+                                    #:interpolation-id (interpolation-id #'interpolation)
+                                    #:format-id (format-id #'format-fstring-value))
   (define-values (strings expression-infos)
-    (parse-template-parts who context-stx input-stx)
+    (parse-template-parts who
+                          context-stx
+                          input-stx
+                          #:format-id format-id
+    ) ; end parse-template-parts
   ) ; end define-values
-  #`(template (list #,@(map datum->syntax-literal strings))
-              (list #,@(map interpolation-syntax expression-infos))
+  #`(#,template-id
+     (list #,@(map datum->syntax-literal strings))
+     (list #,@(map (lambda (expression-info)
+                     (interpolation-syntax expression-info interpolation-id)
+                   ) ; end lambda
+                   expression-infos
+             ) ; end map
+     ) ; end list
     ) ; end template
 ) ; end define-for-syntax expand-template
 
-(define-for-syntax (expand-fstring who context-stx input-stx)
+(define-for-syntax (expand-fstring who context-stx input-stx
+                                   #:format-id (format-id #'format-fstring-value))
   (define-values (strings expression-infos)
-    (parse-template-parts who context-stx input-stx)
+    (parse-template-parts who
+                          context-stx
+                          input-stx
+                          #:format-id format-id
+    ) ; end parse-template-parts
   ) ; end define-values
   (cond
     ((null? expression-infos)
      (datum->syntax-literal (car strings))
     ) ; end static f-string
     (else
-     #`(string-append #,@(fstring-append-parts strings expression-infos))
+     #`(string-append #,@(fstring-append-parts strings expression-infos format-id))
     ) ; end dynamic f-string
   ) ; end cond
 ) ; end define-for-syntax expand-fstring
 
-(define-for-syntax (parse-template-parts who context-stx input-stx)
+(define-for-syntax (parse-template-parts who context-stx input-stx
+                                         #:format-id (format-id #'format-fstring-value))
   (with-handlers ((exn:fail:syntax?
                    (lambda (exn)
                      (raise exn)
@@ -88,7 +147,11 @@
     ) ; end define-values
     (values strings
             (map (lambda (source)
-                   (source-string->expression-info who context-stx source)
+                   (source-string->expression-info who
+                                                   context-stx
+                                                   source
+                                                   #:format-id format-id
+                   ) ; end source-string->expression-info
                  ) ; end lambda
                  expression-sources
             ) ; end map
@@ -97,7 +160,8 @@
 ) ; end define-for-syntax parse-template-parts
 
 (define-for-syntax (source-string->expression-info who context-stx source
-                                                   #:format-depth (format-depth 0))
+                                                   #:format-depth (format-depth 0)
+                                                   #:format-id (format-id #'format-fstring-value))
   (define-values (expression-source suffix-source)
     (split-interpolation-source source)
   ) ; end define-values
@@ -119,7 +183,12 @@
     (parse-interpolation-suffix suffix-source)
   ) ; end define-values
   (define format-spec-stx
-    (format-spec-string->syntax who context-stx format-spec format-depth)
+    (format-spec-string->syntax who
+                                context-stx
+                                format-spec
+                                format-depth
+                                format-id
+    ) ; end format-spec-string->syntax
   ) ; end define format-spec-stx
   (list (datum->syntax context-stx
                        (syntax->datum expression-stx)
@@ -132,7 +201,7 @@
   ) ; end list
 ) ; end define-for-syntax source-string->expression-info
 
-(define-for-syntax (format-spec-string->syntax who context-stx format-spec format-depth)
+(define-for-syntax (format-spec-string->syntax who context-stx format-spec format-depth format-id)
   (cond
     ((not format-spec)
      #'#f
@@ -152,10 +221,11 @@
      ) ; end when too deep
      (define expression-infos
        (map (lambda (source)
-              (source-string->expression-info who
+             (source-string->expression-info who
                                               context-stx
                                               source
                                               #:format-depth (add1 format-depth)
+                                              #:format-id format-id
               ) ; end source-string->expression-info
             ) ; end lambda
             expression-sources
@@ -166,7 +236,7 @@
         (datum->syntax-literal (car strings))
        ) ; end static format spec
        (else
-        #`(string-append #,@(fstring-append-parts strings expression-infos))
+        #`(string-append #,@(fstring-append-parts strings expression-infos format-id))
        ) ; end dynamic format spec
      ) ; end cond
     ) ; end format spec
@@ -591,7 +661,7 @@
   ) ; end datum->syntax
 ) ; end define-for-syntax source-string->syntax
 
-(define-for-syntax (fstring-append-parts strings expression-infos)
+(define-for-syntax (fstring-append-parts strings expression-infos format-id)
   (let loop ((strings strings)
              (expression-infos expression-infos)
         ) ; end loop bindings
@@ -601,7 +671,7 @@
       ) ; end last static string
       (else
        (cons (datum->syntax-literal (car strings))
-             (cons (fstring-interpolation-syntax (car expression-infos))
+             (cons (fstring-interpolation-syntax (car expression-infos) format-id)
                    (loop (cdr strings)
                          (cdr expression-infos)
                    ) ; end loop
@@ -612,26 +682,26 @@
   ) ; end let loop
 ) ; end define-for-syntax fstring-append-parts
 
-(define-for-syntax (fstring-interpolation-syntax expression-info)
+(define-for-syntax (fstring-interpolation-syntax expression-info format-id)
   (define expression-stx (list-ref expression-info 0))
   (define format-spec-stx (list-ref expression-info 1))
   (define conversion (list-ref expression-info 2))
-  #`(format-fstring-value #,expression-stx
-                          #,format-spec-stx
-                          '#,conversion
+  #`(#,format-id #,expression-stx
+                 #,format-spec-stx
+                 '#,conversion
     ) ; end format-fstring-value
 ) ; end define-for-syntax fstring-interpolation-syntax
 
-(define-for-syntax (interpolation-syntax expression-info)
+(define-for-syntax (interpolation-syntax expression-info interpolation-id)
   (define expression-stx (list-ref expression-info 0))
   (define format-spec-stx (list-ref expression-info 1))
   (define conversion (list-ref expression-info 2))
   (define expression-source (list-ref expression-info 3))
-  #`(interpolation #,expression-stx
-                   (quote-syntax #,expression-stx)
-                   #,format-spec-stx
-                   '#,conversion
-                   '#,expression-source
+  #`(#,interpolation-id #,expression-stx
+                        (quote-syntax #,expression-stx)
+                        #,format-spec-stx
+                        '#,conversion
+                        '#,expression-source
     ) ; end interpolation
 ) ; end define-for-syntax interpolation-syntax
 
