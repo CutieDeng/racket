@@ -23,13 +23,17 @@
     (define-values (prefix port suffix)
       (split-reader-args args)
     ) ; end define-values
+    (define-values (language-prefix source-body)
+      (split-language-prefix (port->string port))
+    ) ; end define-values
     (define transformed-port
       (open-input-string
-       (string-append (format "(require (file ~s))\n" (path->string main-rkt))
+       (string-append language-prefix
+                      (format "(require (file ~s))\n" (path->string main-rkt))
                       (format "(require (only-in (file ~s) #%tstring-tpl #%tstring-fpl))\n"
                               (path->string expand-rkt)
                       ) ; end format
-                      (transform-with-read-errors port)
+                      (transform-with-read-errors source-body port)
        ) ; end string-append
       ) ; end open-input-string
     ) ; end define transformed-port
@@ -66,8 +70,31 @@
   ) ; end let loop
 ) ; end define split-reader-args
 
-(define (transform-with-read-errors port)
-  (define source (port->string port))
+(define (split-language-prefix source)
+  (define match
+    (regexp-match-positions #px"^[ \t]+[A-Za-z0-9_+./-][^\r\n]*(?:\r\n|\r|\n)?"
+                            source
+    ) ; end regexp-match-positions
+  ) ; end define match
+  (cond
+    (match
+     (define end (cdar match))
+     (values (if (or (zero? end)
+                     (member (string-ref source (sub1 end)) '(#\newline #\return))
+                 ) ; end or
+                 (substring source 0 end)
+                 (string-append (substring source 0 end) "\n")
+             ) ; end if
+             (substring source end)
+     ) ; end values
+    ) ; end match
+    (else
+     (values "" source)
+    ) ; end else
+  ) ; end cond
+) ; end define split-language-prefix
+
+(define (transform-with-read-errors source port)
   (with-handlers ((exn:fail?
                    (lambda (exn)
                      (raise-read-error (exn-message exn)
