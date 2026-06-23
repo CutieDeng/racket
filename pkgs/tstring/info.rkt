@@ -8,7 +8,8 @@
 ) ; end define deps
 
 (define build-deps
-  '("rackunit-lib")
+  '("at-exp-lib"
+    "rackunit-lib")
 ) ; end define build-deps
 
 (define pkg-desc "Short alias for structured template strings")
