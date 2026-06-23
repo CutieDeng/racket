@@ -2,10 +2,11 @@
 
 (require
  racket/port
- racket/runtime-path
+ racket/match
  syntax/module-reader
  syntax/readerr
- (file "../../racket-tstring/private/source-transform.rkt")
+ (only-in racket-tstring/private/source-transform
+          transform-template-prefixes)
 ) ; end require
 
 (provide
@@ -14,9 +15,6 @@
              (tstring-get-info get-info)
  ) ; end rename-out
 ) ; end provide
-
-(define-runtime-path main-rkt "../main.rkt")
-(define-runtime-path expand-rkt "../../racket-tstring/private/expand.rkt")
 
 (define (wrap-reader proc)
   (lambda args
@@ -29,23 +27,79 @@
     (define transformed-port
       (open-input-string
        (string-append language-prefix
-                      (format "(require (file ~s))\n" (path->string main-rkt))
-                      (format "(require (only-in (file ~s) #%tstring-tpl #%tstring-fpl))\n"
-                              (path->string expand-rkt)
-                      ) ; end format
                       (transform-with-read-errors source-body port)
        ) ; end string-append
       ) ; end open-input-string
     ) ; end define transformed-port
     (port-count-lines! transformed-port)
-    (apply proc
-           (append prefix
-                   (list transformed-port)
-                   suffix
-           ) ; end append
-    ) ; end apply
+    (inject-tstring-requires
+     (apply proc
+            (append prefix
+                    (list transformed-port)
+                    suffix
+            ) ; end append
+     ) ; end apply
+    ) ; end inject-tstring-requires
   ) ; end lambda
 ) ; end define wrap-reader
+
+(define (inject-tstring-requires stx-or-datum)
+  (cond
+    ((syntax? stx-or-datum)
+     (inject-tstring-requires/syntax stx-or-datum)
+    ) ; end syntax
+    (else
+     (inject-tstring-requires/datum stx-or-datum)
+    ) ; end datum
+  ) ; end cond
+) ; end define inject-tstring-requires
+
+(define (inject-tstring-requires/syntax stx)
+  (syntax-case stx ()
+    ((module-form name lang (module-begin . more) . even-more)
+     (with-syntax ((main-req (datum->syntax stx '(require tstring) stx))
+                   (expand-req
+                    (datum->syntax
+                     stx
+                     '(require (only-in racket-tstring/private/expand
+                                        #%tstring-tpl
+                                        #%tstring-fpl))
+                     stx
+                    ) ; end datum->syntax
+                   ) ; end expand-req
+              ) ; end with-syntax bindings
+       #'(module-form name lang
+           (module-begin main-req expand-req . more)
+           . even-more)
+     ) ; end with-syntax
+    ) ; end module
+    (_
+     stx
+    ) ; end non-module
+  ) ; end syntax-case
+) ; end define inject-tstring-requires/syntax
+
+(define (inject-tstring-requires/datum datum)
+  (match datum
+    ((list* module-form name lang (list* module-begin more) even-more)
+     (list* module-form
+            name
+            lang
+            (list* module-begin
+                   '(require tstring)
+                   '(require (only-in racket-tstring/private/expand
+                                      #%tstring-tpl
+                                      #%tstring-fpl))
+                   more
+            ) ; end list* module body
+            even-more
+     ) ; end list*
+    ) ; end module datum
+    (_
+     datum
+    ) ; end non-module datum
+  ) ; end match
+) ; end define inject-tstring-requires/datum
 
 (define (split-reader-args args)
   (let loop ((prefix '())

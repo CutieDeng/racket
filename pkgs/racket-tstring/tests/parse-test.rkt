@@ -21,6 +21,26 @@
              (list "brace = " "")
              (list "(string-append \"}\" \"x\")")
 ) ; end check-parse
+(check-parse "char = {(char->integer #\\})}"
+             (list "char = " "")
+             (list "(char->integer #\\})")
+) ; end check-parse
+(check-parse "symbol = {(symbol->string '|}|)}"
+             (list "symbol = " "")
+             (list "(symbol->string '|}|)")
+) ; end check-parse
+(check-parse "block = {#| } |# 7}"
+             (list "block = " "")
+             (list "#| } |# 7")
+) ; end check-parse
+(check-parse "line = {; }\n7}"
+             (list "line = " "")
+             (list "; }\n7")
+) ; end check-parse
+(check-parse "datum = {#;#\\} 7}"
+             (list "datum = " "")
+             (list "#;#\\} 7")
+) ; end check-parse
 (check-parse "outer {f\"inner {x}\"}"
              (list "outer " "")
              (list "f\"inner {x}\"")

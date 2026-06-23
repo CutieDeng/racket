@@ -90,77 +90,33 @@
 ) ; end define parse-template-string
 
 (define (read-interpolation input start-index)
-  (define length (string-length input))
-  (define expression-out (open-output-string))
-  (let loop ((index start-index)
-             (brace-depth 0)
-        ) ; end loop bindings
-    (cond
-      ((= index length)
-       (raise-arguments-error 'parse-template-string
-                              "unclosed interpolation in template string"
-                              "input"
-                              input
-                              "index"
-                              start-index
-       ) ; end raise-arguments-error
-      ) ; end end of input
-      (else
-       (define ch (string-ref input index))
-       (cond
-         ((char=? ch #\")
-          (define next-index (find-racket-string-end input index))
-          (write-string (substring input index next-index) expression-out)
-          (loop next-index
-                brace-depth
-          ) ; end loop
-         ) ; end racket string
-         ((template-prefix-at? input index)
-          (define next-index (find-template-source-end input (add1 index)))
-          (write-string (substring input index next-index) expression-out)
-          (loop next-index
-                brace-depth
-          ) ; end loop
-         ) ; end nested template
-         ((char=? ch #\{)
-          (write-char ch expression-out)
-          (loop (add1 index)
-                (add1 brace-depth)
-          ) ; end loop
-         ) ; end nested brace
-         ((char=? ch #\})
-          (cond
-            ((zero? brace-depth)
-             (define expression (get-output-string expression-out))
-             (when (string-blank? expression)
-               (raise-arguments-error 'parse-template-string
-                                      "empty interpolation is not allowed"
-                                      "input"
-                                      input
-                                      "index"
-                                      start-index
-               ) ; end raise-arguments-error
-             ) ; end when empty expression
-             (values expression (add1 index))
-            ) ; end interpolation close
-            (else
-             (write-char ch expression-out)
-             (loop (add1 index)
-                   (sub1 brace-depth)
-             ) ; end loop
-            ) ; end nested brace close
-          ) ; end cond right brace
-         ) ; end right brace
-         (else
-          (write-char ch expression-out)
-          (loop (add1 index)
-                brace-depth
-          ) ; end loop
-         ) ; end expression character
-        ) ; end cond char dispatch
-      ) ; end more input
-    ) ; end cond
-  ) ; end let loop
+  (define next-index
+    (with-handlers ((exn:fail?
+                     (lambda (exn)
+                       (raise-arguments-error 'parse-template-string
+                                              (exn-message exn)
+                                              "input"
+                                              input
+                                              "index"
+                                              start-index
+                       ) ; end raise-arguments-error
+                     ) ; end lambda
+                    ) ; end exn:fail?
+                   ) ; end handlers
+      (find-interpolation-source-end input start-index)
+    ) ; end with-handlers
+  ) ; end define next-index
+  (define expression (substring input start-index (sub1 next-index)))
+  (when (string-blank? expression)
+    (raise-arguments-error 'parse-template-string
+                           "empty interpolation is not allowed"
+                           "input"
+                           input
+                           "index"
+                           start-index
+    ) ; end raise-arguments-error
+  ) ; end when empty expression
+  (values expression next-index)
 ) ; end define read-interpolation
 
 (define (string-blank? text)

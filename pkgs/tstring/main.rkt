@@ -1,9 +1,9 @@
 #lang racket/base
 
 (require
- (file "../racket-tstring/main.rkt")
+ racket-tstring
 ) ; end require
 
 (provide
- (all-from-out (file "../racket-tstring/main.rkt"))
+ (all-from-out racket-tstring)
 ) ; end provide

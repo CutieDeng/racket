@@ -17,6 +17,7 @@
 (check-equal? (length (template-parts simple-template)) 3)
 (check-equal? (template-strings simple-template) (list "hello " ""))
 (check-equal? (syntax-e (interpolation-syntax (car (template-interpolations simple-template)))) 'name)
+(check-equal? (interpolation-expression (car (template-interpolations simple-template))) "name")
 (check-equal? (map interpolation-value (template-interpolations simple-template))
               (list "Alice")
 ) ; end check-equal?
@@ -70,6 +71,8 @@
 (check-equal? (fpl "{7:<3d}") "7  ")
 (check-equal? (fpl "{1.234:.2f}") "1.23")
 (check-equal? (fpl "{2:.2f}") "2.00")
+(check-equal? (fpl "{2:}") "2")
+(check-equal? (fpl "{3.14:!<10.10}") "3.1400000000")
 (check-equal? (fpl "{\"hi\"!r}") "\"hi\"")
 (check-exn
  exn:fail?
@@ -116,22 +119,22 @@
  (lambda ()
    (eval '(let ()
             (require "../private/expand.rkt")
-            (fpl "{x!rr}")
+            (fpl "{3! s}")
           ) ; end let
    ) ; end eval
  ) ; end lambda
-) ; end check-exn extra conversion text
+) ; end check-exn conversion whitespace
 
 (check-exn
  exn:fail:syntax?
  (lambda ()
    (eval '(let ()
             (require "../private/expand.rkt")
-            (fpl "{x:}")
+            (fpl "{x!rr}")
           ) ; end let
    ) ; end eval
  ) ; end lambda
-) ; end check-exn empty format suffix
+) ; end check-exn extra conversion text
 
 (check-exn
  exn:fail:syntax?
@@ -154,6 +157,9 @@
 
 (define a 1)
 (define b 2)
+(define value 42)
+(define precision 2)
+(define width 5)
 
 (define multi-template
   (tpl "{a} + {b} = {(+ a b)}")
@@ -164,6 +170,60 @@
               (list 1 2 3)
 ) ; end check-equal?
 
+(check-equal? (fpl "{value:.{precision}f}") "42.00")
+(check-equal? (fpl "{value:{width}d}") "   42")
+(check-equal? (fpl "{value:{width}.{precision}f}") "42.00")
+(check-equal? (fpl "{value:.{precision!s}f}") "42.00")
+
+(define nested-format-template
+  (tpl "{value:.{precision}f}")
+) ; end define nested-format-template
+
+(check-equal? (interpolation-format-spec (car (template-interpolations nested-format-template))) ".2f")
+(check-equal? (interpolation-expression (car (template-interpolations nested-format-template))) "value")
+
+(define multi-nested-format-template
+  (tpl "{value:{width}.{precision}f}")
+) ; end define multi-nested-format-template
+
+(check-equal? (interpolation-format-spec (car (template-interpolations multi-nested-format-template))) "5.2f")
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (define a 1)
+            (define b 2)
+            (fpl "{1:{a:{b}}}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn nested format spec too deep
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (fpl "{1:d\n}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn newline in format spec
+
+(check-exn
+ exn:fail:syntax?
+ (lambda ()
+   (eval '(let ()
+            (require "../private/expand.rkt")
+            (define precision 2)
+            (fpl "{42:\n{precision}f}")
+          ) ; end let
+   ) ; end eval
+ ) ; end lambda
+) ; end check-exn newline before nested format spec
+
 (check-exn
  exn:fail?
  (lambda ()
@@ -172,6 +232,11 @@
 ) ; end check-exn
 
 (check-equal? (fpl "{{name}}") "{name}")
+(check-equal? (fpl "{(char->integer #\\})}") "125")
+(check-equal? (fpl "{(symbol->string '|}|)}") "}")
+(check-equal? (fpl "{#| } |# 7}") "7")
+(check-equal? (fpl "{; }\n7}") "7")
+(check-equal? (fpl "{#;#\\} 7}") "7")
 (check-equal? (fpl "outer {f\"inner {name}\"}") "outer inner Alice")
 
 (define nested-template

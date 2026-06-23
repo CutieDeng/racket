@@ -10,12 +10,15 @@
  interpolation?
  interpolation-value
  interpolation-syntax
+ interpolation-expression
  interpolation-format-spec
  interpolation-conversion
 ) ; end provide
 
 (struct template-data (strings interpolations) #:transparent #:reflection-name 'template)
-(struct interpolation (value syntax format-spec conversion) #:transparent)
+(struct interpolation-data (value syntax format-spec conversion expression)
+  #:transparent
+  #:reflection-name 'interpolation)
 
 (define (template strings interpolations)
   (template-data strings interpolations)
@@ -24,6 +27,17 @@
 (define template? template-data?)
 (define template-strings template-data-strings)
 (define template-interpolations template-data-interpolations)
+
+(define (interpolation value syntax format-spec conversion (expression #f))
+  (interpolation-data value syntax format-spec conversion expression)
+) ; end define interpolation
+
+(define interpolation? interpolation-data?)
+(define interpolation-value interpolation-data-value)
+(define interpolation-syntax interpolation-data-syntax)
+(define interpolation-format-spec interpolation-data-format-spec)
+(define interpolation-conversion interpolation-data-conversion)
+(define interpolation-expression interpolation-data-expression)
 
 (define (template-parts tpl)
   (let loop ((strings (template-strings tpl))

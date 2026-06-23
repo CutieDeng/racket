@@ -96,12 +96,13 @@
   ) ; end with-handlers
 ) ; end define-for-syntax parse-template-parts
 
-(define-for-syntax (source-string->expression-info who context-stx source)
-  (define transformed-source (transform-template-prefixes source))
+(define-for-syntax (source-string->expression-info who context-stx source
+                                                   #:format-depth (format-depth 0))
   (define-values (expression-source suffix-source)
-    (split-interpolation-source transformed-source)
+    (split-interpolation-source source)
   ) ; end define-values
-  (define port (open-input-string expression-source))
+  (define transformed-expression-source (transform-template-prefixes expression-source))
+  (define port (open-input-string transformed-expression-source))
   (define expression-stx (read-syntax 'template-interpolation port))
   (when (eof-object? expression-stx)
     (raise-syntax-error who "empty interpolation is not allowed" context-stx)
@@ -117,15 +118,60 @@
   (define-values (conversion format-spec)
     (parse-interpolation-suffix suffix-source)
   ) ; end define-values
+  (define format-spec-stx
+    (format-spec-string->syntax who context-stx format-spec format-depth)
+  ) ; end define format-spec-stx
   (list (datum->syntax context-stx
                        (syntax->datum expression-stx)
                        context-stx
                        context-stx
         ) ; end datum->syntax
-        format-spec
+        format-spec-stx
         conversion
+        expression-source
   ) ; end list
 ) ; end define-for-syntax source-string->expression-info
+
+(define-for-syntax (format-spec-string->syntax who context-stx format-spec format-depth)
+  (cond
+    ((not format-spec)
+     #'#f
+    ) ; end no format spec
+    (else
+     (define-values (strings expression-sources)
+       (parse-template-string format-spec)
+     ) ; end define-values
+     (when (and (positive? format-depth)
+                (not (null? expression-sources))
+           ) ; end and
+       (raise-syntax-error
+        who
+        "nested replacement fields in format specs may not contain more deeply nested fields"
+        context-stx
+       ) ; end raise-syntax-error
+     ) ; end when too deep
+     (define expression-infos
+       (map (lambda (source)
+              (source-string->expression-info who
+                                              context-stx
+                                              source
+                                              #:format-depth (add1 format-depth)
+              ) ; end source-string->expression-info
+            ) ; end lambda
+            expression-sources
+       ) ; end map
+     ) ; end define expression-infos
+     (cond
+       ((null? expression-infos)
+        (datum->syntax-literal (car strings))
+       ) ; end static format spec
+       (else
+        #`(string-append #,@(fstring-append-parts strings expression-infos))
+       ) ; end dynamic format spec
+     ) ; end cond
+    ) ; end format spec
+  ) ; end cond
+) ; end define-for-syntax format-spec-string->syntax
 
 (define-for-syntax (split-interpolation-source source)
   (define suffix-index (find-explicit-suffix-index source))
@@ -158,6 +204,11 @@
                 depth
           ) ; end loop
          ) ; end string literal
+         ((template-prefix-at? source index)
+          (loop (find-template-literal-end source index)
+                depth
+          ) ; end loop
+         ) ; end nested template literal
          ((char=? ch #\|)
           (loop (find-bar-symbol-end source index)
                 depth
@@ -251,7 +302,8 @@
 (define-for-syntax (format-start-char? ch)
   (or (char-numeric? ch)
       (memv ch '(#\. #\< #\> #\^ #\= #\+ #\- #\space
-                 #\# #\s #\d #\b #\o #\x #\X #\f #\F #\e #\E #\g #\G #\%))
+                 #\# #\{ #\s #\d #\b #\o #\x #\X
+                 #\f #\F #\e #\E #\g #\G #\%))
   ) ; end or
 ) ; end define-for-syntax format-start-char?
 
@@ -414,6 +466,18 @@
 ) ; end define-for-syntax racket-token-delimiter?
 
 (define-for-syntax (parse-interpolation-suffix suffix)
+  (define format-colon-index (string-index suffix #\:))
+  (when (and format-colon-index
+             (format-spec-contains-newline?
+              (substring suffix (add1 format-colon-index))
+             ) ; end format-spec-contains-newline?
+        ) ; end and
+    (raise-arguments-error 'parse-interpolation-suffix
+                           "newlines are not allowed in format specs"
+                           "suffix"
+                           suffix
+    ) ; end raise-arguments-error
+  ) ; end when newline
   (define text (string-trim suffix))
   (cond
     ((equal? text "")
@@ -448,13 +512,13 @@
        ) ; end no format spec
        ((char=? (string-ref rest 0) #\:)
         (define parsed-format-spec (substring rest 1))
-        (when (equal? parsed-format-spec "")
+        (when (format-spec-contains-newline? parsed-format-spec)
           (raise-arguments-error 'parse-interpolation-suffix
-                                 "missing format spec after :"
+                                 "newlines are not allowed in format specs"
                                  "suffix"
                                  suffix
           ) ; end raise-arguments-error
-        ) ; end when missing format spec
+        ) ; end when newline
         (set! format-spec parsed-format-spec)
         (set! rest "")
        ) ; end format spec
@@ -471,16 +535,47 @@
   ) ; end cond
 ) ; end define-for-syntax parse-interpolation-suffix
 
+(define-for-syntax (string-index text target)
+  (let loop ((index 0))
+    (cond
+      ((= index (string-length text))
+       #f
+      ) ; end not found
+      ((char=? (string-ref text index) target)
+       index
+      ) ; end found
+      (else
+       (loop (add1 index))
+      ) ; end continue
+    ) ; end cond
+  ) ; end let loop
+) ; end define-for-syntax string-index
+
+(define-for-syntax (format-spec-contains-newline? text)
+  (let loop ((index 0))
+    (cond
+      ((= index (string-length text))
+       #f
+      ) ; end end
+      ((memv (string-ref text index) '(#\newline #\return))
+       #t
+      ) ; end newline
+      (else
+       (loop (add1 index))
+      ) ; end continue
+    ) ; end cond
+  ) ; end let loop
+) ; end define-for-syntax format-spec-contains-newline?
+
 (define-for-syntax (datum->syntax-literal value)
   #`'#,value
 ) ; end define-for-syntax datum->syntax-literal
 
 (define-for-syntax (source-string->syntax who context-stx source)
-  (define transformed-source (transform-template-prefixes source))
   (define-values (expression-source _suffix-source)
-    (split-interpolation-source transformed-source)
+    (split-interpolation-source source)
   ) ; end define-values
-  (define port (open-input-string expression-source))
+  (define port (open-input-string (transform-template-prefixes expression-source)))
   (define read-stx (read-syntax 'template-interpolation port))
   (when (eof-object? read-stx)
     (raise-syntax-error who "empty interpolation is not allowed" context-stx)
@@ -519,22 +614,24 @@
 
 (define-for-syntax (fstring-interpolation-syntax expression-info)
   (define expression-stx (list-ref expression-info 0))
-  (define format-spec (list-ref expression-info 1))
+  (define format-spec-stx (list-ref expression-info 1))
   (define conversion (list-ref expression-info 2))
   #`(format-fstring-value #,expression-stx
-                          '#,format-spec
+                          #,format-spec-stx
                           '#,conversion
     ) ; end format-fstring-value
 ) ; end define-for-syntax fstring-interpolation-syntax
 
 (define-for-syntax (interpolation-syntax expression-info)
   (define expression-stx (list-ref expression-info 0))
-  (define format-spec (list-ref expression-info 1))
+  (define format-spec-stx (list-ref expression-info 1))
   (define conversion (list-ref expression-info 2))
+  (define expression-source (list-ref expression-info 3))
   #`(interpolation #,expression-stx
                    (quote-syntax #,expression-stx)
-                   '#,format-spec
+                   #,format-spec-stx
                    '#,conversion
+                   '#,expression-source
     ) ; end interpolation
 ) ; end define-for-syntax interpolation-syntax
 
@@ -553,8 +650,9 @@
        ) ; end loop
       ) ; end ordinary string
       ((template-prefix-at? source index)
-       (define end-index (find-template-source-end source (add1 index)))
-       (define content (substring source (+ index 2) (sub1 end-index)))
+       (define-values (content end-index)
+         (find-template-literal-content source index)
+       ) ; end define-values
        (define-values (_strings expression-sources)
          (parse-template-string content)
        ) ; end define-values

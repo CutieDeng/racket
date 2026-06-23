@@ -16,6 +16,7 @@
  interpolation?
  interpolation-value
  interpolation-syntax
+ interpolation-expression
  interpolation-format-spec
  interpolation-conversion
  render-template
