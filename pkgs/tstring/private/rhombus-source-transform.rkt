@@ -3,8 +3,6 @@
 (require
  racket/string
  syntax/readerr
- (only-in racket-tstring/private/parse
-          parse-template-string)
  (only-in racket-tstring/private/source-transform
           find-racket-string-end
           find-template-literal-content
@@ -83,7 +81,7 @@
 
 (define (rhombus-template-content->source kind content)
   (define-values (strings expression-sources)
-    (parse-template-string content)
+    (parse-rhombus-template-string content)
   ) ; end define-values
   (cond
     ((char=? kind #\f)
@@ -189,6 +187,159 @@
   ) ; end if
 ) ; end define rhombus-interpolation-syntax-source
 
+(define (parse-rhombus-template-string input)
+  (define length (string-length input))
+  (let loop ((index 0)
+             (strings '())
+             (expressions '())
+             (static-out (open-output-string))
+        ) ; end loop bindings
+    (cond
+      ((= index length)
+       (values (reverse (cons (get-output-string static-out) strings))
+               (reverse expressions)
+       ) ; end values
+      ) ; end end of input
+      (else
+       (define ch (string-ref input index))
+       (cond
+         ((char=? ch #\{)
+          (cond
+            ((and (< (add1 index) length)
+                  (char=? (string-ref input (add1 index)) #\{)
+             ) ; end and
+             (write-char #\{ static-out)
+             (loop (+ index 2)
+                   strings
+                   expressions
+                   static-out
+             ) ; end loop
+            ) ; end escaped left brace
+            (else
+             (define-values (expression next-index)
+               (read-rhombus-interpolation input (add1 index))
+             ) ; end define-values
+             (loop next-index
+                   (cons (get-output-string static-out) strings)
+                   (cons expression expressions)
+                   (open-output-string)
+             ) ; end loop
+            ) ; end interpolation
+          ) ; end cond left brace
+         ) ; end left brace case
+         ((char=? ch #\})
+          (cond
+            ((and (< (add1 index) length)
+                  (char=? (string-ref input (add1 index)) #\})
+             ) ; end and
+             (write-char #\} static-out)
+             (loop (+ index 2)
+                   strings
+                   expressions
+                   static-out
+             ) ; end loop
+            ) ; end escaped right brace
+            (else
+             (raise-arguments-error 'parse-rhombus-template-string
+                                    "unmatched } in template string; use }} for a literal }"
+                                    "input"
+                                    input
+                                    "index"
+                                    index
+             ) ; end raise-arguments-error
+            ) ; end unmatched right brace
+          ) ; end cond right brace
+         ) ; end right brace case
+         (else
+          (write-char ch static-out)
+          (loop (add1 index)
+                strings
+                expressions
+                static-out
+          ) ; end loop
+         ) ; end ordinary character
+       ) ; end cond char dispatch
+      ) ; end more input
+    ) ; end cond
+  ) ; end let loop
+) ; end define parse-rhombus-template-string
+
+(define (read-rhombus-interpolation input start-index)
+  (define next-index
+    (with-handlers ((exn:fail?
+                     (lambda (exn)
+                       (raise-arguments-error 'parse-rhombus-template-string
+                                              (exn-message exn)
+                                              "input"
+                                              input
+                                              "index"
+                                              start-index
+                       ) ; end raise-arguments-error
+                     ) ; end lambda
+                    ) ; end exn:fail?
+                   ) ; end handlers
+      (find-rhombus-interpolation-source-end input start-index)
+    ) ; end with-handlers
+  ) ; end define next-index
+  (define expression (substring input start-index (sub1 next-index)))
+  (when (string-blank? expression)
+    (raise-arguments-error 'parse-rhombus-template-string
+                           "empty interpolation is not allowed"
+                           "input"
+                           input
+                           "index"
+                           start-index
+    ) ; end raise-arguments-error
+  ) ; end when empty expression
+  (values expression next-index)
+) ; end define read-rhombus-interpolation
+
+(define (find-rhombus-interpolation-source-end source start-index)
+  (define length (string-length source))
+  (let loop ((index start-index)
+             (brace-depth 0)
+        ) ; end loop bindings
+    (cond
+      ((= index length)
+       (raise-arguments-error 'tstring-rhombus
+                              "unclosed interpolation in template string"
+                              "index"
+                              start-index
+       ) ; end raise-arguments-error
+      ) ; end end of source
+      (else
+       (define ch (string-ref source index))
+       (cond
+         ((char=? ch #\")
+          (loop (find-racket-string-end source index) brace-depth)
+         ) ; end string
+         ((template-prefix-at? source index)
+          (loop (find-template-literal-end source index) brace-depth)
+         ) ; end nested template
+         ((rhombus-line-comment-at? source index)
+          (loop (find-rhombus-line-comment-end source index) brace-depth)
+         ) ; end line comment
+         ((rhombus-block-comment-at? source index)
+          (loop (find-rhombus-block-comment-end source index) brace-depth)
+         ) ; end block comment
+         ((char=? ch #\{)
+          (loop (add1 index) (add1 brace-depth))
+         ) ; end nested brace
+         ((char=? ch #\})
+          (if (zero? brace-depth)
+              (add1 index)
+              (loop (add1 index) (sub1 brace-depth))
+          ) ; end if
+         ) ; end right brace
+         (else
+          (loop (add1 index) brace-depth)
+         ) ; end ordinary character
+       ) ; end cond char dispatch
+      ) ; end more source
+    ) ; end cond
+  ) ; end let loop
+) ; end define find-rhombus-interpolation-source-end
+
 (define (rhombus-format-spec-source format-spec)
   (cond
     ((not format-spec)
@@ -196,7 +347,7 @@
     ) ; end no format spec
     (else
      (define-values (strings expression-sources)
-       (parse-template-string format-spec)
+       (parse-rhombus-template-string format-spec)
      ) ; end define-values
      (cond
        ((null? expression-sources)
