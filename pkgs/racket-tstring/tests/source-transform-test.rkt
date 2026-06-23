@@ -9,6 +9,15 @@
 (check-equal? (transform-template-prefixes "t\"x\"") "(#%tstring-tpl \"x\")")
 (check-equal? (transform-template-prefixes "ft\"x\"") "ft\"x\"")
 (check-equal? (transform-template-prefixes "tf\"x\"") "tf\"x\"")
+(check-equal? (transform-template-prefixes "#; f\"x\" \"y\"")
+              "#; (#%tstring-fpl \"x\") \"y\""
+) ; end check-equal?
+(check-equal? (transform-template-prefixes "#; 1 f\"x\"")
+              "#; 1 (#%tstring-fpl \"x\")"
+) ; end check-equal?
+(check-equal? (transform-template-prefixes "#; 'f\"x\" \"y\"")
+              "#; '(#%tstring-fpl \"x\") \"y\""
+) ; end check-equal?
 
 (check-exn exn:fail? (lambda () (transform-template-prefixes "F\"x\"")))
 (check-exn exn:fail? (lambda () (transform-template-prefixes "T\"x\"")))

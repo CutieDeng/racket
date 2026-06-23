@@ -30,6 +30,10 @@
           (define next-index (copy-racket-string source index out))
           (loop next-index)
          ) ; end ordinary string
+         ((datum-comment-at? source index)
+          (define next-index (copy-datum-comment source index out))
+          (loop next-index)
+         ) ; end datum comment
          ((char=? ch #\;)
           (define next-index (copy-line-comment source index out))
           (loop next-index)
@@ -97,6 +101,15 @@
           (emit-source-range index next-index)
           (loop next-index)
          ) ; end ordinary string
+         ((datum-comment-at? source index)
+          (define next-index
+            (emit-datum-comment/positions source index
+                                          emit-source-range
+                                          emit-generated-string
+            ) ; end emit-datum-comment/positions
+          ) ; end define next-index
+          (loop next-index)
+         ) ; end datum comment
          ((char=? ch #\;)
           (define next-index (find-line-comment-end source index))
           (emit-source-range index next-index)
@@ -641,23 +654,65 @@
   ) ; end and
 ) ; end define datum-comment-at?
 
+(define (copy-datum-comment source index out)
+  (define next-index (find-datum-comment-end source index))
+  (write-string "#;" out)
+  (write-string (transform-template-prefixes
+                 (substring source (+ index 2) next-index)
+                ) ; end transform-template-prefixes
+                out
+  ) ; end write-string
+  next-index
+) ; end define copy-datum-comment
+
+(define (emit-datum-comment/positions source index emit-source-range emit-generated-string)
+  (define next-index (find-datum-comment-end source index))
+  (emit-source-range index (+ index 2))
+  (emit-generated-string
+   (transform-template-prefixes (substring source (+ index 2) next-index))
+   next-index
+  ) ; end emit-generated-string
+  next-index
+) ; end define emit-datum-comment/positions
+
 (define (find-datum-comment-end source index)
   (define length (string-length source))
   (define comment-source (substring source (+ index 2)))
-  (define port (open-input-string comment-source))
   (with-handlers ((exn:fail?
                    (lambda (_exn)
                      length
                    ) ; end lambda
                   ) ; end exn:fail?
                  ) ; end handlers
+    (define-values (transformed-source transformed-positions)
+      (transform-template-prefixes/positions comment-source)
+    ) ; end define-values
+    (define port (open-input-string transformed-source))
     (define commented-stx (read-syntax 'template-interpolation port))
     (if (eof-object? commented-stx)
         length
-        (+ index 2 (file-position port))
+        (+ index
+           2
+           (transformed-position->source-index transformed-positions
+                                               (file-position port)
+           ) ; end transformed-position->source-index
+        ) ; end +
     ) ; end if
   ) ; end with-handlers
 ) ; end define find-datum-comment-end
+
+(define (transformed-position->source-index transformed-positions position)
+  (cond
+    ((and (exact-nonnegative-integer? position)
+          (< position (vector-length transformed-positions))
+     ) ; end and
+     (vector-ref transformed-positions position)
+    ) ; end known position
+    (else
+     (vector-ref transformed-positions (sub1 (vector-length transformed-positions)))
+    ) ; end fallback
+  ) ; end cond
+) ; end define transformed-position->source-index
 
 (define (racket-token-delimiter? ch)
   (or (char-whitespace? ch)

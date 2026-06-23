@@ -128,6 +128,16 @@
   (check-equal? (read-datum in) 2)
 ) ; end let template string
 
+(let ((in (open-input-string "#; f\"hi\" \"ok\"\n")))
+  (check-equal? (read-datum in) "ok")
+  (check-equal? (read-datum in) eof)
+) ; end let datum-commented template string
+
+(let ((in (open-input-string "#; 1 f\"hi\"\n")))
+  (check-equal? (read-datum in) '(#%tstring-fpl "hi"))
+  (check-equal? (read-datum in) eof)
+) ; end let template string after datum comment
+
 (let ((in (open-input-string (string-append "\u03BB f\"\u00E9\" 2\n"))))
   (check-equal? (read-datum in) (string->symbol "\u03BB"))
   (check-equal? (read-datum in) '(#%tstring-fpl "\u00E9"))
