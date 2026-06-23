@@ -90,6 +90,7 @@
 (define-config config:doc-search-url 'doc-search-url values)
 (define-config config:doc-open-url 'doc-open-url values)
 (define-config config:installation-name 'installation-name values)
+(define-config config:pkg-catalog-lookup-version 'pkg-catalog-lookup-version values)
 (define-config config:build-stamp 'build-stamp values)
 (define-config config:base-documentation-packages 'base-documentation-packages values)
 (define-config config:distribution-documentation-packages 'distribution-documentation-packages values)
@@ -102,6 +103,7 @@
          get-doc-search-url
          get-doc-open-url
          get-installation-name
+         get-pkg-catalog-lookup-version
          get-build-stamp
          get-base-documentation-packages
          get-distribution-documentation-packages
@@ -114,6 +116,7 @@
 (define (get-doc-search-url) (or (force config:doc-search-url)
                                  "http://docs.racket-lang.org/local-redirect/index.html"))
 (define (get-doc-open-url) (force config:doc-open-url))
+(define (get-pkg-catalog-lookup-version) (force config:pkg-catalog-lookup-version))
 (define installation-name (delay/sync (utils:get-installation-name (force config-table))))
 (define get-installation-name
   (case-lambda
