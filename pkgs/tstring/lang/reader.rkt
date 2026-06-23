@@ -3,8 +3,12 @@
 (require
  racket/port
  racket/match
+ racket/string
  syntax/module-reader
  syntax/readerr
+ (only-in tstring/private/rhombus-source-transform
+          rhombus-runtime-import-source
+          transform-rhombus-template-prefixes)
  (only-in racket-tstring/private/source-transform
           transform-template-prefixes)
 ) ; end require
@@ -21,27 +25,118 @@
     (define-values (prefix port suffix)
       (split-reader-args args)
     ) ; end define-values
-    (define-values (language-prefix source-body)
-      (split-language-prefix (port->string port))
-    ) ; end define-values
-    (define transformed-port
-      (open-input-string
-       (string-append language-prefix
-                      (transform-with-read-errors source-body port)
-       ) ; end string-append
-      ) ; end open-input-string
-    ) ; end define transformed-port
-    (port-count-lines! transformed-port)
-    (inject-tstring-requires
-     (apply proc
-            (append prefix
-                    (list transformed-port)
-                    suffix
-            ) ; end append
-     ) ; end apply
-    ) ; end inject-tstring-requires
+    (define source (port->string port))
+    (define maybe-raw-module
+      (try-read-target proc prefix suffix source)
+    ) ; end define maybe-raw-module
+    (cond
+      ((and maybe-raw-module
+            (rhombus-module? maybe-raw-module)
+       ) ; end and
+       (define transformed-rhombus-port
+         (open-input-string
+          (string-append rhombus-runtime-import-source
+                         (transform-rhombus-template-prefixes source port)
+          ) ; end string-append
+         ) ; end open-input-string
+       ) ; end define transformed-rhombus-port
+       (port-count-lines! transformed-rhombus-port)
+       (apply proc
+              (append prefix
+                      (list transformed-rhombus-port)
+                      suffix
+              ) ; end append
+       ) ; end apply
+      ) ; end rhombus
+      (else
+       (define transformed-port
+         (open-input-string
+          (transform-with-read-errors source port)
+         ) ; end open-input-string
+       ) ; end define transformed-port
+       (port-count-lines! transformed-port)
+       (inject-tstring-requires
+        (apply proc
+               (append prefix
+                       (list transformed-port)
+                       suffix
+               ) ; end append
+        ) ; end apply
+       ) ; end inject-tstring-requires
+      ) ; end other target language
+    ) ; end cond
   ) ; end lambda
 ) ; end define wrap-reader
+
+(define (try-read-target proc prefix suffix source)
+  (with-handlers ((exn:fail?
+                   (lambda (_exn)
+                     #f
+                   ) ; end lambda
+                  ) ; end exn:fail?
+                 ) ; end handlers
+    (define raw-port (open-input-string source))
+    (port-count-lines! raw-port)
+    (apply proc
+           (append prefix
+                   (list raw-port)
+                   suffix
+           ) ; end append
+    ) ; end apply
+  ) ; end with-handlers
+) ; end define try-read-target
+
+(define (rhombus-module? stx-or-datum)
+  (define datum
+    (if (syntax? stx-or-datum)
+        (syntax->datum stx-or-datum)
+        stx-or-datum
+    ) ; end if
+  ) ; end define datum
+  (match datum
+    ((list* 'module _name lang _body)
+     (rhombus-language-datum? lang)
+    ) ; end module
+    (_ #f)
+  ) ; end match
+) ; end define rhombus-module?
+
+(define (rhombus-language-datum? lang)
+  (cond
+    ((symbol? lang)
+     (rhombus-language-name? (symbol->string lang))
+    ) ; end symbol
+    ((and (pair? lang)
+          (eq? (car lang) 'quote)
+          (pair? (cdr lang))
+          (symbol? (cadr lang))
+     ) ; end and
+     (rhombus-language-name? (symbol->string (cadr lang)))
+    ) ; end quoted symbol
+    ((and (pair? lang)
+          (eq? (car lang) 'lib)
+          (pair? (cdr lang))
+          (string? (cadr lang))
+     ) ; end and
+     (rhombus-library-path? (cadr lang))
+    ) ; end lib path
+    (else
+     #f
+    ) ; end unsupported module path
+  ) ; end cond
+) ; end define rhombus-language-datum?
+
+(define (rhombus-language-name? name)
+  (or (equal? name "rhombus")
+      (string-prefix? name "rhombus/")
+  ) ; end or
+) ; end define rhombus-language-name?
+
+(define (rhombus-library-path? path)
+  (or (equal? path "rhombus/main.rhm")
+      (string-prefix? path "rhombus/")
+  ) ; end or
+) ; end define rhombus-library-path?
 
 (define (inject-tstring-requires stx-or-datum)
   (cond
@@ -204,30 +299,6 @@
     ) ; end cond
   ) ; end let loop
 ) ; end define split-reader-args
-
-(define (split-language-prefix source)
-  (define match
-    (regexp-match-positions #px"^[ \t]+[A-Za-z0-9_+./-][^\r\n]*(?:\r\n|\r|\n)?"
-                            source
-    ) ; end regexp-match-positions
-  ) ; end define match
-  (cond
-    (match
-     (define end (cdar match))
-     (values (if (or (zero? end)
-                     (member (string-ref source (sub1 end)) '(#\newline #\return))
-                 ) ; end or
-                 (substring source 0 end)
-                 (string-append (substring source 0 end) "\n")
-             ) ; end if
-             (substring source end)
-     ) ; end values
-    ) ; end match
-    (else
-     (values "" source)
-    ) ; end else
-  ) ; end cond
-) ; end define split-language-prefix
 
 (define (transform-with-read-errors source port)
   (with-handlers ((exn:fail?
