@@ -5,6 +5,17 @@
 (Section 'intmap
 ) ; end Section
 
+(test "#intmap((1 . a) (2 . b))"
+      values
+      (let ([out (open-output-string)])
+        (write (read (open-input-string "#intmap((1 . a) (2 . b))")) out)
+        (get-output-string out)))
+(test "#intmap((1 . a) (2 . b))"
+      values
+      (let ([out (open-output-string)])
+        (print (read (open-input-string "#intmap((1 . a) (2 . b))")) out)
+        (get-output-string out)))
+
 (require racket/intmap
          (prefix-in raw: racket/private/intmap-runtime-adapter
          ) ; end prefix-in

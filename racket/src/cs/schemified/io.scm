@@ -22016,6 +22016,23 @@
 (define printable-regexp? (lambda (v_0) #f))
 (define set-printable-regexp?!
   (lambda (proc_0) (set! printable-regexp? proc_0)))
+(define core-intmap-custom-write
+  (lambda (m_0 out_0 mode_0)
+    (if mode_0
+      (begin
+        (1/write-string "#intmap" out_0)
+        (1/write (core-intmap-range->list m_0 #f #f #t #f) out_0))
+      (begin
+        (1/write-string "#<intmap:" out_0)
+        (1/write-string (number->string (core-intmap-count m_0)) out_0)
+        (1/write-string ">" out_0)))))
+(define effect_2073
+  (begin
+    (void
+     (core-intmap-install-struct-property!
+      1/prop:custom-write
+      core-intmap-custom-write))
+    (void)))
 (define 1/display
   (let ((display_0
          (|#%name|
@@ -22182,9 +22199,9 @@
 (define install-do-global-print!
   (lambda (param_0 default-value_0)
     (set! do-global-print
-      (let ((...rc/io/print/main.rkt:124:8_0
+      (let ((...rc/io/print/main.rkt:140:8_0
              (|#%name|
-              ...rc/io/print/main.rkt:124:8
+              ...rc/io/print/main.rkt:140:8
               (lambda (who34_0 v35_0 o36_0 quote-depth-in32_0 max-length33_0)
                 (let ((quote-depth-in_0
                        (if (eq? quote-depth-in32_0 unsafe-undefined)
@@ -22243,19 +22260,19 @@
                                        (unsafe-bytes-length bstr_1))))))))))
                       (void))))))))
         (|#%name|
-         ...rc/io/print/main.rkt:124:8
+         ...rc/io/print/main.rkt:140:8
          (case-lambda
           ((who_0 v_0 o_0)
-           (...rc/io/print/main.rkt:124:8_0 who_0 v_0 o_0 unsafe-undefined #f))
+           (...rc/io/print/main.rkt:140:8_0 who_0 v_0 o_0 unsafe-undefined #f))
           ((who_0 v_0 o_0 quote-depth-in_0 max-length33_0)
-           (...rc/io/print/main.rkt:124:8_0
+           (...rc/io/print/main.rkt:140:8_0
             who_0
             v_0
             o_0
             quote-depth-in_0
             max-length33_0))
           ((who_0 v_0 o_0 quote-depth-in32_0)
-           (...rc/io/print/main.rkt:124:8_0
+           (...rc/io/print/main.rkt:140:8_0
             who_0
             v_0
             o_0
