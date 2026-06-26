@@ -1182,6 +1182,10 @@
         #t
         1/read-accept-compiled
         #f
+        1/read-accept-pvector
+        #t
+        1/read-accept-pvector-raw
+        #t
         read-accept-bar-quote
         #t
         1/read-accept-graph
@@ -61847,6 +61851,10 @@
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-accept-compiled))
 (define 1/read-accept-box
   (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-box))
+(define 1/read-accept-pvector
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector))
+(define 1/read-accept-pvector-raw
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector-raw))
 (define 1/read-single-flonum
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-single-flonum))
 (define 1/read-decimal-as-inexact
@@ -61935,6 +61943,8 @@
           (check-parameter 1/read-syntax-accept-graph config_0)
           (check-parameter 1/read-accept-compiled config_0)
           (check-parameter 1/read-accept-box config_0)
+          (check-parameter 1/read-accept-pvector config_0)
+          (check-parameter 1/read-accept-pvector-raw config_0)
           (check-parameter read-accept-bar-quote config_0)
           (check-parameter 1/read-decimal-as-inexact config_0)
           (check-parameter 1/read-single-flonum config_0)
@@ -69447,6 +69457,15 @@
                temp4_0
                (list expected_0 accum-str_0)))))
         c_0))))
+(define raw-pvector-literal-datum?
+  (lambda (datum_0)
+    (if (pair? datum_0)
+      (if (pair? (cdr datum_0))
+        (if (null? (cddr datum_0))
+          (not (eq? (cadr datum_0) #f))
+          #f)
+        #f)
+      #f)))
 (define read-pvector
   (lambda (read-one_0
            dispatch-c_0
@@ -69455,7 +69474,21 @@
            accum-str_0
            in_0
            config_0)
-    (let ((chars_0 (list '#\x65 '#\x63 '#\x74 '#\x6f '#\x72)))
+    (begin
+      (if (check-parameter 1/read-accept-pvector config_0)
+        (void)
+        (begin
+          (discard-current-line in_0 config_0)
+          (reader-error.1
+           unsafe-undefined
+           '#\x78
+           #f
+           unsafe-undefined
+           in_0
+           config_0
+           "`#pvector` forms not enabled"
+           (list))))
+      (let ((chars_0 (list '#\x65 '#\x63 '#\x74 '#\x6f '#\x72)))
       (letrec*
        ((loop_0
          (|#%name|
@@ -69464,14 +69497,30 @@
             (if (null? chars_1)
               (let ((datum_0
                      (|#%app| read-one_0 #f in_0 (disable-wrapping config_0))))
-                (wrap
-                 (catch-and-reraise-as-reader/proc
-                  in_0
-                  config_0
-                  (lambda () (core-pvector-literal->pvector datum_0)))
-                 in_0
-                 config_0
-                 init-c_0))
+                (begin
+                  (if (if (not (check-parameter
+                                1/read-accept-pvector-raw
+                                config_0))
+                        (raw-pvector-literal-datum? datum_0)
+                        #f)
+                    (reader-error.1
+                     unsafe-undefined
+                     '#\x78
+                     #f
+                     unsafe-undefined
+                     in_0
+                     config_0
+                     "`#pvector` raw literals not enabled"
+                     (list))
+                    (void))
+                  (wrap
+                   (catch-and-reraise-as-reader/proc
+                    in_0
+                    config_0
+                    (lambda () (core-pvector-literal->pvector datum_0)))
+                   in_0
+                   config_0
+                   init-c_0)))
               (let ((c_0
                      (read-expect-char
                       (car chars_1)
@@ -69482,7 +69531,7 @@
                   (loop_0
                    app_0
                    (string-append accum-str_1 (string c_0))))))))))
-       (loop_0 chars_0 accum-str_0)))))
+       (loop_0 chars_0 accum-str_0))))))
 (define read-extension-reader
   (lambda (read-one_0 read-recur_0 dispatch-c_0 in_0 config_0)
     (let ((extend-str_0
@@ -75245,6 +75294,10 @@
    1/read-accept-compiled
    'read-accept-box
    1/read-accept-box
+   'read-accept-pvector
+   1/read-accept-pvector
+   'read-accept-pvector-raw
+   1/read-accept-pvector-raw
    'read-decimal-as-inexact
    1/read-decimal-as-inexact
    'read-single-flonum
@@ -76126,6 +76179,10 @@
       1/read-curly-brace-with-tag
       #f
       1/read-accept-box
+      #t
+      1/read-accept-pvector
+      #t
+      1/read-accept-pvector-raw
       #t
       read-accept-bar-quote
       #t

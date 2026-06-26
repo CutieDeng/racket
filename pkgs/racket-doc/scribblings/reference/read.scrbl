@@ -243,6 +243,17 @@ information.
 A @tech{parameter} that controls parsing @litchar{#&} input. See
 @secref["parse-box"] for more information.}
 
+@defboolparam[read-accept-pvector on?]{
+
+A @tech{parameter} that controls parsing @litchar{#pvector} input.}
+
+@defboolparam[read-accept-pvector-raw on?]{
+
+A @tech{parameter} that controls parsing the raw
+@litchar{#pvector} input shape. The expanded
+@litchar{#pvector((elem ...) #f)} shape is controlled by
+@racket[read-accept-pvector].}
+
 @defboolparam[read-accept-compiled on?]{
 
 A @tech{parameter} that controls parsing @litchar{#~} compiled input. See

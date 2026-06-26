@@ -386,6 +386,24 @@
             ) ; end read
       ) ; end test
 
+      (test (range 12
+            ) ; end range
+            pvector->list
+            (read (open-input-string
+                   (let ([out (open-output-string
+                              ) ; end open-output-string
+                         ] ; end out
+                        ) ; end let args
+                     (write-pvector-literal many out
+                                            #:pretty? #t
+                     ) ; end write-pvector-literal
+                     (get-output-string out
+                     ) ; end get-output-string
+                   ) ; end let
+                  ) ; end open-input-string
+            ) ; end read
+      ) ; end test
+
       (define (read-pvector-error-message s
                                           ) ; end read-pvector-error-message args
         (with-handlers ([exn:fail:read? exn-message
@@ -422,6 +440,84 @@
       ) ; end test
       (test #t values
             (regexp-match?
+             #rx"`#pvector` forms not enabled"
+             (parameterize ([read-accept-pvector #f
+                            ] ; end read-accept-pvector
+                           ) ; end parameterize args
+               (read-pvector-error-message "#pvector((1) #f)"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"`#pvector` forms not enabled"
+             (parameterize ([read-accept-pvector #f
+                            ] ; end read-accept-pvector
+                           ) ; end parameterize args
+               (read-pvector-error-message
+                "#pvector(0 ((0 (Single/val 1))))"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test 42
+            values
+            (parameterize ([read-accept-pvector #f
+                           ] ; end read-accept-pvector
+                          ) ; end parameterize args
+              (read-after-pvector-error
+               "#pvector((1) #f) \"leftover attack payload\"\n42"
+              ) ; end read-after-pvector-error
+            ) ; end parameterize
+      ) ; end test
+      (test '(1)
+            pvector->list
+            (parameterize ([read-accept-pvector-raw #f
+                           ] ; end read-accept-pvector-raw
+                          ) ; end parameterize args
+              (read (open-input-string "#pvector((1) #f)"
+                    ) ; end open-input-string
+              ) ; end read
+            ) ; end parameterize
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"`#pvector` raw literals not enabled"
+             (parameterize ([read-accept-pvector-raw #f
+                            ] ; end read-accept-pvector-raw
+                           ) ; end parameterize args
+               (read-pvector-error-message
+                "#pvector(0 ((0 (Single/val 1))))"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"`#pvector` raw literals not enabled"
+             (parameterize ([read-accept-pvector-raw #f
+                            ] ; end read-accept-pvector-raw
+                           ) ; end parameterize args
+               (read-pvector-error-message
+                "#pvector(0 ((0 (BadVariant 1))))"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"expanded element list is not a proper list: 1$"
+             (parameterize ([read-accept-pvector-raw #f
+                            ] ; end read-accept-pvector-raw
+                           ) ; end parameterize args
+               (read-pvector-error-message "#pvector(1 #f)"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
              #rx"expected `e` to continue `#pvector` after `#pv`"
              (read-pvector-error-message "#pv"
              ) ; end read-pvector-error-message
@@ -439,6 +535,97 @@
              #rx"obsolete definition variant: One/val; use Single/val"
              (read-pvector-error-message
               "#pvector(1 ([0 (One/val 1)] [1 (One/val 2)]))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"definition id must be dense and ascending: expected 0, got 2"
+             (read-pvector-error-message
+              "#pvector(2 ((2 (Deep/val 2 0 1 Empty)) (1 (Digit/val 1 b)) (0 (Digit/val 1 a))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test '(a b)
+            pvector->list
+            (read (open-input-string
+                   "#pvector(2 (#:allow-forward-refs ((2 (Deep/val 2 0 1 Empty)) (1 (Digit/val 1 b)) (0 (Digit/val 1 a)))))"
+                  ) ; end open-input-string
+            ) ; end read
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"`#pvector` raw literals not enabled"
+             (parameterize ([read-accept-pvector-raw #f
+                            ] ; end read-accept-pvector-raw
+                           ) ; end parameterize args
+               (read-pvector-error-message
+                "#pvector(2 (#:allow-forward-refs ((2 (Deep/val 2 0 1 Empty)) (1 (Digit/val 1 b)) (0 (Digit/val 1 a)))))"
+               ) ; end read-pvector-error-message
+             ) ; end parameterize
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"definition id must be dense and ascending: expected 0, got 1"
+             (read-pvector-error-message
+              "#pvector(0 ((1 (Single/val 1))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"invalid reference id: 0"
+             (read-pvector-error-message
+              "#pvector(0 ((0 (Single 0))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"cyclic reference id: 0"
+             (read-pvector-error-message
+              "#pvector(0 (#:allow-forward-refs ((0 (Single 0)))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"cyclic reference id: 0"
+             (read-pvector-error-message
+              "#pvector(0 (#:allow-forward-refs ((0 (Single 1)) (1 (Single 0)))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"duplicate definition id: 0"
+             (read-pvector-error-message
+              "#pvector(0 (#:allow-forward-refs ((0 (Single/val a)) (0 (Single/val b)))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"definition-value is not a proper list: #f"
+             (read-pvector-error-message
+              "#pvector(0 (#:allow-forward-refs ((0 #f))))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"forward-reference option expects one definition list"
+             (read-pvector-error-message
+              "#pvector(0 (#:allow-forward-refs))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"Digit/val size mismatch: expected 1, got 999"
+             (read-pvector-error-message
+              "#pvector(0 ((0 (Digit/val 999 a))))"
              ) ; end read-pvector-error-message
             ) ; end regexp-match?
       ) ; end test

@@ -31,6 +31,8 @@
                 read-syntax-accept-graph
                 read-accept-compiled
                 read-accept-box
+                read-accept-pvector
+                read-accept-pvector-raw
                 ;; read-accept-bar-quote - shared with printer
                 read-decimal-as-inexact
                 read-single-flonum

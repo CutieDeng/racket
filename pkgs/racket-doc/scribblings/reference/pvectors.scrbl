@@ -507,8 +507,13 @@ Empty
 
 The @racket[/val] variants contain pvector element values directly.
 The other variants contain ids for previously emitted structure
-definitions. When @racket[mode] is @racket['raw] but native literal
-support is not available, the result uses the expanded shape.
+definitions. A raw input literal may opt into forward references with
+the shape @racket[(list root-id-or-Empty (list '#:allow-forward-refs defs))],
+where @racket[defs] contains the same definition entries but the ids
+need only be dense and unique. The forward-reference extension is for
+editing literal data; self references and cyclic references are rejected.
+When @racket[mode] is @racket['raw] but native literal support is not
+available, the result uses the expanded shape.
 }
 
 @defproc[(pvectors->literal-datum [pvs sequence?]
@@ -534,7 +539,8 @@ Converts a datum in either single-pvector literal shape accepted by the
                                 [out output-port? (current-output-port)]
                                 [pool pvector-literal-pool?
                                       (make-pvector-literal-pool)]
-                                [#:mode mode (or/c 'raw 'expanded) 'raw])
+                                [#:mode mode (or/c 'raw 'expanded) 'raw]
+                                [#:pretty? pretty? boolean? #f])
          void?]{
 
 Writes @racketresultfont{#pvector} followed by the datum produced by
@@ -542,7 +548,11 @@ Writes @racketresultfont{#pvector} followed by the datum produced by
 output helper. The Racket reader accepts @racketresultfont{#pvector}
 input in the expanded form @racketresultfont{#pvector((elem ...) #f)}
 and in the raw form
-@racketresultfont{#pvector(root-id-or-Empty defs)}.}
+@racketresultfont{#pvector(root-id-or-Empty defs)}. The
+@racket[read-accept-pvector] parameter controls both forms, and
+@racket[read-accept-pvector-raw] separately controls the raw form.
+When @racket[pretty?] is true, the literal datum is emitted with
+@racket[pretty-write] instead of @racket[write].}
 
 @deftogether[(
 @defproc[(in-pvector [pv pvector?]) sequence?]

@@ -47,6 +47,8 @@
     (check-parameter read-syntax-accept-graph config)
     (check-parameter read-accept-compiled config)
     (check-parameter read-accept-box config)
+    (check-parameter read-accept-pvector config)
+    (check-parameter read-accept-pvector-raw config)
     (check-parameter read-accept-bar-quote config)
     (check-parameter read-decimal-as-inexact config)
     (check-parameter read-single-flonum config)

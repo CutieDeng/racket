@@ -3,6 +3,7 @@
          "special.rkt"
          "wrap.rkt"
          "error.rkt"
+         "parameter.rkt"
          (only-in '#%kernel core-pvector-literal->pvector))
 
 (provide read-pvector)
@@ -26,13 +27,25 @@
                   accum-str))
   c)
 
+(define (raw-pvector-literal-datum? datum)
+  (and (pair? datum)
+       (pair? (cdr datum))
+       (null? (cddr datum))
+       (not (eq? (cadr datum) #f))))
+
 ;; `#pv` has been read.
 (define (read-pvector read-one dispatch-c init-c second-c accum-str in config)
+  (unless (check-parameter read-accept-pvector config)
+    (discard-current-line in config)
+    (reader-error in config "`#pvector` forms not enabled"))
   (define chars (list #\e #\c #\t #\o #\r))
   (let loop ([chars chars] [accum-str accum-str])
     (cond
       [(null? chars)
        (define datum (read-one #f in (disable-wrapping config)))
+       (when (and (not (check-parameter read-accept-pvector-raw config))
+                  (raw-pvector-literal-datum? datum))
+         (reader-error in config "`#pvector` raw literals not enabled"))
        (wrap (catch-and-reraise-as-reader
               in
               config

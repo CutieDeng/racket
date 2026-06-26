@@ -4299,6 +4299,13 @@
   (and (fixnum? v)
        (fx>= v 0)))
 
+(define core-pvector-literal-missing
+  (list 'missing))
+
+(define (core-pvector-literal-forward-option? v)
+  (and (keyword? v)
+       (string=? (keyword->string v) "allow-forward-refs")))
+
 (define (core-pvector-literal-ref table limit id expected-kind)
   (unless (and (core-pvector-literal-id? id)
                (fx< id limit))
@@ -4420,7 +4427,8 @@
        [else
         (core-make-node3 node-level (car nodes) (cadr nodes) (caddr nodes))]))))
 
-(define (core-pvector-literal-parse-def-value val table id)
+(define (core-pvector-literal-parse-def-value
+         val node-ref digit/val-ref digit-ref inner-ref)
   (core-pvector-literal-check-proper-list 'definition-value val)
   (unless (pair? val)
     (core-pvector-literal-error "empty definition value"))
@@ -4457,7 +4465,7 @@
       [(Single)
        (unless (and (pair? args) (null? (cdr args)))
          (core-pvector-literal-error "Single expects one node id"))
-       (core-pvector-literal-node-ref table id (car args))]
+       (node-ref (car args))]
       [(One/val)
        (core-pvector-literal-error
         "obsolete definition variant: One/val; use Single/val")]
@@ -4472,10 +4480,7 @@
               [nodes (let loop ([ids node-ids])
                        (if (null? ids)
                            '()
-                           (cons (core-pvector-literal-node-ref
-                                  table
-                                  id
-                                  (car ids))
+                           (cons (node-ref (car ids))
                                  (loop (cdr ids)))))]
               [len (core-list-length nodes)])
          (core-pvector-literal-check-digit-arity 'Digit len)
@@ -4495,7 +4500,7 @@
           (let loop ([ids node-ids])
             (if (null? ids)
                 '()
-                (cons (core-pvector-literal-node-ref table id (car ids))
+                (cons (node-ref (car ids))
                       (loop (cdr ids)))))))]
       [(Deep/val)
        (unless (and (pair? args)
@@ -4506,9 +4511,9 @@
          (core-pvector-literal-error
           "Deep/val expects size, left digit id, right digit id, and inner id"))
        (let* ([size (car args)]
-              [left (core-pvector-literal-digit/val-ref table id (cadr args))]
-              [right (core-pvector-literal-digit/val-ref table id (caddr args))]
-              [inner (core-pvector-literal-inner-ref table id (cadddr args))]
+              [left (digit/val-ref (cadr args))]
+              [right (digit/val-ref (caddr args))]
+              [inner (inner-ref (cadddr args))]
               [expected (fx+ (core-pvector-literal-digit-length left)
                              (fx+ (if inner
                                       (core-pvector-node-measure inner)
@@ -4525,9 +4530,9 @@
          (core-pvector-literal-error
           "Deep expects size, left digit id, right digit id, and inner id"))
        (let* ([size (car args)]
-              [left (core-pvector-literal-digit-ref table id (cadr args))]
-              [right (core-pvector-literal-digit-ref table id (caddr args))]
-              [inner (core-pvector-literal-inner-ref table id (cadddr args))]
+              [left (digit-ref (cadr args))]
+              [right (digit-ref (caddr args))]
+              [inner (inner-ref (cadddr args))]
               [nodes (append (cdr left)
                              (if inner (list inner) '())
                              (cdr right))]
@@ -4557,7 +4562,113 @@
     (#3%vector-set!
      table
      id
-     (core-pvector-literal-parse-def-value (cadr def) table id))))
+     (core-pvector-literal-parse-def-value
+      (cadr def)
+      (lambda (ref-id) (core-pvector-literal-node-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-digit/val-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-digit-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-inner-ref table id ref-id))))))
+
+(define (core-pvector-literal-forward-ref
+         raw-table value-table state limit id expected-kind)
+  (unless (and (core-pvector-literal-id? id)
+               (fx< id limit))
+    (core-pvector-literal-error "invalid reference id: ~s" id))
+  (case (#3%vector-ref state id)
+    [(done)
+     (let ([v (#3%vector-ref value-table id)])
+       (let ([kind (core-pvector-literal-object-kind v)])
+         (unless (eq? kind expected-kind)
+           (core-pvector-literal-error
+            "reference id ~a has kind ~s, expected ~s"
+            id
+            kind
+            expected-kind)))
+       v)]
+    [(visiting)
+     (core-pvector-literal-error "cyclic reference id: ~s" id)]
+    [else
+     (let ([raw (#3%vector-ref raw-table id)])
+       (when (eq? raw core-pvector-literal-missing)
+         (core-pvector-literal-error "definition id missing: ~s" id))
+       (#3%vector-set! state id 'visiting)
+       (let ([v (core-pvector-literal-parse-def-value
+                 raw
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'node))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'digit/val))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'digit))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-inner-ref
+                    raw-table value-table state limit ref-id)))])
+         (#3%vector-set! value-table id v)
+         (#3%vector-set! state id 'done)
+         (let ([kind (core-pvector-literal-object-kind v)])
+           (unless (eq? kind expected-kind)
+             (core-pvector-literal-error
+              "reference id ~a has kind ~s, expected ~s"
+              id
+              kind
+              expected-kind)))
+         v))]))
+
+(define (core-pvector-literal-forward-inner-ref raw-table value-table state limit id)
+  (cond
+   [(eq? id 'Empty) #f]
+   [else
+    (core-pvector-literal-forward-ref
+     raw-table value-table state limit id 'node)]))
+
+(define (core-pvector-literal-forward-pvector-ref raw-table value-table state limit id)
+  (cond
+   [(eq? id 'Empty) empty-core-pvector]
+   [else
+    (core-pvector-literal-forward-ref
+     raw-table value-table state limit id 'pvector)]))
+
+(define (core-pvector-literal-install-forward-def! def raw-table limit)
+  (core-pvector-literal-check-proper-list 'definition def)
+  (unless (and (pair? def)
+               (pair? (cdr def))
+               (null? (cddr def)))
+    (core-pvector-literal-error
+     "definition must have an id and a value: ~s"
+     def))
+  (let ([id (car def)])
+    (unless (and (core-pvector-literal-id? id)
+                 (fx< id limit))
+      (core-pvector-literal-error "invalid definition id: ~s" id))
+    (unless (eq? (#3%vector-ref raw-table id)
+                 core-pvector-literal-missing)
+      (core-pvector-literal-error "duplicate definition id: ~s" id))
+    (#3%vector-set! raw-table id (cadr def))))
+
+(define (core-pvector-literal-check-forward-defs-complete raw-table limit)
+  (let loop ([id 0])
+    (unless (fx= id limit)
+      (when (eq? (#3%vector-ref raw-table id)
+                 core-pvector-literal-missing)
+        (core-pvector-literal-error "definition id missing: ~s" id))
+      (loop (fx+ id 1)))))
+
+(define (core-pvector-literal-forward-raw->pvector root defs)
+  (core-pvector-literal-check-proper-list 'definition-list defs)
+  (let* ([len (core-list-length defs)]
+         [raw-table (make-vector len core-pvector-literal-missing)]
+         [value-table (make-vector len #f)]
+         [state (make-vector len #f)])
+    (let loop ([defs defs])
+      (unless (null? defs)
+        (core-pvector-literal-install-forward-def! (car defs) raw-table len)
+        (loop (cdr defs))))
+    (core-pvector-literal-check-forward-defs-complete raw-table len)
+    (core-pvector-literal-forward-pvector-ref
+     raw-table value-table state len root)))
 
 (define (core-pvector-literal-raw->pvector root defs)
   (core-pvector-literal-check-proper-list 'definition-list defs)
@@ -4583,6 +4694,17 @@
      [(eq? tail #f)
       (core-pvector-literal-check-proper-list "expanded element list" head)
       (core-list->pvector head)]
+     [(and (pair? tail)
+           (core-pvector-literal-forward-option? (car tail)))
+      (core-pvector-literal-check-proper-list
+       'forward-reference-option
+       tail)
+      (unless (and (pair? (cdr tail))
+                   (null? (cddr tail)))
+        (core-pvector-literal-error
+         "forward-reference option expects one definition list: ~s"
+         tail))
+      (core-pvector-literal-forward-raw->pvector head (cadr tail))]
      [else
       (core-pvector-literal-raw->pvector head tail)])))
 

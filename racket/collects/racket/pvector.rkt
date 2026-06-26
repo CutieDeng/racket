@@ -11,6 +11,7 @@
          '#%flfxnum
          racket/match
          racket/performance-hint
+         (only-in racket/pretty pretty-write)
          (only-in racket/vector vector-copy)
          racket/unsafe/ops
          (for-syntax racket/base))
@@ -286,9 +287,15 @@
 (define (write-pvector-literal pv
                                [port (current-output-port)]
                                [pool (make-pvector-literal-pool)]
-                               #:mode [mode 'raw])
+                               #:mode [mode 'raw]
+                               #:pretty? [pretty? #f])
+  (unless (boolean? pretty?)
+    (raise-argument-error 'write-pvector-literal "boolean?" pretty?))
   (display "#pvector" port)
-  (write (pvector->literal-datum pv pool #:mode mode) port)
+  (let ([datum (pvector->literal-datum pv pool #:mode mode)])
+    (if pretty?
+        (pretty-write datum port)
+        (write datum port)))
   (void))
 
 (define (pvector-empty)
