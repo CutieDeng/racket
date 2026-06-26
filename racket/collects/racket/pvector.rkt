@@ -48,6 +48,12 @@
          pvector-subvector
          in-pvector
          in-pvector-reverse
+         make-pvector-literal-pool
+         pvector-literal-pool?
+         pvector->literal-datum
+         pvectors->literal-datum
+         literal-datum->pvector
+         write-pvector-literal
          for/pvector
          for*/pvector
          pvector*)
@@ -193,6 +199,97 @@
                            "ending index" end
                            "pvector" pv))
   (values pv* len start end))
+
+(struct pvector-literal-pool (state)
+  #:sealed)
+
+(define (make-pvector-literal-pool)
+  (pvector-literal-pool (raw:make-pvector-literal-state)))
+
+(define (check-pvector-literal-pool who pool)
+  (unless (pvector-literal-pool? pool)
+    (raise-argument-error who "pvector-literal-pool?" pool))
+  pool)
+
+(define (pvector-flat-literal-datum pv)
+  (list (pvector->list pv) #f))
+
+(define (check-pvector-literal-mode who mode)
+  (case mode
+    [(raw expanded) mode]
+    [else (raise-argument-error who "(or/c 'raw 'expanded)" mode)]))
+
+(define (pvector-literal-root! who pv pool)
+  (define pv* (check-pvector who pv))
+  (define pool* (check-pvector-literal-pool who pool))
+  (raw:pvector-literal-emit!
+   (pvector-tree/unsafe pv*)
+   (pvector-literal-pool-state pool*)))
+
+(define (pvector-raw-literal-datum who pv pool)
+  (let ([root (pvector-literal-root! who pv pool)])
+    (list (list 'raw root)
+          (raw:pvector-literal-state-defs
+           (pvector-literal-pool-state pool)))))
+
+(define (pvector->literal-datum pv
+                                [pool (make-pvector-literal-pool)]
+                                #:mode [mode 'raw])
+  (define pv* (check-pvector 'pvector->literal-datum pv))
+  (define pool* (check-pvector-literal-pool 'pvector->literal-datum pool))
+  (case (check-pvector-literal-mode 'pvector->literal-datum mode)
+    [(expanded) (pvector-flat-literal-datum pv*)]
+    [(raw)
+     (if (raw:pvector-runtime-adapter-literal-available?)
+         (pvector-raw-literal-datum 'pvector->literal-datum pv* pool*)
+         (pvector-flat-literal-datum pv*))]))
+
+(define (pvectors->literal-datum pvs
+                                 [pool (make-pvector-literal-pool)]
+                                 #:mode [mode 'raw])
+  (define pool* (check-pvector-literal-pool 'pvectors->literal-datum pool))
+  (case (check-pvector-literal-mode 'pvectors->literal-datum mode)
+    [(expanded)
+     (list
+      (for/list ([pv pvs])
+        (pvector->list (check-pvector 'pvectors->literal-datum pv)))
+      #f)]
+    [(raw)
+     (if (raw:pvector-runtime-adapter-literal-available?)
+         (let ([roots
+                (for/list ([pv pvs])
+                  (pvector-literal-root! 'pvectors->literal-datum pv pool*))])
+           (list (list 'raw roots)
+                 (raw:pvector-literal-state-defs
+                  (pvector-literal-pool-state pool*))))
+         (list
+          (for/list ([pv pvs])
+            (pvector->list (check-pvector 'pvectors->literal-datum pv)))
+          #f))]))
+
+(define (literal-datum->pvector datum)
+  (if (raw:pvector-runtime-adapter-literal-available?)
+      (wrap (raw:pvector-literal->pvector datum))
+      (cond
+        [(and (pair? datum)
+              (pair? (cdr datum))
+              (null? (cddr datum))
+              (eq? (cadr datum) #f)
+              (list? (car datum)))
+         (list->pvector (car datum))]
+        [else
+         (raise-arguments-error
+          'literal-datum->pvector
+          "native pvector literal input is not available for raw literals"
+          "datum" datum)])))
+
+(define (write-pvector-literal pv
+                               [port (current-output-port)]
+                               [pool (make-pvector-literal-pool)]
+                               #:mode [mode 'raw])
+  (display "#pvector" port)
+  (write (pvector->literal-datum pv pool #:mode mode) port)
+  (void))
 
 (define (pvector-empty)
   empty-pvector)

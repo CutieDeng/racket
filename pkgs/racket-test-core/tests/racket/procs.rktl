@@ -5,6 +5,10 @@
 
 (require compiler/find-exe)
 
+(define procs-test-directory
+  (or (current-load-relative-directory)
+      (current-directory)))
+
 ;; ----------------------------------------
 
 (include "proc-defs.rktl")
@@ -87,7 +91,8 @@
                     (let ([e (environment-variables-copy
                               (current-environment-variables))])
                       (environment-variables-set! e key val)
-                      e)])
+                      e)]
+                   [current-directory procs-test-directory])
       (subprocess #f #f #f (find-exe) "-e" "(compile (read))")))
   (write realmed-module o)
   (close-output-port o)

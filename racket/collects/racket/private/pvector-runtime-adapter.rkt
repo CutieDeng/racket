@@ -63,9 +63,14 @@
          pvector-ref/fast
          pvector-set/fast
          pvector-shape-stats
+         make-pvector-literal-state
+         pvector-literal-state-defs
+         pvector-literal-emit!
+         pvector-literal->pvector
          pvector-runtime-adapter-backend
          pvector-runtime-adapter-core-available?
          pvector-runtime-adapter-cursor-available?
+         pvector-runtime-adapter-literal-available?
          pvector-runtime-adapter-public-properties-available?
          pvector-install-struct-property!
          pvector-cursor-start
@@ -137,6 +142,10 @@
 (define core-pvector-copy (maybe-kernel 'core-pvector-copy))
 (define core-pvector-install-struct-property!
   (maybe-kernel 'core-pvector-install-struct-property!))
+(define core-pvector-literal-emit!
+  (maybe-kernel 'core-pvector-literal-emit!))
+(define core-pvector-literal->pvector
+  (maybe-kernel 'core-pvector-literal->pvector))
 
 (define core-bindings
   (list core-pvector?
@@ -219,6 +228,11 @@
   (and core-available?
        (procedure? core-pvector-install-struct-property!)))
 
+(define core-literal-available?
+  (and core-available?
+       (procedure? core-pvector-literal-emit!)
+       (procedure? core-pvector-literal->pvector)))
+
 (define (pvector-runtime-adapter-core-available?)
   core-available?)
 
@@ -228,6 +242,9 @@
 (define (pvector-runtime-adapter-public-properties-available?)
   core-public-properties-available?)
 
+(define (pvector-runtime-adapter-literal-available?)
+  core-literal-available?)
+
 (define (pvector-runtime-adapter-backend)
   (if core-available? 'core 'finger))
 
@@ -236,6 +253,28 @@
     (error 'pvector-install-struct-property!
            "native pvector public properties are not available"))
   (core-pvector-install-struct-property! prop value))
+
+(define (make-pvector-literal-state)
+  (vector (make-hasheq)
+          (make-hasheq)
+          (make-hasheq)
+          0
+          null))
+
+(define (pvector-literal-state-defs state)
+  (reverse (vector-ref state 4)))
+
+(define (pvector-literal-emit! pv state)
+  (unless core-literal-available?
+    (error 'pvector-literal-emit!
+           "native pvector literal output is not available"))
+  (core-pvector-literal-emit! pv state))
+
+(define (pvector-literal->pvector datum)
+  (unless core-literal-available?
+    (error 'pvector-literal->pvector
+           "native pvector literal input is not available"))
+  (core-pvector-literal->pvector datum))
 
 (define core-builder-block-size 64)
 

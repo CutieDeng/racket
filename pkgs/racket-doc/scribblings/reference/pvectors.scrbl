@@ -454,6 +454,97 @@ time.
 (pvector->vector letters)
 ]}
 
+@defproc[(make-pvector-literal-pool) pvector-literal-pool?]{
+
+Returns a mutable output pool for pvector literal data. Reusing the
+same pool across calls to @racket[pvector->literal-datum] or
+@racket[pvectors->literal-datum] allows shared runtime tree nodes to
+receive a single id in the emitted definition table.}
+
+@defproc[(pvector-literal-pool? [v any/c]) boolean?]{
+
+Returns @racket[#t] if @racket[v] is a pvector literal output pool,
+@racket[#f] otherwise.}
+
+@defproc[(pvector->literal-datum [pv pvector?]
+                                  [pool pvector-literal-pool?
+                                        (make-pvector-literal-pool)]
+                                  [#:mode mode (or/c 'raw 'expanded) 'raw])
+         any/c]{
+
+Returns a datum suitable for printing after @racketresultfont{#pvector}.
+When @racket[mode] is @racket['expanded], the result has the shape:
+
+@racketblock[
+(list (list elem ...) #f)
+]
+
+When @racket[mode] is @racket['raw] and native literal support is
+available, the result is a structure-preserving datum with the shape:
+
+@racketblock[
+(list (list 'raw root-id-or-Empty)
+      (list (list id val) ...))
+]
+
+The @racket[root-id-or-Empty] value is the id of the root structure
+definition, or @racket['Empty] for an empty pvector; it is not the
+pvector length. The ids in the definition table are dense, ascending,
+and each definition refers only to earlier ids. The @racket[val]
+variants are:
+
+@racketblock[
+Empty
+(Single/val v)
+(Single node-id)
+(Digit/val size v ...)
+(Digit size node-id ...)
+(Node/val size v ...)
+(Node size node-id ...)
+(Deep/val size left-digit-id right-digit-id inner-id-or-Empty)
+(Deep size left-digit-id right-digit-id inner-id-or-Empty)
+]
+
+The @racket[/val] variants contain pvector element values directly.
+The other variants contain ids for previously emitted structure
+definitions. When @racket[mode] is @racket['raw] but native literal
+support is not available, the result uses the expanded shape.
+}
+
+@defproc[(pvectors->literal-datum [pvs sequence?]
+                                   [pool pvector-literal-pool?
+                                         (make-pvector-literal-pool)]
+                                   [#:mode mode (or/c 'raw 'expanded) 'raw])
+         any/c]{
+
+Like @racket[pvector->literal-datum], but emits roots for all pvectors
+in @racket[pvs] using the same @racket[pool]. On the native structural
+path, the result has the shape @racket[(list (list 'raw roots) defs)].
+The shared definition table can preserve sharing among all pvectors in
+@racket[pvs]. The result is a group datum for output helpers; it is not
+a single @racketresultfont{#pvector} reader datum.}
+
+@defproc[(literal-datum->pvector [datum any/c]) pvector?]{
+
+Converts a datum in either single-pvector literal shape accepted by the
+@racketresultfont{#pvector} reader into a pvector. The expanded shape is
+@racket[(list elems #f)]. The raw shape is @racket[(list (list 'raw root)
+defs)].}
+
+@defproc[(write-pvector-literal [pv pvector?]
+                                [out output-port? (current-output-port)]
+                                [pool pvector-literal-pool?
+                                      (make-pvector-literal-pool)]
+                                [#:mode mode (or/c 'raw 'expanded) 'raw])
+         void?]{
+
+Writes @racketresultfont{#pvector} followed by the datum produced by
+@racket[pvector->literal-datum]. This function is an explicit literal
+output helper. The Racket reader accepts @racketresultfont{#pvector}
+input in the expanded form @racketresultfont{#pvector((elem ...) #f)}
+and in the raw form
+@racketresultfont{#pvector((raw root-id-or-Empty) defs)}.}
+
 @deftogether[(
 @defproc[(in-pvector [pv pvector?]) sequence?]
 @defproc[(in-pvector-reverse [pv pvector?]) sequence?]

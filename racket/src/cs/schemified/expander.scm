@@ -69396,6 +69396,63 @@
                           temp16_1
                           (list temp17_0)))))))))
           (wrap rx_0 in_0 config_0 #f))))))
+(define read-expect-char
+  (lambda (expected_0 accum-str_0 in_0 config_0)
+    (let ((c_0
+           (let ((source_0
+                  (read-config/inner-source
+                   (read-config/outer-inner config_0))))
+             (read-char-or-special in_0 special1.1 source_0))))
+      (begin
+        (if (eqv? c_0 expected_0)
+          (void)
+          (let ((temp4_0 "expected `~a` after `~a`"))
+            (reader-error.1
+             unsafe-undefined
+             c_0
+             #f
+             unsafe-undefined
+             in_0
+             config_0
+             temp4_0
+             (list expected_0 accum-str_0))))
+        c_0))))
+(define read-pvector
+  (lambda (read-one_0
+           dispatch-c_0
+           init-c_0
+           second-c_0
+           accum-str_0
+           in_0
+           config_0)
+    (let ((chars_0 (list '#\x65 '#\x63 '#\x74 '#\x6f '#\x72)))
+      (letrec*
+       ((loop_0
+         (|#%name|
+          loop
+          (lambda (chars_1 accum-str_1)
+            (if (null? chars_1)
+              (let ((datum_0
+                     (|#%app| read-one_0 #f in_0 (disable-wrapping config_0))))
+                (wrap
+                 (catch-and-reraise-as-reader/proc
+                  in_0
+                  config_0
+                  (lambda () (core-pvector-literal->pvector datum_0)))
+                 in_0
+                 config_0
+                 init-c_0))
+              (let ((c_0
+                     (read-expect-char
+                      (car chars_1)
+                      accum-str_1
+                      in_0
+                      config_0)))
+                (let ((app_0 (cdr chars_1)))
+                  (loop_0
+                   app_0
+                   (string-append accum-str_1 (string c_0))))))))))
+       (loop_0 chars_0 accum-str_0)))))
 (define read-extension-reader
   (lambda (read-one_0 read-recur_0 dispatch-c_0 in_0 config_0)
     (let ((extend-str_0
@@ -71132,16 +71189,28 @@
                                        accum-str_0
                                        in_0
                                        config_0)
-                                      (let ((temp271_0
-                                             (accum-string-get!.1
-                                              0
-                                              accum-str_0
-                                              config_0)))
-                                        (bad-syntax-error.1
+                                      (if (eqv? c2_0 '#\x76)
+                                        (read-pvector
+                                         read-one
+                                         dispatch-c_0
+                                         c_0
                                          c2_0
+                                         (accum-string-get!.1
+                                          0
+                                          accum-str_0
+                                          config_0)
                                          in_0
-                                         config_0
-                                         temp271_0))))))))
+                                         config_0)
+                                        (let ((temp273_0
+                                               (accum-string-get!.1
+                                                0
+                                                accum-str_0
+                                                config_0)))
+                                          (bad-syntax-error.1
+                                           c2_0
+                                           in_0
+                                           config_0
+                                           temp273_0)))))))))
                           (if (unsafe-fx< index_0 34)
                             (read-extension-lang.1
                              #f
@@ -71167,7 +71236,7 @@
                                  in_0
                                  config_0
                                  c_0)
-                                (let ((temp284_0
+                                (let ((temp286_0
                                        "`~a~~` compiled expressions not enabled"))
                                   (reader-error.1
                                    unsafe-undefined
@@ -71176,7 +71245,7 @@
                                    unsafe-undefined
                                    in_0
                                    config_0
-                                   temp284_0
+                                   temp286_0
                                    (list dispatch-c_0)))))))))))))))))))
 (define retry-special-comment
   (lambda (v_0 in_0 config_0)

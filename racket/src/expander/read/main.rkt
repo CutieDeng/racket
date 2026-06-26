@@ -27,6 +27,7 @@
          "constant.rkt"
          "box.rkt"
          "regexp.rkt"
+         "pvector-literal.rkt"
          "extension.rkt"
          "language.rkt"
          "number.rkt")
@@ -383,6 +384,15 @@
        (when (char? c2) (accum-string-add! accum-str c2))
        (case c2
          [(#\x) (read-regexp c accum-str in config)]
+         [(#\v)
+          (read-pvector
+           read-one
+           dispatch-c
+           c
+           c2
+           (accum-string-get! accum-str config)
+           in
+           config)]
          [else (bad-syntax-error in config #:due-to c2
                                  (accum-string-get! accum-str config))])]
       [(#\l)

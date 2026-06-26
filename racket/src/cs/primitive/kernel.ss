@@ -255,6 +255,8 @@
   [core-pvector-drop-right (known-procedure/single-valued 4)]
   [core-pvector-copy (known-procedure/single-valued 8)]
   [core-pvector-install-struct-property! (known-procedure/single-valued 4)]
+  [core-pvector-literal-emit! (known-procedure/single-valued 4)]
+  [core-pvector-literal->pvector (known-procedure/single-valued 2)]
   [core-intmap? (known-procedure/pure/folding 2)]
   [core-intmap-empty (known-procedure/single-valued 1)]
   [core-intmap-empty? (known-procedure/pure/folding 2)]
