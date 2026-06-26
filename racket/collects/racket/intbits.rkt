@@ -536,14 +536,61 @@
   ) ; end let*
 ) ; end define
 
+(define (fold-shifted-set-bits field base init proc
+        ) ; end fold-shifted-set-bits
+  (let loop ([field field
+              ] ; end field
+             [base base
+              ] ; end base
+             [acc init
+              ] ; end acc
+            ) ; end form
+    (define skip (bitwise-first-bit-set field
+                 ) ; end bitwise-first-bit-set
+    ) ; end define
+    (if (= skip -1
+        ) ; end =
+        acc
+        (let* ([pos (+ base skip
+                    ) ; end +
+                ] ; end pos
+               [field* (arithmetic-shift field (- (add1 skip
+                                                 ) ; end add1
+                                           ) ; end -
+                       ) ; end arithmetic-shift
+                ] ; end field*
+              ) ; end form
+          (loop field*
+                (add1 pos
+                ) ; end add1
+                (proc acc pos
+                ) ; end proc
+          ) ; end loop
+        ) ; end let*
+    ) ; end if
+  ) ; end let
+) ; end define
+
 (define (intbits-for-each bits proc
         ) ; end intbits-for-each
   (check-finite-intbits 'intbits-for-each bits
   ) ; end check-finite-intbits
-  (intbits-for-each/range bits 0 (intbits-width bits
-                                ) ; end intbits-width
-                          proc
-  ) ; end intbits-for-each/range
+  (check-procedure-arity 'intbits-for-each proc 1
+  ) ; end check-procedure-arity
+  (fold-shifted-set-bits
+   bits
+   0
+   (void
+   ) ; end void
+   (lambda (acc pos
+            ) ; end lambda args
+     (proc pos
+     ) ; end proc
+     acc
+   ) ; end lambda
+  ) ; end fold-shifted-set-bits
+  (void
+  ) ; end void
 ) ; end define
 
 (define (intbits-for-each/range bits lo hi proc
@@ -554,18 +601,19 @@
   ) ; end check-range
   (check-procedure-arity 'intbits-for-each/range proc 1
   ) ; end check-procedure-arity
-  (let loop ([pos (range-first bits lo hi
-                   ) ; end range-first
-             ] ; end pos
-            ) ; end form
-    (when pos
-      (proc pos
-      ) ; end proc
-      (loop (range-next bits hi pos
-            ) ; end range-next
-      ) ; end loop
-    ) ; end when
-  ) ; end let
+  (fold-shifted-set-bits
+   (bitwise-bit-field bits lo hi
+   ) ; end bitwise-bit-field
+   lo
+   (void
+   ) ; end void
+   (lambda (acc pos
+            ) ; end lambda args
+     (proc pos
+     ) ; end proc
+     acc
+   ) ; end lambda
+  ) ; end fold-shifted-set-bits
   (void
   ) ; end void
 ) ; end define
@@ -574,11 +622,10 @@
         ) ; end intbits-fold
   (check-finite-intbits 'intbits-fold bits
   ) ; end check-finite-intbits
-  (intbits-fold/range bits 0 (intbits-width bits
-                            ) ; end intbits-width
-                      init
-                      proc
-  ) ; end intbits-fold/range
+  (check-procedure-arity 'intbits-fold proc 2
+  ) ; end check-procedure-arity
+  (fold-shifted-set-bits bits 0 init proc
+  ) ; end fold-shifted-set-bits
 ) ; end define
 
 (define (intbits-fold/range bits lo hi init proc
@@ -589,45 +636,41 @@
   ) ; end check-range
   (check-procedure-arity 'intbits-fold/range proc 2
   ) ; end check-procedure-arity
-  (let loop ([acc init
-              ] ; end acc
-             [pos (range-first bits lo hi
-                   ) ; end range-first
-              ] ; end pos
-            ) ; end form
-    (if pos
-        (loop (proc acc pos
-              ) ; end proc
-              (range-next bits hi pos
-              ) ; end range-next
-        ) ; end loop
-        acc
-    ) ; end if
-  ) ; end let
+  (fold-shifted-set-bits
+   (bitwise-bit-field bits lo hi
+   ) ; end bitwise-bit-field
+   lo
+   init
+   proc
+  ) ; end fold-shifted-set-bits
 ) ; end define
 
 (define (intbits->list bits
         ) ; end intbits->list
   (check-finite-intbits 'intbits->list bits
   ) ; end check-finite-intbits
-  (for/list ([pos (in-intbits bits
-                  ) ; end in-intbits
-             ] ; end pos
-            ) ; end form
-    pos
-  ) ; end for/list
+  (reverse (intbits-fold bits null
+                         (lambda (acc pos
+                                  ) ; end lambda args
+                           (cons pos acc
+                           ) ; end cons
+                         ) ; end lambda
+           ) ; end intbits-fold
+  ) ; end reverse
 ) ; end define
 
 (define (intbits->list/range bits lo hi
         ) ; end intbits->list/range
   (check-intbits 'intbits->list/range bits
   ) ; end check-intbits
-  (for/list ([pos (in-intbits-range bits lo hi
-                  ) ; end in-intbits-range
-             ] ; end pos
-            ) ; end form
-    pos
-  ) ; end for/list
+  (reverse (intbits-fold/range bits lo hi null
+                               (lambda (acc pos
+                                        ) ; end lambda args
+                                 (cons pos acc
+                                 ) ; end cons
+                               ) ; end lambda
+           ) ; end intbits-fold/range
+  ) ; end reverse
 ) ; end define
 
 (define (list->intbits positions
@@ -723,26 +766,42 @@
   ) ; end for/fold
 ) ; end define
 
-(define (range-first bits lo hi
-        ) ; end range-first
-  (let ([pos (intbits-next bits lo
-             ) ; end intbits-next
-        ] ; end pos
-       ) ; end form
-    (and pos
-         (< pos hi
-         ) ; end <
-         pos
-    ) ; end and
-  ) ; end let
+(define (field-state field base
+        ) ; end field-state
+  (define skip (bitwise-first-bit-set field
+               ) ; end bitwise-first-bit-set
+  ) ; end define
+  (and (not (= skip -1
+            ) ; end =
+       ) ; end not
+       (let* ([pos (+ base skip
+                   ) ; end +
+               ] ; end pos
+              [field* (arithmetic-shift field (- (add1 skip
+                                                ) ; end add1
+                                          ) ; end -
+                      ) ; end arithmetic-shift
+               ] ; end field*
+             ) ; end form
+         (cons pos
+               (cons field*
+                     (add1 pos
+                     ) ; end add1
+               ) ; end cons
+         ) ; end cons
+       ) ; end let*
+  ) ; end and
 ) ; end define
 
-(define (range-next bits hi pos
-        ) ; end range-next
-  (range-first bits (add1 pos
-                    ) ; end add1
-               hi
-  ) ; end range-first
+(define (field-state-next state
+        ) ; end field-state-next
+  (field-state (car (cdr state
+                    ) ; end cdr
+               ) ; end car
+               (cdr (cdr state
+                    ) ; end cdr
+               ) ; end cdr
+  ) ; end field-state
 ) ; end define
 
 (define (in-intbits bits
@@ -763,16 +822,15 @@
   (make-do-sequence
    (lambda (
            ) ; end form
+     (define field (bitwise-bit-field bits lo hi
+                   ) ; end bitwise-bit-field
+     ) ; end define
      (values
-      values
-      (lambda (pos
-               ) ; end pos
-        (range-next bits hi pos
-        ) ; end range-next
-      ) ; end lambda
-      (range-first bits lo hi
-      ) ; end range-first
-      exact-nonnegative-integer?
+      car
+      field-state-next
+      (field-state field lo
+      ) ; end field-state
+      pair?
       #f
       #f
      ) ; end values

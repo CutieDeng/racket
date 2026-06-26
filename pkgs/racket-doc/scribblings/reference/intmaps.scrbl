@@ -40,6 +40,25 @@ serializable.
 (equal? (deserialize (serialize m)) m)
 ]
 
+@section[#:tag "intmap-implementation"]{Implementation Notes}
+
+An intmap is represented as a persistent weight-balanced binary search
+tree with cached subtree sizes. Updating operations path-copy the
+search path and share untouched subtrees with older versions. Bulk
+constructors such as @racket[sorted-vector->intmap] build a balanced
+tree directly and should be preferred for already-sorted input or
+literal data.
+
+On Racket CS, the implementation can use a runtime backend with core
+records and cursor primitives. The Racket fallback exposes the same
+public API. Programs should treat the concrete representation as
+opaque.
+
+In write mode, an intmap prints as a readable constructor expression,
+using @racket[(intmap)] for the empty map or
+@racket[(sorted-list->intmap '...)] for non-empty maps. This is an
+expression-level readable form, not a reader-level datum syntax.
+
 @section[#:tag "intmap-constructing"]{Constructing Intmaps}
 
 @defproc[(intmap? [v any/c]) boolean?]{

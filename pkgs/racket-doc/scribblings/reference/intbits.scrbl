@@ -19,6 +19,10 @@ operations use half-open ranges @racket[lo] @math{<=} index
 @math{<} @racket[hi] and support both finite and co-finite intbits
 values.
 
+Traversal operations enumerate set bit indexes, not boolean occupancy
+values. Use @racket[intbits-fold] or @racket[intbits-for-each] for hot
+paths that should avoid materializing a list.
+
 @note-lib[racket/intbits #:use-sources (racket/intbits)]
 
 @section[#:tag "intbits-predicates"]{Predicates and Constants}
