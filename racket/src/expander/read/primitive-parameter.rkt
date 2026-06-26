@@ -31,6 +31,7 @@
 (define-boolean-parameter read-accept-box #t)
 (define-boolean-parameter read-accept-pvector #t)
 (define-boolean-parameter read-accept-pvector-raw #t)
+(define-boolean-parameter read-accept-intmap #t)
 ;; (define-boolean-parameter read-accept-bar-quote #t) - shared with printer
 (define-boolean-parameter read-single-flonum #f)
 (define-boolean-parameter read-decimal-as-inexact #t)

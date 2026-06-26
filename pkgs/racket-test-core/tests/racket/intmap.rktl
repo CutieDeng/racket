@@ -414,6 +414,210 @@
              exn:fail:contract?
 ) ; end err/rt-test
 
+(test '((1 . v1) (2 . v2) (3 . v3) (4 . v4) (5 . v5
+                                            ) ; end 5
+       ) ; end form
+      intmap->literal-datum
+      m
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (literal-datum->intmap '((1 . a) (2 . b
+                                      ) ; end 2
+                             ) ; end form
+      ) ; end literal-datum->intmap
+      #f
+      #f
+) ; end test
+(test "#intmap((1 . a) (2 . b))"
+      values
+      (let ([out (open-output-string
+                 ) ; end open-output-string
+            ] ; end out
+           ) ; end let args
+        (write-intmap-literal (intmap 2 'b 1 'a
+                              ) ; end intmap
+                              out
+        ) ; end write-intmap-literal
+        (get-output-string out
+        ) ; end get-output-string
+      ) ; end let
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (read (open-input-string "#intmap((1 . a) (2 . b))"
+            ) ; end open-input-string
+      ) ; end read
+      #f
+      #f
+) ; end test
+(test '()
+      intmap-range->list
+      (read (open-input-string "#intmap()"
+            ) ; end open-input-string
+      ) ; end read
+      #f
+      #f
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (read (open-input-string
+             (let ([out (open-output-string
+                        ) ; end open-output-string
+                   ] ; end out
+                  ) ; end let args
+               (write (intmap 2 'b 1 'a
+                      ) ; end intmap
+                      out
+               ) ; end write
+               (get-output-string out
+               ) ; end get-output-string
+             ) ; end let
+            ) ; end open-input-string
+      ) ; end read
+      #f
+      #f
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (read (open-input-string
+             (let ([out (open-output-string
+                        ) ; end open-output-string
+                   ] ; end out
+                  ) ; end let args
+               (pretty-write (intmap 2 'b 1 'a
+                             ) ; end intmap
+                             out
+               ) ; end pretty-write
+               (get-output-string out
+               ) ; end get-output-string
+             ) ; end let
+            ) ; end open-input-string
+      ) ; end read
+      #f
+      #f
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (read (open-input-string
+             (let ([out (open-output-string
+                        ) ; end open-output-string
+                   ] ; end out
+                  ) ; end let args
+               (write-intmap-literal (intmap 2 'b 1 'a
+                                     ) ; end intmap
+                                     out
+                                     #:pretty? #t
+               ) ; end write-intmap-literal
+               (get-output-string out
+               ) ; end get-output-string
+             ) ; end let
+            ) ; end open-input-string
+      ) ; end read
+      #f
+      #f
+) ; end test
+
+(define (read-intmap-error-message s
+                                  ) ; end read-intmap-error-message
+  (with-handlers ([exn:fail:read? exn-message
+                  ] ; end exn:fail:read?
+                 ) ; end with-handlers args
+    (read (open-input-string s
+          ) ; end open-input-string
+    ) ; end read
+    #f
+  ) ; end with-handlers
+) ; end define
+
+(define (read-after-intmap-error s
+                                ) ; end read-after-intmap-error
+  (let ([in (open-input-string s
+            ) ; end open-input-string
+       ] ; end in
+       ) ; end let args
+    (with-handlers ([exn:fail:read? (lambda (e)
+                                      (read in
+                                      ) ; end read
+                                    ) ; end lambda
+                   ] ; end exn:fail:read?
+                  ) ; end with-handlers args
+      (read in
+      ) ; end read
+      'not-an-error
+    ) ; end with-handlers
+  ) ; end let
+) ; end define
+
+(test #t values
+      (regexp-match?
+       #rx"`#intmap` forms not enabled"
+       (parameterize ([read-accept-intmap #f
+                      ] ; end read-accept-intmap
+                     ) ; end parameterize args
+         (read-intmap-error-message "#intmap((1 . a))"
+         ) ; end read-intmap-error-message
+       ) ; end parameterize
+      ) ; end regexp-match?
+) ; end test
+(test 42
+      values
+      (parameterize ([read-accept-intmap #f
+                     ] ; end read-accept-intmap
+                    ) ; end parameterize args
+        (read-after-intmap-error "#intmap((1 . a)) \"payload\"\n42"
+        ) ; end read-after-intmap-error
+      ) ; end parameterize
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"expected `t` to continue `#intmap` after `#in`"
+       (read-intmap-error-message "#in"
+       ) ; end read-intmap-error-message
+      ) ; end regexp-match?
+) ; end test
+(test 42 values
+      (read-after-intmap-error "#in\"\"\n42"
+      ) ; end read-after-intmap-error
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"entry-list is not a proper list"
+       (read-intmap-error-message "#intmap(1 . 2)"
+       ) ; end read-intmap-error-message
+      ) ; end regexp-match?
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"exact-integer\\?"
+       (read-intmap-error-message "#intmap((a . b))"
+       ) ; end read-intmap-error-message
+      ) ; end regexp-match?
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"expected strictly increasing integer keys"
+       (read-intmap-error-message "#intmap((1 . a) (1 . b))"
+       ) ; end read-intmap-error-message
+      ) ; end regexp-match?
+) ; end test
+(err/rt-test (literal-datum->intmap '(1 . 2
+                                      ) ; end quote
+              ) ; end literal-datum->intmap
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (write-intmap-literal m (current-output-port
+                                      ) ; end current-output-port
+                                #:pretty? 'yes
+              ) ; end write-intmap-literal
+             exn:fail:contract?
+) ; end err/rt-test
+
 (define many
   (for/fold ([m intmap-empty]) ([i (in-range 200
                                    ) ; end in-range

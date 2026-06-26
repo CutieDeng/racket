@@ -33,6 +33,7 @@
                 read-accept-box
                 read-accept-pvector
                 read-accept-pvector-raw
+                read-accept-intmap
                 ;; read-accept-bar-quote - shared with printer
                 read-decimal-as-inexact
                 read-single-flonum

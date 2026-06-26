@@ -2094,6 +2094,51 @@
   ) ; end let
 ) ; end define
 
+(define (core-intmap-literal-error msg . args
+        ) ; end core-intmap-literal-error
+  (error 'core-intmap-literal->intmap (apply format msg args
+                                      ) ; end apply
+  ) ; end error
+) ; end define
+
+(define (core-intmap-literal-proper-list? v
+        ) ; end core-intmap-literal-proper-list?
+  (let loop ([v v
+             ] ; end v
+            ) ; end let args
+    (cond
+     [(null? v) #t
+     ] ; end t
+     [(pair? v)
+      (loop (cdr v
+            ) ; end cdr
+      ) ; end loop
+     ] ; end clause
+     [else #f
+     ] ; end else
+    ) ; end cond
+  ) ; end let
+) ; end define
+
+(define (core-intmap-literal-check-proper-list who v
+        ) ; end core-intmap-literal-check-proper-list
+  (unless (core-intmap-literal-proper-list? v
+          ) ; end core-intmap-literal-proper-list?
+    (core-intmap-literal-error "~a is not a proper list: ~s" who v
+    ) ; end core-intmap-literal-error
+  ) ; end unless
+  v
+) ; end define
+
+(define (core-intmap-literal->intmap datum
+        ) ; end core-intmap-literal->intmap
+  (core-intmap-literal-check-proper-list 'entry-list datum
+  ) ; end core-intmap-literal-check-proper-list
+  (core-sorted-vector->intmap (list->vector datum
+                              ) ; end list->vector
+  ) ; end core-sorted-vector->intmap
+) ; end define
+
 (define (core-intmap-push-left t stack
         ) ; end core-intmap-push-left
   (let loop ([t t] [stack stack

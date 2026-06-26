@@ -484,6 +484,7 @@
           core-intmap-max-entry
           core-intmap-range->list
           core-sorted-vector->intmap
+          core-intmap-literal->intmap
           core-intmap-cursor-start
           core-intmap-cursor-key
           core-intmap-cursor-value

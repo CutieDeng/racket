@@ -54,10 +54,10 @@ records and cursor primitives. The Racket fallback exposes the same
 public API. Programs should treat the concrete representation as
 opaque.
 
-In write mode, an intmap prints as a readable constructor expression,
-using @racket[(intmap)] for the empty map or
-@racket[(sorted-list->intmap '...)] for non-empty maps. This is an
-expression-level readable form, not a reader-level datum syntax.
+In write mode, an intmap prints as a readable @racketresultfont{#intmap}
+literal whose payload is the sorted entry list. This representation
+shares the validation and linear construction path of
+@racket[sorted-list->intmap].
 
 @section[#:tag "intmap-constructing"]{Constructing Intmaps}
 
@@ -80,6 +80,25 @@ is the empty intmap, and @racket[#f] otherwise.}
 Returns an intmap containing the supplied key-value pairs. An even
 number of arguments must be supplied. If a key appears more than once,
 the rightmost value is retained.}
+
+@deftogether[(
+@defproc[(intmap->literal-datum [m intmap?]) list?]
+@defproc[(literal-datum->intmap [datum any/c]) intmap?]
+@defproc[(write-intmap-literal [m intmap?]
+                                [out output-port? (current-output-port)]
+                                [#:pretty? pretty? boolean? #f])
+         void?]
+)]{
+
+Converts an intmap to and from the datum payload of the
+@racketresultfont{#intmap} reader literal, or writes the full literal to
+@racket[out]. The datum shape is a sorted list of entries, where each
+entry is a pair whose @racket[car] is an exact-integer key and whose
+@racket[cdr] is the value. The reader accepts the same shape as
+@racketresultfont{#intmap((1 . a) (2 . b))}. When @racket[pretty?] is
+true, the literal datum is emitted with @racket[pretty-write] instead of
+@racket[write]. Parsing @racketresultfont{#intmap} input is controlled
+by @racket[read-accept-intmap].}
 
 @deftogether[(
 @defproc[(sorted-list->intmap [entries list?]) intmap?]

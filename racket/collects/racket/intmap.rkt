@@ -18,15 +18,8 @@
         ) ; end intmap-custom-write
   (cond
     [mode
-     (if (intmap-empty? m
-         ) ; end intmap-empty?
-         (write-string "(intmap)" out
-         ) ; end write-string
-         (fprintf out "(sorted-list->intmap '~s)"
-                  (intmap-range->list m #f #f
-                  ) ; end intmap-range->list
-         ) ; end fprintf
-     ) ; end if
+     (write-intmap-literal m out
+     ) ; end write-intmap-literal
     ] ; end mode
     [else
      (fprintf out "#<intmap:~a>" (intmap-count m
@@ -167,4 +160,7 @@
  in-intmap-range-pairs
  sorted-list->intmap
  sorted-vector->intmap
+ intmap->literal-datum
+ literal-datum->intmap
+ write-intmap-literal
 ) ; end provide

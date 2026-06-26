@@ -19,6 +19,7 @@
          read-accept-compiled #f
          read-accept-pvector #t
          read-accept-pvector-raw #t
+         read-accept-intmap #t
          read-accept-bar-quote #t
          read-accept-graph #t
          read-syntax-accept-graph #f

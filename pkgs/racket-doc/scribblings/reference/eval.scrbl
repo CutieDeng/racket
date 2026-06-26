@@ -149,6 +149,7 @@ If the second argument to the load handler is a symbol, then:
        (read-accept-box #t)
        (read-accept-pvector #t)
        (read-accept-pvector-raw #t)
+       (read-accept-intmap #t)
        (read-accept-compiled #t)
        (read-accept-bar-quote #t)
        (read-accept-graph #t)

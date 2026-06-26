@@ -2,6 +2,8 @@
 
 (require (prefix-in fallback: "intmap.rkt"
          ) ; end prefix-in
+         (only-in racket/pretty pretty-write
+         ) ; end only-in
 ) ; end require
 
 (provide
@@ -38,6 +40,9 @@
  in-intmap-range-pairs
  sorted-list->intmap
  sorted-vector->intmap
+ intmap->literal-datum
+ literal-datum->intmap
+ write-intmap-literal
  intmap-shape-stats
  intmap-runtime-adapter-backend
  intmap-runtime-adapter-core-available?
@@ -129,6 +134,9 @@
 ) ; end define
 (define core-sorted-vector->intmap (maybe-kernel 'core-sorted-vector->intmap
                                    ) ; end maybe-kernel
+) ; end define
+(define core-intmap-literal->intmap (maybe-kernel 'core-intmap-literal->intmap
+                                    ) ; end maybe-kernel
 ) ; end define
 (define core-intmap-shape-stats (maybe-kernel 'core-intmap-shape-stats
                                 ) ; end maybe-kernel
@@ -836,6 +844,65 @@
       (fallback:sorted-list->intmap entries
       ) ; end fallback:sorted-list->intmap
   ) ; end if
+) ; end define
+
+(define (intmap->literal-datum m
+        ) ; end intmap->literal-datum
+  (check-intmap 'intmap->literal-datum m
+  ) ; end check-intmap
+  (intmap-range->list m #f #f
+  ) ; end intmap-range->list
+) ; end define
+
+(define (literal-datum->intmap datum
+        ) ; end literal-datum->intmap
+  (unless (list? datum
+          ) ; end list?
+    (raise-argument-error 'literal-datum->intmap "list?" datum
+    ) ; end raise-argument-error
+  ) ; end unless
+  (if (procedure? core-intmap-literal->intmap
+      ) ; end procedure?
+      (core-intmap-literal->intmap datum
+      ) ; end core-intmap-literal->intmap
+      (fallback:literal-datum->intmap datum
+      ) ; end fallback:literal-datum->intmap
+  ) ; end if
+) ; end define
+
+(define (write-intmap-literal m [port (current-output-port
+                                      ) ; end current-output-port
+                               ] ; end port
+                              #:pretty? [pretty? #f
+                                         ] ; end pretty?
+        ) ; end write-intmap-literal
+  (check-intmap 'write-intmap-literal m
+  ) ; end check-intmap
+  (unless (output-port? port
+          ) ; end output-port?
+    (raise-argument-error 'write-intmap-literal "output-port?" port
+    ) ; end raise-argument-error
+  ) ; end unless
+  (unless (boolean? pretty?
+          ) ; end boolean?
+    (raise-argument-error 'write-intmap-literal "boolean?" pretty?
+    ) ; end raise-argument-error
+  ) ; end unless
+  (display "#intmap" port
+  ) ; end display
+  (let ([datum (intmap->literal-datum m
+               ) ; end intmap->literal-datum
+        ] ; end datum
+       ) ; end let args
+    (if pretty?
+        (pretty-write datum port
+        ) ; end pretty-write
+        (write datum port
+        ) ; end write
+    ) ; end if
+  ) ; end let
+  (void
+  ) ; end void
 ) ; end define
 
 (define (intmap-shape-stats m
