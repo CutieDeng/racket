@@ -458,6 +458,38 @@
           core-pvector-copy
           core-pvector-install-struct-property!
 
+          ;; ordered integer map runtime candidate
+          core-intmap?
+          core-intmap-empty
+          core-intmap-empty?
+          core-intmap-count
+          core-intmap-ref
+          core-intmap-has-key?
+          core-intmap-set
+          core-intmap-update
+          core-intmap-replace
+          core-intmap-set/absent
+          core-intmap-remove
+          core-intmap-remove/eq
+          core-intmap-remove/equal
+          core-intmap-replace/eq
+          core-intmap-replace/equal
+          core-intmap-entry<
+          core-intmap-entry<=
+          core-intmap-entry>
+          core-intmap-entry>=
+          core-intmap-min-entry
+          core-intmap-max-entry
+          core-intmap-range->list
+          core-sorted-vector->intmap
+          core-intmap-cursor-start
+          core-intmap-cursor-key
+          core-intmap-cursor-value
+          core-intmap-cursor-next
+          core-intmap-cursor-key+value+next
+          core-intmap-shape-stats
+          core-intmap-install-struct-property!
+
           vector*-length
           vector*-ref
           vector*-set!
@@ -978,6 +1010,7 @@
   (include "rumble/list.ss")
   (include "rumble/vector.ss")
   (include "rumble/pvector.ss")
+  (include "rumble/intmap-ordered.ss")
   (include "rumble/box.ss")
   (include "rumble/immutable.ss")
   (include "rumble/keyword.ss")
@@ -1024,6 +1057,7 @@
   (set-mpair-hash!)
   (set-hash-hash!)
   (set-core-pvector-record-properties!)
+  (set-core-intmap-record-properties!)
   (set-extflonum-print!)
   (set-impersonator-hash!)
   (set-procedure-impersonator-hash!)
