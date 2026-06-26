@@ -26,13 +26,8 @@
 
 (define (literal-root datum
                       ) ; end literal-root
-  (match (car datum
-         ) ; end car
-    [`(raw ,root) root
-    ]
-    [root root
-    ]
-  ) ; end match
+  (car datum
+  ) ; end car
 ) ; end define
 
 (define (literal-defs datum
@@ -210,20 +205,20 @@
 (if (raw:pvector-runtime-adapter-literal-available?
     ) ; end raw:pvector-runtime-adapter-literal-available?
     (let ()
-      (test '((raw Empty) ()) pvector->literal-datum (pvector-empty
-                                                     ) ; end pvector-empty
+      (test '(Empty ()) pvector->literal-datum (pvector-empty
+                                               ) ; end pvector-empty
       ) ; end test
 
-      (test '((raw 0) ((0 (Single/val a)))) pvector->literal-datum (pvector 'a
-                                                                    ) ; end pvector
+      (test '(0 ((0 (Single/val a)))) pvector->literal-datum (pvector 'a
+                                                              ) ; end pvector
       ) ; end test
 
-      (test '((raw 2) ((0 (Digit/val 1 a))
-                       (1 (Digit/val 1 b))
-                       (2 (Deep/val 2 0 1 Empty
-                          ) ; end Deep/val
-                       ) ; end 2
-                      ) ; end defs
+      (test '(2 ((0 (Digit/val 1 a))
+                 (1 (Digit/val 1 b))
+                 (2 (Deep/val 2 0 1 Empty
+                    ) ; end Deep/val
+                 ) ; end 2
+                ) ; end defs
              ) ; end datum
             pvector->literal-datum
             (pvector 'a 'b
@@ -376,6 +371,40 @@
                    ) ; end let
                   ) ; end open-input-string
             ) ; end read
+      ) ; end test
+
+      (define (read-pvector-error-message s
+                                          ) ; end read-pvector-error-message args
+        (with-handlers ([exn:fail:read? exn-message
+                        ] ; end exn:fail:read?
+                       ) ; end with-handlers handlers
+          (read (open-input-string s
+                ) ; end open-input-string
+          ) ; end read
+          #f
+        ) ; end with-handlers
+      ) ; end define
+      (test #t values
+            (regexp-match?
+             #rx"expected `e` to continue `#pvector` after `#pv`"
+             (read-pvector-error-message "#pv"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"expanded element list is not a proper list: 1$"
+             (read-pvector-error-message "#pvector(1 #f)"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
+      ) ; end test
+      (test #t values
+            (regexp-match?
+             #rx"obsolete definition variant: One/val; use Single/val"
+             (read-pvector-error-message
+              "#pvector(1 ([0 (One/val 1)] [1 (One/val 2)]))"
+             ) ; end read-pvector-error-message
+            ) ; end regexp-match?
       ) ; end test
     ) ; end let
     (let ()

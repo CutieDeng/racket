@@ -228,7 +228,7 @@
 
 (define (pvector-raw-literal-datum who pv pool)
   (let ([root (pvector-literal-root! who pv pool)])
-    (list (list 'raw root)
+    (list root
           (raw:pvector-literal-state-defs
            (pvector-literal-pool-state pool)))))
 
@@ -259,7 +259,7 @@
          (let ([roots
                 (for/list ([pv pvs])
                   (pvector-literal-root! 'pvectors->literal-datum pv pool*))])
-           (list (list 'raw roots)
+           (list roots
                  (raw:pvector-literal-state-defs
                   (pvector-literal-pool-state pool*))))
          (list

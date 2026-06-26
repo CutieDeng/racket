@@ -12,7 +12,7 @@
   (unless (eqv? c expected)
     (reader-error in config
                   #:due-to c
-                  "expected `~a` after `~a`"
+                  "expected `~a` to continue `#pvector` after `~a`"
                   expected
                   accum-str))
   c)

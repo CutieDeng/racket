@@ -483,7 +483,7 @@ When @racket[mode] is @racket['raw] and native literal support is
 available, the result is a structure-preserving datum with the shape:
 
 @racketblock[
-(list (list 'raw root-id-or-Empty)
+(list root-id-or-Empty
       (list (list id val) ...))
 ]
 
@@ -519,7 +519,7 @@ support is not available, the result uses the expanded shape.
 
 Like @racket[pvector->literal-datum], but emits roots for all pvectors
 in @racket[pvs] using the same @racket[pool]. On the native structural
-path, the result has the shape @racket[(list (list 'raw roots) defs)].
+path, the result has the shape @racket[(list roots defs)].
 The shared definition table can preserve sharing among all pvectors in
 @racket[pvs]. The result is a group datum for output helpers; it is not
 a single @racketresultfont{#pvector} reader datum.}
@@ -528,8 +528,7 @@ a single @racketresultfont{#pvector} reader datum.}
 
 Converts a datum in either single-pvector literal shape accepted by the
 @racketresultfont{#pvector} reader into a pvector. The expanded shape is
-@racket[(list elems #f)]. The raw shape is @racket[(list (list 'raw root)
-defs)].}
+@racket[(list elems #f)]. The raw shape is @racket[(list root defs)].}
 
 @defproc[(write-pvector-literal [pv pvector?]
                                 [out output-port? (current-output-port)]
@@ -543,7 +542,7 @@ Writes @racketresultfont{#pvector} followed by the datum produced by
 output helper. The Racket reader accepts @racketresultfont{#pvector}
 input in the expanded form @racketresultfont{#pvector((elem ...) #f)}
 and in the raw form
-@racketresultfont{#pvector((raw root-id-or-Empty) defs)}.}
+@racketresultfont{#pvector(root-id-or-Empty defs)}.}
 
 @deftogether[(
 @defproc[(in-pvector [pv pvector?]) sequence?]

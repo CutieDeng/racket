@@ -69406,7 +69406,7 @@
       (begin
         (if (eqv? c_0 expected_0)
           (void)
-          (let ((temp4_0 "expected `~a` after `~a`"))
+          (let ((temp4_0 "expected `~a` to continue `#pvector` after `~a`"))
             (reader-error.1
              unsafe-undefined
              c_0

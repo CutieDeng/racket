@@ -4260,7 +4260,7 @@
               id)))])))
 
 (define (core-pvector-literal-error msg . args)
-  (apply error 'core-pvector-literal->pvector msg args))
+  (error 'core-pvector-literal->pvector (apply format msg args)))
 
 (define (core-pvector-literal-proper-list? v)
   (let loop ([v v])
@@ -4283,14 +4283,14 @@
 
 (define (core-pvector-literal-check-proper-list who v)
   (unless (core-pvector-literal-proper-list? v)
-    (core-pvector-literal-error "~a is not a proper list: ~e" who v))
+    (core-pvector-literal-error "~a is not a proper list: ~s" who v))
   v)
 
 (define (core-pvector-literal-check-size variant size expected)
   (unless (and (fixnum? size)
                (fx= size expected))
     (core-pvector-literal-error
-     "~a size mismatch: expected ~a, got ~e"
+     "~a size mismatch: expected ~a, got ~s"
      variant
      expected
      size)))
@@ -4302,16 +4302,16 @@
 (define (core-pvector-literal-ref table limit id expected-kind)
   (unless (and (core-pvector-literal-id? id)
                (fx< id limit))
-    (core-pvector-literal-error "invalid reference id: ~e" id))
+    (core-pvector-literal-error "invalid reference id: ~s" id))
   (let ([v (#3%vector-ref table id)])
     (unless v
       (core-pvector-literal-error
-       "reference id is not defined before use: ~e"
+       "reference id is not defined before use: ~s"
        id))
     (let ([kind (core-pvector-literal-object-kind v)])
       (unless (eq? kind expected-kind)
         (core-pvector-literal-error
-         "reference id ~a has kind ~e, expected ~e"
+         "reference id ~a has kind ~s, expected ~s"
          id
          kind
          expected-kind)))
@@ -4458,6 +4458,12 @@
        (unless (and (pair? args) (null? (cdr args)))
          (core-pvector-literal-error "Single expects one node id"))
        (core-pvector-literal-node-ref table id (car args))]
+      [(One/val)
+       (core-pvector-literal-error
+        "obsolete definition variant: One/val; use Single/val")]
+      [(One)
+       (core-pvector-literal-error
+        "obsolete definition variant: One; use Single")]
       [(Digit)
        (unless (pair? args)
          (core-pvector-literal-error "Digit expects a size"))
@@ -4530,7 +4536,7 @@
          (core-build-node-tree/nodes (reverse nodes)))]
       [else
        (core-pvector-literal-error
-        "unknown definition variant: ~e"
+        "unknown definition variant: ~s"
         variant)])))
 
 (define (core-pvector-literal-parse-def! def table expected-id)
@@ -4539,13 +4545,13 @@
                (pair? (cdr def))
                (null? (cddr def)))
     (core-pvector-literal-error
-     "definition must have an id and a value: ~e"
+     "definition must have an id and a value: ~s"
      def))
   (let ([id (car def)])
     (unless (and (core-pvector-literal-id? id)
                  (fx= id expected-id))
       (core-pvector-literal-error
-       "definition id must be dense and ascending: expected ~a, got ~e"
+       "definition id must be dense and ascending: expected ~a, got ~s"
        expected-id
        id))
     (#3%vector-set!
@@ -4569,23 +4575,16 @@
                (pair? (cdr datum))
                (null? (cddr datum)))
     (core-pvector-literal-error
-     "literal must be ((element ...) #f) or ((raw root-id) definitions): ~e"
+     "literal must be ((element ...) #f) or (root-id definitions): ~s"
      datum))
   (let ([head (car datum)]
         [tail (cadr datum)])
     (cond
      [(eq? tail #f)
-      (core-pvector-literal-check-proper-list 'element-list head)
+      (core-pvector-literal-check-proper-list "expanded element list" head)
       (core-list->pvector head)]
-     [(and (pair? head)
-           (eq? (car head) 'raw)
-           (pair? (cdr head))
-           (null? (cddr head)))
-      (core-pvector-literal-raw->pvector (cadr head) tail)]
      [else
-      (core-pvector-literal-error
-       "literal must be ((element ...) #f) or ((raw root-id) definitions): ~e"
-       datum)])))
+      (core-pvector-literal-raw->pvector head tail)])))
 
 (define (core-pvector-shape-stats pv)
   (let ([h (make-hasheq)]
