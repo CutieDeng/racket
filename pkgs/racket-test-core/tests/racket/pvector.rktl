@@ -355,6 +355,19 @@
                   ) ; end open-input-string
             ) ; end read
       ) ; end test
+      (test #t
+            values
+            (let ([in (open-input-string "#pvector((1 2 3 4) #f)"
+                      ) ; end open-input-string
+                 ] ; end in
+                 ) ; end let args
+              (read in
+              ) ; end read
+              (eof-object? (read in
+                           ) ; end read
+              ) ; end eof-object?
+            ) ; end let
+      ) ; end test
 
       (test (range 12
             ) ; end range
@@ -384,6 +397,29 @@
           #f
         ) ; end with-handlers
       ) ; end define
+      (define (read-after-pvector-error s
+                                        ) ; end read-after-pvector-error args
+        (let ([in (open-input-string s
+                  ) ; end open-input-string
+             ] ; end in
+             ) ; end let args
+          (with-handlers ([exn:fail:read? (lambda (e)
+                                            (read in
+                                            ) ; end read
+                                          ) ; end lambda
+                         ] ; end exn:fail:read?
+                        ) ; end with-handlers handlers
+            (read in
+            ) ; end read
+            'not-an-error
+          ) ; end with-handlers
+        ) ; end let
+      ) ; end define
+      (test 42
+            values
+            (read-after-pvector-error "#pv\"\"\n42"
+            ) ; end read-after-pvector-error
+      ) ; end test
       (test #t values
             (regexp-match?
              #rx"expected `e` to continue `#pvector` after `#pv`"

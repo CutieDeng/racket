@@ -7,9 +7,18 @@
 
 (provide read-pvector)
 
+(define (discard-current-line in config)
+  (let loop ()
+    (define c (peek-char/special in config))
+    (unless (or (eof-object? c)
+                (eqv? c #\newline))
+      (read-char/special in config)
+      (loop))))
+
 (define (read-expect-char expected accum-str in config)
   (define c (read-char/special in config))
   (unless (eqv? c expected)
+    (discard-current-line in config)
     (reader-error in config
                   #:due-to c
                   "expected `~a` to continue `#pvector` after `~a`"

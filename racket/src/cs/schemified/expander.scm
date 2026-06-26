@@ -69396,6 +69396,34 @@
                           temp16_1
                           (list temp17_0)))))))))
           (wrap rx_0 in_0 config_0 #f))))))
+(define discard-current-line
+  (lambda (in_0 config_0)
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda ()
+          (let ((c_0
+                 (let ((source_0
+                        (read-config/inner-source
+                         (read-config/outer-inner config_0))))
+                   (let ((c_1
+                          (peek-char-or-special in_0 0 'special source_0)))
+                     (if (eq? c_1 'special)
+                       (special1.1 'special)
+                       c_1)))))
+            (if (let ((or-part_0 (eof-object? c_0)))
+                  (if or-part_0
+                    or-part_0
+                    (eqv? c_0 '#\x0a)))
+              (void)
+              (begin
+                (let ((source_1
+                       (read-config/inner-source
+                        (read-config/outer-inner config_0))))
+                  (read-char-or-special in_0 special1.1 source_1))
+                (loop_0))))))))
+     (loop_0))))
 (define read-expect-char
   (lambda (expected_0 accum-str_0 in_0 config_0)
     (let ((c_0
@@ -69407,15 +69435,17 @@
         (if (eqv? c_0 expected_0)
           (void)
           (let ((temp4_0 "expected `~a` to continue `#pvector` after `~a`"))
-            (reader-error.1
-             unsafe-undefined
-             c_0
-             #f
-             unsafe-undefined
-             in_0
-             config_0
-             temp4_0
-             (list expected_0 accum-str_0))))
+            (begin
+              (discard-current-line in_0 config_0)
+              (reader-error.1
+               unsafe-undefined
+               c_0
+               #f
+               unsafe-undefined
+               in_0
+               config_0
+               temp4_0
+               (list expected_0 accum-str_0)))))
         c_0))))
 (define read-pvector
   (lambda (read-one_0
