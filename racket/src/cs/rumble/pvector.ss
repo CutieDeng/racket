@@ -1132,9 +1132,11 @@
   (if (fx<= len (fx* 2 core-pvector-digit-max))
       (let ([prefix-len (fxquotient len 2)])
         (values prefix-len (fx- len prefix-len)))
-      (if (fx= len (fx+ (fx* 2 core-pvector-digit-max) 1))
-          (values core-pvector-digit-max (fx- core-pvector-digit-max 1))
-          (values core-pvector-digit-max core-pvector-digit-max))))
+      (let ([remainder (fx- len (fx* 3 (fxquotient len 3)))])
+        (cond
+         [(fx= remainder 1) (values 2 2)]
+         [(fx= remainder 2) (values 3 2)]
+         [else (values 3 3)]))))
 
 (define (core-vector->large-finger vec len)
   (let-values ([(prefix-len suffix-len)
@@ -4154,6 +4156,23 @@
      (if (fx< 2 len) (core-pvector-large-finger-edge-ref pv prefix? 2) #f)
      (if (fx< 3 len) (core-pvector-large-finger-edge-ref pv prefix? 3) #f))))
 
+(define (core-pvector-literal-emit-node-digit1! state a)
+  (let ([a-id (core-pvector-literal-emit-node! state a)])
+    (core-pvector-literal-emit-def!
+     state
+     (list 'Digit (core-pvector-node-measure a) a-id))))
+
+(define (core-pvector-literal-emit-node-digit2! state a b)
+  (let ([a-id (core-pvector-literal-emit-node! state a)]
+        [b-id (core-pvector-literal-emit-node! state b)])
+    (core-pvector-literal-emit-def!
+     state
+     (list 'Digit
+           (fx+ (core-pvector-node-measure a)
+                (core-pvector-node-measure b))
+           a-id
+           b-id))))
+
 (define (core-pvector-literal-emit-node/uncached! state node)
   (let ([measure (core-pvector-node-measure node)])
     (cond
@@ -4211,10 +4230,37 @@
              [cached (hash-ref tree-map node #f)])
         (if cached
             cached
-            (let* ([node-id (core-pvector-literal-emit-node! state node)]
-                   [id (core-pvector-literal-emit-def!
-                        state
-                        (list 'Single node-id))])
+            (let ([id
+                   (if (fx= (core-pvector-node-level node) 1)
+                       (let ([node-id
+                              (core-pvector-literal-emit-node! state node)])
+                         (core-pvector-literal-emit-def!
+                          state
+                          (list 'Single node-id)))
+                       (let* ([left-id
+                               (if (core-pvector-node2? node)
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node2-a node))
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node3-a node)))]
+                              [right-id
+                               (if (core-pvector-node2? node)
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node2-b node))
+                                   (core-pvector-literal-emit-node-digit2!
+                                    state
+                                    (core-pvector-node3-b node)
+                                    (core-pvector-node3-c node)))])
+                         (core-pvector-literal-emit-def!
+                          state
+                          (list 'Deep
+                                (core-pvector-node-measure node)
+                                left-id
+                                right-id
+                                'Empty))))])
               (hash-set! tree-map node id)
               id)))
       'Empty))

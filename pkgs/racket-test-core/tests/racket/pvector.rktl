@@ -7,6 +7,7 @@
 
 (require racket/list
          racket/match
+         racket/pretty
          racket/pvector
          (prefix-in raw: racket/private/pvector-runtime-adapter
          ) ; end prefix-in
@@ -118,6 +119,101 @@
       ) ; end and
     ) ; end for/and
   ) ; end for/and
+) ; end define
+
+(define (leaf-node2-def? def
+                         ) ; end leaf-node2-def? args
+  (match (def-val def
+         ) ; end def-val
+    [`(Node/val 2 ,_ ,_) #t
+    ]
+    [_ #f
+    ]
+  ) ; end match
+) ; end define
+
+(define (defs-ref defs id
+                  ) ; end defs-ref args
+  (for/or ([def (in-list defs
+                   ) ; end in-list
+            ] ; end def
+           ) ; end for/or clauses
+    (and (equal? (def-id def
+                 ) ; end def-id
+                 id
+         ) ; end equal?
+         (def-val def
+         ) ; end def-val
+    ) ; end and
+  ) ; end for/or
+) ; end define
+
+(define (single-internal-node-def? defs def
+                                   ) ; end single-internal-node-def? args
+  (match (def-val def
+         ) ; end def-val
+    [`(Single ,node-id)
+     (match (defs-ref defs node-id
+            ) ; end defs-ref
+       [`(Node ,_ ,_ ...) #t
+       ]
+       [_ #f
+       ]
+     ) ; end match
+    ]
+    [_ #f
+    ]
+  ) ; end match
+) ; end define
+
+(define (bulk-shape-summary n
+                            ) ; end bulk-shape-summary args
+  (define stats (raw:pvector-shape-stats (list->pvector (range n
+                                                        ) ; end range
+                                         ) ; end list->pvector
+                ) ; end raw:pvector-shape-stats
+  ) ; end define
+  (list n
+        (hash-ref stats 'prefix-length
+        ) ; end hash-ref
+        (hash-ref stats 'suffix-length
+        ) ; end hash-ref
+        (hash-ref stats 'middle-measure
+        ) ; end hash-ref
+  ) ; end list
+) ; end define
+
+(define (literal-tree-shape-ok? n
+                                ) ; end literal-tree-shape-ok? args
+  (define datum (pvector->literal-datum (list->pvector (range n
+                                                       ) ; end range
+                                        ) ; end list->pvector
+                ) ; end pvector->literal-datum
+  ) ; end define
+  (define defs (literal-defs datum
+               ) ; end literal-defs
+  ) ; end define
+  (and (equal? (range n
+               ) ; end range
+               (literal-datum->list datum
+               ) ; end literal-datum->list
+       ) ; end equal?
+       (dense-ascending-defs? defs
+       ) ; end dense-ascending-defs?
+       (forward-refs-ok? defs
+       ) ; end forward-refs-ok?
+       (not (ormap leaf-node2-def? defs
+            ) ; end ormap
+       ) ; end not
+       (not (ormap (lambda (def
+                            ) ; end def
+                     (single-internal-node-def? defs def
+                     ) ; end single-internal-node-def?
+                   ) ; end lambda
+                   defs
+            ) ; end ormap
+       ) ; end not
+  ) ; end and
 ) ; end define
 
 (define (literal-datum->list datum
@@ -274,9 +370,63 @@
                                      #t
                                 ) ; end and
                               ) ; end lambda
-                              '(Digit/val Node/val Node Single Deep/val
+                              '(Digit/val Node/val Digit Deep Deep/val
                                 ) ; end quote
                        ) ; end andmap
+      ) ; end test
+
+      (define ten (list->pvector (range 10
+                                 ) ; end range
+                  ) ; end list->pvector
+      ) ; end define
+      (define ten-datum (pvector->literal-datum ten
+                         ) ; end pvector->literal-datum
+      ) ; end define
+      (test (range 10
+            ) ; end range
+            literal-datum->list ten-datum
+      ) ; end test
+      (test #f
+            values
+            (ormap leaf-node2-def? (literal-defs ten-datum
+                                    ) ; end literal-defs
+            ) ; end ormap
+      ) ; end test
+      (test #f
+            values
+            (let ([defs (literal-defs ten-datum
+                        ) ; end literal-defs
+                  ] ; end defs
+                 ) ; end let args
+              (ormap (lambda (def
+                              ) ; end def
+                       (single-internal-node-def? defs def
+                       ) ; end single-internal-node-def?
+                     ) ; end lambda
+                     defs
+              ) ; end ormap
+            ) ; end let
+      ) ; end test
+      (test '((9 3 3 3)
+              (10 2 2 6)
+              (11 3 2 6)
+              (12 3 3 6)
+              (25 2 2 21)
+              (26 3 2 21)
+              (27 3 3 21)
+              (100 2 2 96))
+            values
+            (map bulk-shape-summary
+                 '(9 10 11 12 25 26 27 100
+                   ) ; end quote
+            ) ; end map
+      ) ; end test
+      (test #t
+            values
+            (andmap literal-tree-shape-ok?
+                    '(9 10 11 12 25 26 27 100
+                      ) ; end quote
+            ) ; end andmap
       ) ; end test
 
       (define pool (make-pvector-literal-pool
@@ -351,6 +501,24 @@
 
       (test '(a b)
             pvector->list
+            (read (open-input-string
+                   (let ([out (open-output-string
+                              ) ; end open-output-string
+                         ] ; end out
+                        ) ; end let args
+                     (write (pvector 'a 'b
+                            ) ; end pvector
+                            out
+                     ) ; end write
+                     (get-output-string out
+                     ) ; end get-output-string
+                   ) ; end let
+                  ) ; end open-input-string
+            ) ; end read
+      ) ; end test
+
+      (test '(a b)
+            pvector->list
             (read (open-input-string "#pvector((a b) #f)"
                   ) ; end open-input-string
             ) ; end read
@@ -379,6 +547,23 @@
                         ) ; end let args
                      (write-pvector-literal many out
                      ) ; end write-pvector-literal
+                     (get-output-string out
+                     ) ; end get-output-string
+                   ) ; end let
+                  ) ; end open-input-string
+            ) ; end read
+      ) ; end test
+
+      (test (range 12
+            ) ; end range
+            pvector->list
+            (read (open-input-string
+                   (let ([out (open-output-string
+                              ) ; end open-output-string
+                         ] ; end out
+                        ) ; end let args
+                     (pretty-write many out
+                     ) ; end pretty-write
                      (get-output-string out
                      ) ; end get-output-string
                    ) ; end let

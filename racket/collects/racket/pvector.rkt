@@ -2508,14 +2508,17 @@
                                #'rest-pat))))])))
 
 (define (pvector-print pv port mode)
-  (display "(pvector" port)
-  (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
-    (display " " port)
-    (case mode
-      [(#t) (write elem port)]
-      [(#f) (display elem port)]
-      [else (print elem port)]))
-  (display ")" port))
+  (case mode
+    [(#t)
+     (write-pvector-literal pv port)]
+    [else
+     (display "(pvector" port)
+     (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
+       (display " " port)
+       (case mode
+         [(#f) (display elem port)]
+         [else (print elem port)]))
+     (display ")" port)]))
 
 (define (pvector-equal? pv other recur)
   (or (eq? pv other)

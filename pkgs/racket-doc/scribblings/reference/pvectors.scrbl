@@ -42,13 +42,11 @@ pvector produces a pvector. Using @racket[stream-filter] with
 Traversal operations such as @racket[stream-for-each],
 @racket[stream-fold], @racket[stream-count], @racket[stream-andmap],
 and @racket[stream-ormap] visit pvector elements in order.
-Pvectors compare with @racket[equal?] element by element. In the BC
-runtime-native implementation, pvectors print as an unreadable summary
-such as @racketresultfont{#<pvector:3>} and are not serializable in the
-first stage of the native runtime backend. Pvectors are also not
-accepted by @racket[place-message-allowed?] in this first stage. Compatibility
-backends may print pvectors as @racket[(pvector elem ...)] and may
-support serialization.
+Pvectors compare with @racket[equal?] element by element. Writing a
+pvector with @racket[write] or @racket[pretty-write] emits a
+@racketresultfont{#pvector} literal that can be read back with
+@racket[read]. Displaying a pvector uses a compact
+@racketresultfont{(pvector ...)} form for human-readable output.
 
 @note-lib[racket/pvector #:use-sources (racket/pvector)]
 
