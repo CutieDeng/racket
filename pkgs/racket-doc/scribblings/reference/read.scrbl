@@ -258,6 +258,18 @@ A @tech{parameter} that controls parsing the raw
 
 A @tech{parameter} that controls parsing @litchar{#intmap} input.}
 
+@defboolparam[read-accept-intmap-unordered on?]{
+
+A @tech{parameter} that controls whether @litchar{#intmap} input accepts
+entries that are not in increasing key order. When this parameter is
+@racket[#f], keys must appear in increasing order.}
+
+@defboolparam[read-accept-intmap-duplicate-keys on?]{
+
+A @tech{parameter} that controls whether @litchar{#intmap} input accepts
+duplicate keys. When this parameter is @racket[#t], the later entry for a
+key is retained.}
+
 @defboolparam[read-accept-compiled on?]{
 
 A @tech{parameter} that controls parsing @litchar{#~} compiled input. See

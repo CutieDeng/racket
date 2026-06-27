@@ -50,6 +50,8 @@
     (check-parameter read-accept-pvector config)
     (check-parameter read-accept-pvector-raw config)
     (check-parameter read-accept-intmap config)
+    (check-parameter read-accept-intmap-unordered config)
+    (check-parameter read-accept-intmap-duplicate-keys config)
     (check-parameter read-accept-bar-quote config)
     (check-parameter read-decimal-as-inexact config)
     (check-parameter read-single-flonum config)

@@ -1188,6 +1188,10 @@
         #t
         1/read-accept-intmap
         #t
+        1/read-accept-intmap-unordered
+        #f
+        1/read-accept-intmap-duplicate-keys
+        #f
         read-accept-bar-quote
         #t
         1/read-accept-graph
@@ -61859,6 +61863,16 @@
   (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector-raw))
 (define 1/read-accept-intmap
   (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-intmap))
+(define 1/read-accept-intmap-unordered
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-unordered))
+(define 1/read-accept-intmap-duplicate-keys
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-duplicate-keys))
 (define 1/read-single-flonum
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-single-flonum))
 (define 1/read-decimal-as-inexact
@@ -61950,6 +61964,8 @@
           (check-parameter 1/read-accept-pvector config_0)
           (check-parameter 1/read-accept-pvector-raw config_0)
           (check-parameter 1/read-accept-intmap config_0)
+          (check-parameter 1/read-accept-intmap-unordered config_0)
+          (check-parameter 1/read-accept-intmap-duplicate-keys config_0)
           (check-parameter read-accept-bar-quote config_0)
           (check-parameter 1/read-decimal-as-inexact config_0)
           (check-parameter 1/read-single-flonum config_0)
@@ -69544,14 +69560,17 @@
          (loop_0 chars_0 accum-str_0))))))
 (define 1/core-intmap-literal->intmap core-intmap-literal->intmap)
 (define read-core-intmap-literal->intmap
-  (lambda (datum_0)
+  (lambda (datum_0 accept-unordered?_0 accept-duplicate-keys?_0)
     (begin
-      (if core-intmap-literal->intmap
+      (if (if core-intmap-literal->intmap #t #f)
         (void)
         (error
          'core-intmap-literal->intmap
          "native intmap literal input is not available"))
-      (core-intmap-literal->intmap datum_0))))
+      (core-intmap-literal->intmap
+       datum_0
+       accept-unordered?_0
+       accept-duplicate-keys?_0))))
 (define discard-current-line
   (lambda (in_0 config_0)
     (letrec*
@@ -69638,7 +69657,17 @@
                    (catch-and-reraise-as-reader/proc
                     in_0
                     config_0
-                    (lambda () (read-core-intmap-literal->intmap datum_0)))
+                    (lambda ()
+                      (let ((app_0
+                             (check-parameter
+                              1/read-accept-intmap-unordered
+                              config_0)))
+                        (read-core-intmap-literal->intmap
+                         datum_0
+                         app_0
+                         (check-parameter
+                          1/read-accept-intmap-duplicate-keys
+                          config_0)))))
                    in_0
                    config_0
                    init-c_0))
@@ -75483,6 +75512,10 @@
    1/read-accept-pvector-raw
    'read-accept-intmap
    1/read-accept-intmap
+   'read-accept-intmap-unordered
+   1/read-accept-intmap-unordered
+   'read-accept-intmap-duplicate-keys
+   1/read-accept-intmap-duplicate-keys
    'read-decimal-as-inexact
    1/read-decimal-as-inexact
    'read-single-flonum

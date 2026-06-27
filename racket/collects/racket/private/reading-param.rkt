@@ -20,6 +20,8 @@
          read-accept-pvector #t
          read-accept-pvector-raw #t
          read-accept-intmap #t
+         read-accept-intmap-unordered #f
+         read-accept-intmap-duplicate-keys #f
          read-accept-bar-quote #t
          read-accept-graph #t
          read-syntax-accept-graph #f

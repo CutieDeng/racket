@@ -861,9 +861,12 @@
     (raise-argument-error 'literal-datum->intmap "list?" datum
     ) ; end raise-argument-error
   ) ; end unless
-  (if (procedure? core-intmap-literal->intmap
-      ) ; end procedure?
-      (core-intmap-literal->intmap datum
+  (if (and (procedure? core-intmap-literal->intmap
+           ) ; end procedure?
+           (procedure-arity-includes? core-intmap-literal->intmap 3
+           ) ; end procedure-arity-includes?
+      ) ; end and
+      (core-intmap-literal->intmap datum #f #f
       ) ; end core-intmap-literal->intmap
       (fallback:literal-datum->intmap datum
       ) ; end fallback:literal-datum->intmap

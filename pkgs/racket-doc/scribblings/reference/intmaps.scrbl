@@ -55,9 +55,9 @@ public API. Programs should treat the concrete representation as
 opaque.
 
 In write mode, an intmap prints as a readable @racketresultfont{#intmap}
-literal whose payload is the sorted entry list. This representation
+literal whose payload is the sorted entry list. This canonical output
 shares the validation and linear construction path of
-@racket[sorted-list->intmap].
+@racket[sorted-list->intmap] when read back in the default mode.
 
 @section[#:tag "intmap-constructing"]{Constructing Intmaps}
 
@@ -98,7 +98,12 @@ entry is a pair whose @racket[car] is an exact-integer key and whose
 @racketresultfont{#intmap((1 . a) (2 . b))}. When @racket[pretty?] is
 true, the literal datum is emitted with @racket[pretty-write] instead of
 @racket[write]. Parsing @racketresultfont{#intmap} input is controlled
-by @racket[read-accept-intmap].}
+by @racket[read-accept-intmap]. By default, reader input must be in
+increasing key order and must not contain duplicate keys. The parameters
+@racket[read-accept-intmap-unordered] and
+@racket[read-accept-intmap-duplicate-keys] relax those two checks for
+reader input; when duplicate keys are accepted, the later entry is
+retained. Output is always sorted in canonical order.}
 
 @deftogether[(
 @defproc[(sorted-list->intmap [entries list?]) intmap?]

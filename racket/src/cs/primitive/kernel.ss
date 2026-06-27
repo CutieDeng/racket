@@ -280,7 +280,7 @@
   [core-intmap-max-entry (known-procedure/single-valued 4)]
   [core-intmap-range->list (known-procedure/single-valued 32)]
   [core-sorted-vector->intmap (known-procedure/single-valued 2)]
-  [core-intmap-literal->intmap (known-procedure/single-valued 2)]
+ [core-intmap-literal->intmap (known-procedure/single-valued 8)]
   [core-intmap-cursor-start (known-procedure/single-valued 64)]
   [core-intmap-cursor-key (known-procedure/then-pure 2)]
   [core-intmap-cursor-value (known-procedure/then-pure 2)]

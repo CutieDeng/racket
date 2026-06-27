@@ -16,14 +16,19 @@
  [core-intmap-literal->intmap core-intmap-literal->intmap]
 ) ; end import-from-primitive-table
 
-(define (read-core-intmap-literal->intmap datum
+(define (read-core-intmap-literal->intmap datum accept-unordered? accept-duplicate-keys?
         ) ; end read-core-intmap-literal->intmap
-  (unless core-intmap-literal->intmap
+  (unless (and core-intmap-literal->intmap
+               (procedure-arity-includes? core-intmap-literal->intmap 3
+               ) ; end procedure-arity-includes?
+          ) ; end and
     (error 'core-intmap-literal->intmap
            "native intmap literal input is not available"
     ) ; end error
   ) ; end unless
   (core-intmap-literal->intmap datum
+                               accept-unordered?
+                               accept-duplicate-keys?
   ) ; end core-intmap-literal->intmap
 ) ; end define
 
@@ -89,11 +94,16 @@
                      ) ; end read-one
        ) ; end define
        (wrap (catch-and-reraise-as-reader
-              in
-              config
-              (read-core-intmap-literal->intmap datum
-              ) ; end read-core-intmap-literal->intmap
-             ) ; end catch-and-reraise-as-reader
+	              in
+	              config
+	              (read-core-intmap-literal->intmap
+	               datum
+	               (check-parameter read-accept-intmap-unordered config
+	               ) ; end check-parameter
+	               (check-parameter read-accept-intmap-duplicate-keys config
+	               ) ; end check-parameter
+	              ) ; end read-core-intmap-literal->intmap
+	             ) ; end catch-and-reraise-as-reader
              in
              config
              init-c

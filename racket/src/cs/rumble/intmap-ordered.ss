@@ -2130,13 +2130,325 @@
   v
 ) ; end define
 
-(define (core-intmap-literal->intmap datum
+(define (core-intmap-literal-order-error previous key
+        ) ; end core-intmap-literal-order-error
+  (raise-arguments-error 'core-intmap-literal->intmap
+                         "expected strictly increasing integer keys"
+                         "previous key" previous
+                         "key" key
+  ) ; end raise-arguments-error
+) ; end define
+
+(define (core-intmap-literal-duplicate-error key
+        ) ; end core-intmap-literal-duplicate-error
+  (raise-arguments-error 'core-intmap-literal->intmap
+                         "duplicate key"
+                         "key" key
+  ) ; end raise-arguments-error
+) ; end define
+
+(define (core-intmap-literal-sort-vector vec len
+        ) ; end core-intmap-literal-sort-vector
+  (let ([wrapped (#%make-vector len
+                 ) ; end #%make-vector
+        ] ; end wrapped
+       ) ; end let args
+    (let loop ([i 0
+               ] ; end i
+              ) ; end let args
+      (when (fx< i len
+            ) ; end fx<
+        (let* ([entry (#3%vector-ref vec i
+                      ) ; end 3%vector-ref
+               ] ; end entry
+               [key (core-intmap-entry-key 'core-intmap-literal->intmap entry
+                    ) ; end core-intmap-entry-key
+               ] ; end key
+              ) ; end let* args
+          (#%vector-set! wrapped i (cons key (cons i entry
+                                             ) ; end cons
+                                  ) ; end cons
+          ) ; end #%vector-set!
+          (loop (fx+ i 1
+                ) ; end fx+
+          ) ; end loop
+        ) ; end let*
+      ) ; end when
+    ) ; end let
+    (chez:vector-sort
+     (lambda (a b
+             ) ; end lambda
+       (let ([ak (car a
+                 ) ; end car
+             ] ; end ak
+             [bk (car b
+                 ) ; end car
+             ] ; end bk
+            ) ; end let args
+         (cond
+          [(core-intmap-key<? ak bk) #t
+          ] ; end clause
+          [(core-intmap-key<? bk ak) #f
+          ] ; end clause
+          [else (fx< (car (cdr a
+                          ) ; end cdr
+                     ) ; end car
+                     (car (cdr b
+                          ) ; end cdr
+                     ) ; end car
+                ) ; end fx<
+          ] ; end else
+         ) ; end cond
+       ) ; end let
+     ) ; end lambda
+     wrapped
+    ) ; end chez:vector-sort
+  ) ; end let
+) ; end define
+
+(define (core-intmap-literal-sorted-entry item wrapped?
+        ) ; end core-intmap-literal-sorted-entry
+  (if wrapped?
+      (cdr (cdr item
+           ) ; end cdr
+      ) ; end cdr
+      item
+  ) ; end if
+) ; end define
+
+(define (core-intmap-literal-sorted-key item wrapped?
+        ) ; end core-intmap-literal-sorted-key
+  (if wrapped?
+      (car item
+      ) ; end car
+      (core-intmap-entry-key 'core-intmap-literal->intmap item
+      ) ; end core-intmap-entry-key
+  ) ; end if
+) ; end define
+
+(define (core-intmap-literal-build-compact-vector out len
+        ) ; end core-intmap-literal-build-compact-vector
+  (let ([compact (#%make-vector len
+                 ) ; end #%make-vector
+        ] ; end compact
+       ) ; end let args
+    (let loop ([i 0
+               ] ; end i
+              ) ; end let args
+      (when (fx< i len
+            ) ; end fx<
+        (#%vector-set! compact i (#3%vector-ref out i
+                               ) ; end 3%vector-ref
+        ) ; end #%vector-set!
+        (loop (fx+ i 1
+              ) ; end fx+
+        ) ; end loop
+      ) ; end when
+    ) ; end let
+    compact
+  ) ; end let
+) ; end define
+
+(define (core-intmap-literal-compact-sorted-vector sorted len wrapped? accept-duplicate-keys?
+        ) ; end core-intmap-literal-compact-sorted-vector
+  (if (fx= len 0
+      ) ; end fx=
+      empty-core-intmap
+      (let* ([first-item (#3%vector-ref sorted 0
+                         ) ; end 3%vector-ref
+             ] ; end first-item
+             [first-key (core-intmap-literal-sorted-key first-item wrapped?
+                        ) ; end core-intmap-literal-sorted-key
+             ] ; end first-key
+             [first-entry (core-intmap-literal-sorted-entry first-item wrapped?
+                          ) ; end core-intmap-literal-sorted-entry
+             ] ; end first-entry
+             [out (#%make-vector len
+                  ) ; end #%make-vector
+             ] ; end out
+            ) ; end let* args
+        (let loop ([i 1] [out-i 0
+                         ] ; end out-i
+                    [key first-key
+                         ] ; end key
+                    [entry first-entry
+                         ] ; end entry
+                  ) ; end let args
+          (if (fx>= i len
+              ) ; end fx>=
+              (let ([out-len (fx+ out-i 1
+                              ) ; end fx+
+                    ] ; end out-len
+                   ) ; end let args
+                (#%vector-set! out out-i entry
+                ) ; end #%vector-set!
+                (core-sorted-vector->intmap
+                 (if (fx= out-len len
+                     ) ; end fx=
+                     out
+                     (core-intmap-literal-build-compact-vector out out-len
+                     ) ; end core-intmap-literal-build-compact-vector
+                 ) ; end if
+                ) ; end core-sorted-vector->intmap
+              ) ; end let
+              (let* ([item (#3%vector-ref sorted i
+                           ) ; end 3%vector-ref
+                     ] ; end item
+                     [next-key (core-intmap-literal-sorted-key item wrapped?
+                               ) ; end core-intmap-literal-sorted-key
+                     ] ; end next-key
+                     [next-entry (core-intmap-literal-sorted-entry item wrapped?
+                                 ) ; end core-intmap-literal-sorted-entry
+                     ] ; end next-entry
+                    ) ; end let* args
+                (if (core-intmap-key=? key next-key
+                    ) ; end core-intmap-key=?
+                    (begin
+                      (unless accept-duplicate-keys?
+                        (core-intmap-literal-duplicate-error next-key
+                        ) ; end core-intmap-literal-duplicate-error
+                      ) ; end unless
+                      (loop (fx+ i 1
+                            ) ; end fx+
+                            out-i
+                            key
+                            next-entry
+                      ) ; end loop
+                    ) ; end begin
+                    (begin
+                      (#%vector-set! out out-i entry
+                      ) ; end #%vector-set!
+                      (loop (fx+ i 1
+                            ) ; end fx+
+                            (fx+ out-i 1
+                            ) ; end fx+
+                            next-key
+                            next-entry
+                      ) ; end loop
+                    ) ; end begin
+                ) ; end if
+              ) ; end let*
+          ) ; end if
+        ) ; end let
+      ) ; end let*
+  ) ; end if
+) ; end define
+
+(define (core-intmap-literal-adaptive->intmap vec accept-unordered? accept-duplicate-keys?
+        ) ; end core-intmap-literal-adaptive->intmap
+  (let ([len (#%vector-length vec
+              ) ; end %vector-length
+        ] ; end len
+       ) ; end let args
+    (let loop ([i 0] [previous #f
+                     ] ; end previous
+                  [needs-sort? #f
+                     ] ; end needs-sort?
+                  [needs-compact? #f
+                     ] ; end needs-compact?
+              ) ; end let args
+      (if (fx>= i len
+          ) ; end fx>=
+          (cond
+           [needs-sort?
+            (core-intmap-literal-compact-sorted-vector
+             (core-intmap-literal-sort-vector vec len
+             ) ; end core-intmap-literal-sort-vector
+             len
+             #t
+             accept-duplicate-keys?
+            ) ; end core-intmap-literal-compact-sorted-vector
+           ] ; end clause
+           [needs-compact?
+            (core-intmap-literal-compact-sorted-vector
+             vec
+             len
+             #f
+             accept-duplicate-keys?
+            ) ; end core-intmap-literal-compact-sorted-vector
+           ] ; end clause
+           [else
+            (core-sorted-vector->intmap vec
+            ) ; end core-sorted-vector->intmap
+           ] ; end else
+          ) ; end cond
+          (let* ([entry (#3%vector-ref vec i
+                        ) ; end 3%vector-ref
+                 ] ; end entry
+                 [key (core-intmap-entry-key 'core-intmap-literal->intmap entry
+                      ) ; end core-intmap-entry-key
+                 ] ; end key
+                ) ; end let* args
+            (core-check-intmap-key 'core-intmap-literal->intmap key
+            ) ; end core-check-intmap-key
+            (cond
+             [(not previous)
+              (loop (fx+ i 1
+                    ) ; end fx+
+                    key
+                    needs-sort?
+                    needs-compact?
+              ) ; end loop
+             ] ; end clause
+             [(core-intmap-key<? previous key
+              ) ; end core-intmap-key<?
+              (loop (fx+ i 1
+                    ) ; end fx+
+                    key
+                    needs-sort?
+                    needs-compact?
+              ) ; end loop
+             ] ; end clause
+             [(core-intmap-key=? previous key
+              ) ; end core-intmap-key=?
+              (if accept-duplicate-keys?
+                  (loop (fx+ i 1
+                        ) ; end fx+
+                        key
+                        needs-sort?
+                        #t
+                  ) ; end loop
+                  (core-intmap-literal-duplicate-error key
+                  ) ; end core-intmap-literal-duplicate-error
+              ) ; end if
+             ] ; end clause
+             [accept-unordered?
+              (loop (fx+ i 1
+                    ) ; end fx+
+                    key
+                    #t
+                    needs-compact?
+              ) ; end loop
+             ] ; end clause
+             [else
+              (core-intmap-literal-order-error previous key
+              ) ; end core-intmap-literal-order-error
+             ] ; end else
+            ) ; end cond
+          ) ; end let*
+      ) ; end if
+    ) ; end let
+  ) ; end let
+) ; end define
+
+(define (core-intmap-literal->intmap datum accept-unordered? accept-duplicate-keys?
         ) ; end core-intmap-literal->intmap
   (core-intmap-literal-check-proper-list 'entry-list datum
   ) ; end core-intmap-literal-check-proper-list
-  (core-sorted-vector->intmap (list->vector datum
-                              ) ; end list->vector
-  ) ; end core-sorted-vector->intmap
+  (let ([vec (list->vector datum
+             ) ; end list->vector
+        ] ; end vec
+       ) ; end let args
+    (if (or accept-unordered? accept-duplicate-keys?
+        ) ; end or
+        (core-intmap-literal-adaptive->intmap vec
+                                             accept-unordered?
+                                             accept-duplicate-keys?
+        ) ; end core-intmap-literal-adaptive->intmap
+        (core-sorted-vector->intmap vec
+        ) ; end core-sorted-vector->intmap
+    ) ; end if
+  ) ; end let
 ) ; end define
 
 (define (core-intmap-push-left t stack

@@ -606,6 +606,110 @@
        ) ; end read-intmap-error-message
       ) ; end regexp-match?
 ) ; end test
+(test #t values
+      (regexp-match?
+       #rx"expected strictly increasing integer keys"
+       (read-intmap-error-message "#intmap((2 . b) (1 . a))"
+       ) ; end read-intmap-error-message
+      ) ; end regexp-match?
+) ; end test
+(test '((1 . a) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (parameterize ([read-accept-intmap-unordered #t
+                     ] ; end read-accept-intmap-unordered
+                    ) ; end parameterize args
+        (read (open-input-string "#intmap((2 . b) (1 . a))"
+              ) ; end open-input-string
+        ) ; end read
+      ) ; end parameterize
+      #f
+      #f
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"duplicate key"
+       (parameterize ([read-accept-intmap-unordered #t
+                      ] ; end read-accept-intmap-unordered
+                     ) ; end parameterize args
+         (read-intmap-error-message "#intmap((1 . a) (2 . b) (1 . c))"
+         ) ; end read-intmap-error-message
+       ) ; end parameterize
+      ) ; end regexp-match?
+) ; end test
+(test '((1 . c) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (parameterize ([read-accept-intmap-duplicate-keys #t
+                     ] ; end read-accept-intmap-duplicate-keys
+                    ) ; end parameterize args
+        (read (open-input-string "#intmap((1 . a) (1 . c) (2 . b))"
+              ) ; end open-input-string
+        ) ; end read
+      ) ; end parameterize
+      #f
+      #f
+) ; end test
+(test #t values
+      (regexp-match?
+       #rx"expected strictly increasing integer keys"
+       (parameterize ([read-accept-intmap-duplicate-keys #t
+                      ] ; end read-accept-intmap-duplicate-keys
+                     ) ; end parameterize args
+         (read-intmap-error-message "#intmap((2 . b) (1 . a))"
+         ) ; end read-intmap-error-message
+       ) ; end parameterize
+      ) ; end regexp-match?
+) ; end test
+(test '((1 . c) (2 . b)
+       ) ; end form
+      intmap-range->list
+      (parameterize ([read-accept-intmap-unordered #t
+                     ] ; end read-accept-intmap-unordered
+                     [read-accept-intmap-duplicate-keys #t
+                     ] ; end read-accept-intmap-duplicate-keys
+                    ) ; end parameterize args
+        (read (open-input-string "#intmap((1 . a) (2 . b) (1 . c))"
+              ) ; end open-input-string
+        ) ; end read
+      ) ; end parameterize
+      #f
+      #f
+) ; end test
+(define unordered-many-literal
+  (string-append
+   "#intmap("
+   (apply string-append
+          (for/list ([i (in-range 199 -1 -1
+                                  ) ; end in-range
+                        ] ; end i
+                    ) ; end for/list args
+            (format "(~a . ~a)" i i
+            ) ; end format
+          ) ; end for/list
+   ) ; end apply
+   ")"
+  ) ; end string-append
+) ; end define
+(define unordered-many-literal-map
+  (parameterize ([read-accept-intmap-unordered #t
+                 ] ; end read-accept-intmap-unordered
+                ) ; end parameterize args
+    (read (open-input-string unordered-many-literal
+          ) ; end open-input-string
+    ) ; end read
+  ) ; end parameterize
+) ; end define
+(test 200 intmap-count unordered-many-literal-map
+) ; end test
+(test #t values
+      (<= (hash-ref (raw:intmap-shape-stats unordered-many-literal-map
+                    ) ; end raw:intmap-shape-stats
+                    'height
+          ) ; end hash-ref
+          10
+      ) ; end <=
+) ; end test
 (err/rt-test (literal-datum->intmap '(1 . 2
                                       ) ; end quote
               ) ; end literal-datum->intmap
