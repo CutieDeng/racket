@@ -2,6 +2,7 @@
 (require (for-syntax racket/base
                      syntax/parse/pre)
          racket/interaction-info
+         racket/promise
          shrubbery/print
          shrubbery/property
          racket/lazy-require
@@ -31,6 +32,159 @@
  (void)
  (define error-module-path->string-handler (make-parameter (lambda (mp len) #f))))
 
+(define need-more (gensym 'need-more))
+(define no-interaction (gensym 'no-interaction))
+
+(define rhombus-tstring-transformer
+  (delay
+    (with-handlers ([exn:fail? (lambda (_exn) #f)])
+      (dynamic-require 'tstring/private/rhombus-source-transform
+                       'transform-rhombus-template-prefixes/positions))))
+
+(define (current-rhombus-tstring-transformer)
+  (force rhombus-tstring-transformer))
+
+(define (install-optional-rhombus-tstring-runtime!)
+  (when (current-rhombus-tstring-transformer)
+    (with-handlers ([exn:fail? void])
+      (namespace-require '(lib "tstring/rhombus-runtime.rkt")))))
+
+(define (empty-rhombus-interaction? stx)
+  (and (syntax? stx)
+       (let ([v (syntax-e stx)])
+         (and (pair? v)
+              (or (null? (cdr v))
+                  (and (syntax? (cdr v))
+                       (null? (syntax-e (cdr v)))))
+              (eq? 'multi (syntax-e (car v)))))))
+
+(define (read-rhombus-interaction src in)
+  (define-values (line col pos) (port-next-location in))
+  (define stx
+    (parse-all in #:source src #:mode 'interactive
+               #:start-column (or col 0)))
+  (if (empty-rhombus-interaction? stx)
+      eof
+      stx))
+
+(define (read-rhombus/tstring-interaction src in transform)
+  (define-values (line col pos) (port-next-location in))
+  (let loop ([byte-offset 0]
+             [char-count 0]
+             [chars '()])
+    (define-values (next-byte-offset next-char-count next-chars eof?)
+      (peek-source-line in byte-offset char-count chars))
+    (cond
+      [(and eof? (null? next-chars))
+       eof]
+      [else
+       (define source (list->string (reverse next-chars)))
+       (define error-consumed #f)
+       (define-values (status stx consumed)
+         (with-handlers ([exn:fail?
+                          (lambda (exn)
+                            (consume-chars in (or error-consumed next-char-count))
+                            (raise exn))])
+           (read-transformed-rhombus-interaction src
+                                                 source
+                                                 (not eof?)
+                                                 (or col 0)
+                                                 transform
+                                                 in
+                                                 (lambda (count)
+                                                   (set! error-consumed count)))))
+       (cond
+         [(eq? status need-more)
+          (loop next-byte-offset next-char-count next-chars)]
+         [(and (eq? status no-interaction) (not eof?))
+          (loop next-byte-offset next-char-count next-chars)]
+         [else
+          (consume-chars in
+                         (if (eq? status no-interaction)
+                             next-char-count
+                             consumed))
+          (if (eq? status no-interaction)
+              eof
+              stx)])])))
+
+(define (read-transformed-rhombus-interaction src
+                                              source
+                                              catch-eof?
+                                              start-column
+                                              transform
+                                              original-in
+                                              [on-error-consumed void])
+  (define (read-it)
+    (define-values (transformed-source transformed-positions)
+      (transform source original-in))
+    (define transformed-in (open-input-string transformed-source))
+    (port-count-lines! transformed-in)
+    (define stx
+      (with-handlers ([exn:fail?
+                       (lambda (exn)
+                         (on-error-consumed
+                          (transformed-position->source-count
+                           transformed-positions
+                           (file-position transformed-in)))
+                         (raise exn))])
+        (parse-all transformed-in #:source src #:mode 'interactive
+                   #:start-column start-column)))
+    (if (empty-rhombus-interaction? stx)
+        (values no-interaction eof 0)
+        (values stx
+                stx
+                (transformed-position->source-count
+                 transformed-positions
+                 (file-position transformed-in)))))
+  (if catch-eof?
+      (with-handlers ([exn:fail:read:eof?
+                       (lambda (_exn)
+                         (values need-more #f 0))]
+                      [exn:fail?
+                       (lambda (exn)
+                         (if (transform-incomplete? source transform original-in)
+                             (values need-more #f 0)
+                             (raise exn)))])
+        (read-it))
+      (read-it)))
+
+(define (peek-source-line in byte-offset char-count chars)
+  (let loop ([byte-offset byte-offset]
+             [char-count char-count]
+             [chars chars])
+    (define ch (peek-char in byte-offset))
+    (cond
+      [(eof-object? ch)
+       (values byte-offset char-count chars #t)]
+      [else
+       (define next-byte-offset (+ byte-offset (char-utf-8-length ch)))
+       (define next-char-count (add1 char-count))
+       (define next-chars (cons ch chars))
+       (if (char=? ch #\newline)
+           (values next-byte-offset next-char-count next-chars #f)
+           (loop next-byte-offset next-char-count next-chars))])))
+
+(define (char-utf-8-length ch)
+  (bytes-length (string->bytes/utf-8 (string ch))))
+
+(define (transformed-position->source-count transformed-positions position)
+  (cond
+    [(and (exact-nonnegative-integer? position)
+          (< position (vector-length transformed-positions)))
+     (vector-ref transformed-positions position)]
+    [else
+     (vector-ref transformed-positions
+                 (sub1 (vector-length transformed-positions)))]))
+
+(define (transform-incomplete? source transform original-in)
+  (with-handlers ([exn:fail? (lambda (_exn) #t)])
+    (transform source original-in)
+    #f))
+
+(define (consume-chars in count)
+  (for ([_index (in-range count)])
+    (read-char in)))
+
 (define-syntax (define-install!+params stx)
   (syntax-parse stx
     #:literals (void)
@@ -55,21 +209,12 @@
    (lambda (src in)
      (when (terminal-port? in)
        (flush-output (current-output-port)))
-     (define-values (line col pos) (port-next-location in))
-     (define stx
-       (parse-all in #:source src #:mode 'interactive
-                  #:start-column (or col 0)))
-     ;; If the result is `(multi)`, that means there
-     ;; was only whitespace, so treat it like an EOF
-     (if (and (syntax? stx)
-              (let ([v (syntax-e stx)])
-                (and (pair? v)
-                     (or (null? (cdr v))
-                         (and (syntax? (cdr v))
-                              (null? (syntax-e (cdr v)))))
-                     (eq? 'multi (syntax-e (car v))))))
-         eof
-         stx)))
+     (define transform (current-rhombus-tstring-transformer))
+     (if transform
+         (begin
+           (install-optional-rhombus-tstring-runtime!)
+           (read-rhombus/tstring-interaction src in transform))
+         (read-rhombus-interaction src in))))
 
   (print-boolean-long-form #t)
 
