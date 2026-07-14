@@ -305,6 +305,8 @@
   [crypto-digest-update! (known-procedure/single-valued 56)]
   [crypto-digest-xof? (known-procedure/single-valued 2)]
   [crypto-random-bytes! (known-procedure/single-valued 14)]
+  [crypto-siphash-1-3 (known-procedure/single-valued 28)]
+  [crypto-siphash-2-4 (known-procedure/single-valued 28)]
   [crypto-subsystem-self-test? (known-procedure/single-valued 1)]
   [current-code-inspector (known-procedure/parameter 3)]
   [current-command-line-arguments (known-procedure/parameter 3)]

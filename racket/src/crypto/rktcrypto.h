@@ -157,6 +157,18 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_open(int alg,
    fails or on bad arguments; on failure `out` is not written. */
 
 /*************************************************/
+/* SipHash keyed PRF                             */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,
+                                             int crounds, int drounds,
+                                             const unsigned char *data, intptr_t start, intptr_t end,
+                                             unsigned char *out, intptr_t out_start);
+/* Computes SipHash-crounds-drounds of data[start..end) under a 16-byte
+   key, writing 8 little-endian bytes to out[out_start..]. Use (2,4)
+   for SipHash-2-4 and (1,3) for SipHash-1-3. Returns 1, or 0 on a bad
+   key length or range. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);

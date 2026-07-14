@@ -8,7 +8,10 @@
 
 (require racket/contract/base
          "digest.rkt"
-         (prefix-in u: "util.rkt"))
+         (prefix-in u: "util.rkt")
+         (only-in '#%kernel
+                  crypto-siphash-2-4
+                  crypto-siphash-1-3))
 
 (define (hmac-algorithm? v)
   (and (memq v (digest-algorithms))
@@ -81,6 +84,14 @@
     (u:crypto-bytes-clear! (hmac-o-key h))
     (set-hmac-done?! h #t)))
 
+;; SipHash keyed PRF: an 8-byte MAC keyed by a 16-byte key, for short
+;; inputs and hash-flooding-resistant hashing. SipHash-2-4 is the
+;; standard choice; SipHash-1-3 trades a margin of security for speed.
+(define (siphash-2-4 key data #:start [start 0] #:end [end (bytes-length data)])
+  (crypto-siphash-2-4 key data start end))
+(define (siphash-1-3 key data #:start [start 0] #:end [end (bytes-length data)])
+  (crypto-siphash-1-3 key data start end))
+
 (define hmac-algorithm/c (flat-named-contract 'hmac-algorithm/c hmac-algorithm?))
 
 (provide hmac-algorithm/c
@@ -95,4 +106,12 @@
                              (#:start exact-nonnegative-integer?
                               #:end exact-nonnegative-integer?)
                              void?)]
-          [hmac-final! (-> hmac? bytes?)]))
+          [hmac-final! (-> hmac? bytes?)]
+          [siphash-2-4 (->* (bytes? bytes?)
+                            (#:start exact-nonnegative-integer?
+                             #:end exact-nonnegative-integer?)
+                            bytes?)]
+          [siphash-1-3 (->* (bytes? bytes?)
+                            (#:start exact-nonnegative-integer?
+                             #:end exact-nonnegative-integer?)
+                            bytes?)]))

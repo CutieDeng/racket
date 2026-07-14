@@ -18,7 +18,9 @@
          crypto-aead-nonce-size
          crypto-aead-tag-size
          crypto-aead-seal!
-         crypto-aead-open!)
+         crypto-aead-open!
+         crypto-siphash-2-4
+         crypto-siphash-1-3)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -226,3 +228,22 @@
      (eqv? 1 (rktcrypto_aead_open id key (bytes-length key) nonce (bytes-length nonce)
                                   aad 0 (bytes-length aad)
                                   ct 0 (bytes-length ct) out 0))]))
+
+;; ----------------------------------------
+;; SipHash keyed PRF (short-input MAC; hash-flooding-resistant hashing)
+
+(define (siphash who key data start end crounds drounds)
+  (check who bytes? key)
+  (unless (eqv? (bytes-length key) 16)
+    (raise-arguments-error who "key must be 16 bytes" "given" (bytes-length key)))
+  (check who bytes? data)
+  (check-start/end who data start end)
+  (define out (make-bytes 8))
+  (rktcrypto_siphash key 16 crounds drounds data start end out 0)
+  out)
+
+(define/who (crypto-siphash-2-4 key data [start 0] [end (and (bytes? data) (bytes-length data))])
+  (siphash who key data start end 2 4))
+
+(define/who (crypto-siphash-1-3 key data [start 0] [end (and (bytes? data) (bytes-length data))])
+  (siphash who key data start end 1 3))

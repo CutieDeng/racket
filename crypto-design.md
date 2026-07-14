@@ -383,10 +383,25 @@ racket/crypto            ; re-export 常用子集
 阶段带 CHUNK_END 压缩，不能在 update 中当普通 block 处理 —— 单 chunk
 测试无法暴露，多 chunk（1025+）差分才发现。
 
+### SipHash — 完成（2026-07-15）
+
+`rktcrypto_siphash.c`：from-scratch 实现 SipHash-2-4 与 SipHash-1-3
+（keyed PRF，16 字节密钥，8 字节 LE 输出）。公开 API 直接暴露（非
+dispatch），io 层 `crypto-siphash-2-4`/`crypto-siphash-1-3` 原语，
+collects `racket/crypto/mac` 的 `siphash-2-4`/`siphash-1-3`。
+
+验收：官方 reference vectors（key=0..15、input byte i=i）len 0–7 全过，
+`crypto-mac.rktl`（含 region 选择、1-3≠2-4、不同密钥不同、负向 key
+长度校验）；C 层 KAT 加 SipHash-2-4 空输入；全量回归通过。用途：短
+输入 MAC + 未来 M5 的 hash-table 抗 flooding 加固。
+
+至此 M1/M1b 摘要+MAC 族完整：SHA-2 全族、SHA-3/SHAKE、BLAKE2b、
+BLAKE3、HMAC、SipHash。
+
 尚未完成（框架已就位，属机械增量）：
 
-- **Poly1305、SipHash、KMAC**：Poly1305 已离线实现验证（并入 M2 AEAD）；
-  SipHash 归入 M5（equal-hash 抗 flooding 加固）；KMAC 基于 SHAKE 待补。
+- **Poly1305**：已实现验证（作为 M2 AEAD 内部组件，未单独暴露 MAC API）。
+- **KMAC**：基于 SHAKE，待补。
 - **SHA-256 便携实现调优**：当前 366 MiB/s 约为 rktio 内置的 0.68×
   （两者皆纯 C 参考实现；可用消息调度滚动 + 循环展开提升）。
 - **硬件加速路径**（SHA-NI/AVX2/ARMv8-CE）：dispatch 的多实现函数指针

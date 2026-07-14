@@ -148,6 +148,18 @@ static int test_aead(void)
   return 1;
 }
 
+/* SipHash-2-4 known-answer test (reference vector, empty input). */
+static int test_siphash(void)
+{
+  unsigned char key[16], out[8];
+  static const unsigned char want[8] = {0x31,0x0e,0x0e,0xdd,0x47,0xdb,0x6f,0x72};
+  int i;
+  for (i = 0; i < 16; i++) key[i] = (unsigned char)i;
+  if (!rktcrypto_siphash(key, 16, 2, 4, (const unsigned char *)"", 0, 0, out, 0))
+    return 0;
+  return memcmp(out, want, 8) == 0;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -155,5 +167,6 @@ int rktcrypto_selftest_core(void)
   if (!test_system_random()) return 0;
   if (!test_digests()) return 0;
   if (!test_aead()) return 0;
+  if (!test_siphash()) return 0;
   return 1;
 }

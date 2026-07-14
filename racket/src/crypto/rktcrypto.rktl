@@ -112,5 +112,18 @@
   (intptr_t ct_end)
   ((*ref unsigned-8) out)
   (intptr_t out_start)))
+(define-function
+ ()
+ int
+ rktcrypto_siphash
+ (((*ref unsigned-8) key)
+  (intptr_t key_len)
+  (int crounds)
+  (int drounds)
+  ((*ref unsigned-8) data)
+  (intptr_t start)
+  (intptr_t end)
+  ((*ref unsigned-8) out)
+  (intptr_t out_start)))
 (define-function () int rktcrypto_selftest_core ())
 )
