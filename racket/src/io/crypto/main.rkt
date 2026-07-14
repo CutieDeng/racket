@@ -13,7 +13,12 @@
          crypto-digest-init!
          crypto-digest-update!
          crypto-digest-final!
-         crypto-digest-oneshot!)
+         crypto-digest-oneshot!
+         crypto-aead-key-size
+         crypto-aead-nonce-size
+         crypto-aead-tag-size
+         crypto-aead-seal!
+         crypto-aead-open!)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -151,3 +156,73 @@
   (unless (eqv? 1 (rktcrypto_digest_oneshot id data data-start data-end out out-start out-len))
     (fail-digest who))
   (void))
+
+;; ----------------------------------------
+;; Authenticated encryption (AEAD)
+;;
+;; Low-level symbol-keyed primitives over the rktcrypto AEAD dispatch.
+;; The collects-level `racket/crypto/aead` and `racket/crypto/secretbox`
+;; wrap these with contracts, output allocation, and nonce handling.
+
+(define (aead-alg->id who alg)
+  (case alg
+    [(chacha20-poly1305)  RKTCRYPTO_AEAD_CHACHA20_POLY1305]
+    [(xchacha20-poly1305) RKTCRYPTO_AEAD_XCHACHA20_POLY1305]
+    [else (raise-argument-error who "crypto-aead-algorithm/c" alg)]))
+
+(define/who (crypto-aead-key-size alg)   (rktcrypto_aead_key_size (aead-alg->id who alg)))
+(define/who (crypto-aead-nonce-size alg) (rktcrypto_aead_nonce_size (aead-alg->id who alg)))
+(define/who (crypto-aead-tag-size alg)   (rktcrypto_aead_tag_size (aead-alg->id who alg)))
+
+(define (check-aead-key/nonce who id key nonce)
+  (check who bytes? key)
+  (check who bytes? nonce)
+  (unless (eqv? (bytes-length key) (rktcrypto_aead_key_size id))
+    (raise-arguments-error who "wrong key size"
+                           "given" (bytes-length key)
+                           "required" (rktcrypto_aead_key_size id)))
+  (unless (eqv? (bytes-length nonce) (rktcrypto_aead_nonce_size id))
+    (raise-arguments-error who "wrong nonce size"
+                           "given" (bytes-length nonce)
+                           "required" (rktcrypto_aead_nonce_size id))))
+
+;; Encrypts `pt` under `key`/`nonce` with additional data `aad`,
+;; writing ciphertext followed by the tag to `out` starting at 0.
+;; `out` must be mutable with length >= (bytes-length pt) + tag-size.
+(define/who (crypto-aead-seal! alg key nonce aad pt out)
+  (define id (aead-alg->id who alg))
+  (check-aead-key/nonce who id key nonce)
+  (check who bytes? aad)
+  (check who bytes? pt)
+  (check-mutable-bytes who out)
+  (define need (+ (bytes-length pt) (rktcrypto_aead_tag_size id)))
+  (unless (>= (bytes-length out) need)
+    (raise-arguments-error who "output byte string is too small"
+                           "given" (bytes-length out) "required" need))
+  (unless (eqv? 1 (rktcrypto_aead_seal id key (bytes-length key) nonce (bytes-length nonce)
+                                       aad 0 (bytes-length aad)
+                                       pt 0 (bytes-length pt) out 0))
+    (fail-digest who))
+  (void))
+
+;; Verifies and decrypts `ct` (ciphertext followed by tag), writing
+;; plaintext to `out` starting at 0. Returns #t on success, #f if
+;; authentication fails. `out` must be mutable with length >=
+;; (bytes-length ct) - tag-size.
+(define/who (crypto-aead-open! alg key nonce aad ct out)
+  (define id (aead-alg->id who alg))
+  (check-aead-key/nonce who id key nonce)
+  (check who bytes? aad)
+  (check who bytes? ct)
+  (check-mutable-bytes who out)
+  (define tagsz (rktcrypto_aead_tag_size id))
+  (cond
+    [(< (bytes-length ct) tagsz) #f]
+    [else
+     (define need (- (bytes-length ct) tagsz))
+     (unless (>= (bytes-length out) need)
+       (raise-arguments-error who "output byte string is too small"
+                              "given" (bytes-length out) "required" need))
+     (eqv? 1 (rktcrypto_aead_open id key (bytes-length key) nonce (bytes-length nonce)
+                                  aad 0 (bytes-length aad)
+                                  ct 0 (bytes-length ct) out 0))]))

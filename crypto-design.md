@@ -395,6 +395,51 @@ racket/crypto            ; re-export 常用子集
 - **可变长/keyed BLAKE2b 的公开 API**：核心已支持，dispatch 暂固定
   BLAKE2b-512、无 keyed 出口（keyed 场景先用 HMAC）。
 
+### M2 对称+AEAD+KDF — 第一批完成（2026-07-15）
+
+本批交付 ChaCha20 系对称加密、AEAD、secretbox 高层封装、HKDF/PBKDF2。
+
+已完成并验收：
+
+- **算法内核**（from-scratch 重写，对标标准）：
+  - `rktcrypto_chacha20.c`：ChaCha20（RFC 8439）+ HChaCha20（XChaCha20 用）
+  - `rktcrypto_poly1305.c`：Poly1305（RFC 8439，32-bit limbs radix 2^26，
+    常量时间约减）
+  - `rktcrypto_aead.c`：ChaCha20-Poly1305 + XChaCha20-Poly1305 AEAD，
+    认证失败经 `rktcrypto_ct_bytes_equal` 常量时间比较
+- **dispatch**（rktcrypto.h AEAD API）：int alg id + seal/open/key-size/
+  nonce-size/tag-size，key/nonce 尺寸校验内建。
+- **io 层**：5 个 symbol-keyed 原语（kernel.ss 注册）。
+- **collects 两层**：
+  - `racket/crypto/aead`（低层，显式 nonce，专家用，文档明确警示 nonce
+    复用灾难性）
+  - `racket/crypto/secretbox`（高层默认入口，misuse-resistant）：只需
+    密钥，每次消息随机 24 字节 nonce（XChaCha20 保证随机 nonce 安全）、
+    版本字节前缀、认证失败统一 `#f`；`call-with-secret-bytes` 清密钥。
+  - `racket/crypto/kdf`：HKDF（RFC 5869）、PBKDF2（RFC 8018），纯 Racket
+    编排 HMAC。
+- **C 层 KAT**：selftest 加 ChaCha20-Poly1305 AEAD（seal+open+tamper-reject）。
+
+验收结果：
+
+- 正确性：RFC 8439 §2.4/2.5/2.8（ChaCha20/Poly1305/AEAD）、
+  draft-irtf-cfrg-xchacha（HChaCha20 + XChaCha20-Poly1305 A.3.1）、
+  RFC 5869（HKDF TC1/TC3）、PBKDF2-HMAC-SHA256 官方向量全过；HChaCha20
+  额外与 Python 独立参考交叉验证。`crypto-aead.rktl`（43 项，含
+  Wycheproof 风格负向：截断 tag、翻转密文/tag、坏 AAD/key/nonce、坏
+  版本字节）+ `crypto-kdf.rktl`（19 项）全过；全量回归通过。
+- misuse-resistance 验证：secretbox 同消息两次密文不同（随机 nonce）、
+  篡改/坏版本/错密钥/错 AAD 均返回 `#f`。
+
+尚未完成（M2 后续）：
+
+- **AES-256-GCM**：软件需 bitsliced 常量时间实现 + PCLMUL/PMULL GHASH
+  加速，体量较大，待接入（无硬件 AES 平台建议用 ChaCha20 系，文档已述）。
+- **Argon2id、scrypt**：密码哈希，PBKDF2 已覆盖基本需求，Argon2id 待补。
+- **per-place DRBG**：`crypto-random-bytes` 已走系统熵（M0），用户态
+  ChaCha20 DRBG（arc4random 风格、fork 安全）作为性能优化待做。
+- **PBKDF2 C 内循环**：当前纯 Racket，高迭代次数 CPU-bound，C 化待优化。
+
 ## 8. 明确不做（non-goals）
 
 

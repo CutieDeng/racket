@@ -14,6 +14,8 @@
 (define-constant RKTCRYPTO_BLAKE2B 12)
 (define-constant RKTCRYPTO_BLAKE3 13)
 (define-constant RKTCRYPTO_DIGEST_CTX_MAXSIZE 2048)
+(define-constant RKTCRYPTO_AEAD_CHACHA20_POLY1305 1)
+(define-constant RKTCRYPTO_AEAD_XCHACHA20_POLY1305 2)
 (define-function
  ()
  int
@@ -73,5 +75,42 @@
   ((*ref unsigned-8) out)
   (intptr_t out_start)
   (intptr_t out_len)))
+(define-function () intptr_t rktcrypto_aead_key_size ((int alg)))
+(define-function () intptr_t rktcrypto_aead_nonce_size ((int alg)))
+(define-function () intptr_t rktcrypto_aead_tag_size ((int alg)))
+(define-function
+ ()
+ int
+ rktcrypto_aead_seal
+ ((int alg)
+  ((*ref unsigned-8) key)
+  (intptr_t key_len)
+  ((*ref unsigned-8) nonce)
+  (intptr_t nonce_len)
+  ((*ref unsigned-8) aad)
+  (intptr_t aad_start)
+  (intptr_t aad_end)
+  ((*ref unsigned-8) pt)
+  (intptr_t pt_start)
+  (intptr_t pt_end)
+  ((*ref unsigned-8) out)
+  (intptr_t out_start)))
+(define-function
+ ()
+ int
+ rktcrypto_aead_open
+ ((int alg)
+  ((*ref unsigned-8) key)
+  (intptr_t key_len)
+  ((*ref unsigned-8) nonce)
+  (intptr_t nonce_len)
+  ((*ref unsigned-8) aad)
+  (intptr_t aad_start)
+  (intptr_t aad_end)
+  ((*ref unsigned-8) ct)
+  (intptr_t ct_start)
+  (intptr_t ct_end)
+  ((*ref unsigned-8) out)
+  (intptr_t out_start)))
 (define-function () int rktcrypto_selftest_core ())
 )

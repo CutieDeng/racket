@@ -115,11 +115,45 @@ static int test_digests(void)
   return 1;
 }
 
+/* ChaCha20-Poly1305 AEAD known-answer test (RFC 8439 2.8.2). */
+static int test_aead(void)
+{
+  unsigned char key[32], nonce[12] = {0x07,0,0,0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47};
+  unsigned char aad[12] = {0x50,0x51,0x52,0x53,0xc0,0xc1,0xc2,0xc3,0xc4,0xc5,0xc6,0xc7};
+  static const char *pt = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+  static const unsigned char tag_want[16] = {
+    0x1a,0xe1,0x0b,0x59,0x4f,0x09,0xe2,0x6a,0x7e,0x90,0x2e,0xcb,0xd0,0x60,0x06,0x91
+  };
+  unsigned char out[160], dec[160];
+  intptr_t ptlen, i;
+
+  for (i = 0; i < 32; i++) key[i] = (unsigned char)(0x80 + i);
+  ptlen = (intptr_t)strlen(pt);
+
+  if (!rktcrypto_aead_seal(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                           aad, 0, 12, (const unsigned char *)pt, 0, ptlen, out, 0))
+    return 0;
+  if (memcmp(out + ptlen, tag_want, 16) != 0)
+    return 0;
+  if (!rktcrypto_aead_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                           aad, 0, 12, out, 0, ptlen + 16, dec, 0))
+    return 0;
+  if (memcmp(dec, pt, (size_t)ptlen) != 0)
+    return 0;
+  /* Tampering must be rejected. */
+  out[0] ^= 1;
+  if (rktcrypto_aead_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                          aad, 0, 12, out, 0, ptlen + 16, dec, 0))
+    return 0;
+  return 1;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
   if (!test_secure_clear()) return 0;
   if (!test_system_random()) return 0;
   if (!test_digests()) return 0;
+  if (!test_aead()) return 0;
   return 1;
 }

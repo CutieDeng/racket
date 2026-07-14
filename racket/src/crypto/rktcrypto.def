@@ -10,4 +10,9 @@ rktcrypto_digest_init
 rktcrypto_digest_update
 rktcrypto_digest_final
 rktcrypto_digest_oneshot
+rktcrypto_aead_key_size
+rktcrypto_aead_nonce_size
+rktcrypto_aead_tag_size
+rktcrypto_aead_seal
+rktcrypto_aead_open
 rktcrypto_selftest_core

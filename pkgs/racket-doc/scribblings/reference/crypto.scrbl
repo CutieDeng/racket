@@ -4,6 +4,8 @@
                               racket/crypto/util
                               racket/crypto/digest
                               racket/crypto/mac
+                              racket/crypto/aead
+                              racket/crypto/secretbox
                               racket/random))
 
 @title[#:tag "crypto"]{Cryptography}
@@ -105,9 +107,10 @@ Digest algorithms are named by symbol. The supported algorithms are
 @racket['sha224], @racket['sha256], @racket['sha384], @racket['sha512],
 @racket['sha512/256], @racket['sha3-224], @racket['sha3-256],
 @racket['sha3-384], @racket['sha3-512], @racket['shake128],
-@racket['shake256], and @racket['blake2b]. The SHAKE algorithms are
-@deftech{extendable-output functions} (XOFs): they have no fixed output
-size, so a length must be supplied.
+@racket['shake256], @racket['blake2b], and @racket['blake3]. The SHAKE
+algorithms are @deftech{extendable-output functions} (XOFs): they have
+no fixed output size, so a length must be supplied. BLAKE3 is also an
+XOF but has a 32-byte default, so a length is optional for it.
 
 @defthing[digest-algorithm/c flat-contract?]{
 A contract for the digest algorithm symbols listed above.}
@@ -190,3 +193,74 @@ Creates an incremental HMAC context.}
 
 @defproc[(hmac-final! [h hmac?]) bytes?]{
 Finalizes @racket[h] and returns the MAC.}
+
+@; ------------------------------------------------------------------------
+
+@section{Authenticated Encryption}
+
+@subsection{High-Level: Secretbox}
+
+@defmodule[racket/crypto/secretbox]
+
+The secretbox interface is the recommended default for symmetric
+encryption. The caller supplies only a key; each message is sealed with
+a fresh random nonce carried in the output, so there is no way to reuse
+a nonce by accident. It is built on XChaCha20-Poly1305, whose 192-bit
+nonce makes random nonces collision-safe.
+
+@defproc[(secretbox-key) bytes?]{
+Generates a fresh random key.}
+
+@defproc[(secretbox-encrypt [key bytes?] [plaintext bytes?]
+                            [#:aad aad bytes? #""])
+         bytes?]{
+
+Encrypts @racket[plaintext] under @racket[key], returning a
+self-describing sealed byte string (a version byte, the random nonce,
+the ciphertext, and the authentication tag). @racket[aad] is
+authenticated but not encrypted.}
+
+@defproc[(secretbox-decrypt [key bytes?] [sealed bytes?]
+                            [#:aad aad bytes? #""])
+         (or/c bytes? #f)]{
+
+Decrypts a byte string produced by @racket[secretbox-encrypt], returning
+the plaintext, or @racket[#f] if it is malformed or authentication
+fails. The two failure kinds are deliberately not distinguished.}
+
+@subsection{Low-Level: Explicit-Nonce AEAD}
+
+@defmodule[racket/crypto/aead]
+
+This is the expert-facing interface: the caller chooses the nonce and is
+responsible for @bold{never reusing a @racket[(key nonce)] pair}, which
+would be catastrophic. Prefer @racketmodname[racket/crypto/secretbox]
+unless you specifically need to control the nonce.
+
+@defthing[aead-algorithm/c flat-contract?]{
+A contract for the AEAD algorithm symbols @racket['chacha20-poly1305]
+and @racket['xchacha20-poly1305].}
+
+@defproc[(aead-encrypt [alg aead-algorithm/c] [key bytes?] [nonce bytes?]
+                       [plaintext bytes?] [#:aad aad bytes? #""])
+         bytes?]{
+
+Encrypts and authenticates @racket[plaintext], returning the ciphertext
+with the authentication tag appended. @racket[key] and @racket[nonce]
+must match the algorithm's sizes.}
+
+@defproc[(aead-decrypt [alg aead-algorithm/c] [key bytes?] [nonce bytes?]
+                       [ciphertext+tag bytes?] [#:aad aad bytes? #""])
+         (or/c bytes? #f)]{
+
+Verifies and decrypts, returning the plaintext, or @racket[#f] if
+authentication fails.}
+
+@deftogether[(
+@defproc[(aead-key-size [alg aead-algorithm/c]) exact-positive-integer?]
+@defproc[(aead-nonce-size [alg aead-algorithm/c]) exact-positive-integer?]
+@defproc[(aead-tag-size [alg aead-algorithm/c]) exact-positive-integer?]
+@defproc[(aead-algorithms) (listof symbol?)]
+)]{
+AEAD metadata: key, nonce, and tag sizes in bytes, and the list of
+supported algorithms.}

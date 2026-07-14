@@ -122,6 +122,41 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_oneshot(int alg,
 /* One-shot init/update/final. Returns 1 on success, 0 on bad arguments. */
 
 /*************************************************/
+/* Authenticated encryption (AEAD)               */
+
+#define RKTCRYPTO_AEAD_CHACHA20_POLY1305   1
+#define RKTCRYPTO_AEAD_XCHACHA20_POLY1305  2
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_key_size(int alg);
+/* Key size in bytes, or -1 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_nonce_size(int alg);
+/* Nonce size in bytes, or -1 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_tag_size(int alg);
+/* Authentication tag size in bytes, or -1 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_seal(int alg,
+                                               const unsigned char *key, intptr_t key_len,
+                                               const unsigned char *nonce, intptr_t nonce_len,
+                                               const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                                               const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                                               unsigned char *out, intptr_t out_start);
+/* Encrypts and authenticates; writes ciphertext followed by the tag
+   to out[out_start..]. `out` must hold (pt_len + tag_size) bytes.
+   Returns 1 on success, 0 on bad algorithm/key/nonce size. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_open(int alg,
+                                               const unsigned char *key, intptr_t key_len,
+                                               const unsigned char *nonce, intptr_t nonce_len,
+                                               const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                                               const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                                               unsigned char *out, intptr_t out_start);
+/* Verifies and decrypts ct[ct_start..ct_end) (ciphertext followed by
+   tag) to out[out_start..]. Returns 1 on success, 0 if authentication
+   fails or on bad arguments; on failure `out` is not written. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);

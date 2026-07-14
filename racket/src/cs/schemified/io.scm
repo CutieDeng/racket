@@ -29,6 +29,11 @@
                 (1/close-output-port close-output-port)
                 (1/complete-path? complete-path?)
                 (1/copy-file copy-file)
+                (crypto-aead-key-size crypto-aead-key-size)
+                (crypto-aead-nonce-size crypto-aead-nonce-size)
+                (crypto-aead-open! crypto-aead-open!)
+                (crypto-aead-seal! crypto-aead-seal!)
+                (crypto-aead-tag-size crypto-aead-tag-size)
                 (1/crypto-bytes-clear! crypto-bytes-clear!)
                 (1/crypto-bytes=? crypto-bytes=?)
                 (1/crypto-digest-block-size crypto-digest-block-size)
@@ -35306,6 +35311,8 @@
 (define RKTCRYPTO_SHAKE_2204 11)
 (define RKTCRYPTO_BLAKE2B 12)
 (define RKTCRYPTO_BLAKE_2626 13)
+(define RKTCRYPTO_AEAD_CHACHA20_POLY_1878 1)
+(define RKTCRYPTO_AEAD_XCHACHA20_POLY_2901 2)
 (define rktcrypto_system_random
   (hash-ref rktcrypto-table 'rktcrypto_system_random))
 (define rktcrypto_ct_bytes_equal
@@ -35328,6 +35335,14 @@
   (hash-ref rktcrypto-table 'rktcrypto_digest_final))
 (define rktcrypto_digest_oneshot
   (hash-ref rktcrypto-table 'rktcrypto_digest_oneshot))
+(define rktcrypto_aead_key_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_key_size))
+(define rktcrypto_aead_nonce_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_nonce_size))
+(define rktcrypto_aead_tag_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_tag_size))
+(define rktcrypto_aead_seal (hash-ref rktcrypto-table 'rktcrypto_aead_seal))
+(define rktcrypto_aead_open (hash-ref rktcrypto-table 'rktcrypto_aead_open))
 (define rktcrypto_selftest_core
   (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
@@ -35679,6 +35694,152 @@
            (void)
            (fail-digest 'crypto-digest-oneshot!))
          (void))))))
+(define aead-alg->id
+  (lambda (who_0 alg_0)
+    (if (eq? alg_0 'chacha20-poly1305)
+      1
+      (if (eq? alg_0 'xchacha20-poly1305)
+        2
+        (raise-argument-error who_0 "crypto-aead-algorithm/c" alg_0)))))
+(define crypto-aead-key-size
+  (lambda (alg_0)
+    (|#%app|
+     rktcrypto_aead_key_size
+     (aead-alg->id 'crypto-aead-key-size alg_0))))
+(define crypto-aead-nonce-size
+  (lambda (alg_0)
+    (|#%app|
+     rktcrypto_aead_nonce_size
+     (aead-alg->id 'crypto-aead-nonce-size alg_0))))
+(define crypto-aead-tag-size
+  (lambda (alg_0)
+    (|#%app|
+     rktcrypto_aead_tag_size
+     (aead-alg->id 'crypto-aead-tag-size alg_0))))
+(define check-aead-key/nonce
+  (lambda (who_0 id_0 key_0 nonce_0)
+    (begin
+      (if (bytes? key_0) (void) (raise-argument-error who_0 "bytes?" key_0))
+      (if (bytes? nonce_0)
+        (void)
+        (raise-argument-error who_0 "bytes?" nonce_0))
+      (if (eqv?
+           (unsafe-bytes-length key_0)
+           (|#%app| rktcrypto_aead_key_size id_0))
+        (void)
+        (raise-arguments-error
+         who_0
+         "wrong key size"
+         "given"
+         (unsafe-bytes-length key_0)
+         "required"
+         (|#%app| rktcrypto_aead_key_size id_0)))
+      (if (eqv?
+           (unsafe-bytes-length nonce_0)
+           (|#%app| rktcrypto_aead_nonce_size id_0))
+        (void)
+        (raise-arguments-error
+         who_0
+         "wrong nonce size"
+         "given"
+         (unsafe-bytes-length nonce_0)
+         "required"
+         (|#%app| rktcrypto_aead_nonce_size id_0))))))
+(define crypto-aead-seal!
+  (lambda (alg_0 key_0 nonce_0 aad_0 pt_0 out_0)
+    (let ((id_0 (aead-alg->id 'crypto-aead-seal! alg_0)))
+      (begin
+        (check-aead-key/nonce 'crypto-aead-seal! id_0 key_0 nonce_0)
+        (begin
+          (if (bytes? aad_0)
+            (void)
+            (raise-argument-error 'crypto-aead-seal! "bytes?" aad_0))
+          (begin
+            (if (bytes? pt_0)
+              (void)
+              (raise-argument-error 'crypto-aead-seal! "bytes?" pt_0))
+            (begin
+              (check-mutable-bytes 'crypto-aead-seal! out_0)
+              (let ((need_0
+                     (+
+                      (unsafe-bytes-length pt_0)
+                      (|#%app| rktcrypto_aead_tag_size id_0))))
+                (begin
+                  (if (>= (unsafe-bytes-length out_0) need_0)
+                    (void)
+                    (raise-arguments-error
+                     'crypto-aead-seal!
+                     "output byte string is too small"
+                     "given"
+                     (unsafe-bytes-length out_0)
+                     "required"
+                     need_0))
+                  (if (eqv?
+                       1
+                       (|#%app|
+                        rktcrypto_aead_seal
+                        id_0
+                        key_0
+                        (unsafe-bytes-length key_0)
+                        nonce_0
+                        (unsafe-bytes-length nonce_0)
+                        aad_0
+                        0
+                        (unsafe-bytes-length aad_0)
+                        pt_0
+                        0
+                        (unsafe-bytes-length pt_0)
+                        out_0
+                        0))
+                    (void)
+                    (fail-digest 'crypto-aead-seal!))
+                  (void))))))))))
+(define crypto-aead-open!
+  (lambda (alg_0 key_0 nonce_0 aad_0 ct_0 out_0)
+    (let ((id_0 (aead-alg->id 'crypto-aead-open! alg_0)))
+      (begin
+        (check-aead-key/nonce 'crypto-aead-open! id_0 key_0 nonce_0)
+        (begin
+          (if (bytes? aad_0)
+            (void)
+            (raise-argument-error 'crypto-aead-open! "bytes?" aad_0))
+          (begin
+            (if (bytes? ct_0)
+              (void)
+              (raise-argument-error 'crypto-aead-open! "bytes?" ct_0))
+            (begin
+              (check-mutable-bytes 'crypto-aead-open! out_0)
+              (let ((tagsz_0 (|#%app| rktcrypto_aead_tag_size id_0)))
+                (if (< (unsafe-bytes-length ct_0) tagsz_0)
+                  #f
+                  (let ((need_0 (- (unsafe-bytes-length ct_0) tagsz_0)))
+                    (begin
+                      (if (>= (unsafe-bytes-length out_0) need_0)
+                        (void)
+                        (raise-arguments-error
+                         'crypto-aead-open!
+                         "output byte string is too small"
+                         "given"
+                         (unsafe-bytes-length out_0)
+                         "required"
+                         need_0))
+                      (eqv?
+                       1
+                       (|#%app|
+                        rktcrypto_aead_open
+                        id_0
+                        key_0
+                        (unsafe-bytes-length key_0)
+                        nonce_0
+                        (unsafe-bytes-length nonce_0)
+                        aad_0
+                        0
+                        (unsafe-bytes-length aad_0)
+                        ct_0
+                        0
+                        (unsafe-bytes-length ct_0)
+                        out_0
+                        0)))))))))))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020
