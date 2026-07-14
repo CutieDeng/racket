@@ -1,0 +1,82 @@
+#lang zuo
+(require "../lib.zuo")
+
+(provide-targets targets-at)
+
+;; Builds "librktcrypto", Racket's built-in cryptography subsystem.
+;; Unlike rktio, this library is plain C99 with no configure step:
+;; platform selection happens via predefined compiler macros, so the
+;; same `targets-at` works on all platforms given a toolchain config.
+
+(define (targets-at at-dir [vars (hash)])
+  (define msvc? (eq? 'windows (hash-ref (runtime-env) 'toolchain-type)))
+
+  (define config (let ([Makefile (at-dir "Makefile")])
+                   (if (file-exists? Makefile)
+                       (config-file->hash Makefile vars)
+                       vars)))
+  (define (lookup key) (hash-ref config key #f))
+
+  (define lto (or (lookup 'LTO) (if msvc? "obj" "o")))
+  (define lta (or (lookup 'LTA) (if msvc? "lib" "a")))
+
+  (define headers
+    (list (at-source "rktcrypto.h")
+          (at-source "rktcrypto_private.h")))
+  (define rktcrypto.h (car headers))
+
+  (define src-names
+    '("rktcrypto_entropy.c"
+      "rktcrypto_ct.c"
+      "rktcrypto_selftest.c"))
+  (define objs
+    (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))
+         src-names))
+
+  (define librktcrypto.a (at-dir (~a "librktcrypto." lta)))
+
+  (define rktcrypto.rktl (at-source "rktcrypto.rktl"))
+  (define rktcrypto.inc (at-source "rktcrypto.inc"))
+  (define rktcrypto.def (at-source "rktcrypto.def"))
+
+  (define parse.rkt (at-source "../rktio/parse.rkt"))
+
+  (make-targets
+   `([:target default_rktcrypto (,librktcrypto.a) ,void]
+
+     [:target ,librktcrypto.a ,objs
+              ,(lambda (path token)
+                 (c-ar path
+                       objs
+                       (let ([ar (hash-ref config 'STATIC_AR #f)])
+                         (if ar
+                             (hash-set config 'AR (shell-subst ar config))
+                             (shell-subst-value config 'AR)))))]
+
+     ,@(map (lambda (name obj)
+              (let ([src (at-source name)])
+                `[:target ,obj (,src ,@headers)
+                          ,(lambda (path token)
+                             (c-compile obj src (config-include config
+                                                                (at-source "."))))]))
+            src-names
+            objs)
+
+     [:target rktcrypto-rktl (,rktcrypto.rktl ,rktcrypto.inc ,rktcrypto.def) ,void]
+
+     [:target ,rktcrypto.rktl (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-o" rktcrypto.rktl rktcrypto.h))]
+     [:target ,rktcrypto.inc (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-c" "-o" rktcrypto.inc rktcrypto.h))]
+     [:target ,rktcrypto.def (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-d" "-o" rktcrypto.def rktcrypto.h))]
+
+     [:target clean ()
+              ,(lambda (token)
+                 (map rm* objs)
+                 (rm* librktcrypto.a))]
+
+     [:db-dir ,(at-dir ".")])))

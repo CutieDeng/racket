@@ -29,6 +29,10 @@
                 (1/close-output-port close-output-port)
                 (1/complete-path? complete-path?)
                 (1/copy-file copy-file)
+                (crypto-bytes-clear! crypto-bytes-clear!)
+                (crypto-bytes=? crypto-bytes=?)
+                (crypto-random-bytes! crypto-random-bytes!)
+                (crypto-subsystem-self-test? crypto-subsystem-self-test?)
                 (1/current-command-line-arguments
                  current-command-line-arguments)
                 (1/current-directory current-directory)
@@ -1945,8 +1949,10 @@
       (let ((app_0 (|#%app| range-ref v_0 1)))
         (let ((app_1 (|#%app| range-ref v_0 0)))
           (values values #f app_0 app_1 (|#%app| range-ref v_0 2) #f #f))))))))
-(define check-range
-  (lambda (a_0 b_0 step_0) (check-range-generic 'in-range a_0 b_0 step_0)))
+(define check-range$1
+  (|#%name|
+   check-range
+   (lambda (a_0 b_0 step_0) (check-range-generic 'in-range a_0 b_0 step_0))))
 (define check-range-generic
   (lambda (who_0 a_0 b_0 step_0)
     (begin
@@ -2789,7 +2795,7 @@
 (define rktio-table
   (let ((or-part_0 (primitive-table '|#%rktio|)))
     (if or-part_0 or-part_0 (error '|#%rktio| "rktio not supported by host"))))
-(define lookup (lambda (n_0) (hash-ref rktio-table n_0)))
+(define lookup$1 (|#%name| lookup (lambda (n_0) (hash-ref rktio-table n_0))))
 (define << arithmetic-shift)
 (define RKTIO_OPEN_READ 1)
 (define RKTIO_OPEN_WRITE 2)
@@ -3813,34 +3819,32 @@
              (exts1.1 app_0 (if old-exts_0 (exts-fd-adders old-exts_0) #f))))
          (lambda (exts_0) (exts-timeout-at exts_0))))))
     (void)))
-(define check-range$1
-  (|#%name|
-   check-range
-   (lambda (who_0 start-pos_0 end-pos_0 max-end_0 in-value_0)
-     (begin
-       (if (> start-pos_0 max-end_0)
-         (raise-range-error
-          who_0
-          "byte string"
-          "starting "
-          start-pos_0
-          in-value_0
-          0
-          max-end_0
-          #f)
-         (void))
-       (if (let ((or-part_0 (< end-pos_0 start-pos_0)))
-             (if or-part_0 or-part_0 (> end-pos_0 max-end_0)))
-         (raise-range-error
-          who_0
-          "byte string"
-          "ending "
-          end-pos_0
-          in-value_0
-          start-pos_0
-          max-end_0
-          0)
-         (void))))))
+(define check-range
+  (lambda (who_0 start-pos_0 end-pos_0 max-end_0 in-value_0)
+    (begin
+      (if (> start-pos_0 max-end_0)
+        (raise-range-error
+         who_0
+         "byte string"
+         "starting "
+         start-pos_0
+         in-value_0
+         0
+         max-end_0
+         #f)
+        (void))
+      (if (let ((or-part_0 (< end-pos_0 start-pos_0)))
+            (if or-part_0 or-part_0 (> end-pos_0 max-end_0)))
+        (raise-range-error
+         who_0
+         "byte string"
+         "ending "
+         end-pos_0
+         in-value_0
+         start-pos_0
+         max-end_0
+         0)
+        (void)))))
 (define check-immutable-field
   (lambda (who_0 v_0 sti_0)
     (if (exact-integer? v_0)
@@ -5542,7 +5546,7 @@
                          "exact-nonnegative-integer?"
                          end_0))
                       (begin
-                        (check-range$1
+                        (check-range
                          'bytes->string/latin-1
                          start2_0
                          end_0
@@ -5598,7 +5602,7 @@
        (if (exact-nonnegative-integer? end11_0)
          (void)
          (raise-argument-error who7_0 "exact-nonnegative-integer?" end11_0))
-       (check-range$1
+       (check-range
         who7_0
         start10_0
         end11_0
@@ -5720,7 +5724,7 @@
                   "exact-nonnegative-integer?"
                   end28_0))
                (begin
-                 (check-range$1
+                 (check-range
                   who23_0
                   start27_0
                   end28_0
@@ -5881,7 +5885,7 @@
                          "exact-nonnegative-integer?"
                          end_0))
                       (begin
-                        (check-range$1
+                        (check-range
                          'string->bytes/latin-1
                          start41_0
                          end_0
@@ -5960,7 +5964,7 @@
                 "exact-nonnegative-integer?"
                 end50_0))
              (begin
-               (check-range$1
+               (check-range
                 who46_0
                 start49_0
                 end50_0
@@ -12802,7 +12806,7 @@
                      'read-bytes!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'read-bytes!
                    start-pos5_0
                    end-pos_0
@@ -12854,7 +12858,7 @@
           who12_0
           "exact-nonnegative-integer?"
           end-pos16_0))
-       (check-range$1
+       (check-range
         who12_0
         start-pos15_0
         end-pos16_0
@@ -13136,7 +13140,7 @@
                      'peek-bytes!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'peek-bytes!
                    start-pos36_0
                    end-pos_0
@@ -13209,7 +13213,7 @@
        (if progress-evt47_0
          (check-progress-evt who44_0 progress-evt47_0 in48_0)
          (void))
-       (check-range$1
+       (check-range
         who44_0
         start-pos49_0
         end-pos50_0
@@ -13875,7 +13879,7 @@
                      'read-string!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'read-string!
                    start-pos45_0
                    end-pos_0
@@ -14046,7 +14050,7 @@
                      'peek-string!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'peek-string!
                    start-pos69_0
                    end-pos_0
@@ -14692,7 +14696,7 @@
               'write-bytes
               "exact-nonnegative-integer?"
               end-pos_0))
-           (check-range$1
+           (check-range
             'write-bytes
             start-pos_0
             end-pos_0
@@ -14736,7 +14740,7 @@
           who7_0
           "exact-nonnegative-integer?"
           end-pos11_0))
-       (check-range$1
+       (check-range
         who7_0
         start-pos10_0
         end-pos11_0
@@ -14899,7 +14903,7 @@
                      'write-bytes-avail-evt
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'write-bytes-avail-evt
                    start-pos26_0
                    end-pos_0
@@ -15053,7 +15057,7 @@
                          'write-string
                          "exact-nonnegative-integer?"
                          end_0))
-                      (check-range$1
+                      (check-range
                        'write-string
                        start4_0
                        end_0
@@ -16878,7 +16882,7 @@
                      'bytes-convert
                      "(or/c #f exact-nonnegative-integer?)"
                      dest-end-pos_0))
-                  (check-range$1
+                  (check-range
                    'bytes-convert
                    src-start-pos2_0
                    src-end-pos_0
@@ -17057,7 +17061,7 @@
   (lambda (who_0 dest-bstr_0 dest-start-pos_0 dest-end-pos_0)
     (if dest-bstr_0
       (let ((len_0 (unsafe-bytes-length dest-bstr_0)))
-        (check-range$1
+        (check-range
          who_0
          dest-start-pos_0
          (if dest-end-pos_0 dest-end-pos_0 len_0)
@@ -17509,7 +17513,7 @@
                    'string->bytes/locale
                    "exact-nonnegative-integer?"
                    end_0))
-                (check-range$1
+                (check-range
                  'string->bytes/locale
                  start2_0
                  end_0
@@ -17616,7 +17620,7 @@
                    'bytes->string/locale
                    "exact-nonnegative-integer?"
                    end_0))
-                (check-range$1
+                (check-range
                  'bytes->string/locale
                  start6_0
                  end_0
@@ -35247,6 +35251,104 @@
                        (loop_0 start_0)))))
                 (let ((bstr_0 (make-bytes sz_0)))
                   (begin (|#%app| final_0 p_0 bstr_0) bstr_0))))))))))
+(define rktcrypto-table
+  (let ((or-part_0 (primitive-table '|#%rktcrypto|)))
+    (if or-part_0
+      or-part_0
+      (error '|#%rktcrypto| "rktcrypto not supported by host"))))
+(define lookup (lambda (n_0) (hash-ref rktcrypto-table n_0)))
+(define rktcrypto_system_random
+  (hash-ref rktcrypto-table 'rktcrypto_system_random))
+(define rktcrypto_ct_bytes_equal
+  (hash-ref rktcrypto-table 'rktcrypto_ct_bytes_equal))
+(define rktcrypto_secure_clear
+  (hash-ref rktcrypto-table 'rktcrypto_secure_clear))
+(define rktcrypto_selftest_core
+  (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
+(define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
+(define check-mutable-bytes
+  (lambda (who_0 bstr_0)
+    (if (if (bytes? bstr_0) (not (immutable? bstr_0)) #f)
+      (void)
+      (raise-argument-error who_0 mutable-bytes-contract bstr_0))))
+(define check-start/end
+  (lambda (who_0 bstr_0 start_0 end_0)
+    (begin
+      (if (exact-nonnegative-integer? start_0)
+        (void)
+        (raise-argument-error who_0 "exact-nonnegative-integer?" start_0))
+      (if (exact-nonnegative-integer? end_0)
+        (void)
+        (raise-argument-error who_0 "exact-nonnegative-integer?" end_0))
+      (check-range who_0 start_0 end_0 (unsafe-bytes-length bstr_0) bstr_0))))
+(define crypto-random-bytes!
+  (let ((crypto-random-bytes!_0
+         (|#%name|
+          crypto-random-bytes!
+          (lambda (bstr3_0 start1_0 end2_0)
+            (let ((end_0
+                   (if (eq? end2_0 unsafe-undefined)
+                     (if (bytes? bstr3_0) (unsafe-bytes-length bstr3_0) #f)
+                     end2_0)))
+              (begin
+                (check-mutable-bytes 'crypto-random-bytes! bstr3_0)
+                (check-start/end 'crypto-random-bytes! bstr3_0 start1_0 end_0)
+                (if (eqv?
+                     1
+                     (|#%app| rktcrypto_system_random bstr3_0 start1_0 end_0))
+                  (void)
+                  (raise
+                   (let ((app_0
+                          (string-append
+                           (symbol->string 'crypto-random-bytes!)
+                           ": system entropy source is unavailable")))
+                     (|#%app| exn:fail app_0 (current-continuation-marks)))))
+                (void)))))))
+    (case-lambda
+     ((bstr_0) (crypto-random-bytes!_0 bstr_0 0 unsafe-undefined))
+     ((bstr_0 start_0 end2_0) (crypto-random-bytes!_0 bstr_0 start_0 end2_0))
+     ((bstr_0 start1_0)
+      (crypto-random-bytes!_0 bstr_0 start1_0 unsafe-undefined)))))
+(define crypto-bytes=?
+  (lambda (a_0 b_0)
+    (begin
+      (if (bytes? a_0)
+        (void)
+        (raise-argument-error 'crypto-bytes=? "bytes?" a_0))
+      (if (bytes? b_0)
+        (void)
+        (raise-argument-error 'crypto-bytes=? "bytes?" b_0))
+      (if (eqv? (unsafe-bytes-length a_0) (unsafe-bytes-length b_0))
+        (eqv?
+         1
+         (|#%app|
+          rktcrypto_ct_bytes_equal
+          a_0
+          0
+          b_0
+          0
+          (unsafe-bytes-length a_0)))
+        #f))))
+(define crypto-bytes-clear!
+  (let ((crypto-bytes-clear!_0
+         (|#%name|
+          crypto-bytes-clear!
+          (lambda (bstr6_0 start4_0 end5_0)
+            (let ((end_0
+                   (if (eq? end5_0 unsafe-undefined)
+                     (if (bytes? bstr6_0) (unsafe-bytes-length bstr6_0) #f)
+                     end5_0)))
+              (begin
+                (check-mutable-bytes 'crypto-bytes-clear! bstr6_0)
+                (check-start/end 'crypto-bytes-clear! bstr6_0 start4_0 end_0)
+                (|#%app| rktcrypto_secure_clear bstr6_0 start4_0 end_0)))))))
+    (case-lambda
+     ((bstr_0) (crypto-bytes-clear!_0 bstr_0 0 unsafe-undefined))
+     ((bstr_0 start_0 end5_0) (crypto-bytes-clear!_0 bstr_0 start_0 end5_0))
+     ((bstr_0 start4_0)
+      (crypto-bytes-clear!_0 bstr_0 start4_0 unsafe-undefined)))))
+(define crypto-subsystem-self-test?
+  (lambda () (eqv? 1 (|#%app| rktcrypto_selftest_core))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

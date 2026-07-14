@@ -140,6 +140,9 @@
   (define librktio.a (list-ref librktio.a+rktio_config.h 0))
   (define rktio_config.h (list-ref librktio.a+rktio_config.h 1))
 
+  (define rktcrypto-dir (at-dir "rktcrypto"))
+  (define librktcrypto.a (setup-rktcrypto (at-source "../../crypto") rktcrypto-dir config))
+
   (define main-deps
     (append
      (list (at-source "main.c")
@@ -190,6 +193,7 @@
                             (at-dir CS m "lz4/lib/liblz4.a")))
                   '()))
             (list librktio.a)
+            (list librktcrypto.a)
             pbchunk-objs))
 
   (define MemoryModule.o (at-dir (.c->.o "MemoryModule.c")))
@@ -641,7 +645,7 @@
                 ,(lambda (path token)
                    (c-compile libracketcsxxx_RAW.dll
                               (append (map target->path boot-objs)
-                                      (list libres.o (target->path librktio.a))
+                                      (list libres.o (target->path librktio.a) (target->path librktcrypto.a))
                                       (if msvc?
                                           windows-libs
                                           (make-mingw-to-ms-link-libraries m (at-dir) config)))
@@ -668,6 +672,7 @@
 
        [:target ,boot.o (,(at-source "boot.c")
                          ,(at-source "../../rktio/rktio.inc")
+                         ,(at-source "../../crypto/rktcrypto.inc")
                          ,(at-source "../../start/self_exe.inc")
                          ,(at-source "../../ChezScheme/c/self-exe.c")
                          ,(at-source "path_replace.inc")
@@ -682,6 +687,7 @@
                                      [config (config-include config
                                                              (at-dir CS m "boot" m)
                                                              (at-source "../../rktio")
+                                                             (at-source "../../crypto")
                                                              rktio-dir)])
                                 config)))]
 
@@ -995,6 +1001,7 @@
          (when (equal? (lookup 'LZ4_LIB) "")
            (unpack-lib (at-dir CS m "lz4/lib/liblz4.a")))
          (unpack-lib (target->path librktio.a))
+         (unpack-lib (target->path librktcrypto.a))
          (unpack-lib (at-dir CS m "boot" m "libkernel.a"))
          (shell/wait (lookup 'AR) (lookup 'ARFLAGS) libracketcs.a
                      (filter (glob->matcher "*.o") (ls* repack-dir))

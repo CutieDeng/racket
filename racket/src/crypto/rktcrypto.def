@@ -1,0 +1,5 @@
+EXPORTS
+rktcrypto_system_random
+rktcrypto_ct_bytes_equal
+rktcrypto_secure_clear
+rktcrypto_selftest_core
