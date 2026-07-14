@@ -331,6 +331,52 @@ racket/crypto            ; re-export 常用子集
 - C 自检（KAT）在 CS 启动后首次调用可用，`(crypto-subsystem-self-test?)`
   → `#t`。
 
+### M1 摘要+MAC — 第一批完成（2026-07-14）
+
+本批交付统一 digest 框架 + SHA-2 全族 + SHA-3/SHAKE + BLAKE2b + HMAC。
+
+已完成并验收：
+
+- **算法内核**（全部 from-scratch 重写，对标标准）：
+  - `rktcrypto_sha256.c`：SHA-224/256（FIPS 180-4）
+  - `rktcrypto_sha512.c`：SHA-384/512/512-256（FIPS 180-4）
+  - `rktcrypto_sha3.c`：SHA3-224/256/384/512 + SHAKE128/256（FIPS 202，
+    单份 Keccak-f[1600] 服务定长与 XOF）
+  - `rktcrypto_blake2b.c`：BLAKE2b（RFC 7693，核心含 keyed 模式）
+- **dispatch**（`rktcrypto_digest.c`）：算法用 int id（经 rktcrypto.h 常量
+  暴露到 Racket 侧），统一 init/update/final/oneshot + ctx-size/size/
+  block-size/xof? 元数据。context 存在 Racket 字节串里，dispatch 每次
+  调用 memcpy 进出本地对齐 union —— 兼顾 GC 可移动性与对齐，对大块
+  update 开销可忽略（一次 ~208B memcpy）。
+- **io 层**（`io/crypto/main.rkt`）：8 个接受 symbol 的类型安全低层原语，
+  kernel.ss 注册；**collects**（`racket/crypto/digest`）：digest 对象
+  （finalized 标记防重用）、one-shot/增量/port/file 四形态、`#:start/#:end`
+  区间、XOF `#:length`，全 contract。
+- **HMAC**（`racket/crypto/mac`，纯 Racket 编排，FIPS 198-1）：one-shot +
+  增量，密钥块用完 `crypto-bytes-clear!` 清零；瓶颈仍在 C 内核。
+- **C 层 KAT**：selftest 每族一个 known-answer 测试。
+
+验收结果：
+
+- 正确性：`tests/racket/crypto-digest.rktl` 55 项全过（NIST FIPS 180-4/202、
+  RFC 7693、RFC 4231 官方向量 + 增量==one-shot + port + 负向）；额外与
+  **python hashlib 差分测试 78 例**（覆盖 0/55/56/63/64/65/127/128/129/1000/
+  100000 等全部块边界）零不匹配。测试过程实抓 2 个笔误（测试期望值）+ 
+  暴露 dispatch 设计的正确性（增量切分不变）。
+- 性能（16 MiB one-shot，Apple M-series 便携路径）：BLAKE2b 1150 MiB/s、
+  SHA-512 576、SHA-256 366、SHA3-256 233 MiB/s。
+
+尚未完成（M1 后续批次，框架已就位，属机械增量）：
+
+- **BLAKE3、Poly1305、SipHash、KMAC**：dispatch 框架加算法即可，未做。
+- **SHA-256 便携实现调优**：当前 366 MiB/s 约为 rktio 内置的 0.68×
+  （两者皆纯 C 参考实现；可用消息调度滚动 + 循环展开提升）。
+- **硬件加速路径**（SHA-NI/AVX2/ARMv8-CE）：dispatch 的多实现函数指针
+  表尚未接入，全部走便携 C。设计文档 M1"≥OpenSSL 80%"针对硬件路径，
+  待此项完成后验收。
+- **可变长/keyed BLAKE2b 的公开 API**：核心已支持，dispatch 暂固定
+  BLAKE2b-512、无 keyed 出口（keyed 场景先用 HMAC）。
+
 ## 8. 明确不做（non-goals）
 
 

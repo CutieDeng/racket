@@ -2,6 +2,8 @@
 @(require "mz.rkt" (for-label racket/crypto
                               racket/crypto/random
                               racket/crypto/util
+                              racket/crypto/digest
+                              racket/crypto/mac
                               racket/random))
 
 @title[#:tag "crypto"]{Cryptography}
@@ -92,3 +94,99 @@ returns @racket[#t] if all pass. Returns @racket[#f] on hosts without
 the built-in subsystem (currently, the BC implementation of Racket,
 where the operations above fall back to best-effort Racket
 implementations without a constant-time guarantee).}
+
+@; ------------------------------------------------------------------------
+
+@section{Message Digests}
+
+@defmodule[racket/crypto/digest]
+
+Digest algorithms are named by symbol. The supported algorithms are
+@racket['sha224], @racket['sha256], @racket['sha384], @racket['sha512],
+@racket['sha512/256], @racket['sha3-224], @racket['sha3-256],
+@racket['sha3-384], @racket['sha3-512], @racket['shake128],
+@racket['shake256], and @racket['blake2b]. The SHAKE algorithms are
+@deftech{extendable-output functions} (XOFs): they have no fixed output
+size, so a length must be supplied.
+
+@defthing[digest-algorithm/c flat-contract?]{
+A contract for the digest algorithm symbols listed above.}
+
+@defproc[(digest-bytes [alg digest-algorithm/c]
+                       [in (or/c bytes? input-port?)]
+                       [#:start start exact-nonnegative-integer? 0]
+                       [#:end end (or/c exact-nonnegative-integer? #f) #f]
+                       [#:length length (or/c exact-positive-integer? #f) #f])
+         bytes?]{
+
+Computes the digest of @racket[in] (a byte string or input port). For a
+byte string, @racket[start] and @racket[end] select a subrange. For a
+fixed-size algorithm @racket[length] may be omitted; for an @tech{XOF}
+it is required.}
+
+@defproc[(digest-file [alg digest-algorithm/c] [path path-string?]
+                      [#:length length (or/c exact-positive-integer? #f) #f])
+         bytes?]{
+Computes the digest of a file's contents.}
+
+@defproc[(make-digest [alg digest-algorithm/c]
+                      [#:length length exact-nonnegative-integer? 0])
+         digest?]{
+Creates an incremental digest context.}
+
+@defproc[(digest? [v any/c]) boolean?]{Recognizes digest contexts.}
+
+@defproc[(digest-update! [dg digest?] [data bytes?]
+                         [#:start start exact-nonnegative-integer? 0]
+                         [#:end end (or/c exact-nonnegative-integer? #f) #f])
+         void?]{
+Absorbs @racket[data] into @racket[dg]. An error is raised if
+@racket[dg] has been finalized.}
+
+@defproc[(digest-final! [dg digest?]
+                        [#:length length (or/c exact-positive-integer? #f) #f])
+         bytes?]{
+Finalizes @racket[dg] and returns the digest. The context becomes
+unusable afterward.}
+
+@deftogether[(
+@defproc[(digest-output-size [alg (and/c digest-algorithm/c (not/c (lambda (a) (digest-xof? a))))]) exact-positive-integer?]
+@defproc[(digest-block-size [alg digest-algorithm/c]) exact-positive-integer?]
+@defproc[(digest-xof? [alg digest-algorithm/c]) boolean?]
+@defproc[(digest-algorithms) (listof symbol?)]
+)]{
+Digest metadata: the default output size (not defined for XOFs), the
+input block size (as used by HMAC), whether the algorithm is an XOF,
+and the list of all supported algorithms.}
+
+@; ------------------------------------------------------------------------
+
+@section{Message Authentication Codes}
+
+@defmodule[racket/crypto/mac]
+
+@defthing[hmac-algorithm/c flat-contract?]{
+Like @racket[digest-algorithm/c] but excludes the XOF algorithms, which
+cannot key an HMAC.}
+
+@defproc[(hmac-bytes [alg hmac-algorithm/c] [key bytes?] [data bytes?]
+                     [#:start start exact-nonnegative-integer? 0]
+                     [#:end end exact-nonnegative-integer? (bytes-length data)])
+         bytes?]{
+
+Computes @tt{HMAC}(@racket[key], @racket[data]) using @racket[alg] as
+the underlying hash (FIPS 198-1 / RFC 2104). To verify a received MAC,
+compare with @racket[crypto-bytes=?].}
+
+@defproc[(make-hmac [alg hmac-algorithm/c] [key bytes?]) hmac?]{
+Creates an incremental HMAC context.}
+
+@defproc[(hmac? [v any/c]) boolean?]{Recognizes HMAC contexts.}
+
+@defproc[(hmac-update! [h hmac?] [data bytes?]
+                       [#:start start exact-nonnegative-integer? 0]
+                       [#:end end exact-nonnegative-integer? (bytes-length data)])
+         void?]{Absorbs @racket[data] into @racket[h].}
+
+@defproc[(hmac-final! [h hmac?]) bytes?]{
+Finalizes @racket[h] and returns the MAC.}

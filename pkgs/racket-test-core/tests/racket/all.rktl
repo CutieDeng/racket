@@ -20,6 +20,7 @@
 (load-in-sandbox "intmap.rktl")
 (load-in-sandbox "intbits.rktl")
 (load-in-sandbox "crypto.rktl")
+(load-in-sandbox "crypto-digest.rktl")
 (load-in-sandbox "fasl.rktl")
 
 (load-in-sandbox "async-channel.rktl")

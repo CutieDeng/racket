@@ -66,6 +66,61 @@ RKTCRYPTO_EXTERN_NOERR void rktcrypto_secure_clear(unsigned char *buf, intptr_t 
    SecureZeroMemory, or a volatile fallback). */
 
 /*************************************************/
+/* Message digests                               */
+
+/* Algorithm ids. These become Racket-side constants via parse.rkt. */
+#define RKTCRYPTO_SHA224      1
+#define RKTCRYPTO_SHA256      2
+#define RKTCRYPTO_SHA384      3
+#define RKTCRYPTO_SHA512      4
+#define RKTCRYPTO_SHA512_256  5
+#define RKTCRYPTO_SHA3_224    6
+#define RKTCRYPTO_SHA3_256    7
+#define RKTCRYPTO_SHA3_384    8
+#define RKTCRYPTO_SHA3_512    9
+#define RKTCRYPTO_SHAKE128   10
+#define RKTCRYPTO_SHAKE256   11
+#define RKTCRYPTO_BLAKE2B    12
+
+/* Upper bound on the incremental context size across all algorithms;
+   Racket allocates a byte string of at least this many bytes to hold
+   a digest context. */
+#define RKTCRYPTO_DIGEST_CTX_MAXSIZE 512
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_digest_ctx_size(int alg);
+/* Bytes needed to hold a context for `alg`, or 0 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_digest_size(int alg);
+/* Default output size in bytes, or 0 for extendable-output functions
+   (SHAKE), or -1 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_digest_block_size(int alg);
+/* Input block size in bytes (for HMAC), or -1 if `alg` is unknown. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_is_xof(int alg);
+/* 1 if `alg` is an extendable-output function, else 0. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_init(int alg, unsigned char *ctx, intptr_t ctx_len, intptr_t outlen);
+/* Initialize `ctx` for `alg`. `outlen` sets the output length for
+   BLAKE2b and the default for SHAKE; ignored for fixed-size hashes.
+   Returns 1 on success, 0 on bad algorithm/size. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_update(int alg, unsigned char *ctx, intptr_t ctx_len,
+                                                   const unsigned char *data, intptr_t start, intptr_t end);
+/* Absorb data[start..end). Returns 1 on success, 0 on bad arguments. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_final(int alg, unsigned char *ctx, intptr_t ctx_len,
+                                                  unsigned char *out, intptr_t out_start, intptr_t out_len);
+/* Write out_len output bytes to out[out_start..]. For fixed-size
+   hashes out_len must equal the digest size; for SHAKE it may be any
+   length. Returns 1 on success, 0 on bad arguments. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_oneshot(int alg,
+                                                    const unsigned char *data, intptr_t start, intptr_t end,
+                                                    unsigned char *out, intptr_t out_start, intptr_t out_len);
+/* One-shot init/update/final. Returns 1 on success, 0 on bad arguments. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);

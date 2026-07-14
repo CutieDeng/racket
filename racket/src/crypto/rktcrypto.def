@@ -2,4 +2,12 @@ EXPORTS
 rktcrypto_system_random
 rktcrypto_ct_bytes_equal
 rktcrypto_secure_clear
+rktcrypto_digest_ctx_size
+rktcrypto_digest_size
+rktcrypto_digest_block_size
+rktcrypto_digest_is_xof
+rktcrypto_digest_init
+rktcrypto_digest_update
+rktcrypto_digest_final
+rktcrypto_digest_oneshot
 rktcrypto_selftest_core

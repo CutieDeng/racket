@@ -22,12 +22,18 @@
 
   (define headers
     (list (at-source "rktcrypto.h")
-          (at-source "rktcrypto_private.h")))
+          (at-source "rktcrypto_private.h")
+          (at-source "rktcrypto_digest.h")))
   (define rktcrypto.h (car headers))
 
   (define src-names
     '("rktcrypto_entropy.c"
       "rktcrypto_ct.c"
+      "rktcrypto_sha256.c"
+      "rktcrypto_sha512.c"
+      "rktcrypto_sha3.c"
+      "rktcrypto_blake2b.c"
+      "rktcrypto_digest.c"
       "rktcrypto_selftest.c"))
   (define objs
     (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))

@@ -2,4 +2,12 @@
 Sforeign_symbol("rktcrypto_system_random", (void *)rktcrypto_system_random);
 Sforeign_symbol("rktcrypto_ct_bytes_equal", (void *)rktcrypto_ct_bytes_equal);
 Sforeign_symbol("rktcrypto_secure_clear", (void *)rktcrypto_secure_clear);
+Sforeign_symbol("rktcrypto_digest_ctx_size", (void *)rktcrypto_digest_ctx_size);
+Sforeign_symbol("rktcrypto_digest_size", (void *)rktcrypto_digest_size);
+Sforeign_symbol("rktcrypto_digest_block_size", (void *)rktcrypto_digest_block_size);
+Sforeign_symbol("rktcrypto_digest_is_xof", (void *)rktcrypto_digest_is_xof);
+Sforeign_symbol("rktcrypto_digest_init", (void *)rktcrypto_digest_init);
+Sforeign_symbol("rktcrypto_digest_update", (void *)rktcrypto_digest_update);
+Sforeign_symbol("rktcrypto_digest_final", (void *)rktcrypto_digest_final);
+Sforeign_symbol("rktcrypto_digest_oneshot", (void *)rktcrypto_digest_oneshot);
 Sforeign_symbol("rktcrypto_selftest_core", (void *)rktcrypto_selftest_core);

@@ -5,7 +5,15 @@
 (provide crypto-random-bytes!
          crypto-bytes=?
          crypto-bytes-clear!
-         crypto-subsystem-self-test?)
+         crypto-subsystem-self-test?
+         crypto-digest-ctx-size
+         crypto-digest-size
+         crypto-digest-block-size
+         crypto-digest-xof?
+         crypto-digest-init!
+         crypto-digest-update!
+         crypto-digest-final!
+         crypto-digest-oneshot!)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -53,3 +61,92 @@
 ;; Runs the rktcrypto known-answer self-tests; `#t` means all passed.
 (define/who (crypto-subsystem-self-test?)
   (eqv? 1 (rktcrypto_selftest_core)))
+
+;; ----------------------------------------
+;; Message digests
+;;
+;; These low-level primitives take an algorithm symbol and expose the
+;; rktcrypto digest dispatch. The digest context is a caller-provided
+;; mutable byte string of at least `crypto-digest-ctx-size` bytes; the
+;; collects-level `racket/crypto/digest` wraps this as a digest object
+;; with a finalized flag, contracts, and port support.
+
+(define (alg->id who alg)
+  (case alg
+    [(sha224)     RKTCRYPTO_SHA224]
+    [(sha256)     RKTCRYPTO_SHA256]
+    [(sha384)     RKTCRYPTO_SHA384]
+    [(sha512)     RKTCRYPTO_SHA512]
+    [(sha512/256) RKTCRYPTO_SHA512_256]
+    [(sha3-224)   RKTCRYPTO_SHA3_224]
+    [(sha3-256)   RKTCRYPTO_SHA3_256]
+    [(sha3-384)   RKTCRYPTO_SHA3_384]
+    [(sha3-512)   RKTCRYPTO_SHA3_512]
+    [(shake128)   RKTCRYPTO_SHAKE128]
+    [(shake256)   RKTCRYPTO_SHAKE256]
+    [(blake2b)    RKTCRYPTO_BLAKE2B]
+    [else (raise-argument-error who "crypto-digest-algorithm/c" alg)]))
+
+(define/who (crypto-digest-ctx-size alg)
+  (rktcrypto_digest_ctx_size (alg->id who alg)))
+
+(define/who (crypto-digest-size alg)
+  (rktcrypto_digest_size (alg->id who alg)))
+
+(define/who (crypto-digest-block-size alg)
+  (rktcrypto_digest_block_size (alg->id who alg)))
+
+(define/who (crypto-digest-xof? alg)
+  (eqv? 1 (rktcrypto_digest_is_xof (alg->id who alg))))
+
+(define (check-ctx who ctx alg-id)
+  (check-mutable-bytes who ctx)
+  (define need (rktcrypto_digest_ctx_size alg-id))
+  (unless (>= (bytes-length ctx) need)
+    (raise-arguments-error who "digest context byte string is too small"
+                           "given" (bytes-length ctx)
+                           "required" need)))
+
+(define (fail-digest who)
+  (raise (exn:fail (string-append (symbol->string who) ": digest operation failed")
+                   (current-continuation-marks))))
+
+(define/who (crypto-digest-init! alg ctx [outlen 0])
+  (define id (alg->id who alg))
+  (check-ctx who ctx id)
+  (check who exact-nonnegative-integer? outlen)
+  (unless (eqv? 1 (rktcrypto_digest_init id ctx (bytes-length ctx) outlen))
+    (fail-digest who))
+  (void))
+
+(define/who (crypto-digest-update! alg ctx data [start 0] [end (and (bytes? data) (bytes-length data))])
+  (define id (alg->id who alg))
+  (check-ctx who ctx id)
+  (check who bytes? data)
+  (check-start/end who data start end)
+  (unless (eqv? 1 (rktcrypto_digest_update id ctx (bytes-length ctx) data start end))
+    (fail-digest who))
+  (void))
+
+(define/who (crypto-digest-final! alg ctx out [out-start 0] [out-len (and (bytes? out) (- (bytes-length out) out-start))])
+  (define id (alg->id who alg))
+  (check-ctx who ctx id)
+  (check-mutable-bytes who out)
+  (check who exact-nonnegative-integer? out-start)
+  (check who exact-nonnegative-integer? out-len)
+  (check-range who out-start (+ out-start out-len) (bytes-length out) out)
+  (unless (eqv? 1 (rktcrypto_digest_final id ctx (bytes-length ctx) out out-start out-len))
+    (fail-digest who))
+  (void))
+
+(define/who (crypto-digest-oneshot! alg data data-start data-end out out-start out-len)
+  (define id (alg->id who alg))
+  (check who bytes? data)
+  (check-start/end who data data-start data-end)
+  (check-mutable-bytes who out)
+  (check who exact-nonnegative-integer? out-start)
+  (check who exact-nonnegative-integer? out-len)
+  (check-range who out-start (+ out-start out-len) (bytes-length out) out)
+  (unless (eqv? 1 (rktcrypto_digest_oneshot id data data-start data-end out out-start out-len))
+    (fail-digest who))
+  (void))
