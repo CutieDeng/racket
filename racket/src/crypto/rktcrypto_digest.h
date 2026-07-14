@@ -84,4 +84,27 @@ void rktcrypto_blake2b_core_update(rktcrypto_blake2b_ctx_t *ctx,
 void rktcrypto_blake2b_core_final(rktcrypto_blake2b_ctx_t *ctx,
                                   unsigned char *out, intptr_t out_len);
 
+/* ---- BLAKE3 (official specification) ---- */
+
+#define RKTCRYPTO_BLAKE3_MAX_DEPTH 54
+
+typedef struct rktcrypto_blake3_ctx_t {
+  uint32_t key[8];
+  /* chunk state */
+  uint32_t cv[8];
+  unsigned char block[64];
+  uint8_t block_len;
+  uint8_t blocks_compressed;      /* blocks compressed in the current chunk */
+  uint64_t chunk_counter;
+  /* CV stack: one slot (8 words) per set bit of the chunk count */
+  uint32_t cv_stack[(RKTCRYPTO_BLAKE3_MAX_DEPTH + 1) * 8];
+  uint8_t cv_stack_len;           /* number of CVs on the stack */
+} rktcrypto_blake3_ctx_t;
+
+void rktcrypto_blake3_core_init(rktcrypto_blake3_ctx_t *ctx);
+void rktcrypto_blake3_core_update(rktcrypto_blake3_ctx_t *ctx,
+                                  const unsigned char *data, intptr_t len);
+void rktcrypto_blake3_core_final(rktcrypto_blake3_ctx_t *ctx,
+                                 unsigned char *out, intptr_t out_len);
+
 #endif

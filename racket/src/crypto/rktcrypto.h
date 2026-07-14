@@ -81,11 +81,12 @@ RKTCRYPTO_EXTERN_NOERR void rktcrypto_secure_clear(unsigned char *buf, intptr_t 
 #define RKTCRYPTO_SHAKE128   10
 #define RKTCRYPTO_SHAKE256   11
 #define RKTCRYPTO_BLAKE2B    12
+#define RKTCRYPTO_BLAKE3     13
 
 /* Upper bound on the incremental context size across all algorithms;
    Racket allocates a byte string of at least this many bytes to hold
-   a digest context. */
-#define RKTCRYPTO_DIGEST_CTX_MAXSIZE 512
+   a digest context. (BLAKE3's CV stack dominates.) */
+#define RKTCRYPTO_DIGEST_CTX_MAXSIZE 2048
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_digest_ctx_size(int alg);
 /* Bytes needed to hold a context for `alg`, or 0 if `alg` is unknown. */

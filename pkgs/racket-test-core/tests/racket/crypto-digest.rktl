@@ -56,6 +56,25 @@
       hx 'blake2b #"abc")
 
 ;; ----------------------------------------
+;; BLAKE3 (official spec; default 32-byte output, also an XOF)
+
+(test "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+      hx 'blake3 #"abc")
+(test "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+      hx 'blake3 #"")
+;; XOF: default length is 32, but longer is allowed and a prefix of it
+(test (subbytes (digest-bytes 'blake3 #"abc" #:length 131) 0 32)
+      values (digest-bytes 'blake3 #"abc"))
+(test 32 digest-output-size 'blake3)
+(test #t digest-xof? 'blake3)
+;; multi-chunk input (2 KiB) incremental == one-shot
+(let ([msg (make-bytes 2048 90)])
+  (define d (make-digest 'blake3))
+  (digest-update! d msg #:start 0 #:end 1000)
+  (digest-update! d msg #:start 1000 #:end 2048)
+  (test (digest-bytes 'blake3 msg) digest-final! d))
+
+;; ----------------------------------------
 ;; Region selection (#:start / #:end)
 
 (test (hx 'sha256 #"abc")

@@ -12,7 +12,8 @@
 (define-constant RKTCRYPTO_SHAKE128 10)
 (define-constant RKTCRYPTO_SHAKE256 11)
 (define-constant RKTCRYPTO_BLAKE2B 12)
-(define-constant RKTCRYPTO_DIGEST_CTX_MAXSIZE 512)
+(define-constant RKTCRYPTO_BLAKE3 13)
+(define-constant RKTCRYPTO_DIGEST_CTX_MAXSIZE 2048)
 (define-function
  ()
  int

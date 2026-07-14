@@ -18,12 +18,26 @@
 (define algorithms
   '(sha224 sha256 sha384 sha512 sha512/256
     sha3-224 sha3-256 sha3-384 sha3-512
-    shake128 shake256 blake2b))
+    shake128 shake256 blake2b blake3))
 
 (define (digest-algorithm? v) (and (memq v algorithms) #t))
 
-(define (fixed-algorithm? v)
-  (and (digest-algorithm? v) (not (crypto-digest-xof? v))))
+;; Has a default output size (so #:length may be omitted). This is true
+;; for every algorithm except the pure XOFs (SHAKE); BLAKE3 is an XOF
+;; but still has a 32-byte default.
+(define (has-default-size? v)
+  (and (digest-algorithm? v) (> (crypto-digest-size v) 0)))
+
+;; Resolves the output length for a call, given the algorithm and an
+;; optional explicit length.
+(define (resolve-length who alg len)
+  (cond
+    [len len]
+    [(has-default-size? alg) (crypto-digest-size alg)]
+    [else
+     (raise-arguments-error who
+                            "output length required for an extendable-output function"
+                            "algorithm" alg)]))
 
 ;; An incremental digest. `ctx` is the rktcrypto context byte string;
 ;; `done?` guards against use after finalization.
@@ -47,13 +61,7 @@
   (when (digest-done? dg)
     (raise-arguments-error who "digest has already been finalized"))
   (define alg (digest-algorithm dg))
-  (define out-len
-    (cond
-      [len len]
-      [(crypto-digest-xof? alg)
-       (raise-arguments-error who "output length required for an extendable-output function"
-                              "algorithm" alg)]
-      [else (crypto-digest-size alg)]))
+  (define out-len (resolve-length who alg len))
   (define out (make-bytes out-len))
   (crypto-digest-final! alg (digest-ctx dg) out 0 out-len)
   (set-digest-done?! dg #t)
@@ -65,14 +73,7 @@
                       #:start [start 0]
                       #:end [end (and (bytes? in) (bytes-length in))]
                       #:length [len #f])
-  (define out-len
-    (cond
-      [len len]
-      [(crypto-digest-xof? alg)
-       (raise-arguments-error 'digest-bytes
-                              "output length required for an extendable-output function"
-                              "algorithm" alg)]
-      [else (crypto-digest-size alg)]))
+  (define out-len (resolve-length 'digest-bytes alg len))
   (cond
     [(bytes? in)
      (define out (make-bytes out-len))
@@ -153,6 +154,6 @@
           [digest-final! (->* (digest?)
                               (#:length (or/c exact-positive-integer? #f))
                               bytes?)]
-          [digest-output-size (-> fixed-algorithm? exact-positive-integer?)]
+          [digest-output-size (-> has-default-size? exact-positive-integer?)]
           [digest-block-size (-> digest-algorithm/c exact-positive-integer?)]
           [digest-xof? (-> digest-algorithm/c boolean?)]))

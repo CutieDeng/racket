@@ -31,14 +31,14 @@
                 (1/copy-file copy-file)
                 (1/crypto-bytes-clear! crypto-bytes-clear!)
                 (1/crypto-bytes=? crypto-bytes=?)
-                (crypto-digest-block-size crypto-digest-block-size)
-                (crypto-digest-ctx-size crypto-digest-ctx-size)
-                (crypto-digest-final! crypto-digest-final!)
-                (crypto-digest-init! crypto-digest-init!)
-                (crypto-digest-oneshot! crypto-digest-oneshot!)
-                (crypto-digest-size crypto-digest-size)
-                (crypto-digest-update! crypto-digest-update!)
-                (crypto-digest-xof? crypto-digest-xof?)
+                (1/crypto-digest-block-size crypto-digest-block-size)
+                (1/crypto-digest-ctx-size crypto-digest-ctx-size)
+                (1/crypto-digest-final! crypto-digest-final!)
+                (1/crypto-digest-init! crypto-digest-init!)
+                (1/crypto-digest-oneshot! crypto-digest-oneshot!)
+                (1/crypto-digest-size crypto-digest-size)
+                (1/crypto-digest-update! crypto-digest-update!)
+                (1/crypto-digest-xof? crypto-digest-xof?)
                 (1/crypto-random-bytes! crypto-random-bytes!)
                 (1/crypto-subsystem-self-test? crypto-subsystem-self-test?)
                 (1/current-command-line-arguments
@@ -425,10 +425,12 @@
    'temp-dir
    '9))
 (define hash2610 (hasheq))
-(define hash2095
+(define hash2218
   (hasheq
    'blake2b
    '12
+   'blake3
+   '13
    'sha224
    '1
    'sha256
@@ -35303,6 +35305,7 @@
 (define RKTCRYPTO_SHAKE_2592 10)
 (define RKTCRYPTO_SHAKE_2204 11)
 (define RKTCRYPTO_BLAKE2B 12)
+(define RKTCRYPTO_BLAKE_2626 13)
 (define rktcrypto_system_random
   (hash-ref rktcrypto-table 'rktcrypto_system_random))
 (define rktcrypto_ct_bytes_equal
@@ -35422,7 +35425,7 @@
 (define alg->id
   (lambda (who_0 alg_0)
     (let ((index_0
-           (if (symbol? alg_0) (hash-ref hash2095 alg_0 (lambda () 0)) 0)))
+           (if (symbol? alg_0) (hash-ref hash2218 alg_0 (lambda () 0)) 0)))
       (if (unsafe-fx< index_0 6)
         (if (unsafe-fx< index_0 2)
           (if (unsafe-fx< index_0 1)
@@ -35433,29 +35436,37 @@
             (if (unsafe-fx< index_0 4) 3 (if (unsafe-fx< index_0 5) 4 5))))
         (if (unsafe-fx< index_0 9)
           (if (unsafe-fx< index_0 7) 6 (if (unsafe-fx< index_0 8) 7 8))
-          (if (unsafe-fx< index_0 10)
-            9
-            (if (unsafe-fx< index_0 11)
-              10
-              (if (unsafe-fx< index_0 12) 11 12))))))))
-(define crypto-digest-ctx-size
-  (lambda (alg_0)
-    (|#%app|
-     rktcrypto_digest_ctx_size
-     (alg->id 'crypto-digest-ctx-size alg_0))))
-(define crypto-digest-size
-  (lambda (alg_0)
-    (|#%app| rktcrypto_digest_size (alg->id 'crypto-digest-size alg_0))))
-(define crypto-digest-block-size
-  (lambda (alg_0)
-    (|#%app|
-     rktcrypto_digest_block_size
-     (alg->id 'crypto-digest-block-size alg_0))))
-(define crypto-digest-xof?
-  (lambda (alg_0)
-    (eqv?
-     1
-     (|#%app| rktcrypto_digest_is_xof (alg->id 'crypto-digest-xof? alg_0)))))
+          (if (unsafe-fx< index_0 11)
+            (if (unsafe-fx< index_0 10) 9 10)
+            (if (unsafe-fx< index_0 12)
+              11
+              (if (unsafe-fx< index_0 13) 12 13))))))))
+(define 1/crypto-digest-ctx-size
+  (|#%name|
+   crypto-digest-ctx-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_digest_ctx_size
+      (alg->id 'crypto-digest-ctx-size alg_0)))))
+(define 1/crypto-digest-size
+  (|#%name|
+   crypto-digest-size
+   (lambda (alg_0)
+     (|#%app| rktcrypto_digest_size (alg->id 'crypto-digest-size alg_0)))))
+(define 1/crypto-digest-block-size
+  (|#%name|
+   crypto-digest-block-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_digest_block_size
+      (alg->id 'crypto-digest-block-size alg_0)))))
+(define 1/crypto-digest-xof?
+  (|#%name|
+   crypto-digest-xof?
+   (lambda (alg_0)
+     (eqv?
+      1
+      (|#%app| rktcrypto_digest_is_xof (alg->id 'crypto-digest-xof? alg_0))))))
 (define check-ctx
   (lambda (who_0 ctx_0 alg-id_0)
     (begin
@@ -35478,7 +35489,7 @@
              (symbol->string who_0)
              ": digest operation failed")))
        (|#%app| exn:fail app_0 (current-continuation-marks))))))
-(define crypto-digest-init!
+(define 1/crypto-digest-init!
   (let ((crypto-digest-init!_0
          (|#%name|
           crypto-digest-init!
@@ -35503,10 +35514,13 @@
                   (void)
                   (fail-digest 'crypto-digest-init!))
                 (void)))))))
-    (case-lambda
-     ((alg_0 ctx_0) (crypto-digest-init!_0 alg_0 ctx_0 0))
-     ((alg_0 ctx_0 outlen7_0) (crypto-digest-init!_0 alg_0 ctx_0 outlen7_0)))))
-(define crypto-digest-update!
+    (|#%name|
+     crypto-digest-init!
+     (case-lambda
+      ((alg_0 ctx_0) (crypto-digest-init!_0 alg_0 ctx_0 0))
+      ((alg_0 ctx_0 outlen7_0)
+       (crypto-digest-init!_0 alg_0 ctx_0 outlen7_0))))))
+(define 1/crypto-digest-update!
   (let ((crypto-digest-update!_0
          (|#%name|
           crypto-digest-update!
@@ -35542,19 +35556,21 @@
                     (void)
                     (fail-digest 'crypto-digest-update!))
                   (void))))))))
-    (case-lambda
-     ((alg_0 ctx_0 data_0)
-      (crypto-digest-update!_0 alg_0 ctx_0 data_0 0 unsafe-undefined))
-     ((alg_0 ctx_0 data_0 start_0 end11_0)
-      (crypto-digest-update!_0 alg_0 ctx_0 data_0 start_0 end11_0))
-     ((alg_0 ctx_0 data_0 start10_0)
-      (crypto-digest-update!_0
-       alg_0
-       ctx_0
-       data_0
-       start10_0
-       unsafe-undefined)))))
-(define crypto-digest-final!
+    (|#%name|
+     crypto-digest-update!
+     (case-lambda
+      ((alg_0 ctx_0 data_0)
+       (crypto-digest-update!_0 alg_0 ctx_0 data_0 0 unsafe-undefined))
+      ((alg_0 ctx_0 data_0 start_0 end11_0)
+       (crypto-digest-update!_0 alg_0 ctx_0 data_0 start_0 end11_0))
+      ((alg_0 ctx_0 data_0 start10_0)
+       (crypto-digest-update!_0
+        alg_0
+        ctx_0
+        data_0
+        start10_0
+        unsafe-undefined))))))
+(define 1/crypto-digest-final!
   (let ((crypto-digest-final!_0
          (|#%name|
           crypto-digest-final!
@@ -35601,64 +35617,68 @@
                     (void)
                     (fail-digest 'crypto-digest-final!))
                   (void))))))))
-    (case-lambda
-     ((alg_0 ctx_0 out_0)
-      (crypto-digest-final!_0 alg_0 ctx_0 out_0 0 unsafe-undefined))
-     ((alg_0 ctx_0 out_0 out-start_0 out-len16_0)
-      (crypto-digest-final!_0 alg_0 ctx_0 out_0 out-start_0 out-len16_0))
-     ((alg_0 ctx_0 out_0 out-start15_0)
-      (crypto-digest-final!_0
-       alg_0
-       ctx_0
-       out_0
-       out-start15_0
-       unsafe-undefined)))))
-(define crypto-digest-oneshot!
-  (lambda (alg_0 data_0 data-start_0 data-end_0 out_0 out-start_0 out-len_0)
-    (let ((id_0 (alg->id 'crypto-digest-oneshot! alg_0)))
-      (begin
-        (if (bytes? data_0)
-          (void)
-          (raise-argument-error 'crypto-digest-oneshot! "bytes?" data_0))
-        (check-start/end
-         'crypto-digest-oneshot!
-         data_0
-         data-start_0
-         data-end_0)
-        (check-mutable-bytes 'crypto-digest-oneshot! out_0)
-        (if (exact-nonnegative-integer? out-start_0)
-          (void)
-          (raise-argument-error
-           'crypto-digest-oneshot!
-           "exact-nonnegative-integer?"
-           out-start_0))
-        (if (exact-nonnegative-integer? out-len_0)
-          (void)
-          (raise-argument-error
-           'crypto-digest-oneshot!
-           "exact-nonnegative-integer?"
-           out-len_0))
-        (let ((app_0 (+ out-start_0 out-len_0)))
-          (check-range
-           'crypto-digest-oneshot!
-           out-start_0
-           app_0
-           (unsafe-bytes-length out_0)
-           out_0))
-        (if (eqv?
-             1
-             (|#%app|
-              rktcrypto_digest_oneshot
-              id_0
-              data_0
-              data-start_0
-              data-end_0
-              out_0
-              out-start_0
-              out-len_0))
-          (void)
-          (fail-digest 'crypto-digest-oneshot!))
-        (void)))))
+    (|#%name|
+     crypto-digest-final!
+     (case-lambda
+      ((alg_0 ctx_0 out_0)
+       (crypto-digest-final!_0 alg_0 ctx_0 out_0 0 unsafe-undefined))
+      ((alg_0 ctx_0 out_0 out-start_0 out-len16_0)
+       (crypto-digest-final!_0 alg_0 ctx_0 out_0 out-start_0 out-len16_0))
+      ((alg_0 ctx_0 out_0 out-start15_0)
+       (crypto-digest-final!_0
+        alg_0
+        ctx_0
+        out_0
+        out-start15_0
+        unsafe-undefined))))))
+(define 1/crypto-digest-oneshot!
+  (|#%name|
+   crypto-digest-oneshot!
+   (lambda (alg_0 data_0 data-start_0 data-end_0 out_0 out-start_0 out-len_0)
+     (let ((id_0 (alg->id 'crypto-digest-oneshot! alg_0)))
+       (begin
+         (if (bytes? data_0)
+           (void)
+           (raise-argument-error 'crypto-digest-oneshot! "bytes?" data_0))
+         (check-start/end
+          'crypto-digest-oneshot!
+          data_0
+          data-start_0
+          data-end_0)
+         (check-mutable-bytes 'crypto-digest-oneshot! out_0)
+         (if (exact-nonnegative-integer? out-start_0)
+           (void)
+           (raise-argument-error
+            'crypto-digest-oneshot!
+            "exact-nonnegative-integer?"
+            out-start_0))
+         (if (exact-nonnegative-integer? out-len_0)
+           (void)
+           (raise-argument-error
+            'crypto-digest-oneshot!
+            "exact-nonnegative-integer?"
+            out-len_0))
+         (let ((app_0 (+ out-start_0 out-len_0)))
+           (check-range
+            'crypto-digest-oneshot!
+            out-start_0
+            app_0
+            (unsafe-bytes-length out_0)
+            out_0))
+         (if (eqv?
+              1
+              (|#%app|
+               rktcrypto_digest_oneshot
+               id_0
+               data_0
+               data-start_0
+               data-end_0
+               out_0
+               out-start_0
+               out-len_0))
+           (void)
+           (fail-digest 'crypto-digest-oneshot!))
+         (void))))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

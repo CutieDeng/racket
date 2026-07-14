@@ -366,9 +366,27 @@ racket/crypto            ; re-export 常用子集
 - 性能（16 MiB one-shot，Apple M-series 便携路径）：BLAKE2b 1150 MiB/s、
   SHA-512 576、SHA-256 366、SHA3-256 233 MiB/s。
 
-尚未完成（M1 后续批次，框架已就位，属机械增量）：
+### M1b BLAKE3 — 完成（2026-07-15）
 
-- **BLAKE3、Poly1305、SipHash、KMAC**：dispatch 框架加算法即可，未做。
+`rktcrypto_blake3.c`：from-scratch 实现 BLAKE3（官方规范），含树形结构
+（1024 字节 chunk 分块、CV 栈按完成 chunk 数的低位进位合并、root 输出）
+与 XOF 可变长输出。接入 digest dispatch（`'blake3`，兼具 32 字节默认
+与 XOF 能力）。
+
+验收：官方测试向量（输入 i%251）离线全过 —— len 0/1/2/3/64/1023/1024/
+1025/2048/3072，覆盖单 chunk、chunk 边界、多 chunk 树合并、多 block XOF；
+`crypto-digest.rktl` 增补 BLAKE3 用例（含 XOF 前缀一致性、2KiB 多 chunk
+增量==one-shot）；C 层 KAT 加 BLAKE3("abc")；全量回归通过。吞吐
+1150+ MiB/s（便携路径，最快的内建摘要）。
+
+实现中定位并修复一个真实 bug：满 chunk 的末 block 必须**延迟**到 output
+阶段带 CHUNK_END 压缩，不能在 update 中当普通 block 处理 —— 单 chunk
+测试无法暴露，多 chunk（1025+）差分才发现。
+
+尚未完成（框架已就位，属机械增量）：
+
+- **Poly1305、SipHash、KMAC**：Poly1305 已离线实现验证（并入 M2 AEAD）；
+  SipHash 归入 M5（equal-hash 抗 flooding 加固）；KMAC 基于 SHAKE 待补。
 - **SHA-256 便携实现调优**：当前 366 MiB/s 约为 rktio 内置的 0.68×
   （两者皆纯 C 参考实现；可用消息调度滚动 + 循环展开提升）。
 - **硬件加速路径**（SHA-NI/AVX2/ARMv8-CE）：dispatch 的多实现函数指针
