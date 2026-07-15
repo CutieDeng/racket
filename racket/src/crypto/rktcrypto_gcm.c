@@ -162,6 +162,19 @@ static inline uint64x2_t gcm_ghash1(uint64x2_t acc, uint64x2_t crev, uint64_t h0
   acc = veorq_u64(acc, crev);
   return gcm_clmul_reduce(vgetq_lane_u64(acc,0), vgetq_lane_u64(acc,1), h0, h1);
 }
+/* Eight-block aggregation: (acc^c0)*H^8 ^ c1*H^7 ^ ... ^ c7*H^1, one reduction. */
+static inline uint64x2_t gcm_agg8(uint64x2_t acc, const uint64x2_t c[8], const uint64x2_t Hp[8])
+{
+  /* Hp[k] = H^(k+1); the block that acc folds into uses the highest power. */
+  uint64x2_t a0 = veorq_u64(acc, c[0]), lo, hi, lo1, hi1;
+  int j;
+  gcm_clmul256(vgetq_lane_u64(a0,0), vgetq_lane_u64(a0,1), vgetq_lane_u64(Hp[7],0), vgetq_lane_u64(Hp[7],1), &lo, &hi);
+  for (j = 1; j < 8; j++) {
+    gcm_clmul256(vgetq_lane_u64(c[j],0), vgetq_lane_u64(c[j],1), vgetq_lane_u64(Hp[7-j],0), vgetq_lane_u64(Hp[7-j],1), &lo1, &hi1);
+    lo = veorq_u64(lo, lo1); hi = veorq_u64(hi, hi1);
+  }
+  return gcm_reduce256(lo, hi);
+}
 
 /* Full seal (encrypt=1) or open (encrypt=0) core: encrypts/decrypts and
    authenticates in a single pass, four blocks at a time. `tag` gets the
@@ -173,7 +186,7 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
                    int encrypt, unsigned char tag[16])
 {
   unsigned char hb[16], blk[16], ctr[16], j0[16], ej0[16], s[16];
-  uint64x2_t H1, H2, H3, H4, acc;
+  uint64x2_t H1, H2, H3, H4, Hp[8], acc;
   uint64_t h0, h1;
   intptr_t l;
   int i;
@@ -181,6 +194,9 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
   for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
   H1 = gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(hb)));
   H2 = gcm_gfmul_n(H1, H1); H3 = gcm_gfmul_n(H2, H1); H4 = gcm_gfmul_n(H3, H1);
+  Hp[0]=H1; Hp[1]=H2; Hp[2]=H3; Hp[3]=H4;
+  Hp[4]=gcm_gfmul_n(H4,H1); Hp[5]=gcm_gfmul_n(Hp[4],H1);
+  Hp[6]=gcm_gfmul_n(Hp[5],H1); Hp[7]=gcm_gfmul_n(Hp[6],H1);
   h0 = vgetq_lane_u64(H1, 0); h1 = vgetq_lane_u64(H1, 1);
   acc = vdupq_n_u64(0);
 
@@ -202,6 +218,35 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
   memcpy(ctr, nonce, 12); ctr[12]=0; ctr[13]=0; ctr[14]=0; ctr[15]=2;
 
   l = len;
+  while (l >= 128) {
+    unsigned char c8[128];
+    uint8x16_t st8[8], k, iv8[8], ov8[8];
+    uint64x2_t cg[8];
+    int r, b;
+    memcpy(c8, ctr, 16);
+    for (b = 1; b < 8; b++) {
+      uint32_t cc;
+      memcpy(c8+16*b, c8+16*(b-1), 16);
+      cc = ((uint32_t)c8[16*b+12]<<24)|((uint32_t)c8[16*b+13]<<16)|((uint32_t)c8[16*b+14]<<8)|(uint32_t)c8[16*b+15];
+      cc++;
+      c8[16*b+12]=(unsigned char)(cc>>24); c8[16*b+13]=(unsigned char)(cc>>16);
+      c8[16*b+14]=(unsigned char)(cc>>8);  c8[16*b+15]=(unsigned char)cc;
+    }
+    for (b = 0; b < 8; b++) st8[b] = vld1q_u8(c8+16*b);
+    for (r = 0; r < 13; r++) { k = vld1q_u8(rk+16*r);
+      for (b = 0; b < 8; b++) st8[b] = vaesmcq_u8(vaeseq_u8(st8[b], k)); }
+    { uint8x16_t k13=vld1q_u8(rk+16*13), k14=vld1q_u8(rk+16*14);
+      for (b = 0; b < 8; b++) st8[b] = veorq_u8(vaeseq_u8(st8[b], k13), k14); }
+    for (b = 0; b < 8; b++) {
+      iv8[b] = vld1q_u8(in+16*b);
+      ov8[b] = veorq_u8(iv8[b], st8[b]);
+      vst1q_u8(out+16*b, ov8[b]);
+      cg[b] = gcm_revbits(vreinterpretq_u64_u8(encrypt ? ov8[b] : iv8[b]));
+    }
+    acc = gcm_agg8(acc, cg, Hp);
+    memcpy(ctr, c8+16*7, 16); inc32(ctr);
+    in += 128; out += 128; l -= 128;
+  }
   while (l >= 64) {
     unsigned char c4[64];
     uint8x16_t s0, s1, s2, s3, k, i0, i1, i2, i3, o0, o1, o2, o3, g0, g1, g2, g3;
