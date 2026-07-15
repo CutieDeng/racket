@@ -238,8 +238,10 @@ would be catastrophic. Prefer @racketmodname[racket/crypto/secretbox]
 unless you specifically need to control the nonce.
 
 @defthing[aead-algorithm/c flat-contract?]{
-A contract for the AEAD algorithm symbols @racket['chacha20-poly1305]
-and @racket['xchacha20-poly1305].}
+A contract for the AEAD algorithm symbols @racket['chacha20-poly1305],
+@racket['xchacha20-poly1305], and @racket['aes-256-gcm]. On hardware
+without AES acceleration, prefer a ChaCha20-Poly1305 variant: the
+portable AES here is constant-time but not fast.}
 
 @defproc[(aead-encrypt [alg aead-algorithm/c] [key bytes?] [nonce bytes?]
                        [plaintext bytes?] [#:aad aad bytes? #""])

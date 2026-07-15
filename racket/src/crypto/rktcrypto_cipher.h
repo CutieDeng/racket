@@ -47,4 +47,22 @@ void rktcrypto_poly1305_update(rktcrypto_poly1305_ctx_t *ctx,
                                const unsigned char *data, intptr_t len);
 void rktcrypto_poly1305_final(rktcrypto_poly1305_ctx_t *ctx, unsigned char tag[16]);
 
+/* ---- AES-256 (FIPS 197), encryption only, constant-time ---- */
+
+void rktcrypto_aes256_expand_key(const unsigned char key[32], unsigned char rk[240]);
+void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
+                                    const unsigned char in[16],
+                                    unsigned char out[16]);
+
+/* ---- AES-256-GCM (SP 800-38D), 12-byte nonce ---- */
+
+int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start);
+int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start);
+
 #endif

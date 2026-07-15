@@ -13,7 +13,7 @@
                   crypto-aead-seal!
                   crypto-aead-open!))
 
-(define algorithms '(chacha20-poly1305 xchacha20-poly1305))
+(define algorithms '(chacha20-poly1305 xchacha20-poly1305 aes-256-gcm))
 (define (aead-algorithm? v) (and (memq v algorithms) #t))
 (define aead-algorithm/c (flat-named-contract 'aead-algorithm/c aead-algorithm?))
 

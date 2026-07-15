@@ -170,6 +170,7 @@
   (case alg
     [(chacha20-poly1305)  RKTCRYPTO_AEAD_CHACHA20_POLY1305]
     [(xchacha20-poly1305) RKTCRYPTO_AEAD_XCHACHA20_POLY1305]
+    [(aes-256-gcm)        RKTCRYPTO_AEAD_AES256_GCM]
     [else (raise-argument-error who "crypto-aead-algorithm/c" alg)]))
 
 (define/who (crypto-aead-key-size alg)   (rktcrypto_aead_key_size (aead-alg->id who alg)))

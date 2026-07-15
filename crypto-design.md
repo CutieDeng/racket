@@ -4,6 +4,15 @@
 分支：`anthropic/crypto`
 日期：2026-07-14
 
+## 决策更新（2026-07-15）：不 vendor 任何外部代码
+
+用户明确：**不引入任何外部库代码**（含 HACL*/fiat-crypto/PQClean 等验证
+实现），避免把供应链风险搬进树内。因此本文 §1 vendor/ 目录与 §3 算法表
+"来源 H/F/P" 全部作废 —— **所有算法内核从零手写**，对标 FIPS/RFC 官方
+向量 + 独立参考做差分验收。M3 椭圆曲线、M4 后量子亦从零实现。常量时间
+AES 用有限域算术 S-box（x^254 求逆）而非查表。优先级：M2b AES-GCM →
+M3 公钥 → M4 后量子 → M5 去 OpenSSL。
+
 ## 0. 方向与澄清
 
 v1 中"不发明密码学"的准确含义：**不自行设计算法/协议/工作模式**；
@@ -446,10 +455,29 @@ BLAKE3、HMAC、SipHash。
 - misuse-resistance 验证：secretbox 同消息两次密文不同（随机 nonce）、
   篡改/坏版本/错密钥/错 AAD 均返回 `#f`。
 
-尚未完成（M2 后续）：
+### M2b AES-256-GCM — 完成（2026-07-15）
 
-- **AES-256-GCM**：软件需 bitsliced 常量时间实现 + PCLMUL/PMULL GHASH
-  加速，体量较大，待接入（无硬件 AES 平台建议用 ChaCha20 系，文档已述）。
+`rktcrypto_aes.c` + `rktcrypto_gcm.c`：from-scratch AES-256-GCM。
+
+- **AES-256 核心**（仅加密，CTR 只需加密）：常量时间——SubBytes 用有限域
+  算术（GF(2^8) 经 x^254 费马求逆 + 仿射变换）**而非查表**，规避 cache
+  时序侧信道（满足"不 vendor + 常量时间"双约束）。
+- **GHASH**：常量时间逐位 GF(2^128) 乘法（NIST 位序，无查表），认证器
+  无数据依赖时序。GCM = CTR（起始 J0+1）+ GHASH + tag（E(J0)⊕S）。
+- 接入 AEAD dispatch（`'aes-256-gcm`，复用现有 aead 原语，无新原语、
+  无版本 bump）。
+
+验收：NIST 全零向量（隔离 AES/CTR/GHASH/tag）—— empty tag
+530f8afb…、16 字节密文 cea7403d…/tag d0d1c8a7… 全过；AES 核心另过
+FIPS-197 C.3 与 SP800-38A 向量；`crypto-aead.rktl` 增补 AES-GCM 用例
+（NIST 向量 + 跨长度往返 + 篡改拒绝）；C 层 KAT 加全零 AES-GCM。
+过程中排查发现是测试对照值抄错（TC15 密文/tag），实现自始正确——
+用权威全零向量隔离确认。
+
+性能：便携常量时间路径（有限域 S-box 无查表，慢但安全）；无硬件 AES
+平台文档引导用 ChaCha20 系。ARMv8-CE/AES-NI 硬件加速 dispatch 待接入。
+
+尚未完成（M2 后续）：
 - **Argon2id、scrypt**：密码哈希，PBKDF2 已覆盖基本需求，Argon2id 待补。
 - **per-place DRBG**：`crypto-random-bytes` 已走系统熵（M0），用户态
   ChaCha20 DRBG（arc4random 风格、fork 安全）作为性能优化待做。

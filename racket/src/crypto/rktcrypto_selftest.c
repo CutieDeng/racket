@@ -145,6 +145,21 @@ static int test_aead(void)
   if (rktcrypto_aead_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
                           aad, 0, 12, out, 0, ptlen + 16, dec, 0))
     return 0;
+
+  /* AES-256-GCM KAT: all-zero key/nonce, 16 zero bytes of plaintext
+     (NIST vector: ct cea7403d..., tag d0d1c8a7...). */
+  {
+    unsigned char zkey[32] = {0}, znonce[12] = {0}, zpt[16] = {0}, zout[32];
+    static const unsigned char zct[16] = {
+      0xce,0xa7,0x40,0x3d,0x4d,0x60,0x6b,0x6e,0x07,0x4e,0xc5,0xd3,0xba,0xf3,0x9d,0x18};
+    static const unsigned char ztag[16] = {
+      0xd0,0xd1,0xc8,0xa7,0x99,0x99,0x6b,0xf0,0x26,0x5b,0x98,0xb5,0xd4,0x8a,0xb9,0x19};
+    if (!rktcrypto_aead_seal(RKTCRYPTO_AEAD_AES256_GCM, zkey, 32, znonce, 12,
+                             (const unsigned char *)"", 0, 0, zpt, 0, 16, zout, 0))
+      return 0;
+    if (memcmp(zout, zct, 16) != 0 || memcmp(zout + 16, ztag, 16) != 0)
+      return 0;
+  }
   return 1;
 }
 

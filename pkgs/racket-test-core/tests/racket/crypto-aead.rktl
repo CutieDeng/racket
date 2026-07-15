@@ -31,6 +31,33 @@
 (test 24 aead-nonce-size 'xchacha20-poly1305)
 
 ;; ----------------------------------------
+;; AES-256-GCM (NIST vectors)
+
+;; all-zero key/nonce, empty plaintext -> tag 530f8afb...
+(test "530f8afbc74536b9a963b4f1c4cb738b"
+      bytes->hex-string
+      (aead-encrypt 'aes-256-gcm (make-bytes 32 0) (make-bytes 12 0) #""))
+;; all-zero key/nonce, 16 zero bytes -> ct cea7403d..., tag d0d1c8a7...
+(test "cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919"
+      bytes->hex-string
+      (aead-encrypt 'aes-256-gcm (make-bytes 32 0) (make-bytes 12 0) (make-bytes 16 0)))
+(test 32 aead-key-size 'aes-256-gcm)
+(test 12 aead-nonce-size 'aes-256-gcm)
+(test 16 aead-tag-size 'aes-256-gcm)
+
+;; AES-256-GCM round-trips across sizes and AAD
+(let ([k (make-bytes 32 5)] [n (make-bytes 12 9)])
+  (for ([len (list 0 1 15 16 17 64 100)])
+    (define pt (make-bytes len (modulo (* len 3) 256)))
+    (define aad (make-bytes (modulo len 7) 4))
+    (define ct (aead-encrypt 'aes-256-gcm k n pt #:aad aad))
+    (test pt aead-decrypt 'aes-256-gcm k n ct #:aad aad))
+  ;; tampering rejected
+  (let ([ct (aead-encrypt 'aes-256-gcm k n #"secret data here")])
+    (bytes-set! ct 0 (bitwise-xor (bytes-ref ct 0) 1))
+    (test #f aead-decrypt 'aes-256-gcm k n ct)))
+
+;; ----------------------------------------
 ;; XChaCha20-Poly1305 round-trips across sizes and AAD
 
 (let ([k (make-bytes 32 7)]

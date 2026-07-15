@@ -45,8 +45,8 @@
                 (1/crypto-digest-update! crypto-digest-update!)
                 (1/crypto-digest-xof? crypto-digest-xof?)
                 (1/crypto-random-bytes! crypto-random-bytes!)
-                (crypto-siphash-1-3 crypto-siphash-1-3)
-                (crypto-siphash-2-4 crypto-siphash-2-4)
+                (1/crypto-siphash-1-3 crypto-siphash-1-3)
+                (1/crypto-siphash-2-4 crypto-siphash-2-4)
                 (1/crypto-subsystem-self-test? crypto-subsystem-self-test?)
                 (1/current-command-line-arguments
                  current-command-line-arguments)
@@ -35315,6 +35315,7 @@
 (define RKTCRYPTO_BLAKE_2626 13)
 (define RKTCRYPTO_AEAD_CHACHA20_POLY_1878 1)
 (define RKTCRYPTO_AEAD_XCHACHA20_POLY_2901 2)
+(define RKTCRYPTO_AEAD_AES256_GCM 3)
 (define rktcrypto_system_random
   (hash-ref rktcrypto-table 'rktcrypto_system_random))
 (define rktcrypto_ct_bytes_equal
@@ -35703,7 +35704,9 @@
       1
       (if (eq? alg_0 'xchacha20-poly1305)
         2
-        (raise-argument-error who_0 "crypto-aead-algorithm/c" alg_0)))))
+        (if (eq? alg_0 'aes-256-gcm)
+          3
+          (raise-argument-error who_0 "crypto-aead-algorithm/c" alg_0))))))
 (define 1/crypto-aead-key-size
   (|#%name|
    crypto-aead-key-size
@@ -35885,7 +35888,7 @@
                  out_0
                  0)
                 out_0))))))))
-(define crypto-siphash-2-4
+(define 1/crypto-siphash-2-4
   (let ((crypto-siphash-2-4_0
          (|#%name|
           crypto-siphash-2-4
@@ -35902,13 +35905,15 @@
                end_0
                2
                4))))))
-    (case-lambda
-     ((key_0 data_0) (crypto-siphash-2-4_0 key_0 data_0 0 unsafe-undefined))
-     ((key_0 data_0 start_0 end21_0)
-      (crypto-siphash-2-4_0 key_0 data_0 start_0 end21_0))
-     ((key_0 data_0 start20_0)
-      (crypto-siphash-2-4_0 key_0 data_0 start20_0 unsafe-undefined)))))
-(define crypto-siphash-1-3
+    (|#%name|
+     crypto-siphash-2-4
+     (case-lambda
+      ((key_0 data_0) (crypto-siphash-2-4_0 key_0 data_0 0 unsafe-undefined))
+      ((key_0 data_0 start_0 end21_0)
+       (crypto-siphash-2-4_0 key_0 data_0 start_0 end21_0))
+      ((key_0 data_0 start20_0)
+       (crypto-siphash-2-4_0 key_0 data_0 start20_0 unsafe-undefined))))))
+(define 1/crypto-siphash-1-3
   (let ((crypto-siphash-1-3_0
          (|#%name|
           crypto-siphash-1-3
@@ -35925,12 +35930,14 @@
                end_0
                1
                3))))))
-    (case-lambda
-     ((key_0 data_0) (crypto-siphash-1-3_0 key_0 data_0 0 unsafe-undefined))
-     ((key_0 data_0 start_0 end25_0)
-      (crypto-siphash-1-3_0 key_0 data_0 start_0 end25_0))
-     ((key_0 data_0 start24_0)
-      (crypto-siphash-1-3_0 key_0 data_0 start24_0 unsafe-undefined)))))
+    (|#%name|
+     crypto-siphash-1-3
+     (case-lambda
+      ((key_0 data_0) (crypto-siphash-1-3_0 key_0 data_0 0 unsafe-undefined))
+      ((key_0 data_0 start_0 end25_0)
+       (crypto-siphash-1-3_0 key_0 data_0 start_0 end25_0))
+      ((key_0 data_0 start24_0)
+       (crypto-siphash-1-3_0 key_0 data_0 start24_0 unsafe-undefined))))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

@@ -16,6 +16,7 @@
 (define-constant RKTCRYPTO_DIGEST_CTX_MAXSIZE 2048)
 (define-constant RKTCRYPTO_AEAD_CHACHA20_POLY1305 1)
 (define-constant RKTCRYPTO_AEAD_XCHACHA20_POLY1305 2)
+(define-constant RKTCRYPTO_AEAD_AES256_GCM 3)
 (define-function
  ()
  int

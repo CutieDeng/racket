@@ -38,6 +38,8 @@
       "rktcrypto_digest.c"
       "rktcrypto_chacha20.c"
       "rktcrypto_poly1305.c"
+      "rktcrypto_aes.c"
+      "rktcrypto_gcm.c"
       "rktcrypto_aead.c"
       "rktcrypto_siphash.c"
       "rktcrypto_selftest.c"))
