@@ -9,6 +9,7 @@
  read/tstring
  read-syntax/tstring
  read-interaction/tstring
+ interaction-ready?/tstring
 ) ; end provide
 
 (define need-more (gensym 'need-more))
@@ -30,6 +31,57 @@
     (read-syntax/tstring source-name in)
   ) ; end parameterize
 ) ; end define read-interaction/tstring
+
+;; Submit predicate for interactive editors (expeditor via
+;; `drracket:submit-predicate`): #t when the buffered entry holds at
+;; least one complete interaction, #f when more input is needed.
+;; Mirrors the need-more logic of `read-syntax/tstring`: an entry is
+;; incomplete when the template transform fails on a partial template
+;; or when plain reading of the transformed source stops at eof.
+(define (interaction-ready?/tstring in [whitespace-after? #t])
+  (define source (port->string in))
+  (define transformed
+    (with-handlers ((exn:fail?
+                     (lambda (exn) #f)
+                    )
+                   ) ; end handlers
+      (transform-template-prefixes source)
+    ) ; end with-handlers
+  ) ; end define transformed
+  (cond
+    ((not transformed)
+     #f
+    ) ; end incomplete template
+    (else
+     (define transformed-in (open-input-string transformed))
+     (parameterize ((read-accept-reader #t)
+                    (read-accept-lang #f)
+                   ) ; end parameterize bindings
+       (let loop ((first? #t))
+         (define status
+           (with-handlers ((exn:fail:read:eof?
+                            (lambda (exn) 'need-more)
+                           )
+                           (exn:fail:read?
+                            (lambda (exn) 'ready)
+                           )
+                          ) ; end handlers
+             (if (eof-object? (read transformed-in))
+                 'eof
+                 'ready
+             ) ; end if
+           ) ; end with-handlers
+         ) ; end define status
+         (case status
+           ((eof) (not first?))
+           ((need-more) #f)
+           (else (loop #f))
+         ) ; end case
+       ) ; end let loop
+     ) ; end parameterize
+    ) ; end transformed source
+  ) ; end cond
+) ; end define interaction-ready?/tstring
 
 (define (read-syntax/tstring source-name in)
   (unless (input-port? in)

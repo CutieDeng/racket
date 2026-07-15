@@ -2,6 +2,7 @@
 
 (require
  rackunit
+ racket/interaction-info
  (only-in racket-tstring/private/read-syntax
           read/tstring
           read-syntax/tstring
@@ -12,6 +13,32 @@
 (dynamic-require 'racket/interactive/tstring #f)
 
 (check-eq? (current-read-interaction) read-interaction/tstring)
+
+;; The reader install must also advertise interaction info; otherwise
+;; xrepl refuses to open expeditor (the read interaction is no longer
+;; the boot default) and the REPL degrades to readline/plain mode.
+(check-equal? (current-interaction-info)
+              '#(racket-tstring/private/interaction-info
+                 get-info
+                 #f
+               ) ; end info vector
+) ; end check-equal? interaction info
+
+(let ((info ((dynamic-require 'racket-tstring/private/interaction-info
+                              'get-info
+             ) ; end dynamic-require
+             #f
+            ) ; end get-info application
+     )) ; end let bindings
+  (define submit? (info 'drracket:submit-predicate #f))
+  (check-true (procedure? submit?))
+  (check-true (submit? (open-input-string "f\"done\"") #t))
+  (check-false (submit? (open-input-string "f\"a") #t))
+  (check-false (submit? (open-input-string "f\"a{(+ 1") #t))
+  (check-true (submit? (open-input-string "f\"a\nb\"") #t))
+  (check-false (submit? (open-input-string "") #t))
+  (check-eq? (info 'color-lexer 'default) 'default)
+) ; end let interaction info contents
 
 (define read-interaction (current-read-interaction))
 
