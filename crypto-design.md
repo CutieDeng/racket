@@ -666,8 +666,22 @@ NTT 向量化列为后续。
 双校验;先自洽 30/30 再双向互操作,一次通过——严格对齐 pq-crystals 参考
 的打包/采样/符号约定是零返工的原因。
 
-**M4 后量子核心完成:ML-KEM-768(KEM) + ML-DSA-65(签名)双双与 OpenSSL
-逐位互操作。剩 X25519MLKEM768 混合 KEM(可选)。**
+### M4-3 X25519MLKEM768 混合 KEM — 完成（2026-07-15）
+
+`racket/crypto/kem` 纯 collects 层实现(复用已验证的 ML-KEM-768 +
+X25519,无新 C):draft-ietf-tls-ecdhe-mlkem 的混合 KEM——只要经典或后量子
+一侧不破,共享密钥即安全(抗"先收割后解密")。构造为纯拼接,线序**先经
+offline C харness 打到 OpenSSL X25519MLKEM768 探明再固化**:ek=ml-kem-ek‖
+x25519-pub(1216)、ct=ml-kem-ct‖x25519-ephem(1120)、ss=ml-kem-ss‖x25519-ss
+(64,无额外 KDF,交由 TLS 密钥调度)。**互操作:OpenSSL encaps 我 ek → 我
+decaps 逐半恢复,64 字节 ss 完全一致**(C 探针确认布局,Racket 层忠实转
+写)。API x25519mlkem768-generate-key/encaps/decaps。
+
+验收：自洽 20 轮往返、随机性、跨密钥失配、ss 前 32 字节等于独立 ML-KEM
+解封(证明拼接顺序)、负例;`crypto-kem.rktl` 增补。性能 encaps 8.6k ops/s。
+
+**M4 后量子完整:ML-KEM-768(KEM) + ML-DSA-65(签名) + X25519MLKEM768
+(混合 KEM)全部从零/纯拼接,与 OpenSSL 逐位互操作。经典+后量子密码栈齐备。**
 
 ## 8. 明确不做（non-goals）
 

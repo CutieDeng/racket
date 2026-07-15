@@ -72,4 +72,48 @@
 (err/rt-test (mlkem768-decaps (make-bytes 1088) (make-bytes 100)) exn:fail?)
 (err/rt-test (mlkem768-encaps "not bytes") exn:fail:contract?)
 
+;; ----------------------------------------
+;; X25519MLKEM768 hybrid KEM (wire order verified against OpenSSL)
+
+(test 1216 values X25519MLKEM768-PUBLIC-KEY-BYTES)
+(test 2432 values X25519MLKEM768-SECRET-KEY-BYTES)
+(test 1120 values X25519MLKEM768-CIPHERTEXT-BYTES)
+(test 64   values X25519MLKEM768-SHARED-SECRET-BYTES)
+
+(for ([i (in-range 20)])
+  (define-values (ek dk) (x25519mlkem768-generate-key))
+  (test 1216 bytes-length ek)
+  (test 2432 bytes-length dk)
+  (define-values (ct ss) (x25519mlkem768-encaps ek))
+  (test 1120 bytes-length ct)
+  (test 64 bytes-length ss)
+  (test ss x25519mlkem768-decaps ct dk))
+
+;; the hybrid secret is the ML-KEM secret concatenated with the X25519
+;; secret: its first 32 bytes match the standalone ML-KEM decapsulation
+(let-values ([(ek dk) (x25519mlkem768-generate-key)])
+  (define-values (ct ss) (x25519mlkem768-encaps ek))
+  (define mlss (mlkem768-decaps (subbytes ct 0 1088) (subbytes dk 0 2400)))
+  (test mlss values (subbytes ss 0 32)))
+
+;; randomized: two encapsulations differ, both decapsulate correctly
+(let-values ([(ek dk) (x25519mlkem768-generate-key)])
+  (define-values (ct1 ss1) (x25519mlkem768-encaps ek))
+  (define-values (ct2 ss2) (x25519mlkem768-encaps ek))
+  (test #f equal? ct1 ct2)
+  (test #f equal? ss1 ss2)
+  (test ss1 x25519mlkem768-decaps ct1 dk)
+  (test ss2 x25519mlkem768-decaps ct2 dk))
+
+;; wrong key: decapsulating with a different dk gives a different secret
+(let-values ([(ek-a dk-a) (x25519mlkem768-generate-key)]
+             [(ek-b dk-b) (x25519mlkem768-generate-key)])
+  (define-values (ct ss) (x25519mlkem768-encaps ek-a))
+  (test #f equal? ss (x25519mlkem768-decaps ct dk-b)))
+
+;; malformed sizes raise
+(err/rt-test (x25519mlkem768-encaps (make-bytes 100)) exn:fail?)
+(err/rt-test (x25519mlkem768-decaps (make-bytes 100) (make-bytes 2432)) exn:fail?)
+(err/rt-test (x25519mlkem768-decaps (make-bytes 1120) (make-bytes 100)) exn:fail?)
+
 (report-errs)
