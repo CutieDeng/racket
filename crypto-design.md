@@ -584,8 +584,26 @@ sign/verify 往返 + 篡改/错消息/错密钥拒绝 + 负向）；C 层 KAT；
 scalar 运算仔细转写一次通过。sign→verify 自洽不足以证明与标准一致
 (错 seed 也会自洽),vendor 差分是决定性验收。
 
-尚未完成（M3 后续）：P-256（ECDH/ECDSA，NIST 曲线,需 Weierstrass 点
-运算 + 模 p256 域）。
+### M3-3 P-256 — 完成（2026-07-15）
+
+`rktcrypto_p256.c`：from-scratch NIST P-256（secp256r1）ECDH + ECDSA。
+泛化 Montgomery 域算术（4×64-bit limbs,参数化模数——同一套代码服务
+域 mod p 与群阶 mod n,n0/R² 运行时算避免手抄错）；Jacobian 坐标点
+运算（double/add/常量时间 scalarmult,a=-3 优化 double 公式）；ECDH
+（scalar×point→x）；ECDSA-with-SHA-256 sign（随机 nonce rejection
+sampling 从 DRBG）+ verify。复用 SHA-256。生产零依赖。接入
+`racket/crypto/kex`（p256-ecdh）+ `racket/crypto/sign`（p256-ecdsa）。
+
+验收（与 OpenSSL 3 差分,极充分）：① pubkey 100 样本逐字节一致（证明
+整个点运算栈正确）；② ECDH DH 一致性；③ ECDSA 自洽 sign→verify;
+④ **跨库互操作:我签的 OpenSSL 能验、OpenSSL 签的我能验（各 100 样本
+0 失败）**——确认 ECDSA 语义/编码/哈希与标准一致。`crypto-kex.rktl`/
+`crypto-sign.rktl` 增补、C 层 KAT、全量回归。
+
+实现教训:jac_double 首版仓促(重复语句、mont_sub 缺参数、错误公式)——
+仔细重写标准 a=-3 double 公式。
+
+**M3 经典公钥完整:X25519、Ed25519、P-256(ECDH+ECDSA)全部从零手写。**
 
 ## 8. 明确不做（non-goals）
 

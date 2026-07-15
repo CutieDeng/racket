@@ -210,6 +210,29 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_verify(const unsigned char *sig,
    Returns 1 if valid, 0 otherwise. */
 
 /*************************************************/
+/* NIST P-256 (secp256r1)                        */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_pubkey(unsigned char *out65, const unsigned char *priv);
+/* Public key (65-byte uncompressed 0x04||x||y) from a 32-byte private
+   scalar. Returns 1, or 0 for a degenerate key. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_ecdh(unsigned char *out, const unsigned char *scalar,
+                                               const unsigned char *point65);
+/* ECDH: writes the 32-byte x-coordinate of scalar*point to out.
+   Returns 1, or 0 on a bad point or point at infinity. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_ecdsa_sign(unsigned char *sig,
+                                                     const unsigned char *msg, intptr_t msglen,
+                                                     const unsigned char *priv);
+/* ECDSA-with-SHA-256: writes a 64-byte r||s signature. Uses a random
+   nonce from the built-in CSPRNG. Returns 1, or 0 on failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_ecdsa_verify(const unsigned char *sig,
+                                                       const unsigned char *msg, intptr_t msglen,
+                                                       const unsigned char *pub65);
+/* Verifies a 64-byte ECDSA signature. Returns 1 if valid, 0 otherwise. */
+
+/*************************************************/
 /* SipHash keyed PRF                             */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,

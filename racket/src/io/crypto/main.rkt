@@ -25,7 +25,11 @@
          crypto-x25519
          crypto-ed25519-public-key
          crypto-ed25519-sign
-         crypto-ed25519-verify)
+         crypto-ed25519-verify
+         crypto-p256-public-key
+         crypto-p256-ecdh
+         crypto-p256-ecdsa-sign
+         crypto-p256-ecdsa-verify)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -322,3 +326,43 @@
   (and (eqv? (bytes-length pk) 32)
        (eqv? (bytes-length sig) 64)
        (eqv? 1 (rktcrypto_ed25519_verify sig msg (bytes-length msg) pk))))
+
+;; ----------------------------------------
+;; NIST P-256 (secp256r1): ECDH + ECDSA
+
+(define/who (crypto-p256-public-key priv)
+  (check who bytes? priv)
+  (unless (eqv? (bytes-length priv) 32)
+    (raise-arguments-error who "private key must be 32 bytes" "given" (bytes-length priv)))
+  (define pub (make-bytes 65))
+  (and (eqv? 1 (rktcrypto_p256_pubkey pub priv)) pub))
+
+(define/who (crypto-p256-ecdh priv peer-point)
+  (check who bytes? priv)
+  (check who bytes? peer-point)
+  (unless (eqv? (bytes-length priv) 32)
+    (raise-arguments-error who "private key must be 32 bytes" "given" (bytes-length priv)))
+  (cond
+    [(not (eqv? (bytes-length peer-point) 65)) #f]
+    [else
+     (define out (make-bytes 32))
+     (and (eqv? 1 (rktcrypto_p256_ecdh out priv peer-point)) out)]))
+
+(define/who (crypto-p256-ecdsa-sign priv msg)
+  (check who bytes? priv)
+  (check who bytes? msg)
+  (unless (eqv? (bytes-length priv) 32)
+    (raise-arguments-error who "private key must be 32 bytes" "given" (bytes-length priv)))
+  (define sig (make-bytes 64))
+  (unless (eqv? 1 (rktcrypto_p256_ecdsa_sign sig msg (bytes-length msg) priv))
+    (raise (exn:fail (string-append (symbol->string who) ": signing failed")
+                     (current-continuation-marks))))
+  sig)
+
+(define/who (crypto-p256-ecdsa-verify pub msg sig)
+  (check who bytes? pub)
+  (check who bytes? msg)
+  (check who bytes? sig)
+  (and (eqv? (bytes-length pub) 65)
+       (eqv? (bytes-length sig) 64)
+       (eqv? 1 (rktcrypto_p256_ecdsa_verify sig msg (bytes-length msg) pub))))

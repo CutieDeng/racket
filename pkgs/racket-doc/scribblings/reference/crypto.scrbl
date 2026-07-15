@@ -220,6 +220,16 @@ peer's public key, or @racket[#f] if the peer key is a low-order point
 (the shared secret would be all-zero). A typical exchange derives a
 symmetric key from the shared secret with @racket[hkdf].}
 
+@deftogether[(
+@defproc[(p256-generate-private-key) bytes?]
+@defproc[(p256-public-key [private-key bytes?]) bytes?]
+@defproc[(p256-ecdh [private-key bytes?] [peer-public-key bytes?]) (or/c bytes? #f)]
+)]{
+NIST P-256 (secp256r1) ECDH. A private key is 32 bytes; a public key is
+a 65-byte uncompressed point (@tt{0x04}||x||y). @racket[p256-ecdh]
+returns the 32-byte shared x-coordinate, or @racket[#f] on a malformed
+peer point.}
+
 @; ------------------------------------------------------------------------
 
 @section{Signatures}
@@ -241,6 +251,16 @@ Signs @racket[message], returning a 64-byte signature.}
 @defproc[(ed25519-verify [public-key bytes?] [message bytes?] [signature bytes?]) boolean?]{
 Returns @racket[#t] if @racket[signature] is a valid Ed25519 signature
 of @racket[message] under @racket[public-key].}
+
+@deftogether[(
+@defproc[(p256-ecdsa-sign [private-key bytes?] [message bytes?]) bytes?]
+@defproc[(p256-ecdsa-verify [public-key bytes?] [message bytes?] [signature bytes?]) boolean?]
+)]{
+NIST P-256 ECDSA with SHA-256. Keys come from
+@racket[p256-generate-private-key] and @racket[p256-public-key] (in
+@racketmodname[racket/crypto/kex]); signatures are 64-byte @tt{r||s}.
+Signing uses a random nonce, so a given message signs differently each
+time.}
 
 @; ------------------------------------------------------------------------
 

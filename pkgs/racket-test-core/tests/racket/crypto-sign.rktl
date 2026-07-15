@@ -53,6 +53,28 @@
   (test #t ed25519-verify pk #"" sig))
 
 ;; ----------------------------------------
+;; P-256 ECDSA (random nonce, so signatures vary; verify round-trips)
+
+(for ([i (in-range 15)])
+  (define sk (p256-generate-private-key))
+  (define pk (p256-public-key sk))
+  (define msg (make-bytes (modulo (* i 11) 80) (modulo (+ i 3) 256)))
+  (define sig (p256-ecdsa-sign sk msg))
+  (test 64 bytes-length sig)
+  (test #t p256-ecdsa-verify pk msg sig)
+  (test #f p256-ecdsa-verify pk (bytes-append msg #"x") sig)      ; wrong message
+  ;; tampered signature
+  (let ([bad (bytes-copy sig)])
+    (bytes-set! bad 0 (bitwise-xor (bytes-ref bad 0) 1))
+    (test #f p256-ecdsa-verify pk msg bad))
+  ;; wrong key
+  (test #f p256-ecdsa-verify (p256-public-key (p256-generate-private-key)) msg sig))
+
+;; two signatures of the same message differ (random nonce)
+(let ([sk (p256-generate-private-key)])
+  (test #f equal? (p256-ecdsa-sign sk #"same") (p256-ecdsa-sign sk #"same")))
+
+;; ----------------------------------------
 ;; Negative cases
 
 (err/rt-test (ed25519-public-key (make-bytes 16)) exn:fail?)      ; wrong seed size

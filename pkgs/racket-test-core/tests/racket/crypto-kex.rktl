@@ -50,6 +50,34 @@
 (test #f x25519 (x25519-generate-private-key) (make-bytes 32 0))
 
 ;; ----------------------------------------
+;; P-256 ECDH
+
+;; public key from priv = 01 02 .. 20 (verified against OpenSSL)
+(test (string-append "04515c3d6eb9e396b904d3feca7f54fdcd0cc1e997bf375dca515ad0a6c3b403"
+                     "5f4536be3a50f318fbf9a5475902a221502bef0d57e08c53b2cc0a56f17d9f9354")
+      bytes->hex-string (p256-public-key (list->bytes (for/list ([i (in-range 32)]) (add1 i)))))
+
+;; Diffie-Hellman consistency with fresh random keys
+(for ([i (in-range 15)])
+  (define a (p256-generate-private-key))
+  (define b (p256-generate-private-key))
+  (define A (p256-public-key a))
+  (define B (p256-public-key b))
+  (test 32 bytes-length a)
+  (test 65 bytes-length A)
+  (test 4 bytes-ref A 0)   ; uncompressed marker
+  (test (p256-ecdh a B) values (p256-ecdh b A)))
+
+;; different keypairs give different shared secrets
+(let ([a (p256-generate-private-key)]
+      [b (p256-generate-private-key)]
+      [c (p256-generate-private-key)])
+  (test #f equal? (p256-ecdh a (p256-public-key b)) (p256-ecdh a (p256-public-key c))))
+
+;; malformed peer point -> #f
+(test #f p256-ecdh (p256-generate-private-key) (make-bytes 64 0))
+
+;; ----------------------------------------
 ;; Negative cases
 
 (err/rt-test (x25519 (make-bytes 16) (make-bytes 32)) exn:fail?)   ; wrong scalar size

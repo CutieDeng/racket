@@ -8,7 +8,10 @@
 
 (require racket/contract/base
          "random.rkt"
-         (only-in '#%kernel crypto-x25519))
+         (only-in '#%kernel
+                  crypto-x25519
+                  crypto-p256-public-key
+                  crypto-p256-ecdh))
 
 (define x25519-base-point
   (bytes-append (bytes 9) (make-bytes 31 0)))
@@ -29,7 +32,29 @@
 (define (x25519 private-key peer-public-key)
   (crypto-x25519 private-key peer-public-key))
 
+;; P-256 (NIST secp256r1) ECDH. A private key is 32 bytes < the group
+;; order; the public key is a 65-byte uncompressed point.
+(define p256-order
+  ;; n = ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551
+  #xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551)
+
+(define (p256-generate-private-key)
+  (let loop ()
+    (define k (crypto-random-bytes 32))
+    (define v (for/fold ([acc 0]) ([b (in-bytes k)]) (+ (* acc 256) b)))
+    (if (and (> v 0) (< v p256-order)) k (loop))))
+
+(define (p256-public-key private-key)
+  (or (crypto-p256-public-key private-key)
+      (error 'p256-public-key "degenerate private key")))
+
+(define (p256-ecdh private-key peer-public-key)
+  (crypto-p256-ecdh private-key peer-public-key))
+
 (provide (contract-out
           [x25519-generate-private-key (-> bytes?)]
           [x25519-public-key (-> bytes? bytes?)]
-          [x25519 (-> bytes? bytes? (or/c bytes? #f))]))
+          [x25519 (-> bytes? bytes? (or/c bytes? #f))]
+          [p256-generate-private-key (-> bytes?)]
+          [p256-public-key (-> bytes? bytes?)]
+          [p256-ecdh (-> bytes? bytes? (or/c bytes? #f))]))

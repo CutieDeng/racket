@@ -21,5 +21,9 @@ rktcrypto_x25519
 rktcrypto_ed25519_pubkey
 rktcrypto_ed25519_sign
 rktcrypto_ed25519_verify
+rktcrypto_p256_pubkey
+rktcrypto_p256_ecdh
+rktcrypto_p256_ecdsa_sign
+rktcrypto_p256_ecdsa_verify
 rktcrypto_siphash
 rktcrypto_selftest_core

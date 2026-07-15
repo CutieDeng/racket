@@ -240,6 +240,27 @@ static int test_ed25519(void)
   return 1;
 }
 
+/* P-256 KAT: priv = 01 02 .. 20, pubkey verified against OpenSSL;
+   plus an ECDSA sign/verify round-trip and tamper rejection. */
+static int test_p256(void)
+{
+  unsigned char priv[32], pub[65], sig[64];
+  int i;
+  static const unsigned char want_pub[65] = {
+    0x04,0x51,0x5c,0x3d,0x6e,0xb9,0xe3,0x96,0xb9,0x04,0xd3,0xfe,0xca,0x7f,0x54,0xfd,
+    0xcd,0x0c,0xc1,0xe9,0x97,0xbf,0x37,0x5d,0xca,0x51,0x5a,0xd0,0xa6,0xc3,0xb4,0x03,
+    0x5f,0x45,0x36,0xbe,0x3a,0x50,0xf3,0x18,0xfb,0xf9,0xa5,0x47,0x59,0x02,0xa2,0x21,
+    0x50,0x2b,0xef,0x0d,0x57,0xe0,0x8c,0x53,0xb2,0xcc,0x0a,0x56,0xf1,0x7d,0x9f,0x93,0x54};
+  for (i = 0; i < 32; i++) priv[i] = (unsigned char)(i + 1);
+  if (!rktcrypto_p256_pubkey(pub, priv)) return 0;
+  if (memcmp(pub, want_pub, 65) != 0) return 0;
+  if (!rktcrypto_p256_ecdsa_sign(sig, (const unsigned char *)"abc", 3, priv)) return 0;
+  if (!rktcrypto_p256_ecdsa_verify(sig, (const unsigned char *)"abc", 3, pub)) return 0;
+  sig[0] ^= 1;
+  if (rktcrypto_p256_ecdsa_verify(sig, (const unsigned char *)"abc", 3, pub)) return 0;
+  return 1;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -252,5 +273,6 @@ int rktcrypto_selftest_core(void)
   if (!test_argon2id()) return 0;
   if (!test_x25519()) return 0;
   if (!test_ed25519()) return 0;
+  if (!test_p256()) return 0;
   return 1;
 }

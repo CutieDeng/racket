@@ -45,9 +45,13 @@
                 (1/crypto-digest-size crypto-digest-size)
                 (1/crypto-digest-update! crypto-digest-update!)
                 (1/crypto-digest-xof? crypto-digest-xof?)
-                (crypto-ed25519-public-key crypto-ed25519-public-key)
-                (crypto-ed25519-sign crypto-ed25519-sign)
-                (crypto-ed25519-verify crypto-ed25519-verify)
+                (1/crypto-ed25519-public-key crypto-ed25519-public-key)
+                (1/crypto-ed25519-sign crypto-ed25519-sign)
+                (1/crypto-ed25519-verify crypto-ed25519-verify)
+                (crypto-p256-ecdh crypto-p256-ecdh)
+                (crypto-p256-ecdsa-sign crypto-p256-ecdsa-sign)
+                (crypto-p256-ecdsa-verify crypto-p256-ecdsa-verify)
+                (crypto-p256-public-key crypto-p256-public-key)
                 (1/crypto-random-bytes! crypto-random-bytes!)
                 (1/crypto-siphash-1-3 crypto-siphash-1-3)
                 (1/crypto-siphash-2-4 crypto-siphash-2-4)
@@ -35361,6 +35365,13 @@
   (hash-ref rktcrypto-table 'rktcrypto_ed25519_sign))
 (define rktcrypto_ed25519_verify
   (hash-ref rktcrypto-table 'rktcrypto_ed25519_verify))
+(define rktcrypto_p256_pubkey
+  (hash-ref rktcrypto-table 'rktcrypto_p256_pubkey))
+(define rktcrypto_p256_ecdh (hash-ref rktcrypto-table 'rktcrypto_p256_ecdh))
+(define rktcrypto_p256_ecdsa_sign
+  (hash-ref rktcrypto-table 'rktcrypto_p256_ecdsa_sign))
+(define rktcrypto_p256_ecdsa_verify
+  (hash-ref rktcrypto-table 'rktcrypto_p256_ecdsa_verify))
 (define rktcrypto_siphash (hash-ref rktcrypto-table 'rktcrypto_siphash))
 (define rktcrypto_selftest_core
   (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
@@ -36070,71 +36081,177 @@
                (if (eqv? 1 (|#%app| rktcrypto_x25519 out_0 scalar_0 point_0))
                  out_0
                  #f)))))))))
-(define crypto-ed25519-public-key
-  (lambda (seed_0)
+(define 1/crypto-ed25519-public-key
+  (|#%name|
+   crypto-ed25519-public-key
+   (lambda (seed_0)
+     (begin
+       (if (bytes? seed_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-public-key "bytes?" seed_0))
+       (begin
+         (if (eqv? (unsafe-bytes-length seed_0) 32)
+           (void)
+           (raise-arguments-error
+            'crypto-ed25519-public-key
+            "seed must be 32 bytes"
+            "given"
+            (unsafe-bytes-length seed_0)))
+         (let ((pk_0 (make-bytes 32)))
+           (begin (|#%app| rktcrypto_ed25519_pubkey pk_0 seed_0) pk_0)))))))
+(define 1/crypto-ed25519-sign
+  (|#%name|
+   crypto-ed25519-sign
+   (lambda (seed_0 msg_0)
+     (begin
+       (if (bytes? seed_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-sign "bytes?" seed_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-ed25519-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length seed_0) 32)
+             (void)
+             (raise-arguments-error
+              'crypto-ed25519-sign
+              "seed must be 32 bytes"
+              "given"
+              (unsafe-bytes-length seed_0)))
+           (let ((sig_0 (make-bytes 64)))
+             (begin
+               (|#%app|
+                rktcrypto_ed25519_sign
+                sig_0
+                msg_0
+                (unsafe-bytes-length msg_0)
+                seed_0)
+               sig_0))))))))
+(define 1/crypto-ed25519-verify
+  (|#%name|
+   crypto-ed25519-verify
+   (lambda (pk_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" pk_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pk_0) 32)
+         (if (eqv? (unsafe-bytes-length sig_0) 64)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_ed25519_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pk_0))
+           #f)
+         #f)))))
+(define crypto-p256-public-key
+  (lambda (priv_0)
     (begin
-      (if (bytes? seed_0)
+      (if (bytes? priv_0)
         (void)
-        (raise-argument-error 'crypto-ed25519-public-key "bytes?" seed_0))
+        (raise-argument-error 'crypto-p256-public-key "bytes?" priv_0))
       (begin
-        (if (eqv? (unsafe-bytes-length seed_0) 32)
+        (if (eqv? (unsafe-bytes-length priv_0) 32)
           (void)
           (raise-arguments-error
-           'crypto-ed25519-public-key
-           "seed must be 32 bytes"
+           'crypto-p256-public-key
+           "private key must be 32 bytes"
            "given"
-           (unsafe-bytes-length seed_0)))
-        (let ((pk_0 (make-bytes 32)))
-          (begin (|#%app| rktcrypto_ed25519_pubkey pk_0 seed_0) pk_0))))))
-(define crypto-ed25519-sign
-  (lambda (seed_0 msg_0)
+           (unsafe-bytes-length priv_0)))
+        (let ((pub_0 (make-bytes 65)))
+          (if (eqv? 1 (|#%app| rktcrypto_p256_pubkey pub_0 priv_0))
+            pub_0
+            #f))))))
+(define crypto-p256-ecdh
+  (lambda (priv_0 peer-point_0)
     (begin
-      (if (bytes? seed_0)
+      (if (bytes? priv_0)
         (void)
-        (raise-argument-error 'crypto-ed25519-sign "bytes?" seed_0))
+        (raise-argument-error 'crypto-p256-ecdh "bytes?" priv_0))
+      (if (bytes? peer-point_0)
+        (void)
+        (raise-argument-error 'crypto-p256-ecdh "bytes?" peer-point_0))
+      (if (eqv? (unsafe-bytes-length priv_0) 32)
+        (void)
+        (raise-arguments-error
+         'crypto-p256-ecdh
+         "private key must be 32 bytes"
+         "given"
+         (unsafe-bytes-length priv_0)))
+      (if (not (eqv? (unsafe-bytes-length peer-point_0) 65))
+        #f
+        (let ((out_0 (make-bytes 32)))
+          (if (eqv? 1 (|#%app| rktcrypto_p256_ecdh out_0 priv_0 peer-point_0))
+            out_0
+            #f))))))
+(define crypto-p256-ecdsa-sign
+  (lambda (priv_0 msg_0)
+    (begin
+      (if (bytes? priv_0)
+        (void)
+        (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" priv_0))
       (begin
         (if (bytes? msg_0)
           (void)
-          (raise-argument-error 'crypto-ed25519-sign "bytes?" msg_0))
+          (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" msg_0))
         (begin
-          (if (eqv? (unsafe-bytes-length seed_0) 32)
+          (if (eqv? (unsafe-bytes-length priv_0) 32)
             (void)
             (raise-arguments-error
-             'crypto-ed25519-sign
-             "seed must be 32 bytes"
+             'crypto-p256-ecdsa-sign
+             "private key must be 32 bytes"
              "given"
-             (unsafe-bytes-length seed_0)))
+             (unsafe-bytes-length priv_0)))
           (let ((sig_0 (make-bytes 64)))
             (begin
-              (|#%app|
-               rktcrypto_ed25519_sign
-               sig_0
-               msg_0
-               (unsafe-bytes-length msg_0)
-               seed_0)
+              (if (eqv?
+                   1
+                   (|#%app|
+                    rktcrypto_p256_ecdsa_sign
+                    sig_0
+                    msg_0
+                    (unsafe-bytes-length msg_0)
+                    priv_0))
+                (void)
+                (raise
+                 (let ((app_0
+                        (string-append
+                         (symbol->string 'crypto-p256-ecdsa-sign)
+                         ": signing failed")))
+                   (|#%app| exn:fail app_0 (current-continuation-marks)))))
               sig_0)))))))
-(define crypto-ed25519-verify
-  (lambda (pk_0 msg_0 sig_0)
+(define crypto-p256-ecdsa-verify
+  (lambda (pub_0 msg_0 sig_0)
     (begin
-      (if (bytes? pk_0)
+      (if (bytes? pub_0)
         (void)
-        (raise-argument-error 'crypto-ed25519-verify "bytes?" pk_0))
+        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" pub_0))
       (if (bytes? msg_0)
         (void)
-        (raise-argument-error 'crypto-ed25519-verify "bytes?" msg_0))
+        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" msg_0))
       (if (bytes? sig_0)
         (void)
-        (raise-argument-error 'crypto-ed25519-verify "bytes?" sig_0))
-      (if (eqv? (unsafe-bytes-length pk_0) 32)
+        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" sig_0))
+      (if (eqv? (unsafe-bytes-length pub_0) 65)
         (if (eqv? (unsafe-bytes-length sig_0) 64)
           (eqv?
            1
            (|#%app|
-            rktcrypto_ed25519_verify
+            rktcrypto_p256_ecdsa_verify
             sig_0
             msg_0
             (unsafe-bytes-length msg_0)
-            pk_0))
+            pub_0))
           #f)
         #f))))
 (define port-insist-atomic-lock

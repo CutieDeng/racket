@@ -166,6 +166,34 @@
 (define-function
  ()
  int
+ rktcrypto_p256_pubkey
+ (((*ref unsigned-8) out65) ((*ref unsigned-8) priv)))
+(define-function
+ ()
+ int
+ rktcrypto_p256_ecdh
+ (((*ref unsigned-8) out)
+  ((*ref unsigned-8) scalar)
+  ((*ref unsigned-8) point65)))
+(define-function
+ ()
+ int
+ rktcrypto_p256_ecdsa_sign
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) msg)
+  (intptr_t msglen)
+  ((*ref unsigned-8) priv)))
+(define-function
+ ()
+ int
+ rktcrypto_p256_ecdsa_verify
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) msg)
+  (intptr_t msglen)
+  ((*ref unsigned-8) pub65)))
+(define-function
+ ()
+ int
  rktcrypto_siphash
  (((*ref unsigned-8) key)
   (intptr_t key_len)
