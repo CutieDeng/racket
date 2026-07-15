@@ -7,6 +7,9 @@
 
 #include "rktcrypto_cipher.h"
 #include <string.h>
+#if defined(__aarch64__)
+# include <arm_neon.h>
+#endif
 
 #define ROTL32(x, n) (((x) << (n)) | ((x) >> (32 - (n))))
 
@@ -99,6 +102,51 @@ void rktcrypto_hchacha20(const unsigned char key[32],
   for (i = 0; i < 4; i++) store32_le(subkey + 16 + 4 * i, x[12 + i]);
 }
 
+#if defined(__aarch64__)
+/* Four ChaCha20 blocks in parallel (vertical SIMD: each 32-bit state
+   word held across the four counter lanes), XORed straight into the
+   output. Bit-exact with the scalar core. */
+# define CC_ROT(x, n) vorrq_u32(vshlq_n_u32(x, n), vshrq_n_u32(x, 32 - (n)))
+# define CC_QR4(a, b, c, d) do {                                            \
+    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_ROT(d, 16);            \
+    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_ROT(b, 12);            \
+    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_ROT(d, 8);             \
+    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_ROT(b, 7);             \
+  } while (0)
+static void chacha20_4block_xor(const uint32_t s[16], uint32_t ctr,
+                                const unsigned char *in, unsigned char *out)
+{
+  uint32x4_t v[16], o[16];
+  uint32x4_t ctrs = vsetq_lane_u32(ctr, vdupq_n_u32(0), 0);
+  int i, r, g;
+  ctrs = vsetq_lane_u32(ctr + 1, ctrs, 1);
+  ctrs = vsetq_lane_u32(ctr + 2, ctrs, 2);
+  ctrs = vsetq_lane_u32(ctr + 3, ctrs, 3);
+  for (i = 0; i < 16; i++) v[i] = vdupq_n_u32(s[i]);
+  v[12] = ctrs;
+  for (i = 0; i < 16; i++) o[i] = v[i];
+  for (r = 0; r < 10; r++) {
+    CC_QR4(v[0], v[4], v[ 8], v[12]); CC_QR4(v[1], v[5], v[ 9], v[13]);
+    CC_QR4(v[2], v[6], v[10], v[14]); CC_QR4(v[3], v[7], v[11], v[15]);
+    CC_QR4(v[0], v[5], v[10], v[15]); CC_QR4(v[1], v[6], v[11], v[12]);
+    CC_QR4(v[2], v[7], v[ 8], v[13]); CC_QR4(v[3], v[4], v[ 9], v[14]);
+  }
+  for (i = 0; i < 16; i++) v[i] = vaddq_u32(v[i], o[i]);
+  for (g = 0; g < 4; g++) {
+    uint32x4x2_t t0 = vtrnq_u32(v[4*g], v[4*g+1]);
+    uint32x4x2_t t1 = vtrnq_u32(v[4*g+2], v[4*g+3]);
+    uint32x4_t r0 = vcombine_u32(vget_low_u32(t0.val[0]), vget_low_u32(t1.val[0]));
+    uint32x4_t r1 = vcombine_u32(vget_low_u32(t0.val[1]), vget_low_u32(t1.val[1]));
+    uint32x4_t r2 = vcombine_u32(vget_high_u32(t0.val[0]), vget_high_u32(t1.val[0]));
+    uint32x4_t r3 = vcombine_u32(vget_high_u32(t0.val[1]), vget_high_u32(t1.val[1]));
+    vst1q_u8(out +   0 + g*16, veorq_u8(vld1q_u8(in +   0 + g*16), vreinterpretq_u8_u32(r0)));
+    vst1q_u8(out +  64 + g*16, veorq_u8(vld1q_u8(in +  64 + g*16), vreinterpretq_u8_u32(r1)));
+    vst1q_u8(out + 128 + g*16, veorq_u8(vld1q_u8(in + 128 + g*16), vreinterpretq_u8_u32(r2)));
+    vst1q_u8(out + 192 + g*16, veorq_u8(vld1q_u8(in + 192 + g*16), vreinterpretq_u8_u32(r3)));
+  }
+}
+#endif
+
 void rktcrypto_chacha20_xor(const unsigned char key[32],
                             const unsigned char nonce[12],
                             uint32_t counter,
@@ -108,6 +156,14 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
   uint32_t state[16];
   unsigned char block[64];
   chacha20_setup(state, key, nonce, counter);
+
+#if defined(__aarch64__)
+  while (len >= 256) {
+    chacha20_4block_xor(state, state[12], in, out);
+    state[12] += 4;
+    in += 256; out += 256; len -= 256;
+  }
+#endif
 
   while (len > 0) {
     intptr_t n = (len < 64) ? len : 64;
