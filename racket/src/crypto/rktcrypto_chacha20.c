@@ -106,16 +106,24 @@ void rktcrypto_hchacha20(const unsigned char key[32],
 /* Four ChaCha20 blocks in parallel (vertical SIMD: each 32-bit state
    word held across the four counter lanes), XORed straight into the
    output. Bit-exact with the scalar core. */
-# define CC_ROT(x, n) vorrq_u32(vshlq_n_u32(x, n), vshrq_n_u32(x, 32 - (n)))
+/* Fewer instructions than shift-or: rot16 is a 16-bit element reverse,
+   rot8 a byte-permute, rot12/rot7 a shift-right-insert. */
+static const unsigned char CC_ROT8IDX[16] =
+  { 3,0,1,2, 7,4,5,6, 11,8,9,10, 15,12,13,14 };
+# define CC_R16(x) vreinterpretq_u32_u16(vrev32q_u16(vreinterpretq_u16_u32(x)))
+# define CC_R12(x) vsriq_n_u32(vshlq_n_u32(x, 12), x, 20)
+# define CC_R8(x)  vreinterpretq_u32_u8(vqtbl1q_u8(vreinterpretq_u8_u32(x), idx8))
+# define CC_R7(x)  vsriq_n_u32(vshlq_n_u32(x, 7), x, 25)
 # define CC_QR4(a, b, c, d) do {                                            \
-    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_ROT(d, 16);            \
-    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_ROT(b, 12);            \
-    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_ROT(d, 8);             \
-    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_ROT(b, 7);             \
+    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_R16(d);                \
+    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_R12(b);                \
+    a = vaddq_u32(a, b); d = veorq_u32(d, a); d = CC_R8(d);                 \
+    c = vaddq_u32(c, d); b = veorq_u32(b, c); b = CC_R7(b);                 \
   } while (0)
 static void chacha20_4block_xor(const uint32_t s[16], uint32_t ctr,
                                 const unsigned char *in, unsigned char *out)
 {
+  uint8x16_t idx8 = vld1q_u8(CC_ROT8IDX);
   uint32x4_t v[16], o[16];
   uint32x4_t ctrs = vsetq_lane_u32(ctr, vdupq_n_u32(0), 0);
   int i, r, g;
