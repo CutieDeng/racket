@@ -148,6 +148,7 @@
         [roots (current-compiled-file-roots)]
         [orig-target-machine (current-compile-target-machine)])
     (define (compilation-manager-load-handler path mod-name)
+      (let retry-loop ([remaining-attempts 6])
       (parameterize ([current-compile-target-machine
                       ;; In case we get here by an optimization demand during
                       ;; a cross compile, always go back to the original target; it's
@@ -207,7 +208,51 @@
                (parameterize ([compiler-security-guard security-guard])
                  (compile-root path->mode roots path cache collection-cache read-syntax #hash()))
                (trace-printf "done: ~a" path)]))
-      (default-handler path mod-name))
+      ;; The optimistic checks above (and the date-based choice inside
+      ;; `default-handler`) are lock-free, while a concurrent builder can
+      ;; republish this module's compiled file at any moment. If the chosen
+      ;; compiled file vanishes between the up-to-date check and the open,
+      ;; drop the memoized verdict and re-enter the coordinated path (which
+      ;; consults the parallel lock: either this process rebuilds the file,
+      ;; or it waits for the builder), instead of treating a cache miss as
+      ;; a fatal error.
+      (with-handlers ([(lambda (exn)
+                         (and (or (exn:fail:filesystem? exn)
+                                  ;; the expansion-time variant of a failed
+                                  ;; module load is an `exn:fail:syntax`:
+                                  (exn:missing-module? exn))
+                              (or (file-exists? path)
+                                  (let ([p2 (rkt->ss path)])
+                                    (and (not (eq? path p2))
+                                         (file-exists? p2))))))
+                       (lambda (exn)
+                         (cond
+                           [(remaining-attempts . > . 1)
+                            (trace-printf "compiled file vanished; retrying: ~a" path)
+                            ;; Small growing backoff so that retries can
+                            ;; make progress even against a continuous
+                            ;; external eviction; the first retry is
+                            ;; immediate, which covers the common case of
+                            ;; a writer that has just republished this
+                            ;; entry.
+                            (sleep (* 0.005 (- 6 remaining-attempts)))
+                            (let* ([main-path (simple-form-path path)]
+                                   [alt-path (rkt->ss main-path)])
+                              (hash-remove! cache main-path)
+                              (unless (eq? alt-path main-path)
+                                (hash-remove! cache alt-path)))
+                            (retry-loop (sub1 remaining-attempts))]
+                           [(or (not (pair? mod-name)) (car mod-name))
+                            ;; Terminal fallback: the compiled file keeps
+                            ;; vanishing, so give up on it for this load
+                            ;; and load the source directly. This is the
+                            ;; same computation performed without caching
+                            ;; the result, so progress is guaranteed as
+                            ;; long as the source exists.
+                            (trace-printf "compiled file kept vanishing; loading source directly: ~a" path)
+                            (orig-load (if (file-exists? path) path (rkt->ss path)) mod-name)]
+                           [else (raise exn)]))])
+        (default-handler path mod-name))))
     (when (null? roots)
       (raise-arguments-error 'make-compilation-manager-...
                              "empty current-compiled-file-roots list"))
@@ -847,29 +892,28 @@
            (write-compiled-code zo-name out tmp-name path recompile-from code-or-bytes)])
         ;; Redundant, but close as early as possible:
         (close-output-port out)
-        ;; Note that we check time and write ".dep" before returning from
-        ;; with-compile-output...
         (verify-times path tmp-name)
         (when (equal? recompile-from zo-name)
-          (trace-printf "recompiling in-place: ~a" zo-name)
-          ;; In the case of recompiling, make sure that any concurrent
-          ;; process always sees recompile possibilities by writing
-          ;; the expected sha1 into ".dep" before deleting the ".zo"
-          (write-updated-deps use-existing-deps assume-compiled-sha1 zo-name
-                              #:target-machine #f))
-        ;; Explicitly delete target file before writing ".dep", just so
-        ;; ".dep" doesn't claim a description of the wrong file
-        (when (file-exists? zo-name)
-          (try-delete-file zo-name #f))
-        (cond
-          [use-existing-deps
-           (write-updated-deps use-existing-deps assume-compiled-sha1 zo-name)]
-          [else
-           (when (bytes? code-or-bytes)
-             (error 'compile-zo "internal error: expected compiled code instead of cached bytes"))
-           (write-deps code-or-bytes zo-name path->mode dest-roots path src-sha1
-                       external-deps external-module-deps reader-deps 
-                       up-to-date collection-cache read-src-syntax)])))
+          (trace-printf "recompiling in-place: ~a" zo-name))))
+    ;; The new ".zo" is now atomically in place (the rename performed by
+    ;; `with-compile-output` replaces any previous version), so the
+    ;; compiled file is never absent for a concurrent reader. Write the
+    ;; ".dep" only after the ".zo" it describes exists: a reader that
+    ;; pairs the new ".zo" with a stale ".dep" sees a detectable mismatch
+    ;; (machine kind or source sha1) and falls back to the coordinated
+    ;; rebuild path, whereas a ".dep" must never describe a compiled file
+    ;; that is missing. (The recorded dependency sha1s stay valid across
+    ;; an in-place machine-independent-to-specific recompile by the
+    ;; `assume-compiled-sha1` protocol.)
+    (cond
+      [use-existing-deps
+       (write-updated-deps use-existing-deps assume-compiled-sha1 zo-name)]
+      [else
+       (when (bytes? code-or-bytes)
+         (error 'compile-zo "internal error: expected compiled code instead of cached bytes"))
+       (write-deps code-or-bytes zo-name path->mode dest-roots path src-sha1
+                   external-deps external-module-deps reader-deps
+                   up-to-date collection-cache read-src-syntax)])
     (trace-printf "wrote zo file: ~a" zo-name))
 
   (unless code-or-bytes
