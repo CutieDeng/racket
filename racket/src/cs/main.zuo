@@ -109,6 +109,7 @@
             "arity.ss"
             "intmap.ss"
             "intmap-ordered.ss"
+            "swisstable.ss"
             "patricia.ss"
             "hamt-stencil.ss"
             "hamt-vector.ss"

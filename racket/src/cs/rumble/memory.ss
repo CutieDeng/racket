@@ -10,7 +10,10 @@
                              ;; were enabled) and with interrupts disabled
                              (let ([r (unbox collect-request)])
                                (set-box! collect-request #f)
-                               (collect/report r)))))
+                               (collect/report r)
+                               ;; weak/ephemeron swisstables sweep lazily
+                               ;; when they observe an epoch change
+                               (swisstable-note-gc!)))))
 
 ;; Notification can be called in any Chez Scheme thread
 (define (set-garbage-collect-notify! proc)

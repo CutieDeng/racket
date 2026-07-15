@@ -6,6 +6,7 @@
   '("base"
     "rhombus-lib"))
 
+(define pkg-authors '(mflatt))
 (define pkg-desc "Rhombus executable")
 
 (define license '(Apache-2.0 OR MIT))

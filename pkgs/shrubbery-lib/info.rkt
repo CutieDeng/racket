@@ -7,6 +7,7 @@
     "syntax-color-lib"
     "parser-tools-lib"))
 
+(define pkg-authors '(mflatt))
 (define pkg-desc "implementation (no documentation) part of \"shrubbery\"")
 
 (define license '(Apache-2.0 OR MIT))

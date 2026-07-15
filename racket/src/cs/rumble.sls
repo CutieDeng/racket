@@ -493,6 +493,25 @@
           core-intmap-shape-stats
           core-intmap-install-struct-property!
 
+          ;; SwissTable mutable hash table runtime candidate
+          core-swisstable?
+          core-make-swisstable
+          core-swisstable-kind
+          core-swisstable-weakness
+          core-swisstable-count
+          core-swisstable-ref
+          core-swisstable-has-key?
+          core-swisstable-set!
+          core-swisstable-remove!
+          core-swisstable-clear!
+          core-swisstable-stats
+          core-swisstable-iterate-first
+          core-swisstable-iterate-next
+          core-swisstable-iterate-key
+          core-swisstable-iterate-value
+          core-swisstable-iterate-key+value
+          core-swisstable-install-struct-property!
+
           vector*-length
           vector*-ref
           vector*-set!
@@ -1014,6 +1033,7 @@
   (include "rumble/vector.ss")
   (include "rumble/pvector.ss")
   (include "rumble/intmap-ordered.ss")
+  (include "rumble/swisstable.ss")
   (include "rumble/box.ss")
   (include "rumble/immutable.ss")
   (include "rumble/keyword.ss")

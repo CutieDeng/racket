@@ -19,6 +19,7 @@
 (load-in-sandbox "pvector.rktl")
 (load-in-sandbox "intmap.rktl")
 (load-in-sandbox "intbits.rktl")
+(load-in-sandbox "swisstable.rktl")
 (load-in-sandbox "fasl.rktl")
 
 (load-in-sandbox "async-channel.rktl")

@@ -6,6 +6,7 @@
   '(["base" #:version "8.8.0.5"]
     "shrubbery-lib"))
 
+(define pkg-authors '(mflatt))
 (define pkg-desc "implementation (no documentation) part of \"enforest\"")
 
 (define license '(Apache-2.0 OR MIT))
