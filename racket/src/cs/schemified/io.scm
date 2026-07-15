@@ -48,10 +48,13 @@
                 (1/crypto-ed25519-public-key crypto-ed25519-public-key)
                 (1/crypto-ed25519-sign crypto-ed25519-sign)
                 (1/crypto-ed25519-verify crypto-ed25519-verify)
-                (crypto-p256-ecdh crypto-p256-ecdh)
-                (crypto-p256-ecdsa-sign crypto-p256-ecdsa-sign)
-                (crypto-p256-ecdsa-verify crypto-p256-ecdsa-verify)
-                (crypto-p256-public-key crypto-p256-public-key)
+                (crypto-mlkem768-decaps crypto-mlkem768-decaps)
+                (crypto-mlkem768-encaps crypto-mlkem768-encaps)
+                (crypto-mlkem768-keypair crypto-mlkem768-keypair)
+                (1/crypto-p256-ecdh crypto-p256-ecdh)
+                (1/crypto-p256-ecdsa-sign crypto-p256-ecdsa-sign)
+                (1/crypto-p256-ecdsa-verify crypto-p256-ecdsa-verify)
+                (1/crypto-p256-public-key crypto-p256-public-key)
                 (1/crypto-random-bytes! crypto-random-bytes!)
                 (1/crypto-siphash-1-3 crypto-siphash-1-3)
                 (1/crypto-siphash-2-4 crypto-siphash-2-4)
@@ -35373,6 +35376,16 @@
 (define rktcrypto_p256_ecdsa_verify
   (hash-ref rktcrypto-table 'rktcrypto_p256_ecdsa_verify))
 (define rktcrypto_siphash (hash-ref rktcrypto-table 'rktcrypto_siphash))
+(define rktcrypto_mlkem768_keypair
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_keypair))
+(define rktcrypto_mlkem768_encaps
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_encaps))
+(define rktcrypto_mlkem768_decaps
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_decaps))
+(define rktcrypto_mlkem768_keypair_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_keypair_derand))
+(define rktcrypto_mlkem768_enc_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_enc_derand))
 (define rktcrypto_selftest_core
   (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
@@ -36154,106 +36167,152 @@
              pk_0))
            #f)
          #f)))))
-(define crypto-p256-public-key
-  (lambda (priv_0)
+(define 1/crypto-p256-public-key
+  (|#%name|
+   crypto-p256-public-key
+   (lambda (priv_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-public-key "bytes?" priv_0))
+       (begin
+         (if (eqv? (unsafe-bytes-length priv_0) 32)
+           (void)
+           (raise-arguments-error
+            'crypto-p256-public-key
+            "private key must be 32 bytes"
+            "given"
+            (unsafe-bytes-length priv_0)))
+         (let ((pub_0 (make-bytes 65)))
+           (if (eqv? 1 (|#%app| rktcrypto_p256_pubkey pub_0 priv_0))
+             pub_0
+             #f)))))))
+(define 1/crypto-p256-ecdh
+  (|#%name|
+   crypto-p256-ecdh
+   (lambda (priv_0 peer-point_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdh "bytes?" priv_0))
+       (if (bytes? peer-point_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdh "bytes?" peer-point_0))
+       (if (eqv? (unsafe-bytes-length priv_0) 32)
+         (void)
+         (raise-arguments-error
+          'crypto-p256-ecdh
+          "private key must be 32 bytes"
+          "given"
+          (unsafe-bytes-length priv_0)))
+       (if (not (eqv? (unsafe-bytes-length peer-point_0) 65))
+         #f
+         (let ((out_0 (make-bytes 32)))
+           (if (eqv? 1 (|#%app| rktcrypto_p256_ecdh out_0 priv_0 peer-point_0))
+             out_0
+             #f)))))))
+(define 1/crypto-p256-ecdsa-sign
+  (|#%name|
+   crypto-p256-ecdsa-sign
+   (lambda (priv_0 msg_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" priv_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length priv_0) 32)
+             (void)
+             (raise-arguments-error
+              'crypto-p256-ecdsa-sign
+              "private key must be 32 bytes"
+              "given"
+              (unsafe-bytes-length priv_0)))
+           (let ((sig_0 (make-bytes 64)))
+             (begin
+               (if (eqv?
+                    1
+                    (|#%app|
+                     rktcrypto_p256_ecdsa_sign
+                     sig_0
+                     msg_0
+                     (unsafe-bytes-length msg_0)
+                     priv_0))
+                 (void)
+                 (raise
+                  (let ((app_0
+                         (string-append
+                          (symbol->string 'crypto-p256-ecdsa-sign)
+                          ": signing failed")))
+                    (|#%app| exn:fail app_0 (current-continuation-marks)))))
+               sig_0))))))))
+(define 1/crypto-p256-ecdsa-verify
+  (|#%name|
+   crypto-p256-ecdsa-verify
+   (lambda (pub_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pub_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" pub_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pub_0) 65)
+         (if (eqv? (unsafe-bytes-length sig_0) 64)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_p256_ecdsa_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pub_0))
+           #f)
+         #f)))))
+(define crypto-mlkem768-keypair
+  (lambda ()
+    (let ((pk_0 (make-bytes 1184)))
+      (let ((sk_0 (make-bytes 2400)))
+        (if (eqv? 1 (|#%app| rktcrypto_mlkem768_keypair pk_0 sk_0))
+          (values pk_0 sk_0)
+          #f)))))
+(define crypto-mlkem768-encaps
+  (lambda (pk_0)
     (begin
-      (if (bytes? priv_0)
+      (if (bytes? pk_0)
         (void)
-        (raise-argument-error 'crypto-p256-public-key "bytes?" priv_0))
-      (begin
-        (if (eqv? (unsafe-bytes-length priv_0) 32)
-          (void)
-          (raise-arguments-error
-           'crypto-p256-public-key
-           "private key must be 32 bytes"
-           "given"
-           (unsafe-bytes-length priv_0)))
-        (let ((pub_0 (make-bytes 65)))
-          (if (eqv? 1 (|#%app| rktcrypto_p256_pubkey pub_0 priv_0))
-            pub_0
-            #f))))))
-(define crypto-p256-ecdh
-  (lambda (priv_0 peer-point_0)
-    (begin
-      (if (bytes? priv_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdh "bytes?" priv_0))
-      (if (bytes? peer-point_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdh "bytes?" peer-point_0))
-      (if (eqv? (unsafe-bytes-length priv_0) 32)
-        (void)
-        (raise-arguments-error
-         'crypto-p256-ecdh
-         "private key must be 32 bytes"
-         "given"
-         (unsafe-bytes-length priv_0)))
-      (if (not (eqv? (unsafe-bytes-length peer-point_0) 65))
+        (raise-argument-error 'crypto-mlkem768-encaps "bytes?" pk_0))
+      (if (not (eqv? (unsafe-bytes-length pk_0) 1184))
         #f
-        (let ((out_0 (make-bytes 32)))
-          (if (eqv? 1 (|#%app| rktcrypto_p256_ecdh out_0 priv_0 peer-point_0))
-            out_0
+        (let ((ct_0 (make-bytes 1088)))
+          (let ((ss_0 (make-bytes 32)))
+            (if (eqv? 1 (|#%app| rktcrypto_mlkem768_encaps ct_0 ss_0 pk_0))
+              (values ct_0 ss_0)
+              #f)))))))
+(define crypto-mlkem768-decaps
+  (lambda (ct_0 sk_0)
+    (begin
+      (if (bytes? ct_0)
+        (void)
+        (raise-argument-error 'crypto-mlkem768-decaps "bytes?" ct_0))
+      (if (bytes? sk_0)
+        (void)
+        (raise-argument-error 'crypto-mlkem768-decaps "bytes?" sk_0))
+      (if (not
+           (if (eqv? (unsafe-bytes-length ct_0) 1088)
+             (eqv? (unsafe-bytes-length sk_0) 2400)
+             #f))
+        #f
+        (let ((ss_0 (make-bytes 32)))
+          (if (eqv? 1 (|#%app| rktcrypto_mlkem768_decaps ss_0 ct_0 sk_0))
+            ss_0
             #f))))))
-(define crypto-p256-ecdsa-sign
-  (lambda (priv_0 msg_0)
-    (begin
-      (if (bytes? priv_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" priv_0))
-      (begin
-        (if (bytes? msg_0)
-          (void)
-          (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" msg_0))
-        (begin
-          (if (eqv? (unsafe-bytes-length priv_0) 32)
-            (void)
-            (raise-arguments-error
-             'crypto-p256-ecdsa-sign
-             "private key must be 32 bytes"
-             "given"
-             (unsafe-bytes-length priv_0)))
-          (let ((sig_0 (make-bytes 64)))
-            (begin
-              (if (eqv?
-                   1
-                   (|#%app|
-                    rktcrypto_p256_ecdsa_sign
-                    sig_0
-                    msg_0
-                    (unsafe-bytes-length msg_0)
-                    priv_0))
-                (void)
-                (raise
-                 (let ((app_0
-                        (string-append
-                         (symbol->string 'crypto-p256-ecdsa-sign)
-                         ": signing failed")))
-                   (|#%app| exn:fail app_0 (current-continuation-marks)))))
-              sig_0)))))))
-(define crypto-p256-ecdsa-verify
-  (lambda (pub_0 msg_0 sig_0)
-    (begin
-      (if (bytes? pub_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" pub_0))
-      (if (bytes? msg_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" msg_0))
-      (if (bytes? sig_0)
-        (void)
-        (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" sig_0))
-      (if (eqv? (unsafe-bytes-length pub_0) 65)
-        (if (eqv? (unsafe-bytes-length sig_0) 64)
-          (eqv?
-           1
-           (|#%app|
-            rktcrypto_p256_ecdsa_verify
-            sig_0
-            msg_0
-            (unsafe-bytes-length msg_0)
-            pub_0))
-          #f)
-        #f))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

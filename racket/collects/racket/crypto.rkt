@@ -12,7 +12,8 @@
          "crypto/secretbox.rkt"
          "crypto/kdf.rkt"
          "crypto/kex.rkt"
-         "crypto/sign.rkt")
+         "crypto/sign.rkt"
+         "crypto/kem.rkt")
 
 (provide (all-from-out "crypto/random.rkt")
          (all-from-out "crypto/util.rkt")
@@ -22,4 +23,5 @@
          (all-from-out "crypto/secretbox.rkt")
          (all-from-out "crypto/kdf.rkt")
          (all-from-out "crypto/kex.rkt")
-         (all-from-out "crypto/sign.rkt"))
+         (all-from-out "crypto/sign.rkt")
+         (all-from-out "crypto/kem.rkt"))

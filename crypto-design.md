@@ -605,6 +605,41 @@ sampling 从 DRBG）+ verify。复用 SHA-256。生产零依赖。接入
 
 **M3 经典公钥完整:X25519、Ed25519、P-256(ECDH+ECDSA)全部从零手写。**
 
+### M4-1 ML-KEM-768 — 完成（2026-07-15）
+
+`rktcrypto_mlkem.c`：from-scratch ML-KEM-768（Kyber，FIPS 203），**首个
+后量子格密码**。多项式环 Z_q[X]/(X²⁵⁶+1),q=3329;NTT 乘法（zetas 表、
+Montgomery/Barrett 约减、7 层蝶形 ntt/invntt、basemul）;矩阵/噪声采样
+用 SHAKE128 拒绝采样 + CBD(η=2);K-PKE IND-CPA + FO 变换（隐式拒绝）
+得 IND-CCA2。G/H=SHA3-512/256、PRF=SHAKE256,全部复用 M1 的 Keccak
+核。尺寸:ek=1184、dk=2400、ct=1088、ss=32。生产随机版走内建 DRBG;
+另留 `_derand` 变体供 KAT。接入 `racket/crypto/kem`（mlkem768-generate-key
+/encaps/decaps，隐式拒绝语义在契约中说明）。生产零依赖。
+
+验收（极充分）：① 自洽 keygen→encaps→decaps 50 样本 0 失败;② **与
+OpenSSL 3.6 互操作:用我的 ek 让 OpenSSL 封装、我解封,50 样本 shared
+secret 全等**——逐位证明 keygen 输出格式、decaps 语义、G/H/ss 派生、
+压缩编码全部与 FIPS 203 标准一致（互操作是随机化 KEM 的正确 oracle,
+不能比对封装输出）;③ C 层 KAT 钉死确定性输出 + 隐式拒绝(改 1 bit →
+ss 变);④ `crypto-kem.rktl` 122 测试(20 轮往返、随机性、隐式拒绝、
+负例);⑤ 全 8 套 crypto 回归通过。
+
+性能（M1 Air/aarch64,经完整 Racket 栈含 FFI+参数检查）:keygen/encaps/
+decaps 均 ~30k ops/s(~32 µs/op)。OpenSSL 基线 45k/68k/44k——同数量
+级,便携 C 无 SIMD NTT 下 0.5–0.7×;encaps 差距最大(OpenSSL 有
+AVX2/NEON NTT)。NEON NTT 向量化列为后续优化。
+
+实现教训(极隐蔽的决定性 bug):keygen 把 `skpv=ntt(s)` 序列化进 dk
+前未做 `polyvec_reduce`——`poly_ntt` 输出不约减,而 `poly_tobytes` 只
+处理单次负数回绕、无法容纳大正系数,12-bit 截断损坏 dk。自洽与互操作
+同时失败,逐层隔离(NTT 往返→basemul→编码/压缩→CBD 范围→矩阵主项
+抵消→序列化)才定位到存储截断。加一行 `polyvec_reduce(&skpv)` 即 0 失败。
+教训:NTT 输出必须先约减再序列化;差分单测每层都要有,否则复合失败无从
+下手。
+
+**M4 后量子进行中:ML-KEM-768 完成。剩 ML-DSA-65(FIPS 204 签名)、
+X25519MLKEM768 混合 KEM。**
+
 ## 8. 明确不做（non-goals）
 
 

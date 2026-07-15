@@ -17,6 +17,10 @@
 (define-constant RKTCRYPTO_AEAD_CHACHA20_POLY1305 1)
 (define-constant RKTCRYPTO_AEAD_XCHACHA20_POLY1305 2)
 (define-constant RKTCRYPTO_AEAD_AES256_GCM 3)
+(define-constant RKTCRYPTO_MLKEM768_PUBLICKEYBYTES 1184)
+(define-constant RKTCRYPTO_MLKEM768_SECRETKEYBYTES 2400)
+(define-constant RKTCRYPTO_MLKEM768_CIPHERTEXTBYTES 1088)
+(define-constant RKTCRYPTO_MLKEM768_BYTES 32)
 (define-function
  ()
  int
@@ -204,5 +208,33 @@
   (intptr_t end)
   ((*ref unsigned-8) out)
   (intptr_t out_start)))
+(define-function
+ ()
+ int
+ rktcrypto_mlkem768_keypair
+ (((*ref unsigned-8) pk) ((*ref unsigned-8) sk)))
+(define-function
+ ()
+ int
+ rktcrypto_mlkem768_encaps
+ (((*ref unsigned-8) ct) ((*ref unsigned-8) ss) ((*ref unsigned-8) pk)))
+(define-function
+ ()
+ int
+ rktcrypto_mlkem768_decaps
+ (((*ref unsigned-8) ss) ((*ref unsigned-8) ct) ((*ref unsigned-8) sk)))
+(define-function
+ ()
+ int
+ rktcrypto_mlkem768_keypair_derand
+ (((*ref unsigned-8) pk) ((*ref unsigned-8) sk) ((*ref unsigned-8) coins)))
+(define-function
+ ()
+ int
+ rktcrypto_mlkem768_enc_derand
+ (((*ref unsigned-8) ct)
+  ((*ref unsigned-8) ss)
+  ((*ref unsigned-8) pk)
+  ((*ref unsigned-8) m)))
 (define-function () int rktcrypto_selftest_core ())
 )

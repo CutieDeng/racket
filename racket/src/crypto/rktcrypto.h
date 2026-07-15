@@ -245,6 +245,43 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t 
    key length or range. */
 
 /*************************************************/
+/* ML-KEM-768 (Kyber), FIPS 203                  */
+
+#define RKTCRYPTO_MLKEM768_PUBLICKEYBYTES  1184
+#define RKTCRYPTO_MLKEM768_SECRETKEYBYTES  2400
+#define RKTCRYPTO_MLKEM768_CIPHERTEXTBYTES 1088
+#define RKTCRYPTO_MLKEM768_BYTES           32
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_keypair(unsigned char *pk, unsigned char *sk);
+/* Generates an ML-KEM-768 keypair using the built-in CSPRNG. pk is
+   1184 bytes, sk is 2400 bytes. Returns 1, or 0 on RNG failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_encaps(unsigned char *ct, unsigned char *ss,
+                                                     const unsigned char *pk);
+/* Encapsulates to public key pk, writing a 1088-byte ciphertext to ct
+   and the 32-byte shared secret to ss, drawing the message from the
+   built-in CSPRNG. Returns 1, or 0 on RNG failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_decaps(unsigned char *ss,
+                                                     const unsigned char *ct,
+                                                     const unsigned char *sk);
+/* Decapsulates ciphertext ct with secret key sk, writing the 32-byte
+   shared secret to ss. Uses implicit rejection (FO transform), so a
+   malformed ciphertext yields a pseudorandom secret rather than an
+   error. Constant-time in the secret. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_keypair_derand(unsigned char *pk, unsigned char *sk,
+                                                             const unsigned char *coins);
+/* Deterministic keygen from 64 bytes of coins (d||z), for known-answer
+   tests. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_enc_derand(unsigned char *ct, unsigned char *ss,
+                                                         const unsigned char *pk,
+                                                         const unsigned char *m);
+/* Deterministic encapsulation from a 32-byte message m, for
+   known-answer tests. Returns 1. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);

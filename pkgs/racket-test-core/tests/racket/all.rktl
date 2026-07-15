@@ -26,6 +26,7 @@
 (load-in-sandbox "crypto-mac.rktl")
 (load-in-sandbox "crypto-kex.rktl")
 (load-in-sandbox "crypto-sign.rktl")
+(load-in-sandbox "crypto-kem.rktl")
 (load-in-sandbox "fasl.rktl")
 
 (load-in-sandbox "async-channel.rktl")

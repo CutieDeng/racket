@@ -26,4 +26,9 @@ rktcrypto_p256_ecdh
 rktcrypto_p256_ecdsa_sign
 rktcrypto_p256_ecdsa_verify
 rktcrypto_siphash
+rktcrypto_mlkem768_keypair
+rktcrypto_mlkem768_encaps
+rktcrypto_mlkem768_decaps
+rktcrypto_mlkem768_keypair_derand
+rktcrypto_mlkem768_enc_derand
 rktcrypto_selftest_core

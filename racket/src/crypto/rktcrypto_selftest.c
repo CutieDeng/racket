@@ -261,6 +261,26 @@ static int test_p256(void)
   return 1;
 }
 
+static int test_mlkem768(void)
+{
+  unsigned char coins[64], m[32], pk[1184], sk[2400], ct[1088], ss1[32], ss2[32];
+  int i;
+  static const unsigned char want_ss[32] = {
+    0xf2,0xc2,0x67,0x8a,0x3b,0xe8,0xba,0x85,0xe9,0x05,0x3a,0x0e,0xaf,0xfc,0x55,0x76,
+    0x61,0xd1,0x5f,0x27,0x42,0xca,0xaf,0x27,0x2c,0xd9,0x37,0x70,0x06,0x2b,0x53,0xca};
+  for (i = 0; i < 64; i++) coins[i] = (unsigned char)i;
+  for (i = 0; i < 32; i++) m[i] = (unsigned char)(255 - i);
+  if (!rktcrypto_mlkem768_keypair_derand(pk, sk, coins)) return 0;
+  if (!rktcrypto_mlkem768_enc_derand(ct, ss1, pk, m)) return 0;
+  if (memcmp(ss1, want_ss, 32) != 0) return 0;
+  if (!rktcrypto_mlkem768_decaps(ss2, ct, sk)) return 0;
+  if (memcmp(ss1, ss2, 32) != 0) return 0;         /* correct decapsulation */
+  ct[0] ^= 1;                                       /* implicit rejection */
+  if (!rktcrypto_mlkem768_decaps(ss2, ct, sk)) return 0;
+  if (memcmp(ss1, ss2, 32) == 0) return 0;          /* must differ */
+  return 1;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -274,5 +294,6 @@ int rktcrypto_selftest_core(void)
   if (!test_x25519()) return 0;
   if (!test_ed25519()) return 0;
   if (!test_p256()) return 0;
+  if (!test_mlkem768()) return 0;
   return 1;
 }

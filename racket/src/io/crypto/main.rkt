@@ -29,7 +29,10 @@
          crypto-p256-public-key
          crypto-p256-ecdh
          crypto-p256-ecdsa-sign
-         crypto-p256-ecdsa-verify)
+         crypto-p256-ecdsa-verify
+         crypto-mlkem768-keypair
+         crypto-mlkem768-encaps
+         crypto-mlkem768-decaps)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -366,3 +369,33 @@
   (and (eqv? (bytes-length pub) 65)
        (eqv? (bytes-length sig) 64)
        (eqv? 1 (rktcrypto_p256_ecdsa_verify sig msg (bytes-length msg) pub))))
+
+;; ----------------------------------------
+;; ML-KEM-768 (Kyber, FIPS 203): post-quantum KEM
+
+(define (crypto-mlkem768-keypair)
+  (define pk (make-bytes 1184))
+  (define sk (make-bytes 2400))
+  (and (eqv? 1 (rktcrypto_mlkem768_keypair pk sk))
+       (values pk sk)))
+
+(define/who (crypto-mlkem768-encaps pk)
+  (check who bytes? pk)
+  (cond
+    [(not (eqv? (bytes-length pk) 1184)) #f]
+    [else
+     (define ct (make-bytes 1088))
+     (define ss (make-bytes 32))
+     (and (eqv? 1 (rktcrypto_mlkem768_encaps ct ss pk))
+          (values ct ss))]))
+
+(define/who (crypto-mlkem768-decaps ct sk)
+  (check who bytes? ct)
+  (check who bytes? sk)
+  (cond
+    [(not (and (eqv? (bytes-length ct) 1088)
+               (eqv? (bytes-length sk) 2400)))
+     #f]
+    [else
+     (define ss (make-bytes 32))
+     (and (eqv? 1 (rktcrypto_mlkem768_decaps ss ct sk)) ss)]))
