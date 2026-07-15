@@ -5,6 +5,10 @@
    SHA-NI / ARMv8 acceleration may be added later behind dispatch. */
 
 #include "rktcrypto_digest.h"
+#if defined(__x86_64__) || defined(__i386__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 
 #define ROTR32(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
 #define SHR32(x, n)  ((x) >> (n))
@@ -135,6 +139,12 @@ static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p
 {
 #if defined(__ARM_FEATURE_SHA2) || (defined(__ARM_FEATURE_CRYPTO) && defined(__ARM_NEON))
   sha256_transform_hw(ctx, p);
+#elif defined(__x86_64__) || defined(__i386__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SHA)) {
+    rktcrypto_sha256_block_shani(ctx->h, p);
+  } else {
+    sha256_transform_portable(ctx, p);
+  }
 #else
   sha256_transform_portable(ctx, p);
 #endif

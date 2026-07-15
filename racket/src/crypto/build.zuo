@@ -29,6 +29,8 @@
 
   (define src-names
     '("rktcrypto_entropy.c"
+      "rktcrypto_cpu.c"
+      "rktcrypto_x86.c"
       "rktcrypto_ct.c"
       "rktcrypto_sha256.c"
       "rktcrypto_sha512.c"

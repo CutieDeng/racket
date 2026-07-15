@@ -9,6 +9,10 @@
 
 #include "rktcrypto.h"
 #include "rktcrypto_cipher.h"
+#if defined(__x86_64__) || defined(__i386__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 #include <string.h>
 
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
@@ -202,6 +206,11 @@ static void gcm_tag(const unsigned char rk[240], const unsigned char nonce[12],
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   gcm_ghash_hw(h, aad, aad_len, ct, ct_len, s);
 #else
+# if defined(__x86_64__) || defined(__i386__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_PCLMUL)) {
+    rktcrypto_ghash_x86(h, aad, aad_len, ct, ct_len, s);
+  } else
+# endif
   {
     uint64_t acc[2] = {0, 0};
     unsigned char lenblock[16];

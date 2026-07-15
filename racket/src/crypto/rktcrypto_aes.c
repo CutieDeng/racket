@@ -8,6 +8,10 @@
    encryption is implemented, which is all AES-GCM (CTR mode) needs. */
 
 #include "rktcrypto_cipher.h"
+#if defined(__x86_64__) || defined(__i386__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 
 #include <stdint.h>
 
@@ -184,6 +188,12 @@ void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
 {
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   aes256_encrypt_block_hw(rk, in, out);
+#elif defined(__x86_64__) || defined(__i386__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI)) {
+    rktcrypto_aes256_block_aesni(rk, in, out);
+    return;
+  }
+  aes256_encrypt_block_portable(rk, in, out);
 #else
   aes256_encrypt_block_portable(rk, in, out);
 #endif

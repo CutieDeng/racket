@@ -792,8 +792,41 @@ NIST 向量 + hashlib 差分(12 尺寸跨块边界)0 错。**"不劣于"对 SHA-
 GCM、P-256 专用域约减。运行时 CPU 特征分派(见下)是把这些安全铺开的
 架构前提。
 
-**密码学子系统开发完成。** P-256 专用汇编、单遍 GCM 与纯 Racket TLS（M6）
-仍属后续。
+### M5-opt-x86 x86-64 硬件路径 + 运行时分派 — 完成（2026-07-15）
+
+用户点明:运行时"预分派"是把硬件加速跨平台安全铺开的架构前提。落地
+运行时 CPU 特征分派 + x86-64 硬件路径(对齐 OpenSSL,初步实现)。**关键
+方法**:虽在 Apple Silicon 开发,但可 cross-compile x86_64 + Rosetta 2
+运行(Rosetta 支持 AES-NI/PCLMUL,不支持 SHA-NI)——故高价值的 AES-GCM
+路径可 Rosetta 逐位验证,非仅编译检查。
+
+- `rktcrypto_cpu.c/.h`:运行时特征探测,一次性缓存(热路径读缓存字后
+  分派,零 per-call 开销——OpenSSL 模式)。x86 用 CPUID leaf 1/7;ARM
+  macOS 用 sysctlbyname(FEAT_AES/PMULL/SHA256/SHA512),ARM Linux 用
+  getauxval(AT_HWCAP)。**双平台实测**:M1 原生探到全 ARM 特征、Rosetta
+  探到 AESNI+PCLMUL。
+- `rktcrypto_x86.c`(`__attribute__((target(...)))` 使无全局 -march 也可
+  编译,标准多版本分派手法):
+  - **AES-256 块(AES-NI)**:Rosetta 验证——FIPS-197 C.3 KAT + 对拍便携
+    10 万 0 错。
+  - **GHASH(PCLMULQDQ,Gueron 序列)**:Rosetta 验证——对拍便携 20 万 0
+    错;字节反转吸收 GCM 位序,无需 bit-reverse。
+  - **SHA-256(SHA-NI)**:标准 Intel intrinsic 序,编译干净,但 Rosetta
+    无 SHA 扩展→correct-by-construction+编译检查,待真机验;分派回退到
+    已验证便携 SHA-256。
+- 分派接线:aes.c 块 / gcm.c GHASH / sha256.c transform 加
+  `#elif __x86_64__` 运行时分支,不碰 ARM 编译期路径(M1 侧 x86 全编译
+  掉,零回归——重建后 selftest 通过、AES-GCM 1142/SHA-512 1701 不变)。
+- **集成验证(Rosetta)**:同一 x86 AES-GCM,hw 分派(features=0x3)vs
+  强制便携(0x0),**300 组随机 (pt,aad) 长度输出逐位相同**;便携已对
+  OpenSSL 500 组验证→x86 hw 传递性正确。
+
+架构注:分派在 C 库层(非 Racket 解释器;Racket CS 经 Chez 编译原生,
+crypto 在 librktcrypto)。当前 Apple 目标编译期守卫已正确;运行时分派为
+可分发多架构二进制的正解(x86 的 AES-NI/SHA-NI 因 CPU 而异尤需)。
+
+**密码学子系统开发完成。** P-256 专用汇编、单遍 GCM、x86 SHA-NI 真机验、
+x86 AVX2 SHA-512/Keccak 与纯 Racket TLS（M6）仍属后续。
 
 ## 8. 明确不做（non-goals）
 
