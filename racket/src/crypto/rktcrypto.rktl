@@ -25,6 +25,11 @@
 (define-function
  ()
  int
+ rktcrypto_random_bytes
+ (((*ref unsigned-8) buf) (intptr_t start) (intptr_t end)))
+(define-function
+ ()
+ int
  rktcrypto_ct_bytes_equal
  (((*ref unsigned-8) a)
   (intptr_t a_start)

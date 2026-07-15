@@ -34,7 +34,7 @@
                 (1/crypto-aead-open! crypto-aead-open!)
                 (1/crypto-aead-seal! crypto-aead-seal!)
                 (1/crypto-aead-tag-size crypto-aead-tag-size)
-                (crypto-argon2id crypto-argon2id)
+                (1/crypto-argon2id crypto-argon2id)
                 (1/crypto-bytes-clear! crypto-bytes-clear!)
                 (1/crypto-bytes=? crypto-bytes=?)
                 (1/crypto-digest-block-size crypto-digest-block-size)
@@ -35319,6 +35319,8 @@
 (define RKTCRYPTO_AEAD_AES256_GCM 3)
 (define rktcrypto_system_random
   (hash-ref rktcrypto-table 'rktcrypto_system_random))
+(define rktcrypto_random_bytes
+  (hash-ref rktcrypto-table 'rktcrypto_random_bytes))
 (define rktcrypto_ct_bytes_equal
   (hash-ref rktcrypto-table 'rktcrypto_ct_bytes_equal))
 (define rktcrypto_secure_clear
@@ -35381,7 +35383,7 @@
                 (check-start/end 'crypto-random-bytes! bstr3_0 start1_0 end_0)
                 (if (eqv?
                      1
-                     (|#%app| rktcrypto_system_random bstr3_0 start1_0 end_0))
+                     (|#%app| rktcrypto_random_bytes bstr3_0 start1_0 end_0))
                   (void)
                   (raise
                    (let ((app_0
@@ -35940,82 +35942,91 @@
        (crypto-siphash-1-3_0 key_0 data_0 start_0 end25_0))
       ((key_0 data_0 start24_0)
        (crypto-siphash-1-3_0 key_0 data_0 start24_0 unsafe-undefined))))))
-(define crypto-argon2id
-  (lambda (pwd_0 salt_0 secret_0 ad_0 t-cost_0 m-cost_0 parallelism_0 outlen_0)
-    (begin
-      (if (bytes? pwd_0)
-        (void)
-        (raise-argument-error 'crypto-argon2id "bytes?" pwd_0))
-      (begin
-        (if (bytes? salt_0)
-          (void)
-          (raise-argument-error 'crypto-argon2id "bytes?" salt_0))
-        (begin
-          (if (bytes? secret_0)
-            (void)
-            (raise-argument-error 'crypto-argon2id "bytes?" secret_0))
-          (begin
-            (if (bytes? ad_0)
-              (void)
-              (raise-argument-error 'crypto-argon2id "bytes?" ad_0))
-            (begin
-              (if (exact-positive-integer? t-cost_0)
-                (void)
-                (raise-argument-error
-                 'crypto-argon2id
-                 "exact-positive-integer?"
-                 t-cost_0))
-              (begin
-                (if (exact-positive-integer? m-cost_0)
-                  (void)
-                  (raise-argument-error
-                   'crypto-argon2id
-                   "exact-positive-integer?"
-                   m-cost_0))
-                (begin
-                  (if (exact-positive-integer? parallelism_0)
-                    (void)
-                    (raise-argument-error
-                     'crypto-argon2id
-                     "exact-positive-integer?"
-                     parallelism_0))
-                  (begin
-                    (if (exact-positive-integer? outlen_0)
-                      (void)
-                      (raise-argument-error
-                       'crypto-argon2id
-                       "exact-positive-integer?"
-                       outlen_0))
-                    (let ((out_0 (make-bytes outlen_0)))
-                      (begin
-                        (if (eqv?
-                             1
-                             (|#%app|
-                              rktcrypto_argon2id
-                              pwd_0
-                              (unsafe-bytes-length pwd_0)
-                              salt_0
-                              (unsafe-bytes-length salt_0)
-                              secret_0
-                              (unsafe-bytes-length secret_0)
-                              ad_0
-                              (unsafe-bytes-length ad_0)
-                              t-cost_0
-                              m-cost_0
-                              parallelism_0
-                              out_0
-                              outlen_0))
-                          (void)
-                          (raise
-                           (let ((app_0
-                                  (string-append
-                                   (symbol->string 'crypto-argon2id)
-                                   ": Argon2id failed (bad parameters)")))
-                             (|#%app|
-                              exn:fail
-                              app_0
-                              (current-continuation-marks)))))
-                        out_0))))))))))))
+(define 1/crypto-argon2id
+  (|#%name|
+   crypto-argon2id
+   (lambda (pwd_0
+            salt_0
+            secret_0
+            ad_0
+            t-cost_0
+            m-cost_0
+            parallelism_0
+            outlen_0)
+     (begin
+       (if (bytes? pwd_0)
+         (void)
+         (raise-argument-error 'crypto-argon2id "bytes?" pwd_0))
+       (begin
+         (if (bytes? salt_0)
+           (void)
+           (raise-argument-error 'crypto-argon2id "bytes?" salt_0))
+         (begin
+           (if (bytes? secret_0)
+             (void)
+             (raise-argument-error 'crypto-argon2id "bytes?" secret_0))
+           (begin
+             (if (bytes? ad_0)
+               (void)
+               (raise-argument-error 'crypto-argon2id "bytes?" ad_0))
+             (begin
+               (if (exact-positive-integer? t-cost_0)
+                 (void)
+                 (raise-argument-error
+                  'crypto-argon2id
+                  "exact-positive-integer?"
+                  t-cost_0))
+               (begin
+                 (if (exact-positive-integer? m-cost_0)
+                   (void)
+                   (raise-argument-error
+                    'crypto-argon2id
+                    "exact-positive-integer?"
+                    m-cost_0))
+                 (begin
+                   (if (exact-positive-integer? parallelism_0)
+                     (void)
+                     (raise-argument-error
+                      'crypto-argon2id
+                      "exact-positive-integer?"
+                      parallelism_0))
+                   (begin
+                     (if (exact-positive-integer? outlen_0)
+                       (void)
+                       (raise-argument-error
+                        'crypto-argon2id
+                        "exact-positive-integer?"
+                        outlen_0))
+                     (let ((out_0 (make-bytes outlen_0)))
+                       (begin
+                         (if (eqv?
+                              1
+                              (|#%app|
+                               rktcrypto_argon2id
+                               pwd_0
+                               (unsafe-bytes-length pwd_0)
+                               salt_0
+                               (unsafe-bytes-length salt_0)
+                               secret_0
+                               (unsafe-bytes-length secret_0)
+                               ad_0
+                               (unsafe-bytes-length ad_0)
+                               t-cost_0
+                               m-cost_0
+                               parallelism_0
+                               out_0
+                               outlen_0))
+                           (void)
+                           (raise
+                            (let ((app_0
+                                   (string-append
+                                    (symbol->string 'crypto-argon2id)
+                                    ": Argon2id failed (bad parameters)")))
+                              (|#%app|
+                               exn:fail
+                               app_0
+                               (current-continuation-marks)))))
+                         out_0)))))))))))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

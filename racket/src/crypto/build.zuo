@@ -43,6 +43,7 @@
       "rktcrypto_aead.c"
       "rktcrypto_siphash.c"
       "rktcrypto_argon2.c"
+      "rktcrypto_drbg.c"
       "rktcrypto_selftest.c"))
   (define objs
     (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))

@@ -41,7 +41,7 @@
 (define/who (crypto-random-bytes! bstr [start 0] [end (and (bytes? bstr) (bytes-length bstr))])
   (check-mutable-bytes who bstr)
   (check-start/end who bstr start end)
-  (unless (eqv? 1 (rktcrypto_system_random bstr start end))
+  (unless (eqv? 1 (rktcrypto_random_bytes bstr start end))
     (raise (exn:fail
             (string-append (symbol->string who)
                            ": system entropy source is unavailable")

@@ -49,6 +49,22 @@ static int test_secure_clear(void)
   return 1;
 }
 
+static int test_drbg(void)
+{
+  /* Fill region and non-all-zero, same discipline as the OS RNG. */
+  unsigned char buf[40];
+  unsigned char acc = 0;
+  int i;
+  for (i = 0; i < 40; i++) buf[i] = 0xAA;
+  if (!rktcrypto_random_bytes(buf, 4, 36)) return 0;
+  if (buf[0] != 0xAA || buf[3] != 0xAA || buf[36] != 0xAA || buf[39] != 0xAA)
+    return 0;
+  for (i = 4; i < 36; i++) acc |= buf[i];
+  if (acc == 0) return 0;
+  if (!rktcrypto_random_bytes(buf, 0, 0)) return 0;
+  return 1;
+}
+
 static int test_system_random(void)
 {
   /* Sanity only: correct fill region, and output is not all-zeros
@@ -194,6 +210,7 @@ int rktcrypto_selftest_core(void)
   if (!test_ct_bytes_equal()) return 0;
   if (!test_secure_clear()) return 0;
   if (!test_system_random()) return 0;
+  if (!test_drbg()) return 0;
   if (!test_digests()) return 0;
   if (!test_aead()) return 0;
   if (!test_siphash()) return 0;

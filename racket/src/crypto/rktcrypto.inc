@@ -1,5 +1,6 @@
 /* Extracted from rktio.h by rktio/parse.rkt */
 Sforeign_symbol("rktcrypto_system_random", (void *)rktcrypto_system_random);
+Sforeign_symbol("rktcrypto_random_bytes", (void *)rktcrypto_random_bytes);
 Sforeign_symbol("rktcrypto_ct_bytes_equal", (void *)rktcrypto_ct_bytes_equal);
 Sforeign_symbol("rktcrypto_secure_clear", (void *)rktcrypto_secure_clear);
 Sforeign_symbol("rktcrypto_digest_ctx_size", (void *)rktcrypto_digest_ctx_size);

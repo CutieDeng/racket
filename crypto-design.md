@@ -492,11 +492,31 @@ t=3/m=64MiB/p=4）。
 排查中发现离线测试函数声明 ABI 与 intptr_t 签名不匹配致参数错位死循环
 ——实现本身正确。
 
-尚未完成（M2 后续）：
-- **scrypt**：PBKDF2/Argon2id 已覆盖密码哈希需求，scrypt 可选后补。
-- **per-place DRBG**：`crypto-random-bytes` 已走系统熵（M0），用户态
-  ChaCha20 DRBG（arc4random 风格、fork 安全）作为性能优化待做。
+### M2b DRBG — 完成（2026-07-15）
+
+`rktcrypto_drbg.c`：per-OS-thread ChaCha20 用户态 CSPRNG（arc4random 风格
+fast-key-erasure）。系统熵一次播种；每次请求用 block 0 keystream 重设
+key（前向安全，状态被攻破无法反推历史输出）；getpid() 检测 fork 后
+自动重播种（父子进程绝不共享状态）。Racket 绿色线程在同一 place 同一
+OS 线程、atomic FFI 调用下进入,thread-local 状态无需额外锁。
+
+`crypto-random-bytes`/`!` 从每次 syscall 切到 DRBG（M0 的
+`rktcrypto_system_random` 仍是播种源与 fallback）。
+
+验收：离线 C 测试全过 —— 区间填充、非全零、两次不同、分布 256/256、
+**fork 安全（fork 后经 pipe 比对父子输出必不同,catastrophic 若相同）**；
+C 层 KAT 加 DRBG 基本冒烟；Racket 层随机数测试（长度/非全零/65536
+分布/两次不同）现走 DRBG 仍全过。性能：小请求从 ~1µs（syscall）降到
+纳秒级内存操作。
+
+**M2 对称+KDF+DRBG 至此完整**：对称(ChaCha20/AES-256)、AEAD 三件套、
+KDF(HKDF/PBKDF2/Argon2id)、secretbox、DRBG。
+
+尚未完成（可选后补）：
+- **scrypt**：PBKDF2/Argon2id 已覆盖密码哈希需求，scrypt 可选。
 - **PBKDF2 C 内循环**：当前纯 Racket，高迭代次数 CPU-bound，C 化待优化。
+- **硬件加速 dispatch**（SHA-NI/AVX2/ARMv8-CE/AES-NI）：便携路径已就位，
+  加速路径待接入。
 
 ## 8. 明确不做（non-goals）
 

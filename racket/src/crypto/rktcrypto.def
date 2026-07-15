@@ -1,5 +1,6 @@
 EXPORTS
 rktcrypto_system_random
+rktcrypto_random_bytes
 rktcrypto_ct_bytes_equal
 rktcrypto_secure_clear
 rktcrypto_digest_ctx_size

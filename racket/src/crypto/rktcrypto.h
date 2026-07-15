@@ -52,6 +52,14 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_system_random(unsigned char *buf, intptr_t 
    failure; on failure, the buffer contents are unspecified and must
    not be used. */
 
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_random_bytes(unsigned char *buf, intptr_t start, intptr_t end);
+/* Like rktcrypto_system_random, but served from a per-thread ChaCha20
+   generator seeded from the OS: much faster for frequent small
+   requests, forward-secret (each request re-keys), and reseeded after
+   fork() so a parent and child never share state. This is the default
+   source for `crypto-random-bytes`. Returns 1 on success, 0 on a
+   seeding failure. */
+
 /*************************************************/
 /* Constant-time utilities                       */
 
