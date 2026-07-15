@@ -15,10 +15,12 @@ union digest_ctx {
   rktcrypto_keccak_ctx_t keccak;
   rktcrypto_blake2b_ctx_t blake2b;
   rktcrypto_blake3_ctx_t blake3;
+  rktcrypto_sha1_ctx_t sha1;
+  rktcrypto_md5_ctx_t md5;
 };
 
 /* Family selector plus fixed parameters for each algorithm id. */
-enum family { F_SHA256, F_SHA512, F_KECCAK, F_BLAKE2B, F_BLAKE3, F_NONE };
+enum family { F_SHA256, F_SHA512, F_KECCAK, F_BLAKE2B, F_BLAKE3, F_SHA1, F_MD5, F_NONE };
 
 struct alg_info {
   enum family family;
@@ -46,6 +48,8 @@ static struct alg_info info_for(int alg)
     case RKTCRYPTO_BLAKE2B:    a.family = F_BLAKE2B; a.digest_size = 64; a.block_size = 128; break;
     /* BLAKE3 has a 32-byte default output but is also an XOF. */
     case RKTCRYPTO_BLAKE3:     a.family = F_BLAKE3;  a.digest_size = 32; a.block_size = 64; a.is_xof = 1; break;
+    case RKTCRYPTO_SHA1:       a.family = F_SHA1;    a.digest_size = 20; a.block_size = 64;  break;
+    case RKTCRYPTO_MD5:        a.family = F_MD5;     a.digest_size = 16; a.block_size = 64;  break;
     default: break;
   }
   return a;
@@ -102,6 +106,12 @@ int rktcrypto_digest_init(int alg, unsigned char *ctx, intptr_t ctx_len, intptr_
     case F_BLAKE3:
       rktcrypto_blake3_core_init(&u.blake3);
       break;
+    case F_SHA1:
+      rktcrypto_sha1_core_init(&u.sha1);
+      break;
+    case F_MD5:
+      rktcrypto_md5_core_init(&u.md5);
+      break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));
@@ -127,6 +137,8 @@ int rktcrypto_digest_update(int alg, unsigned char *ctx, intptr_t ctx_len,
     case F_KECCAK:  rktcrypto_keccak_core_update(&u.keccak, data + start, len); break;
     case F_BLAKE2B: rktcrypto_blake2b_core_update(&u.blake2b, data + start, len); break;
     case F_BLAKE3:  rktcrypto_blake3_core_update(&u.blake3, data + start, len); break;
+    case F_SHA1:    rktcrypto_sha1_core_update(&u.sha1, data + start, len); break;
+    case F_MD5:     rktcrypto_md5_core_update(&u.md5, data + start, len); break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));
@@ -152,6 +164,8 @@ int rktcrypto_digest_final(int alg, unsigned char *ctx, intptr_t ctx_len,
     case F_KECCAK:  rktcrypto_keccak_core_final(&u.keccak, out + out_start, out_len); break;
     case F_BLAKE2B: rktcrypto_blake2b_core_final(&u.blake2b, out + out_start, out_len); break;
     case F_BLAKE3:  rktcrypto_blake3_core_final(&u.blake3, out + out_start, out_len); break;
+    case F_SHA1:    rktcrypto_sha1_core_final(&u.sha1, out + out_start, out_len); break;
+    case F_MD5:     rktcrypto_md5_core_final(&u.md5, out + out_start, out_len); break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));

@@ -108,6 +108,8 @@
     [(shake256)   RKTCRYPTO_SHAKE256]
     [(blake2b)    RKTCRYPTO_BLAKE2B]
     [(blake3)     RKTCRYPTO_BLAKE3]
+    [(sha1)       RKTCRYPTO_SHA1]
+    [(md5)        RKTCRYPTO_MD5]
     [else (raise-argument-error who "crypto-digest-algorithm/c" alg)]))
 
 (define/who (crypto-digest-ctx-size alg)

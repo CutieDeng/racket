@@ -33,6 +33,7 @@
       "rktcrypto_sha256.c"
       "rktcrypto_sha512.c"
       "rktcrypto_sha3.c"
+      "rktcrypto_legacy.c"
       "rktcrypto_blake2b.c"
       "rktcrypto_blake3.c"
       "rktcrypto_digest.c"

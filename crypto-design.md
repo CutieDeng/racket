@@ -683,6 +683,26 @@ decaps 逐半恢复,64 字节 ss 完全一致**(C 探针确认布局,Racket 层�
 **M4 后量子完整:ML-KEM-768(KEM) + ML-DSA-65(签名) + X25519MLKEM768
 (混合 KEM)全部从零/纯拼接,与 OpenSSL 逐位互操作。经典+后量子密码栈齐备。**
 
+### M5-1 SHA-1/MD5 内建、openssl/* 去 libcrypto — 完成（2026-07-15）
+
+`rktcrypto_legacy.c`：from-scratch SHA-1(FIPS 180-4)+MD5(RFC 1321),
+纳入统一 digest 框架(alg id 14/15、F_SHA1/F_MD5 家族)。**二者密码学已破,
+仅为兼容旧场景(Git 对象 id、旧校验和)保留**,注释明标。`openssl/sha1`
+与 `openssl/md5` 从 libcrypto FFI(带纯 Racket 回退)改为直接走内建
+digest——**这两个模块不再依赖任何外部库**,是"摆脱 OpenSSL"的直接兑现;
+接口不变。`racket/crypto/digest` 增 sha1/md5 符号。
+
+验收：官方向量(空/"abc"/quick-brown-fox)+ 流式分块一致 + **与纯 Racket
+file/sha1、file/md5 交叉对拍 200 组随机长度 0 不一致**(覆盖块边界);C 层
+KAT;crypto-digest.rktl 增正例、原把 md5 当"未知算法"的负例改用 sha999。
+
+性能教训:首版标量块函数 SHA-1 385/MD5 351 MB/s——**反比纯 Racket 回退
+(900+)还慢**(digest 框架每次 update memcpy ~2KB 上下文联合体,加标量块
+带每轮分支)。按经典做法重写:SHA-1 滚动 16 字窗口 + 80 轮全展开去分支
+→996;MD5 RFC 1321 全展开 64 步去分支→856 MB/s(各 ~2.5×),追平/反超
+纯 Racket。教训:落入统一框架的 digest 必须跑吞吐基准对比回退实现,否则
+"内建"可能是性能倒退。
+
 ## 8. 明确不做（non-goals）
 
 

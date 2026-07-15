@@ -48,9 +48,9 @@
                 (1/crypto-ed25519-public-key crypto-ed25519-public-key)
                 (1/crypto-ed25519-sign crypto-ed25519-sign)
                 (1/crypto-ed25519-verify crypto-ed25519-verify)
-                (crypto-mldsa65-keypair crypto-mldsa65-keypair)
-                (crypto-mldsa65-sign crypto-mldsa65-sign)
-                (crypto-mldsa65-verify crypto-mldsa65-verify)
+                (1/crypto-mldsa65-keypair crypto-mldsa65-keypair)
+                (1/crypto-mldsa65-sign crypto-mldsa65-sign)
+                (1/crypto-mldsa65-verify crypto-mldsa65-verify)
                 (1/crypto-mlkem768-decaps crypto-mlkem768-decaps)
                 (1/crypto-mlkem768-encaps crypto-mlkem768-encaps)
                 (1/crypto-mlkem768-keypair crypto-mlkem768-keypair)
@@ -447,12 +447,16 @@
    'temp-dir
    '9))
 (define hash2610 (hasheq))
-(define hash2218
+(define hash2525
   (hasheq
    'blake2b
    '12
    'blake3
    '13
+   'md5
+   '15
+   'sha1
+   '14
    'sha224
    '1
    'sha256
@@ -35328,6 +35332,8 @@
 (define RKTCRYPTO_SHAKE_2204 11)
 (define RKTCRYPTO_BLAKE2B 12)
 (define RKTCRYPTO_BLAKE_2626 13)
+(define RKTCRYPTO_SHA_2988 14)
+(define RKTCRYPTO_MD_2131 15)
 (define RKTCRYPTO_AEAD_CHACHA20_POLY_1878 1)
 (define RKTCRYPTO_AEAD_XCHACHA20_POLY_2901 2)
 (define RKTCRYPTO_AEAD_AES256_GCM 3)
@@ -35496,22 +35502,24 @@
 (define alg->id
   (lambda (who_0 alg_0)
     (let ((index_0
-           (if (symbol? alg_0) (hash-ref hash2218 alg_0 (lambda () 0)) 0)))
-      (if (unsafe-fx< index_0 6)
-        (if (unsafe-fx< index_0 2)
+           (if (symbol? alg_0) (hash-ref hash2525 alg_0 (lambda () 0)) 0)))
+      (if (unsafe-fx< index_0 7)
+        (if (unsafe-fx< index_0 3)
           (if (unsafe-fx< index_0 1)
             (raise-argument-error who_0 "crypto-digest-algorithm/c" alg_0)
-            1)
-          (if (unsafe-fx< index_0 3)
-            2
-            (if (unsafe-fx< index_0 4) 3 (if (unsafe-fx< index_0 5) 4 5))))
-        (if (unsafe-fx< index_0 9)
-          (if (unsafe-fx< index_0 7) 6 (if (unsafe-fx< index_0 8) 7 8))
-          (if (unsafe-fx< index_0 11)
-            (if (unsafe-fx< index_0 10) 9 10)
-            (if (unsafe-fx< index_0 12)
-              11
-              (if (unsafe-fx< index_0 13) 12 13))))))))
+            (if (unsafe-fx< index_0 2) 1 2))
+          (if (unsafe-fx< index_0 4)
+            3
+            (if (unsafe-fx< index_0 5) 4 (if (unsafe-fx< index_0 6) 5 6))))
+        (if (unsafe-fx< index_0 11)
+          (if (unsafe-fx< index_0 8)
+            7
+            (if (unsafe-fx< index_0 9) 8 (if (unsafe-fx< index_0 10) 9 10)))
+          (if (unsafe-fx< index_0 13)
+            (if (unsafe-fx< index_0 12) 11 12)
+            (if (unsafe-fx< index_0 14)
+              13
+              (if (unsafe-fx< index_0 15) 14 15))))))))
 (define 1/crypto-digest-ctx-size
   (|#%name|
    crypto-digest-ctx-size
@@ -36332,73 +36340,79 @@
            (if (eqv? 1 (|#%app| rktcrypto_mlkem768_decaps ss_0 ct_0 sk_0))
              ss_0
              #f)))))))
-(define crypto-mldsa65-keypair
-  (lambda ()
-    (let ((pk_0 (make-bytes 1952)))
-      (let ((sk_0 (make-bytes 4032)))
-        (if (eqv? 1 (|#%app| rktcrypto_mldsa65_keypair pk_0 sk_0))
-          (values pk_0 sk_0)
-          #f)))))
-(define crypto-mldsa65-sign
-  (lambda (sk_0 msg_0)
-    (begin
-      (if (bytes? sk_0)
-        (void)
-        (raise-argument-error 'crypto-mldsa65-sign "bytes?" sk_0))
-      (begin
-        (if (bytes? msg_0)
-          (void)
-          (raise-argument-error 'crypto-mldsa65-sign "bytes?" msg_0))
-        (begin
-          (if (eqv? (unsafe-bytes-length sk_0) 4032)
-            (void)
-            (raise-arguments-error
-             'crypto-mldsa65-sign
-             "secret key must be 4032 bytes"
-             "given"
-             (unsafe-bytes-length sk_0)))
-          (let ((sig_0 (make-bytes 3309)))
-            (begin
-              (if (eqv?
-                   1
-                   (|#%app|
-                    rktcrypto_mldsa65_sign
-                    sig_0
-                    msg_0
-                    (unsafe-bytes-length msg_0)
-                    sk_0))
-                (void)
-                (raise
-                 (let ((app_0
-                        (string-append
-                         (symbol->string 'crypto-mldsa65-sign)
-                         ": signing failed")))
-                   (|#%app| exn:fail app_0 (current-continuation-marks)))))
-              sig_0)))))))
-(define crypto-mldsa65-verify
-  (lambda (pk_0 msg_0 sig_0)
-    (begin
-      (if (bytes? pk_0)
-        (void)
-        (raise-argument-error 'crypto-mldsa65-verify "bytes?" pk_0))
-      (if (bytes? msg_0)
-        (void)
-        (raise-argument-error 'crypto-mldsa65-verify "bytes?" msg_0))
-      (if (bytes? sig_0)
-        (void)
-        (raise-argument-error 'crypto-mldsa65-verify "bytes?" sig_0))
-      (if (eqv? (unsafe-bytes-length pk_0) 1952)
-        (if (eqv? (unsafe-bytes-length sig_0) 3309)
-          (eqv?
-           1
-           (|#%app|
-            rktcrypto_mldsa65_verify
-            sig_0
-            msg_0
-            (unsafe-bytes-length msg_0)
-            pk_0))
-          #f)
-        #f))))
+(define 1/crypto-mldsa65-keypair
+  (|#%name|
+   crypto-mldsa65-keypair
+   (lambda ()
+     (let ((pk_0 (make-bytes 1952)))
+       (let ((sk_0 (make-bytes 4032)))
+         (if (eqv? 1 (|#%app| rktcrypto_mldsa65_keypair pk_0 sk_0))
+           (values pk_0 sk_0)
+           #f))))))
+(define 1/crypto-mldsa65-sign
+  (|#%name|
+   crypto-mldsa65-sign
+   (lambda (sk_0 msg_0)
+     (begin
+       (if (bytes? sk_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-sign "bytes?" sk_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-mldsa65-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length sk_0) 4032)
+             (void)
+             (raise-arguments-error
+              'crypto-mldsa65-sign
+              "secret key must be 4032 bytes"
+              "given"
+              (unsafe-bytes-length sk_0)))
+           (let ((sig_0 (make-bytes 3309)))
+             (begin
+               (if (eqv?
+                    1
+                    (|#%app|
+                     rktcrypto_mldsa65_sign
+                     sig_0
+                     msg_0
+                     (unsafe-bytes-length msg_0)
+                     sk_0))
+                 (void)
+                 (raise
+                  (let ((app_0
+                         (string-append
+                          (symbol->string 'crypto-mldsa65-sign)
+                          ": signing failed")))
+                    (|#%app| exn:fail app_0 (current-continuation-marks)))))
+               sig_0))))))))
+(define 1/crypto-mldsa65-verify
+  (|#%name|
+   crypto-mldsa65-verify
+   (lambda (pk_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" pk_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pk_0) 1952)
+         (if (eqv? (unsafe-bytes-length sig_0) 3309)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_mldsa65_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pk_0))
+           #f)
+         #f)))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

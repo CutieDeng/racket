@@ -90,6 +90,8 @@ RKTCRYPTO_EXTERN_NOERR void rktcrypto_secure_clear(unsigned char *buf, intptr_t 
 #define RKTCRYPTO_SHAKE256   11
 #define RKTCRYPTO_BLAKE2B    12
 #define RKTCRYPTO_BLAKE3     13
+#define RKTCRYPTO_SHA1       14   /* legacy, broken; compatibility only */
+#define RKTCRYPTO_MD5        15   /* legacy, broken; compatibility only */
 
 /* Upper bound on the incremental context size across all algorithms;
    Racket allocates a byte string of at least this many bytes to hold

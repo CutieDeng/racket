@@ -116,9 +116,23 @@
 (test #t list? (member 'sha3-256 (digest-algorithms)))
 
 ;; ----------------------------------------
+;; SHA-1 and MD5 (legacy, broken; vectors from FIPS 180-4 / RFC 1321)
+
+(test "a9993e364706816aba3e25717850c26c9cd0d89d" hx 'sha1 #"abc")
+(test "da39a3ee5e6b4b0d3255bfef95601890afd80709" hx 'sha1 #"")
+(test "84983e441c3bd26ebaae4aa1f95129e5e54670f1"
+      hx 'sha1 #"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+(test "900150983cd24fb0d6963f7d28e17f72" hx 'md5 #"abc")
+(test "d41d8cd98f00b204e9800998ecf8427e" hx 'md5 #"")
+(test "9e107d9d372bb6826bd81d3542a419d6"
+      hx 'md5 #"The quick brown fox jumps over the lazy dog")
+(test 20 digest-output-size 'sha1)
+(test 16 digest-output-size 'md5)
+
+;; ----------------------------------------
 ;; Negative cases
 
-(err/rt-test (digest-bytes 'md5 #"x") exn:fail:contract?)          ; unknown alg
+(err/rt-test (digest-bytes 'sha999 #"x") exn:fail:contract?)       ; unknown alg
 (err/rt-test (digest-bytes 'shake128 #"x") exn:fail:contract?)     ; XOF needs #:length
 (err/rt-test (digest-output-size 'shake128) exn:fail:contract?)    ; XOF has no fixed size
 (err/rt-test (digest-bytes 'sha256 "not bytes") exn:fail:contract?)

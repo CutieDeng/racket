@@ -13,6 +13,8 @@
 (define-constant RKTCRYPTO_SHAKE256 11)
 (define-constant RKTCRYPTO_BLAKE2B 12)
 (define-constant RKTCRYPTO_BLAKE3 13)
+(define-constant RKTCRYPTO_SHA1 14)
+(define-constant RKTCRYPTO_MD5 15)
 (define-constant RKTCRYPTO_DIGEST_CTX_MAXSIZE 2048)
 (define-constant RKTCRYPTO_AEAD_CHACHA20_POLY1305 1)
 (define-constant RKTCRYPTO_AEAD_XCHACHA20_POLY1305 2)

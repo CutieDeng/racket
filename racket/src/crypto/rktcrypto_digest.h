@@ -27,6 +27,34 @@ void rktcrypto_sha256_core_update(rktcrypto_sha256_ctx_t *ctx,
 void rktcrypto_sha256_core_final(rktcrypto_sha256_ctx_t *ctx,
                                  unsigned char *out, intptr_t out_len);
 
+/* ---- SHA-1 (FIPS 180-4) and MD5 (RFC 1321): legacy, broken ---- */
+
+typedef struct rktcrypto_sha1_ctx_t {
+  uint32_t h[5];
+  uint64_t len;         /* message length in bits */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_sha1_ctx_t;
+
+void rktcrypto_sha1_core_init(rktcrypto_sha1_ctx_t *ctx);
+void rktcrypto_sha1_core_update(rktcrypto_sha1_ctx_t *ctx,
+                                const unsigned char *data, intptr_t len);
+void rktcrypto_sha1_core_final(rktcrypto_sha1_ctx_t *ctx,
+                               unsigned char *out, intptr_t out_len);
+
+typedef struct rktcrypto_md5_ctx_t {
+  uint32_t h[4];
+  uint64_t len;         /* message length in bits */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_md5_ctx_t;
+
+void rktcrypto_md5_core_init(rktcrypto_md5_ctx_t *ctx);
+void rktcrypto_md5_core_update(rktcrypto_md5_ctx_t *ctx,
+                               const unsigned char *data, intptr_t len);
+void rktcrypto_md5_core_final(rktcrypto_md5_ctx_t *ctx,
+                              unsigned char *out, intptr_t out_len);
+
 /* ---- SHA-384 / SHA-512 / SHA-512-256 (FIPS 180-4) ---- */
 
 typedef struct rktcrypto_sha512_ctx_t {
