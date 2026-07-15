@@ -158,6 +158,20 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_open(int alg,
    fails or on bad arguments; on failure `out` is not written. */
 
 /*************************************************/
+/* Argon2id password hashing                     */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_argon2id(const unsigned char *pwd, intptr_t pwdlen,
+                                              const unsigned char *salt, intptr_t saltlen,
+                                              const unsigned char *secret, intptr_t secretlen,
+                                              const unsigned char *ad, intptr_t adlen,
+                                              intptr_t t_cost, intptr_t m_cost, intptr_t parallelism,
+                                              unsigned char *out, intptr_t outlen);
+/* Argon2id (RFC 9106). `secret` and `ad` may be NULL with length 0.
+   t_cost is the iteration count, m_cost the memory in kibibytes,
+   parallelism the number of lanes. Returns 1 on success, 0 on invalid
+   parameters or allocation failure. */
+
+/*************************************************/
 /* SipHash keyed PRF                             */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,

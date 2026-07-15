@@ -116,6 +116,23 @@
 (define-function
  ()
  int
+ rktcrypto_argon2id
+ (((*ref unsigned-8) pwd)
+  (intptr_t pwdlen)
+  ((*ref unsigned-8) salt)
+  (intptr_t saltlen)
+  ((*ref unsigned-8) secret)
+  (intptr_t secretlen)
+  ((*ref unsigned-8) ad)
+  (intptr_t adlen)
+  (intptr_t t_cost)
+  (intptr_t m_cost)
+  (intptr_t parallelism)
+  ((*ref unsigned-8) out)
+  (intptr_t outlen)))
+(define-function
+ ()
+ int
  rktcrypto_siphash
  (((*ref unsigned-8) key)
   (intptr_t key_len)

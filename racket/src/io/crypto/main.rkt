@@ -20,7 +20,8 @@
          crypto-aead-seal!
          crypto-aead-open!
          crypto-siphash-2-4
-         crypto-siphash-1-3)
+         crypto-siphash-1-3
+         crypto-argon2id)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -248,3 +249,29 @@
 
 (define/who (crypto-siphash-1-3 key data [start 0] [end (and (bytes? data) (bytes-length data))])
   (siphash who key data start end 1 3))
+
+;; ----------------------------------------
+;; Argon2id password hashing (RFC 9106)
+
+;; Writes an `outlen`-byte tag to a fresh byte string. secret and ad
+;; may be empty. t-cost is iterations, m-cost is memory in kibibytes,
+;; parallelism is the number of lanes.
+(define/who (crypto-argon2id pwd salt secret ad t-cost m-cost parallelism outlen)
+  (check who bytes? pwd)
+  (check who bytes? salt)
+  (check who bytes? secret)
+  (check who bytes? ad)
+  (check who exact-positive-integer? t-cost)
+  (check who exact-positive-integer? m-cost)
+  (check who exact-positive-integer? parallelism)
+  (check who exact-positive-integer? outlen)
+  (define out (make-bytes outlen))
+  (unless (eqv? 1 (rktcrypto_argon2id pwd (bytes-length pwd)
+                                      salt (bytes-length salt)
+                                      secret (bytes-length secret)
+                                      ad (bytes-length ad)
+                                      t-cost m-cost parallelism
+                                      out outlen))
+    (raise (exn:fail (string-append (symbol->string who) ": Argon2id failed (bad parameters)")
+                     (current-continuation-marks))))
+  out)

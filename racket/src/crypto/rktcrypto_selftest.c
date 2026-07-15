@@ -175,6 +175,20 @@ static int test_siphash(void)
   return memcmp(out, want, 8) == 0;
 }
 
+/* Argon2id KAT (RFC 9106 test vector). Uses a small memory cost, so
+   it is cheap enough for a startup self-test. */
+static int test_argon2id(void)
+{
+  unsigned char pwd[32], salt[16], secret[8], ad[12], out[32];
+  static const unsigned char want[32] = {
+    0x0d,0x64,0x0d,0xf5,0x8d,0x78,0x76,0x6c,0x08,0xc0,0x37,0xa3,0x4a,0x8b,0x53,0xc9,
+    0xd0,0x1e,0xf0,0x45,0x2d,0x75,0xb6,0x5e,0xb5,0x25,0x20,0xe9,0x6b,0x01,0xe6,0x59};
+  memset(pwd, 1, 32); memset(salt, 2, 16); memset(secret, 3, 8); memset(ad, 4, 12);
+  if (!rktcrypto_argon2id(pwd, 32, salt, 16, secret, 8, ad, 12, 3, 32, 4, out, 32))
+    return 0;
+  return memcmp(out, want, 32) == 0;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -183,5 +197,6 @@ int rktcrypto_selftest_core(void)
   if (!test_digests()) return 0;
   if (!test_aead()) return 0;
   if (!test_siphash()) return 0;
+  if (!test_argon2id()) return 0;
   return 1;
 }

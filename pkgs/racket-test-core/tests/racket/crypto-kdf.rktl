@@ -43,6 +43,29 @@
 (test 50 bytes-length (pbkdf2 'sha256 #"password" #"salt" #:iterations 3 #:length 50))
 
 ;; ----------------------------------------
+;; Argon2id (RFC 9106 test vector)
+
+(test "0d640df58d78766c08c037a34a8b53c9d01ef0452d75b65eb52520e96b01e659"
+      hx (argon2id (make-bytes 32 1) (make-bytes 16 2)
+                   #:secret (make-bytes 8 3) #:ad (make-bytes 12 4)
+                   #:iterations 3 #:memory 32 #:parallelism 4 #:length 32))
+;; default parameters produce a 32-byte tag; deterministic
+(let ([h (argon2id #"password" #"saltsaltsaltsalt" #:iterations 1 #:memory 64 #:parallelism 1)])
+  (test 32 bytes-length h)
+  (test h argon2id #"password" #"saltsaltsaltsalt" #:iterations 1 #:memory 64 #:parallelism 1))
+;; different salt -> different hash
+(test #f equal?
+      (argon2id #"pw" #"salt-one-16bytes" #:iterations 1 #:memory 32 #:parallelism 1)
+      (argon2id #"pw" #"salt-two-16bytes" #:iterations 1 #:memory 32 #:parallelism 1))
+;; custom output length
+(test 64 bytes-length
+      (argon2id #"pw" #"saltsaltsaltsalt" #:iterations 1 #:memory 32 #:parallelism 1 #:length 64))
+;; negative: non-positive parameters
+(err/rt-test (argon2id #"p" #"s" #:iterations 0) exn:fail:contract?)
+(err/rt-test (argon2id #"p" #"s" #:length 0) exn:fail:contract?)
+(err/rt-test (argon2id "not bytes" #"s") exn:fail:contract?)
+
+;; ----------------------------------------
 ;; Negative cases
 
 (err/rt-test (hkdf 'shake128 #"ikm" #:length 32) exn:fail:contract?)   ; XOF not allowed

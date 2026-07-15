@@ -10,7 +10,8 @@
 (require racket/contract/base
          "digest.rkt"
          "mac.rkt"
-         (prefix-in u: "util.rkt"))
+         (prefix-in u: "util.rkt")
+         (only-in '#%kernel crypto-argon2id))
 
 (define (kdf-hash? v)
   (and (memq v (digest-algorithms)) (not (digest-xof? v)) #t))
@@ -71,8 +72,28 @@
     (bytes-copy! out (* (sub1 blk) hlen) acc))
   (subbytes out 0 length))
 
+;; Argon2id (RFC 9106): memory-hard password hashing. The defaults
+;; follow the RFC's second recommended option (memory-constrained):
+;; 3 iterations, 64 MiB, 4 lanes. Increase them for stronger hashing.
+(define (argon2id password salt
+                  #:iterations [iterations 3]
+                  #:memory [memory (* 64 1024)]      ; kibibytes -> 64 MiB
+                  #:parallelism [parallelism 4]
+                  #:length [length 32]
+                  #:secret [secret #""]
+                  #:ad [ad #""])
+  (crypto-argon2id password salt secret ad iterations memory parallelism length))
+
 (provide kdf-hash/c
          (contract-out
+          [argon2id (->* (bytes? bytes?)
+                         (#:iterations exact-positive-integer?
+                          #:memory exact-positive-integer?
+                          #:parallelism exact-positive-integer?
+                          #:length exact-positive-integer?
+                          #:secret bytes?
+                          #:ad bytes?)
+                         bytes?)]
           [hkdf (->* (kdf-hash/c bytes? #:length exact-positive-integer?)
                      (#:salt bytes? #:info bytes?)
                      bytes?)]

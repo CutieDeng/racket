@@ -477,8 +477,23 @@ FIPS-197 C.3 与 SP800-38A 向量；`crypto-aead.rktl` 增补 AES-GCM 用例
 性能：便携常量时间路径（有限域 S-box 无查表，慢但安全）；无硬件 AES
 平台文档引导用 ChaCha20 系。ARMv8-CE/AES-NI 硬件加速 dispatch 待接入。
 
+### M2b Argon2id — 完成（2026-07-15）
+
+`rktcrypto_argon2.c`：from-scratch Argon2id（RFC 9106）内存硬密码哈希，
+复用已有 BLAKE2b core。含变长哈希 H'、Argon2 P 置换（带
+2·trunc(a)·trunc(b) 混合项，区别于 BLAKE2b round）、G 压缩、argon2id
+混合寻址（首轮前半 data-independent 生成地址块、其余 data-dependent）、
+多轮多 lane 驱动、内存清零；支持 secret(K)/AD(X)。接入
+`racket/crypto/kdf` 的 `argon2id`（keyword API，默认 RFC 第二推荐
+t=3/m=64MiB/p=4）。
+
+验收：RFC 9106 官方向量（0d640df5…）离线通过；`crypto-kdf.rktl` 增补
+（官方向量 + 确定性 + 不同 salt 不同 + 自定义长度 + 负向）；C 层 KAT。
+排查中发现离线测试函数声明 ABI 与 intptr_t 签名不匹配致参数错位死循环
+——实现本身正确。
+
 尚未完成（M2 后续）：
-- **Argon2id、scrypt**：密码哈希，PBKDF2 已覆盖基本需求，Argon2id 待补。
+- **scrypt**：PBKDF2/Argon2id 已覆盖密码哈希需求，scrypt 可选后补。
 - **per-place DRBG**：`crypto-random-bytes` 已走系统熵（M0），用户态
   ChaCha20 DRBG（arc4random 风格、fork 安全）作为性能优化待做。
 - **PBKDF2 C 内循环**：当前纯 Racket，高迭代次数 CPU-bound，C 化待优化。

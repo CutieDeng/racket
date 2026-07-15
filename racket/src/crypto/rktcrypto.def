@@ -15,5 +15,6 @@ rktcrypto_aead_nonce_size
 rktcrypto_aead_tag_size
 rktcrypto_aead_seal
 rktcrypto_aead_open
+rktcrypto_argon2id
 rktcrypto_siphash
 rktcrypto_selftest_core

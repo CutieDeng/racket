@@ -196,6 +196,57 @@ Finalizes @racket[h] and returns the MAC.}
 
 @; ------------------------------------------------------------------------
 
+@section{Key Derivation}
+
+@defmodule[racket/crypto/kdf]
+
+@defthing[kdf-hash/c flat-contract?]{
+A contract for the hash algorithms usable with a KDF: the fixed-size
+digest algorithms (the XOFs are excluded).}
+
+@defproc[(hkdf [alg kdf-hash/c] [ikm bytes?]
+               [#:length length exact-positive-integer?]
+               [#:salt salt bytes? #""]
+               [#:info info bytes? #""])
+         bytes?]{
+
+HKDF (RFC 5869): derives @racket[length] bytes of key material from the
+input keying material @racket[ikm], with optional @racket[salt] and
+context @racket[info]. Equivalent to @racket[hkdf-extract] followed by
+@racket[hkdf-expand].}
+
+@deftogether[(
+@defproc[(hkdf-extract [alg kdf-hash/c] [ikm bytes?] [#:salt salt bytes? #""]) bytes?]
+@defproc[(hkdf-expand [alg kdf-hash/c] [prk bytes?] [length exact-positive-integer?] [#:info info bytes? #""]) bytes?]
+)]{
+The two HKDF stages separately, when finer control is needed.}
+
+@defproc[(pbkdf2 [alg kdf-hash/c] [password bytes?] [salt bytes?]
+                 [#:iterations iterations exact-positive-integer?]
+                 [#:length length exact-positive-integer?])
+         bytes?]{
+
+PBKDF2 (RFC 8018) with @racket[alg]-based HMAC. Use a high
+@racket[iterations] count for password hashing; @racket[argon2id] is a
+stronger, memory-hard alternative.}
+
+@defproc[(argon2id [password bytes?] [salt bytes?]
+                   [#:iterations iterations exact-positive-integer? 3]
+                   [#:memory memory exact-positive-integer? 65536]
+                   [#:parallelism parallelism exact-positive-integer? 4]
+                   [#:length length exact-positive-integer? 32]
+                   [#:secret secret bytes? #""]
+                   [#:ad ad bytes? #""])
+         bytes?]{
+
+Argon2id (RFC 9106), a memory-hard password hashing function.
+@racket[memory] is in kibibytes; the defaults follow the RFC's
+memory-constrained recommendation (3 iterations, 64 MiB, 4 lanes).
+@racket[secret] and @racket[ad] are optional keying and associated
+data.}
+
+@; ------------------------------------------------------------------------
+
 @section{Authenticated Encryption}
 
 @subsection{High-Level: Secretbox}
