@@ -530,9 +530,12 @@ NIST GCM 全零向量；SHA-256 过 NIST 向量 + python hashlib 差分（全块
 （transform 走硬件），不涉及原语/io/绑定，无需 bump 版本。
 
 尚未完成（可选后补）：
-- **PMULL GHASH**：GCM 的 GHASH 仍便携逐位（AES-GCM 的当前瓶颈），
-  PMULL 无进位乘法（位反射域 + Gueron 约减）待接，接后 AES-GCM 可达
-  GB/s 级。精密易错,单列。
+- **PMULL GHASH**：GCM 的 GHASH 仍便携逐位（AES-GCM 的当前瓶颈）。
+  已离线试写 PMULL 版但与便携逐位差分 1000/1000 不匹配（位反射域 +
+  Karatsuba + 约减细节错，位反射是经典陷阱），按"不通过不集成"策略
+  未放进仓库（AES-GCM 保持便携 GHASH 正确）。待专门调试后接入,接后
+  AES-GCM 可达 GB/s 级。验收方法:与 rktcrypto_gcm.c 的 ref bit-by-bit
+  ghash_mul 随机输入差分 + NIST 全零向量。
 - **x86 加速**：AES-NI/SHA-NI/AVX2 需运行时 cpuid dispatch，待接。
 - **ChaCha20/BLAKE NEON**、**scrypt**、**PBKDF2 C 内循环**：可选后补。
 
