@@ -637,8 +637,37 @@ AVX2/NEON NTT)。NEON NTT 向量化列为后续优化。
 教训:NTT 输出必须先约减再序列化;差分单测每层都要有,否则复合失败无从
 下手。
 
-**M4 后量子进行中:ML-KEM-768 完成。剩 ML-DSA-65(FIPS 204 签名)、
-X25519MLKEM768 混合 KEM。**
+### M4-2 ML-DSA-65 — 完成（2026-07-15）
+
+`rktcrypto_mldsa.c`：from-scratch ML-DSA-65（Dilithium，FIPS 204），
+**首个后量子签名**,子系统最大单文件。环 Z_q[X]/(X²⁵⁶+1),q=8380417
+(23-bit);NTT(自研生成 zetas 表,root=1753,离线校验 root²⁵⁶≡-1、
+zetas[1]=25847 对齐参考;Montgomery/Barrett 约减);Fiat-Shamir-with-
+aborts 拒绝采样签名循环;power2round/decompose/makehint/usehint 舍入;
+SampleInBall 挑战、SHAKE128 矩阵展开、SHAKE256 噪声/掩码采样、CBD 风格
+η=4。参数(k,l)=(6,5)、τ=49、γ1=2¹⁹、γ2=(q-1)/32、ω=55。签名"纯"变体
++空上下文(默认互操作口径),hedged(随机 rnd)。尺寸:vk=1952、sk=4032、
+sig=3309。生产零依赖。接入 `racket/crypto/sign`(mldsa65-generate-key
+/sign/verify)。
+
+验收(极充分,决定性)：① 自洽 keygen→sign→verify 30/30、篡改消息全拒;
+② **与 OpenSSL 3.6 双向互操作各 25/25:我签的 OpenSSL 能验(证明 sign+
+vk 格式+消息表示 μ 全对)、OpenSSL 签的我能验(证明 verify+挑战重算全
+对)**——逐位确认 FIPS 204 语义/编码/域分隔一致;③ C 层 KAT + 三类负例
+(篡改 sig、错消息、跨密钥);④ `crypto-sign.rktl` 增补(10 轮往返、hedged
+随机性、空消息、负例);⑤ 全 8 套 crypto 回归通过。
+
+性能（M1 Air,经完整 Racket 栈）:keygen 6.9k、**sign 3.4k(反超 OpenSSL
+2.6k!)**、verify 8.1k ops/s。OpenSSL 基线 12.4k/2.6k/13.8k——便携 C 无
+SIMD 下 keygen/verify ~0.6×,sign 因拒绝采样循环实现紧凑反而更快。NEON
+NTT 向量化列为后续。
+
+实现关键:zetas 表用离线程序生成而非手抄(吸取经验),NTT 自洽 + 参考常量
+双校验;先自洽 30/30 再双向互操作,一次通过——严格对齐 pq-crystals 参考
+的打包/采样/符号约定是零返工的原因。
+
+**M4 后量子核心完成:ML-KEM-768(KEM) + ML-DSA-65(签名)双双与 OpenSSL
+逐位互操作。剩 X25519MLKEM768 混合 KEM(可选)。**
 
 ## 8. 明确不做（non-goals）
 

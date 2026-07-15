@@ -13,7 +13,10 @@
                   crypto-ed25519-sign
                   crypto-ed25519-verify
                   crypto-p256-ecdsa-sign
-                  crypto-p256-ecdsa-verify))
+                  crypto-p256-ecdsa-verify
+                  crypto-mldsa65-keypair
+                  crypto-mldsa65-sign
+                  crypto-mldsa65-verify))
 
 ;; Generates a fresh 32-byte Ed25519 private key (seed).
 (define (ed25519-generate-private-key)
@@ -40,10 +43,36 @@
 (define (p256-ecdsa-verify public-key message signature)
   (crypto-p256-ecdsa-verify public-key message signature))
 
-(provide (contract-out
+;; ML-DSA-65 (Dilithium, FIPS 204): post-quantum signatures. A key pair
+;; is a verification key (public, 1952 bytes) and a signing key (secret,
+;; 4032 bytes); signatures are 3309 bytes. Signing is hedged (draws fresh
+;; randomness), so `mldsa65-sign` of the same message varies -- this is
+;; standard-conformant and does not weaken verification. The pure variant
+;; with an empty context is used, interoperable with other FIPS 204
+;; implementations.
+(define (mldsa65-generate-key)
+  (call-with-values crypto-mldsa65-keypair values))
+
+(define (mldsa65-sign signing-key message)
+  (crypto-mldsa65-sign signing-key message))
+
+(define (mldsa65-verify verify-key message signature)
+  (crypto-mldsa65-verify verify-key message signature))
+
+(provide MLDSA65-PUBLIC-KEY-BYTES
+         MLDSA65-SECRET-KEY-BYTES
+         MLDSA65-SIGNATURE-BYTES
+         (contract-out
           [ed25519-generate-private-key (-> bytes?)]
           [ed25519-public-key (-> bytes? bytes?)]
           [ed25519-sign (-> bytes? bytes? bytes?)]
           [ed25519-verify (-> bytes? bytes? bytes? boolean?)]
           [p256-ecdsa-sign (-> bytes? bytes? bytes?)]
-          [p256-ecdsa-verify (-> bytes? bytes? bytes? boolean?)]))
+          [p256-ecdsa-verify (-> bytes? bytes? bytes? boolean?)]
+          [mldsa65-generate-key (-> (values bytes? bytes?))]
+          [mldsa65-sign (-> bytes? bytes? bytes?)]
+          [mldsa65-verify (-> bytes? bytes? bytes? boolean?)]))
+
+(define MLDSA65-PUBLIC-KEY-BYTES 1952)
+(define MLDSA65-SECRET-KEY-BYTES 4032)
+(define MLDSA65-SIGNATURE-BYTES 3309)

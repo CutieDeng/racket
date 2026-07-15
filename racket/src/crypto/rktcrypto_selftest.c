@@ -281,6 +281,23 @@ static int test_mlkem768(void)
   return 1;
 }
 
+static int test_mldsa65(void)
+{
+  unsigned char seed[32], pk[1952], sk[4032], sig[3309];
+  unsigned char msg[3] = { 'a', 'b', 'c' };
+  int i;
+  for (i = 0; i < 32; i++) seed[i] = (unsigned char)i;
+  if (!rktcrypto_mldsa65_keypair_derand(pk, sk, seed)) return 0;
+  if (!rktcrypto_mldsa65_sign_derand(sig, msg, 3, sk)) return 0;
+  if (!rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;  /* genuine signature */
+  sig[0] ^= 1;                                                /* tampered signature */
+  if (rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;
+  sig[0] ^= 1;
+  msg[0] ^= 1;                                                /* wrong message */
+  if (rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;
+  return 1;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -295,5 +312,6 @@ int rktcrypto_selftest_core(void)
   if (!test_ed25519()) return 0;
   if (!test_p256()) return 0;
   if (!test_mlkem768()) return 0;
+  if (!test_mldsa65()) return 0;
   return 1;
 }

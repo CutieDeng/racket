@@ -21,6 +21,9 @@
 (define-constant RKTCRYPTO_MLKEM768_SECRETKEYBYTES 2400)
 (define-constant RKTCRYPTO_MLKEM768_CIPHERTEXTBYTES 1088)
 (define-constant RKTCRYPTO_MLKEM768_BYTES 32)
+(define-constant RKTCRYPTO_MLDSA65_PUBLICKEYBYTES 1952)
+(define-constant RKTCRYPTO_MLDSA65_SECRETKEYBYTES 4032)
+(define-constant RKTCRYPTO_MLDSA65_SIGBYTES 3309)
 (define-function
  ()
  int
@@ -236,5 +239,39 @@
   ((*ref unsigned-8) ss)
   ((*ref unsigned-8) pk)
   ((*ref unsigned-8) m)))
+(define-function
+ ()
+ int
+ rktcrypto_mldsa65_keypair
+ (((*ref unsigned-8) pk) ((*ref unsigned-8) sk)))
+(define-function
+ ()
+ int
+ rktcrypto_mldsa65_sign
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) m)
+  (intptr_t mlen)
+  ((*ref unsigned-8) sk)))
+(define-function
+ ()
+ int
+ rktcrypto_mldsa65_verify
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) m)
+  (intptr_t mlen)
+  ((*ref unsigned-8) pk)))
+(define-function
+ ()
+ int
+ rktcrypto_mldsa65_keypair_derand
+ (((*ref unsigned-8) pk) ((*ref unsigned-8) sk) ((*ref unsigned-8) seed)))
+(define-function
+ ()
+ int
+ rktcrypto_mldsa65_sign_derand
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) m)
+  (intptr_t mlen)
+  ((*ref unsigned-8) sk)))
 (define-function () int rktcrypto_selftest_core ())
 )

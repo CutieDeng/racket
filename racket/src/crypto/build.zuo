@@ -48,6 +48,7 @@
       "rktcrypto_ed25519.c"
       "rktcrypto_p256.c"
       "rktcrypto_mlkem.c"
+      "rktcrypto_mldsa.c"
       "rktcrypto_selftest.c"))
   (define objs
     (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))

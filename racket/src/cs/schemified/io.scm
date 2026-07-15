@@ -48,9 +48,12 @@
                 (1/crypto-ed25519-public-key crypto-ed25519-public-key)
                 (1/crypto-ed25519-sign crypto-ed25519-sign)
                 (1/crypto-ed25519-verify crypto-ed25519-verify)
-                (crypto-mlkem768-decaps crypto-mlkem768-decaps)
-                (crypto-mlkem768-encaps crypto-mlkem768-encaps)
-                (crypto-mlkem768-keypair crypto-mlkem768-keypair)
+                (crypto-mldsa65-keypair crypto-mldsa65-keypair)
+                (crypto-mldsa65-sign crypto-mldsa65-sign)
+                (crypto-mldsa65-verify crypto-mldsa65-verify)
+                (1/crypto-mlkem768-decaps crypto-mlkem768-decaps)
+                (1/crypto-mlkem768-encaps crypto-mlkem768-encaps)
+                (1/crypto-mlkem768-keypair crypto-mlkem768-keypair)
                 (1/crypto-p256-ecdh crypto-p256-ecdh)
                 (1/crypto-p256-ecdsa-sign crypto-p256-ecdsa-sign)
                 (1/crypto-p256-ecdsa-verify crypto-p256-ecdsa-verify)
@@ -35386,6 +35389,16 @@
   (hash-ref rktcrypto-table 'rktcrypto_mlkem768_keypair_derand))
 (define rktcrypto_mlkem768_enc_derand
   (hash-ref rktcrypto-table 'rktcrypto_mlkem768_enc_derand))
+(define rktcrypto_mldsa65_keypair
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_keypair))
+(define rktcrypto_mldsa65_sign
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_sign))
+(define rktcrypto_mldsa65_verify
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_verify))
+(define rktcrypto_mldsa65_keypair_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_keypair_derand))
+(define rktcrypto_mldsa65_sign_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_sign_derand))
 (define rktcrypto_selftest_core
   (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
@@ -36275,44 +36288,117 @@
              pub_0))
            #f)
          #f)))))
-(define crypto-mlkem768-keypair
+(define 1/crypto-mlkem768-keypair
+  (|#%name|
+   crypto-mlkem768-keypair
+   (lambda ()
+     (let ((pk_0 (make-bytes 1184)))
+       (let ((sk_0 (make-bytes 2400)))
+         (if (eqv? 1 (|#%app| rktcrypto_mlkem768_keypair pk_0 sk_0))
+           (values pk_0 sk_0)
+           #f))))))
+(define 1/crypto-mlkem768-encaps
+  (|#%name|
+   crypto-mlkem768-encaps
+   (lambda (pk_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-encaps "bytes?" pk_0))
+       (if (not (eqv? (unsafe-bytes-length pk_0) 1184))
+         #f
+         (let ((ct_0 (make-bytes 1088)))
+           (let ((ss_0 (make-bytes 32)))
+             (if (eqv? 1 (|#%app| rktcrypto_mlkem768_encaps ct_0 ss_0 pk_0))
+               (values ct_0 ss_0)
+               #f))))))))
+(define 1/crypto-mlkem768-decaps
+  (|#%name|
+   crypto-mlkem768-decaps
+   (lambda (ct_0 sk_0)
+     (begin
+       (if (bytes? ct_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-decaps "bytes?" ct_0))
+       (if (bytes? sk_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-decaps "bytes?" sk_0))
+       (if (not
+            (if (eqv? (unsafe-bytes-length ct_0) 1088)
+              (eqv? (unsafe-bytes-length sk_0) 2400)
+              #f))
+         #f
+         (let ((ss_0 (make-bytes 32)))
+           (if (eqv? 1 (|#%app| rktcrypto_mlkem768_decaps ss_0 ct_0 sk_0))
+             ss_0
+             #f)))))))
+(define crypto-mldsa65-keypair
   (lambda ()
-    (let ((pk_0 (make-bytes 1184)))
-      (let ((sk_0 (make-bytes 2400)))
-        (if (eqv? 1 (|#%app| rktcrypto_mlkem768_keypair pk_0 sk_0))
+    (let ((pk_0 (make-bytes 1952)))
+      (let ((sk_0 (make-bytes 4032)))
+        (if (eqv? 1 (|#%app| rktcrypto_mldsa65_keypair pk_0 sk_0))
           (values pk_0 sk_0)
           #f)))))
-(define crypto-mlkem768-encaps
-  (lambda (pk_0)
+(define crypto-mldsa65-sign
+  (lambda (sk_0 msg_0)
+    (begin
+      (if (bytes? sk_0)
+        (void)
+        (raise-argument-error 'crypto-mldsa65-sign "bytes?" sk_0))
+      (begin
+        (if (bytes? msg_0)
+          (void)
+          (raise-argument-error 'crypto-mldsa65-sign "bytes?" msg_0))
+        (begin
+          (if (eqv? (unsafe-bytes-length sk_0) 4032)
+            (void)
+            (raise-arguments-error
+             'crypto-mldsa65-sign
+             "secret key must be 4032 bytes"
+             "given"
+             (unsafe-bytes-length sk_0)))
+          (let ((sig_0 (make-bytes 3309)))
+            (begin
+              (if (eqv?
+                   1
+                   (|#%app|
+                    rktcrypto_mldsa65_sign
+                    sig_0
+                    msg_0
+                    (unsafe-bytes-length msg_0)
+                    sk_0))
+                (void)
+                (raise
+                 (let ((app_0
+                        (string-append
+                         (symbol->string 'crypto-mldsa65-sign)
+                         ": signing failed")))
+                   (|#%app| exn:fail app_0 (current-continuation-marks)))))
+              sig_0)))))))
+(define crypto-mldsa65-verify
+  (lambda (pk_0 msg_0 sig_0)
     (begin
       (if (bytes? pk_0)
         (void)
-        (raise-argument-error 'crypto-mlkem768-encaps "bytes?" pk_0))
-      (if (not (eqv? (unsafe-bytes-length pk_0) 1184))
-        #f
-        (let ((ct_0 (make-bytes 1088)))
-          (let ((ss_0 (make-bytes 32)))
-            (if (eqv? 1 (|#%app| rktcrypto_mlkem768_encaps ct_0 ss_0 pk_0))
-              (values ct_0 ss_0)
-              #f)))))))
-(define crypto-mlkem768-decaps
-  (lambda (ct_0 sk_0)
-    (begin
-      (if (bytes? ct_0)
+        (raise-argument-error 'crypto-mldsa65-verify "bytes?" pk_0))
+      (if (bytes? msg_0)
         (void)
-        (raise-argument-error 'crypto-mlkem768-decaps "bytes?" ct_0))
-      (if (bytes? sk_0)
+        (raise-argument-error 'crypto-mldsa65-verify "bytes?" msg_0))
+      (if (bytes? sig_0)
         (void)
-        (raise-argument-error 'crypto-mlkem768-decaps "bytes?" sk_0))
-      (if (not
-           (if (eqv? (unsafe-bytes-length ct_0) 1088)
-             (eqv? (unsafe-bytes-length sk_0) 2400)
-             #f))
-        #f
-        (let ((ss_0 (make-bytes 32)))
-          (if (eqv? 1 (|#%app| rktcrypto_mlkem768_decaps ss_0 ct_0 sk_0))
-            ss_0
-            #f))))))
+        (raise-argument-error 'crypto-mldsa65-verify "bytes?" sig_0))
+      (if (eqv? (unsafe-bytes-length pk_0) 1952)
+        (if (eqv? (unsafe-bytes-length sig_0) 3309)
+          (eqv?
+           1
+           (|#%app|
+            rktcrypto_mldsa65_verify
+            sig_0
+            msg_0
+            (unsafe-bytes-length msg_0)
+            pk_0))
+          #f)
+        #f))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

@@ -31,4 +31,9 @@ rktcrypto_mlkem768_encaps
 rktcrypto_mlkem768_decaps
 rktcrypto_mlkem768_keypair_derand
 rktcrypto_mlkem768_enc_derand
+rktcrypto_mldsa65_keypair
+rktcrypto_mldsa65_sign
+rktcrypto_mldsa65_verify
+rktcrypto_mldsa65_keypair_derand
+rktcrypto_mldsa65_sign_derand
 rktcrypto_selftest_core

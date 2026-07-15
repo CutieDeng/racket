@@ -282,6 +282,41 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_enc_derand(unsigned char *ct, unsi
    known-answer tests. Returns 1. */
 
 /*************************************************/
+/* ML-DSA-65 (Dilithium), FIPS 204               */
+
+#define RKTCRYPTO_MLDSA65_PUBLICKEYBYTES 1952
+#define RKTCRYPTO_MLDSA65_SECRETKEYBYTES 4032
+#define RKTCRYPTO_MLDSA65_SIGBYTES       3309
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_keypair(unsigned char *pk, unsigned char *sk);
+/* Generates an ML-DSA-65 keypair using the built-in CSPRNG. pk is 1952
+   bytes, sk is 4032 bytes. Returns 1, or 0 on RNG failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_sign(unsigned char *sig,
+                                                  const unsigned char *m, intptr_t mlen,
+                                                  const unsigned char *sk);
+/* Signs m[0..mlen) with secret key sk (pure ML-DSA, empty context),
+   writing a 3309-byte signature to sig. Hedged: draws 32 random bytes
+   from the CSPRNG, so signatures vary. Returns 1, or 0 on RNG failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_verify(const unsigned char *sig,
+                                                    const unsigned char *m, intptr_t mlen,
+                                                    const unsigned char *pk);
+/* Verifies a 3309-byte signature over m under public key pk. Returns 1
+   if valid, 0 otherwise. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_keypair_derand(unsigned char *pk, unsigned char *sk,
+                                                            const unsigned char *seed);
+/* Deterministic keygen from a 32-byte seed, for known-answer tests.
+   Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_sign_derand(unsigned char *sig,
+                                                         const unsigned char *m, intptr_t mlen,
+                                                         const unsigned char *sk);
+/* Deterministic signing (zero randomizer), for known-answer tests.
+   Returns 1. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);

@@ -32,7 +32,10 @@
          crypto-p256-ecdsa-verify
          crypto-mlkem768-keypair
          crypto-mlkem768-encaps
-         crypto-mlkem768-decaps)
+         crypto-mlkem768-decaps
+         crypto-mldsa65-keypair
+         crypto-mldsa65-sign
+         crypto-mldsa65-verify)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -399,3 +402,31 @@
     [else
      (define ss (make-bytes 32))
      (and (eqv? 1 (rktcrypto_mlkem768_decaps ss ct sk)) ss)]))
+
+;; ----------------------------------------
+;; ML-DSA-65 (Dilithium, FIPS 204): post-quantum signatures
+
+(define (crypto-mldsa65-keypair)
+  (define pk (make-bytes 1952))
+  (define sk (make-bytes 4032))
+  (and (eqv? 1 (rktcrypto_mldsa65_keypair pk sk))
+       (values pk sk)))
+
+(define/who (crypto-mldsa65-sign sk msg)
+  (check who bytes? sk)
+  (check who bytes? msg)
+  (unless (eqv? (bytes-length sk) 4032)
+    (raise-arguments-error who "secret key must be 4032 bytes" "given" (bytes-length sk)))
+  (define sig (make-bytes 3309))
+  (unless (eqv? 1 (rktcrypto_mldsa65_sign sig msg (bytes-length msg) sk))
+    (raise (exn:fail (string-append (symbol->string who) ": signing failed")
+                     (current-continuation-marks))))
+  sig)
+
+(define/who (crypto-mldsa65-verify pk msg sig)
+  (check who bytes? pk)
+  (check who bytes? msg)
+  (check who bytes? sig)
+  (and (eqv? (bytes-length pk) 1952)
+       (eqv? (bytes-length sig) 3309)
+       (eqv? 1 (rktcrypto_mldsa65_verify sig msg (bytes-length msg) pk))))

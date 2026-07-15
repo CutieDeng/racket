@@ -84,4 +84,48 @@
 (test #f ed25519-verify (make-bytes 10) #"m" (make-bytes 64))
 (test #f ed25519-verify (make-bytes 32) #"m" (make-bytes 10))
 
+;; ----------------------------------------
+;; ML-DSA-65 (FIPS 204) post-quantum signatures
+
+(test 1952 values MLDSA65-PUBLIC-KEY-BYTES)
+(test 4032 values MLDSA65-SECRET-KEY-BYTES)
+(test 3309 values MLDSA65-SIGNATURE-BYTES)
+
+(for ([i (in-range 10)])
+  (define-values (vk sk) (mldsa65-generate-key))
+  (test 1952 bytes-length vk)
+  (test 4032 bytes-length sk)
+  (define msg (make-bytes (modulo (* i 13) 120) (modulo i 256)))
+  (define sig (mldsa65-sign sk msg))
+  (test 3309 bytes-length sig)
+  (test #t mldsa65-verify vk msg sig)
+  ;; wrong message rejected
+  (test #f mldsa65-verify vk (bytes-append msg #"x") sig)
+  ;; tampered signature rejected
+  (let ([bad (bytes-copy sig)])
+    (bytes-set! bad 0 (bitwise-xor (bytes-ref bad 0) 1))
+    (test #f mldsa65-verify vk msg bad))
+  ;; signature from another key does not verify
+  (let-values ([(vk2 sk2) (mldsa65-generate-key)])
+    (test #f mldsa65-verify vk2 msg sig)))
+
+;; empty message signs and verifies
+(let-values ([(vk sk) (mldsa65-generate-key)])
+  (define sig (mldsa65-sign sk #""))
+  (test #t mldsa65-verify vk #"" sig))
+
+;; signing is hedged: two signatures of the same message differ, both verify
+(let-values ([(vk sk) (mldsa65-generate-key)])
+  (define s1 (mldsa65-sign sk #"same"))
+  (define s2 (mldsa65-sign sk #"same"))
+  (test #f equal? s1 s2)
+  (test #t mldsa65-verify vk #"same" s1)
+  (test #t mldsa65-verify vk #"same" s2))
+
+;; negative cases
+(err/rt-test (mldsa65-sign (make-bytes 100) #"m") exn:fail?)         ; wrong sk size
+(err/rt-test (mldsa65-sign "not bytes" #"m") exn:fail:contract?)
+(test #f mldsa65-verify (make-bytes 10) #"m" (make-bytes 3309))      ; wrong vk size
+(test #f mldsa65-verify (make-bytes 1952) #"m" (make-bytes 10))      ; wrong sig size
+
 (report-errs)
