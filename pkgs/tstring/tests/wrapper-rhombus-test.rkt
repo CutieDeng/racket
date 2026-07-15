@@ -6,12 +6,17 @@
  racket/port
  racket/system
  (only-in "../private/rhombus-source-transform.rkt"
-          transform-rhombus-template-prefixes)
+          transform-rhombus-template-prefixes
+          transform-rhombus-template-prefixes/positions)
 ) ; end require
 
 (define (transform-rhombus-source source)
   (transform-rhombus-template-prefixes source (open-input-string source))
 ) ; end define transform-rhombus-source
+
+(define (transform-rhombus-source/positions source)
+  (transform-rhombus-template-prefixes/positions source (open-input-string source))
+) ; end define transform-rhombus-source/positions
 
 (check-equal?
  (transform-rhombus-source "println(f\"{1 /* } */}\")\n")
@@ -27,6 +32,24 @@
  (transform-rhombus-source "println(f\"{1:{2 /* } */}d}\")\n")
  "println(rhombus_tstring_concat(\"\", rhombus_tstring_format((1), rhombus_tstring_concat(\"\", rhombus_tstring_format((2 /* } */), #false, \"\"), \"d\"), \"\"), \"\"))\n"
 ) ; end check-equal?
+
+(let ()
+  (define source "f\"hi\" 2\n")
+  (define-values (transformed positions)
+    (transform-rhombus-source/positions source)
+  ) ; end define-values
+  (check-equal? transformed "\"hi\" 2\n")
+  (check-equal? (vector-ref positions
+                            (bytes-length (string->bytes/utf-8 "\"hi\""))
+                 ) ; end vector-ref
+                (string-length "f\"hi\"")
+  ) ; end check-equal?
+  (check-equal? (vector-ref positions
+                            (bytes-length (string->bytes/utf-8 transformed))
+                 ) ; end vector-ref
+                (string-length source)
+  ) ; end check-equal?
+) ; end let
 
 (define (rhombus-available?)
   (with-handlers ((exn:fail?
@@ -81,7 +104,30 @@
   (check-equal? stdout expected-stdout)
 ) ; end define check-rhombus-tstring
 
+(define (read-rhombus-repl-datum source)
+  (dynamic-require 'rhombus/runtime-config #f)
+  (define read-interaction (current-read-interaction))
+  (define in (open-input-string source))
+  (define stx (read-interaction 'test in))
+  (and (syntax? stx)
+       (syntax->datum stx)
+  ) ; end and
+) ; end define read-rhombus-repl-datum
+
+(define (check-rhombus-repl-read source expected-pattern)
+  (check-regexp-match expected-pattern
+                      (format "~s" (read-rhombus-repl-datum source))
+  ) ; end check-regexp-match
+) ; end define check-rhombus-repl-read
+
 (when (rhombus-available?)
+  (check-rhombus-repl-read "println(f\"hi {1}\")\n"
+                           #rx"rhombus_tstring_concat"
+  ) ; end check-rhombus-repl-read
+  (check-rhombus-repl-read "println(t\"hi {1}\")\n"
+                           #rx"rhombus_tstring_template"
+  ) ; end check-rhombus-repl-read
+
   (check-rhombus-tstring
    #<<SOURCE
 #lang tstring rhombus

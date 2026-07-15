@@ -16,6 +16,9 @@
 (load-in-sandbox "extflonum.rktl")
 (load-in-sandbox "string.rktl")
 (load-in-sandbox "treelist.rktl")
+(load-in-sandbox "pvector.rktl")
+(load-in-sandbox "intmap.rktl")
+(load-in-sandbox "intbits.rktl")
 (load-in-sandbox "fasl.rktl")
 
 (load-in-sandbox "async-channel.rktl")

@@ -21,6 +21,8 @@
                  [read-square-bracket-with-tag #f]
                  [read-curly-brace-with-tag #f]
                  [read-accept-box #t]
+                 [read-accept-pvector #t]
+                 [read-accept-pvector-raw #t]
                  [read-accept-bar-quote #t]
                  [read-accept-graph #t]
                  [read-syntax-accept-graph #f]

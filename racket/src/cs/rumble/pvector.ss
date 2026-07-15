@@ -1132,9 +1132,11 @@
   (if (fx<= len (fx* 2 core-pvector-digit-max))
       (let ([prefix-len (fxquotient len 2)])
         (values prefix-len (fx- len prefix-len)))
-      (if (fx= len (fx+ (fx* 2 core-pvector-digit-max) 1))
-          (values core-pvector-digit-max (fx- core-pvector-digit-max 1))
-          (values core-pvector-digit-max core-pvector-digit-max))))
+      (let ([remainder (fx- len (fx* 3 (fxquotient len 3)))])
+        (cond
+         [(fx= remainder 1) (values 2 2)]
+         [(fx= remainder 2) (values 3 2)]
+         [else (values 3 3)]))))
 
 (define (core-vector->large-finger vec len)
   (let-values ([(prefix-len suffix-len)
@@ -4102,6 +4104,655 @@
   (install! (record-type-descriptor core-pvector-inline))
   (install! (record-type-descriptor core-pvector-large-finger))
   (void))
+
+(define (core-pvector-literal-state-ref state index)
+  (#3%vector-ref state index))
+
+(define (core-pvector-literal-state-set! state index value)
+  (#3%vector-set! state index value))
+
+(define (core-pvector-literal-value-map state)
+  (core-pvector-literal-state-ref state 0))
+
+(define (core-pvector-literal-node-map state)
+  (core-pvector-literal-state-ref state 1))
+
+(define (core-pvector-literal-node-tree-map state)
+  (core-pvector-literal-state-ref state 2))
+
+(define (core-pvector-literal-next-id! state)
+  (let ([id (core-pvector-literal-state-ref state 3)])
+    (core-pvector-literal-state-set! state 3 (fx+ id 1))
+    id))
+
+(define (core-pvector-literal-add-def! state id val)
+  (core-pvector-literal-state-set!
+   state
+   4
+   (cons (list id val)
+         (core-pvector-literal-state-ref state 4))))
+
+(define (core-pvector-literal-emit-def! state val)
+  (let ([id (core-pvector-literal-next-id! state)])
+    (core-pvector-literal-add-def! state id val)
+    id))
+
+(define (core-pvector-literal-emit-digit/val! state len a b c d)
+  (core-pvector-literal-emit-def!
+   state
+   (cond
+    [(fx= len 1) (list 'Digit/val len a)]
+    [(fx= len 2) (list 'Digit/val len a b)]
+    [(fx= len 3) (list 'Digit/val len a b c)]
+    [else (list 'Digit/val len a b c d)])))
+
+(define (core-pvector-literal-emit-edge-digit/val! state pv prefix?)
+  (let ([len (core-pvector-large-finger-edge-length pv prefix?)])
+    (core-pvector-literal-emit-digit/val!
+     state
+     len
+     (if (fx< 0 len) (core-pvector-large-finger-edge-ref pv prefix? 0) #f)
+     (if (fx< 1 len) (core-pvector-large-finger-edge-ref pv prefix? 1) #f)
+     (if (fx< 2 len) (core-pvector-large-finger-edge-ref pv prefix? 2) #f)
+     (if (fx< 3 len) (core-pvector-large-finger-edge-ref pv prefix? 3) #f))))
+
+(define (core-pvector-literal-emit-node-digit1! state a)
+  (let ([a-id (core-pvector-literal-emit-node! state a)])
+    (core-pvector-literal-emit-def!
+     state
+     (list 'Digit (core-pvector-node-measure a) a-id))))
+
+(define (core-pvector-literal-emit-node-digit2! state a b)
+  (let ([a-id (core-pvector-literal-emit-node! state a)]
+        [b-id (core-pvector-literal-emit-node! state b)])
+    (core-pvector-literal-emit-def!
+     state
+     (list 'Digit
+           (fx+ (core-pvector-node-measure a)
+                (core-pvector-node-measure b))
+           a-id
+           b-id))))
+
+(define (core-pvector-literal-emit-node/uncached! state node)
+  (let ([measure (core-pvector-node-measure node)])
+    (cond
+     [(fx= (core-pvector-node-level node) 1)
+      (if (core-pvector-node2? node)
+          (core-pvector-literal-emit-def!
+           state
+           (list 'Node/val
+                 measure
+                 (core-pvector-node2-a node)
+                 (core-pvector-node2-b node)))
+          (core-pvector-literal-emit-def!
+           state
+           (list 'Node/val
+                 measure
+                 (core-pvector-node3-a node)
+                 (core-pvector-node3-b node)
+                 (core-pvector-node3-c node))))]
+     [(core-pvector-node2? node)
+      (let ([a-id (core-pvector-literal-emit-node!
+                   state
+                   (core-pvector-node2-a node))]
+            [b-id (core-pvector-literal-emit-node!
+                   state
+                   (core-pvector-node2-b node))])
+        (core-pvector-literal-emit-def!
+         state
+         (list 'Node measure a-id b-id)))]
+     [else
+      (let ([a-id (core-pvector-literal-emit-node!
+                   state
+                   (core-pvector-node3-a node))]
+            [b-id (core-pvector-literal-emit-node!
+                   state
+                   (core-pvector-node3-b node))]
+            [c-id (core-pvector-literal-emit-node!
+                   state
+                   (core-pvector-node3-c node))])
+        (core-pvector-literal-emit-def!
+         state
+         (list 'Node measure a-id b-id c-id)))])))
+
+(define (core-pvector-literal-emit-node! state node)
+  (let* ([node-map (core-pvector-literal-node-map state)]
+         [cached (hash-ref node-map node #f)])
+    (if cached
+        cached
+        (let ([id (core-pvector-literal-emit-node/uncached! state node)])
+          (hash-set! node-map node id)
+          id))))
+
+(define (core-pvector-literal-emit-node-tree! state node)
+  (if node
+      (let* ([tree-map (core-pvector-literal-node-tree-map state)]
+             [cached (hash-ref tree-map node #f)])
+        (if cached
+            cached
+            (let ([id
+                   (if (fx= (core-pvector-node-level node) 1)
+                       (let ([node-id
+                              (core-pvector-literal-emit-node! state node)])
+                         (core-pvector-literal-emit-def!
+                          state
+                          (list 'Single node-id)))
+                       (let* ([left-id
+                               (if (core-pvector-node2? node)
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node2-a node))
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node3-a node)))]
+                              [right-id
+                               (if (core-pvector-node2? node)
+                                   (core-pvector-literal-emit-node-digit1!
+                                    state
+                                    (core-pvector-node2-b node))
+                                   (core-pvector-literal-emit-node-digit2!
+                                    state
+                                    (core-pvector-node3-b node)
+                                    (core-pvector-node3-c node)))])
+                         (core-pvector-literal-emit-def!
+                          state
+                          (list 'Deep
+                                (core-pvector-node-measure node)
+                                left-id
+                                right-id
+                                'Empty))))])
+              (hash-set! tree-map node id)
+              id)))
+      'Empty))
+
+(define (core-pvector-literal-emit! pv state)
+  (let ([pv (core-check-pvector 'core-pvector-literal-emit! pv)])
+    (cond
+     [(core-pvector-empty-record? pv) 'Empty]
+     [else
+      (let* ([value-map (core-pvector-literal-value-map state)]
+             [cached (hash-ref value-map pv #f)])
+        (if cached
+            cached
+            (let ([id
+                   (cond
+                    [(core-pvector-inline? pv)
+                     (core-pvector-literal-emit-def!
+                      state
+                      (list 'Single/val (core-pvector-inline-e0 pv)))]
+                    [else
+                     (let* ([left-id
+                             (core-pvector-literal-emit-edge-digit/val!
+                              state
+                              pv
+                              #t)]
+                            [right-id
+                             (core-pvector-literal-emit-edge-digit/val!
+                              state
+                              pv
+                              #f)]
+                            [inner-id
+                             (core-pvector-literal-emit-node-tree!
+                              state
+                              (core-pvector-large-finger-middle pv))])
+                       (core-pvector-literal-emit-def!
+                        state
+                        (list 'Deep/val
+                              (core-pvector-large-finger-length pv)
+                              left-id
+                              right-id
+                              inner-id)))])])
+              (hash-set! value-map pv id)
+              id)))])))
+
+(define (core-pvector-literal-error msg . args)
+  (error 'core-pvector-literal->pvector (apply format msg args)))
+
+(define (core-pvector-literal-proper-list? v)
+  (let loop ([v v])
+    (cond
+     [(null? v) #t]
+     [(pair? v) (loop (cdr v))]
+     [else #f])))
+
+(define (core-pvector-literal-node? v)
+  (or (core-pvector-node2? v)
+      (core-pvector-node3? v)))
+
+(define (core-pvector-literal-object-kind v)
+  (cond
+   [(core-pvector? v) 'pvector]
+   [(core-pvector-literal-node? v) 'node]
+   [(and (pair? v) (eq? (car v) 'Digit/val)) 'digit/val]
+   [(and (pair? v) (eq? (car v) 'Digit)) 'digit]
+   [else #f]))
+
+(define (core-pvector-literal-check-proper-list who v)
+  (unless (core-pvector-literal-proper-list? v)
+    (core-pvector-literal-error "~a is not a proper list: ~s" who v))
+  v)
+
+(define (core-pvector-literal-check-size variant size expected)
+  (unless (and (fixnum? size)
+               (fx= size expected))
+    (core-pvector-literal-error
+     "~a size mismatch: expected ~a, got ~s"
+     variant
+     expected
+     size)))
+
+(define (core-pvector-literal-id? v)
+  (and (fixnum? v)
+       (fx>= v 0)))
+
+(define core-pvector-literal-missing
+  (list 'missing))
+
+(define (core-pvector-literal-forward-option? v)
+  (and (keyword? v)
+       (string=? (keyword->string v) "allow-forward-refs")))
+
+(define (core-pvector-literal-ref table limit id expected-kind)
+  (unless (and (core-pvector-literal-id? id)
+               (fx< id limit))
+    (core-pvector-literal-error "invalid reference id: ~s" id))
+  (let ([v (#3%vector-ref table id)])
+    (unless v
+      (core-pvector-literal-error
+       "reference id is not defined before use: ~s"
+       id))
+    (let ([kind (core-pvector-literal-object-kind v)])
+      (unless (eq? kind expected-kind)
+        (core-pvector-literal-error
+         "reference id ~a has kind ~s, expected ~s"
+         id
+         kind
+         expected-kind)))
+    v))
+
+(define (core-pvector-literal-node-ref table limit id)
+  (core-pvector-literal-ref table limit id 'node))
+
+(define (core-pvector-literal-digit/val-ref table limit id)
+  (core-pvector-literal-ref table limit id 'digit/val))
+
+(define (core-pvector-literal-digit-ref table limit id)
+  (core-pvector-literal-ref table limit id 'digit))
+
+(define (core-pvector-literal-inner-ref table limit id)
+  (cond
+   [(eq? id 'Empty) #f]
+   [else (core-pvector-literal-node-ref table limit id)]))
+
+(define (core-pvector-literal-pvector-ref table limit id)
+  (cond
+   [(eq? id 'Empty) empty-core-pvector]
+   [else (core-pvector-literal-ref table limit id 'pvector)]))
+
+(define (core-pvector-literal-digit-length digit)
+  (core-list-length (cdr digit)))
+
+(define (core-pvector-literal-digit-measure digit)
+  (let loop ([nodes (cdr digit)] [measure 0])
+    (if (null? nodes)
+        measure
+        (loop (cdr nodes)
+              (fx+ measure (core-pvector-node-measure (car nodes)))))))
+
+(define (core-pvector-literal-node-list-measure nodes)
+  (let loop ([nodes nodes] [measure 0])
+    (if (null? nodes)
+        measure
+        (loop (cdr nodes)
+              (fx+ measure (core-pvector-node-measure (car nodes)))))))
+
+(define (core-pvector-literal-check-digit-arity variant len)
+  (unless (and (fx>= len 1)
+               (fx<= len core-pvector-digit-max))
+    (core-pvector-literal-error
+     "~a expects 1 to 4 elements, got ~a"
+     variant
+     len)))
+
+(define (core-pvector-literal-check-node-arity variant len)
+  (unless (or (fx= len 2)
+              (fx= len 3))
+    (core-pvector-literal-error
+     "~a expects 2 or 3 elements, got ~a"
+     variant
+     len)))
+
+(define (core-pvector-literal-list-ref/fill lst index)
+  (cond
+   [(null? lst) #f]
+   [(fx= index 0) (car lst)]
+   [else (core-pvector-literal-list-ref/fill (cdr lst) (fx- index 1))]))
+
+(define (core-pvector-literal-make-large size left inner right)
+  (let ([left-values (cdr left)]
+        [right-values (cdr right)])
+    (make-core-pvector-large-finger/inline
+     size
+     (core-list-length left-values)
+     inner
+     (core-list-length right-values)
+     (core-pvector-literal-list-ref/fill left-values 0)
+     (core-pvector-literal-list-ref/fill left-values 1)
+     (core-pvector-literal-list-ref/fill left-values 2)
+     (core-pvector-literal-list-ref/fill left-values 3)
+     (core-pvector-literal-list-ref/fill right-values 0)
+     (core-pvector-literal-list-ref/fill right-values 1)
+     (core-pvector-literal-list-ref/fill right-values 2)
+     (core-pvector-literal-list-ref/fill right-values 3))))
+
+(define (core-pvector-literal-node-same-level? nodes)
+  (or (null? nodes)
+      (let ([level (core-pvector-node-level (car nodes))])
+        (let loop ([nodes (cdr nodes)])
+          (cond
+           [(null? nodes) #t]
+           [(fx= level (core-pvector-node-level (car nodes)))
+            (loop (cdr nodes))]
+           [else #f])))))
+
+(define (core-pvector-literal-build-node variant size nodes)
+  (let ([len (core-list-length nodes)])
+    (core-pvector-literal-check-node-arity variant len)
+    (unless (core-pvector-literal-node-same-level? nodes)
+      (core-pvector-literal-error
+       "~a child nodes do not have the same level"
+       variant))
+    (core-pvector-literal-check-size
+     variant
+     size
+     (core-pvector-literal-node-list-measure nodes))
+    (let ([node-level (fx+ (core-pvector-node-level (car nodes)) 1)])
+      (cond
+       [(fx= len 2)
+        (core-make-node2 node-level (car nodes) (cadr nodes))]
+       [else
+        (core-make-node3 node-level (car nodes) (cadr nodes) (caddr nodes))]))))
+
+(define (core-pvector-literal-parse-def-value
+         val node-ref digit/val-ref digit-ref inner-ref)
+  (core-pvector-literal-check-proper-list 'definition-value val)
+  (unless (pair? val)
+    (core-pvector-literal-error "empty definition value"))
+  (let ([variant (car val)]
+        [args (cdr val)])
+    (case variant
+      [(Single/val)
+       (unless (and (pair? args) (null? (cdr args)))
+         (core-pvector-literal-error "Single/val expects one element"))
+       (core-make-single-pvector (car args))]
+      [(Digit/val)
+       (unless (pair? args)
+         (core-pvector-literal-error "Digit/val expects a size"))
+       (let* ([size (car args)]
+              [values (cdr args)]
+              [len (core-list-length values)])
+         (core-pvector-literal-check-digit-arity 'Digit/val len)
+         (core-pvector-literal-check-size 'Digit/val size len)
+         (cons 'Digit/val values))]
+      [(Node/val)
+       (unless (pair? args)
+         (core-pvector-literal-error "Node/val expects a size"))
+       (let* ([size (car args)]
+              [values (cdr args)]
+              [len (core-list-length values)])
+         (core-pvector-literal-check-node-arity 'Node/val len)
+         (core-pvector-literal-check-size 'Node/val size len)
+         (cond
+          [(fx= len 2) (core-make-leaf-node2 (car values) (cadr values))]
+          [else (core-make-leaf-node3
+                 (car values)
+                 (cadr values)
+                 (caddr values))]))]
+      [(Single)
+       (unless (and (pair? args) (null? (cdr args)))
+         (core-pvector-literal-error "Single expects one node id"))
+       (node-ref (car args))]
+      [(One/val)
+       (core-pvector-literal-error
+        "obsolete definition variant: One/val; use Single/val")]
+      [(One)
+       (core-pvector-literal-error
+        "obsolete definition variant: One; use Single")]
+      [(Digit)
+       (unless (pair? args)
+         (core-pvector-literal-error "Digit expects a size"))
+       (let* ([size (car args)]
+              [node-ids (cdr args)]
+              [nodes (let loop ([ids node-ids])
+                       (if (null? ids)
+                           '()
+                           (cons (node-ref (car ids))
+                                 (loop (cdr ids)))))]
+              [len (core-list-length nodes)])
+         (core-pvector-literal-check-digit-arity 'Digit len)
+         (core-pvector-literal-check-size
+          'Digit
+          size
+          (core-pvector-literal-node-list-measure nodes))
+         (cons 'Digit nodes))]
+      [(Node)
+       (unless (pair? args)
+         (core-pvector-literal-error "Node expects a size"))
+       (let ([size (car args)]
+             [node-ids (cdr args)])
+         (core-pvector-literal-build-node
+          'Node
+          size
+          (let loop ([ids node-ids])
+            (if (null? ids)
+                '()
+                (cons (node-ref (car ids))
+                      (loop (cdr ids)))))))]
+      [(Deep/val)
+       (unless (and (pair? args)
+                    (pair? (cdr args))
+                    (pair? (cddr args))
+                    (pair? (cdddr args))
+                    (null? (cddddr args)))
+         (core-pvector-literal-error
+          "Deep/val expects size, left digit id, right digit id, and inner id"))
+       (let* ([size (car args)]
+              [left (digit/val-ref (cadr args))]
+              [right (digit/val-ref (caddr args))]
+              [inner (inner-ref (cadddr args))]
+              [expected (fx+ (core-pvector-literal-digit-length left)
+                             (fx+ (if inner
+                                      (core-pvector-node-measure inner)
+                                      0)
+                                  (core-pvector-literal-digit-length right)))])
+         (core-pvector-literal-check-size 'Deep/val size expected)
+         (core-pvector-literal-make-large size left inner right))]
+      [(Deep)
+       (unless (and (pair? args)
+                    (pair? (cdr args))
+                    (pair? (cddr args))
+                    (pair? (cdddr args))
+                    (null? (cddddr args)))
+         (core-pvector-literal-error
+          "Deep expects size, left digit id, right digit id, and inner id"))
+       (let* ([size (car args)]
+              [left (digit-ref (cadr args))]
+              [right (digit-ref (caddr args))]
+              [inner (inner-ref (cadddr args))]
+              [nodes (append (cdr left)
+                             (if inner (list inner) '())
+                             (cdr right))]
+              [expected (core-pvector-literal-node-list-measure nodes)])
+         (core-pvector-literal-check-size 'Deep size expected)
+         (core-build-node-tree/nodes (reverse nodes)))]
+      [else
+       (core-pvector-literal-error
+        "unknown definition variant: ~s"
+        variant)])))
+
+(define (core-pvector-literal-parse-def! def table expected-id)
+  (core-pvector-literal-check-proper-list 'definition def)
+  (unless (and (pair? def)
+               (pair? (cdr def))
+               (null? (cddr def)))
+    (core-pvector-literal-error
+     "definition must have an id and a value: ~s"
+     def))
+  (let ([id (car def)])
+    (unless (and (core-pvector-literal-id? id)
+                 (fx= id expected-id))
+      (core-pvector-literal-error
+       "definition id must be dense and ascending: expected ~a, got ~s"
+       expected-id
+       id))
+    (#3%vector-set!
+     table
+     id
+     (core-pvector-literal-parse-def-value
+      (cadr def)
+      (lambda (ref-id) (core-pvector-literal-node-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-digit/val-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-digit-ref table id ref-id))
+      (lambda (ref-id) (core-pvector-literal-inner-ref table id ref-id))))))
+
+(define (core-pvector-literal-forward-ref
+         raw-table value-table state limit id expected-kind)
+  (unless (and (core-pvector-literal-id? id)
+               (fx< id limit))
+    (core-pvector-literal-error "invalid reference id: ~s" id))
+  (case (#3%vector-ref state id)
+    [(done)
+     (let ([v (#3%vector-ref value-table id)])
+       (let ([kind (core-pvector-literal-object-kind v)])
+         (unless (eq? kind expected-kind)
+           (core-pvector-literal-error
+            "reference id ~a has kind ~s, expected ~s"
+            id
+            kind
+            expected-kind)))
+       v)]
+    [(visiting)
+     (core-pvector-literal-error "cyclic reference id: ~s" id)]
+    [else
+     (let ([raw (#3%vector-ref raw-table id)])
+       (when (eq? raw core-pvector-literal-missing)
+         (core-pvector-literal-error "definition id missing: ~s" id))
+       (#3%vector-set! state id 'visiting)
+       (let ([v (core-pvector-literal-parse-def-value
+                 raw
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'node))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'digit/val))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-ref
+                    raw-table value-table state limit ref-id 'digit))
+                 (lambda (ref-id)
+                   (core-pvector-literal-forward-inner-ref
+                    raw-table value-table state limit ref-id)))])
+         (#3%vector-set! value-table id v)
+         (#3%vector-set! state id 'done)
+         (let ([kind (core-pvector-literal-object-kind v)])
+           (unless (eq? kind expected-kind)
+             (core-pvector-literal-error
+              "reference id ~a has kind ~s, expected ~s"
+              id
+              kind
+              expected-kind)))
+         v))]))
+
+(define (core-pvector-literal-forward-inner-ref raw-table value-table state limit id)
+  (cond
+   [(eq? id 'Empty) #f]
+   [else
+    (core-pvector-literal-forward-ref
+     raw-table value-table state limit id 'node)]))
+
+(define (core-pvector-literal-forward-pvector-ref raw-table value-table state limit id)
+  (cond
+   [(eq? id 'Empty) empty-core-pvector]
+   [else
+    (core-pvector-literal-forward-ref
+     raw-table value-table state limit id 'pvector)]))
+
+(define (core-pvector-literal-install-forward-def! def raw-table limit)
+  (core-pvector-literal-check-proper-list 'definition def)
+  (unless (and (pair? def)
+               (pair? (cdr def))
+               (null? (cddr def)))
+    (core-pvector-literal-error
+     "definition must have an id and a value: ~s"
+     def))
+  (let ([id (car def)])
+    (unless (and (core-pvector-literal-id? id)
+                 (fx< id limit))
+      (core-pvector-literal-error "invalid definition id: ~s" id))
+    (unless (eq? (#3%vector-ref raw-table id)
+                 core-pvector-literal-missing)
+      (core-pvector-literal-error "duplicate definition id: ~s" id))
+    (#3%vector-set! raw-table id (cadr def))))
+
+(define (core-pvector-literal-check-forward-defs-complete raw-table limit)
+  (let loop ([id 0])
+    (unless (fx= id limit)
+      (when (eq? (#3%vector-ref raw-table id)
+                 core-pvector-literal-missing)
+        (core-pvector-literal-error "definition id missing: ~s" id))
+      (loop (fx+ id 1)))))
+
+(define (core-pvector-literal-forward-raw->pvector root defs)
+  (core-pvector-literal-check-proper-list 'definition-list defs)
+  (let* ([len (core-list-length defs)]
+         [raw-table (make-vector len core-pvector-literal-missing)]
+         [value-table (make-vector len #f)]
+         [state (make-vector len #f)])
+    (let loop ([defs defs])
+      (unless (null? defs)
+        (core-pvector-literal-install-forward-def! (car defs) raw-table len)
+        (loop (cdr defs))))
+    (core-pvector-literal-check-forward-defs-complete raw-table len)
+    (core-pvector-literal-forward-pvector-ref
+     raw-table value-table state len root)))
+
+(define (core-pvector-literal-raw->pvector root defs)
+  (core-pvector-literal-check-proper-list 'definition-list defs)
+  (let* ([len (core-list-length defs)]
+         [table (make-vector len #f)])
+    (let loop ([defs defs] [id 0])
+      (unless (null? defs)
+        (core-pvector-literal-parse-def! (car defs) table id)
+        (loop (cdr defs) (fx+ id 1))))
+    (core-pvector-literal-pvector-ref table len root)))
+
+(define (core-pvector-literal->pvector datum)
+  (core-pvector-literal-check-proper-list 'literal datum)
+  (unless (and (pair? datum)
+               (pair? (cdr datum))
+               (null? (cddr datum)))
+    (core-pvector-literal-error
+     "literal must be ((element ...) #f) or (root-id definitions): ~s"
+     datum))
+  (let ([head (car datum)]
+        [tail (cadr datum)])
+    (cond
+     [(eq? tail #f)
+      (core-pvector-literal-check-proper-list "expanded element list" head)
+      (core-list->pvector head)]
+     [(and (pair? tail)
+           (core-pvector-literal-forward-option? (car tail)))
+      (core-pvector-literal-check-proper-list
+       'forward-reference-option
+       tail)
+      (unless (and (pair? (cdr tail))
+                   (null? (cddr tail)))
+        (core-pvector-literal-error
+         "forward-reference option expects one definition list: ~s"
+         tail))
+      (core-pvector-literal-forward-raw->pvector head (cadr tail))]
+     [else
+      (core-pvector-literal-raw->pvector head tail)])))
 
 (define (core-pvector-shape-stats pv)
   (let ([h (make-hasheq)]

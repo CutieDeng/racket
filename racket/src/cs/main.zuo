@@ -108,6 +108,7 @@
             "object-name.ss"
             "arity.ss"
             "intmap.ss"
+            "intmap-ordered.ss"
             "patricia.ss"
             "hamt-stencil.ss"
             "hamt-vector.ss"

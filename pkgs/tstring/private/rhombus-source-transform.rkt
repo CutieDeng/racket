@@ -13,6 +13,7 @@
 (provide
  rhombus-runtime-import-source
  transform-rhombus-template-prefixes
+ transform-rhombus-template-prefixes/positions
 ) ; end provide
 
 (define rhombus-runtime-import-source
@@ -20,6 +21,13 @@
 ) ; end define rhombus-runtime-import-source
 
 (define (transform-rhombus-template-prefixes source port)
+  (define-values (transformed _positions)
+    (transform-rhombus-template-prefixes/positions source port)
+  ) ; end define-values
+  transformed
+) ; end define transform-rhombus-template-prefixes
+
+(define (transform-rhombus-template-prefixes/positions source port)
   (with-handlers ((exn:fail?
                    (lambda (exn)
                      (raise-read-error (exn-message exn)
@@ -30,46 +38,72 @@
                                        #f
                      ) ; end raise-read-error
                    ) ; end lambda
-                  ) ; end exn:fail?
+                 ) ; end exn:fail?
                  ) ; end handlers
     (define length (string-length source))
     (define out (open-output-string))
+    (define positions-rev '(0))
+    (define (record-position! text source-count)
+      (define byte-count (bytes-length (string->bytes/utf-8 text)))
+      (for ((_index (in-range byte-count)))
+        (set! positions-rev (cons source-count positions-rev))
+      ) ; end for
+    ) ; end define record-position!
+    (define (emit-generated-string text source-count)
+      (write-string text out)
+      (record-position! text source-count)
+    ) ; end define emit-generated-string
+    (define (emit-source-char index)
+      (define ch (string-ref source index))
+      (write-char ch out)
+      (record-position! (string ch) (add1 index))
+    ) ; end define emit-source-char
+    (define (emit-source-range start-index end-index)
+      (let loop ((index start-index))
+        (unless (= index end-index)
+          (emit-source-char index)
+          (loop (add1 index))
+        ) ; end unless
+      ) ; end let loop
+    ) ; end define emit-source-range
     (let loop ((index 0))
       (cond
         ((= index length)
-         (get-output-string out)
+         (values (get-output-string out)
+                 (list->vector (reverse positions-rev))
+         ) ; end values
         ) ; end of source
         (else
          (define ch (string-ref source index))
          (cond
            ((char=? ch #\")
             (define next-index (find-racket-string-end source index))
-            (write-string (substring source index next-index) out)
+            (emit-source-range index next-index)
             (loop next-index)
            ) ; end ordinary string
            ((rhombus-line-comment-at? source index)
             (define next-index (find-rhombus-line-comment-end source index))
-            (write-string (substring source index next-index) out)
+            (emit-source-range index next-index)
             (loop next-index)
            ) ; end line comment
            ((rhombus-block-comment-at? source index)
             (define next-index (find-rhombus-block-comment-end source index))
-            (write-string (substring source index next-index) out)
+            (emit-source-range index next-index)
             (loop next-index)
            ) ; end block comment
            ((template-prefix-at? source index)
             (define-values (content next-index)
               (find-template-literal-content source index)
             ) ; end define-values
-            (write-string (rhombus-template-content->source
-                           (string-ref source index)
-                           content)
-                          out
+            (emit-generated-string (rhombus-template-content->source
+                                    (string-ref source index)
+                                    content)
+                                   next-index
             ) ; end write-string
             (loop next-index)
            ) ; end template prefix
            (else
-            (write-char ch out)
+            (emit-source-char index)
             (loop (add1 index))
            ) ; end ordinary character
          ) ; end cond char dispatch
@@ -77,7 +111,7 @@
       ) ; end cond
     ) ; end loop
   ) ; end with-handlers
-) ; end define transform-rhombus-template-prefixes
+) ; end define transform-rhombus-template-prefixes/positions
 
 (define (rhombus-template-content->source kind content)
   (define-values (strings expression-sources)

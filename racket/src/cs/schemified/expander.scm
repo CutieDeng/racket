@@ -1182,6 +1182,16 @@
         #t
         1/read-accept-compiled
         #f
+        1/read-accept-pvector
+        #t
+        1/read-accept-pvector-raw
+        #t
+        1/read-accept-intmap
+        #t
+        1/read-accept-intmap-unordered
+        #f
+        1/read-accept-intmap-duplicate-keys
+        #f
         read-accept-bar-quote
         #t
         1/read-accept-graph
@@ -61847,6 +61857,22 @@
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-accept-compiled))
 (define 1/read-accept-box
   (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-box))
+(define 1/read-accept-pvector
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector))
+(define 1/read-accept-pvector-raw
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector-raw))
+(define 1/read-accept-intmap
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-intmap))
+(define 1/read-accept-intmap-unordered
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-unordered))
+(define 1/read-accept-intmap-duplicate-keys
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-duplicate-keys))
 (define 1/read-single-flonum
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-single-flonum))
 (define 1/read-decimal-as-inexact
@@ -61935,6 +61961,11 @@
           (check-parameter 1/read-syntax-accept-graph config_0)
           (check-parameter 1/read-accept-compiled config_0)
           (check-parameter 1/read-accept-box config_0)
+          (check-parameter 1/read-accept-pvector config_0)
+          (check-parameter 1/read-accept-pvector-raw config_0)
+          (check-parameter 1/read-accept-intmap config_0)
+          (check-parameter 1/read-accept-intmap-unordered config_0)
+          (check-parameter 1/read-accept-intmap-duplicate-keys config_0)
           (check-parameter read-accept-bar-quote config_0)
           (check-parameter 1/read-decimal-as-inexact config_0)
           (check-parameter 1/read-single-flonum config_0)
@@ -69396,6 +69427,261 @@
                           temp16_1
                           (list temp17_0)))))))))
           (wrap rx_0 in_0 config_0 #f))))))
+(define discard-current-line$1
+  (|#%name|
+   discard-current-line
+   (lambda (in_0 config_0)
+     (letrec*
+      ((loop_0
+        (|#%name|
+         loop
+         (lambda ()
+           (let ((c_0
+                  (let ((source_0
+                         (read-config/inner-source
+                          (read-config/outer-inner config_0))))
+                    (let ((c_0
+                           (peek-char-or-special in_0 0 'special source_0)))
+                      (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+             (if (let ((or-part_0 (eof-object? c_0)))
+                   (if or-part_0 or-part_0 (eqv? c_0 '#\xa)))
+               (void)
+               (begin
+                 (let ((source_0
+                        (read-config/inner-source
+                         (read-config/outer-inner config_0))))
+                   (read-char-or-special in_0 special1.1 source_0))
+                 (loop_0))))))))
+      (loop_0)))))
+(define read-expect-char$1
+  (|#%name|
+   read-expect-char
+   (lambda (expected_0 accum-str_0 in_0 config_0)
+     (let ((c_0
+            (let ((source_0
+                   (read-config/inner-source
+                    (read-config/outer-inner config_0))))
+              (read-char-or-special in_0 special1.1 source_0))))
+       (begin
+         (if (eqv? c_0 expected_0)
+           (void)
+           (begin
+             (discard-current-line$1 in_0 config_0)
+             (let ((temp4_0 "expected `~a` to continue `#pvector` after `~a`"))
+               (reader-error.1
+                unsafe-undefined
+                c_0
+                #f
+                unsafe-undefined
+                in_0
+                config_0
+                temp4_0
+                (list expected_0 accum-str_0)))))
+         c_0)))))
+(define raw-pvector-literal-datum?
+  (lambda (datum_0)
+    (if (pair? datum_0)
+      (if (pair? (cdr datum_0))
+        (if (null? (cddr datum_0)) (not (eq? (cadr datum_0) #f)) #f)
+        #f)
+      #f)))
+(define read-pvector
+  (lambda (read-one_0
+           dispatch-c_0
+           init-c_0
+           second-c_0
+           accum-str_0
+           in_0
+           config_0)
+    (begin
+      (if (check-parameter 1/read-accept-pvector config_0)
+        (void)
+        (begin
+          (discard-current-line$1 in_0 config_0)
+          (let ((temp9_0 "`#pvector` forms not enabled"))
+            (reader-error.1
+             unsafe-undefined
+             '#\x78
+             #f
+             unsafe-undefined
+             in_0
+             config_0
+             temp9_0
+             (list)))))
+      (let ((chars_0 (list '#\x65 '#\x63 '#\x74 '#\x6f '#\x72)))
+        (letrec*
+         ((loop_0
+           (|#%name|
+            loop
+            (lambda (chars_1 accum-str_1)
+              (if (null? chars_1)
+                (let ((datum_0
+                       (|#%app|
+                        read-one_0
+                        #f
+                        in_0
+                        (disable-wrapping config_0))))
+                  (begin
+                    (if (if (not
+                             (check-parameter
+                              1/read-accept-pvector-raw
+                              config_0))
+                          (raw-pvector-literal-datum? datum_0)
+                          #f)
+                      (let ((temp12_0 "`#pvector` raw literals not enabled"))
+                        (reader-error.1
+                         unsafe-undefined
+                         '#\x78
+                         #f
+                         unsafe-undefined
+                         in_0
+                         config_0
+                         temp12_0
+                         (list)))
+                      (void))
+                    (wrap
+                     (catch-and-reraise-as-reader/proc
+                      in_0
+                      config_0
+                      (lambda () (core-pvector-literal->pvector datum_0)))
+                     in_0
+                     config_0
+                     init-c_0)))
+                (let ((c_0
+                       (read-expect-char$1
+                        (car chars_1)
+                        accum-str_1
+                        in_0
+                        config_0)))
+                  (let ((app_0 (cdr chars_1)))
+                    (loop_0
+                     app_0
+                     (string-append accum-str_1 (string c_0))))))))))
+         (loop_0 chars_0 accum-str_0))))))
+(define 1/core-intmap-literal->intmap core-intmap-literal->intmap)
+(define read-core-intmap-literal->intmap
+  (lambda (datum_0 accept-unordered?_0 accept-duplicate-keys?_0)
+    (begin
+      (if (if core-intmap-literal->intmap #t #f)
+        (void)
+        (error
+         'core-intmap-literal->intmap
+         "native intmap literal input is not available"))
+      (core-intmap-literal->intmap
+       datum_0
+       accept-unordered?_0
+       accept-duplicate-keys?_0))))
+(define discard-current-line
+  (lambda (in_0 config_0)
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda ()
+          (let ((c_0
+                 (let ((source_0
+                        (read-config/inner-source
+                         (read-config/outer-inner config_0))))
+                   (let ((c_0 (peek-char-or-special in_0 0 'special source_0)))
+                     (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+            (if (let ((or-part_0 (eof-object? c_0)))
+                  (if or-part_0 or-part_0 (eqv? c_0 '#\xa)))
+              (void)
+              (begin
+                (let ((source_0
+                       (read-config/inner-source
+                        (read-config/outer-inner config_0))))
+                  (read-char-or-special in_0 special1.1 source_0))
+                (loop_0))))))))
+     (loop_0))))
+(define read-expect-char
+  (lambda (expected_0 accum-str_0 in_0 config_0)
+    (let ((c_0
+           (let ((source_0
+                  (read-config/inner-source
+                   (read-config/outer-inner config_0))))
+             (read-char-or-special in_0 special1.1 source_0))))
+      (begin
+        (if (eqv? c_0 expected_0)
+          (void)
+          (begin
+            (discard-current-line in_0 config_0)
+            (let ((temp4_0 "expected `~a` to continue `#intmap` after `~a`"))
+              (reader-error.1
+               unsafe-undefined
+               c_0
+               #f
+               unsafe-undefined
+               in_0
+               config_0
+               temp4_0
+               (list expected_0 accum-str_0)))))
+        c_0))))
+(define read-intmap
+  (lambda (read-one_0
+           dispatch-c_0
+           init-c_0
+           second-c_0
+           accum-str_0
+           in_0
+           config_0)
+    (begin
+      (if (check-parameter 1/read-accept-intmap config_0)
+        (void)
+        (begin
+          (discard-current-line in_0 config_0)
+          (let ((temp9_0 "`#intmap` forms not enabled"))
+            (reader-error.1
+             unsafe-undefined
+             '#\x78
+             #f
+             unsafe-undefined
+             in_0
+             config_0
+             temp9_0
+             (list)))))
+      (let ((chars_0 (list '#\x74 '#\x6d '#\x61 '#\x70)))
+        (letrec*
+         ((loop_0
+           (|#%name|
+            loop
+            (lambda (chars_1 accum-str_1)
+              (if (null? chars_1)
+                (let ((datum_0
+                       (|#%app|
+                        read-one_0
+                        #f
+                        in_0
+                        (disable-wrapping config_0))))
+                  (wrap
+                   (catch-and-reraise-as-reader/proc
+                    in_0
+                    config_0
+                    (lambda ()
+                      (let ((app_0
+                             (check-parameter
+                              1/read-accept-intmap-unordered
+                              config_0)))
+                        (read-core-intmap-literal->intmap
+                         datum_0
+                         app_0
+                         (check-parameter
+                          1/read-accept-intmap-duplicate-keys
+                          config_0)))))
+                   in_0
+                   config_0
+                   init-c_0))
+                (let ((c_0
+                       (read-expect-char
+                        (car chars_1)
+                        accum-str_1
+                        in_0
+                        config_0)))
+                  (let ((app_0 (cdr chars_1)))
+                    (loop_0
+                     app_0
+                     (string-append accum-str_1 (string c_0))))))))))
+         (loop_0 chars_0 accum-str_0))))))
 (define read-extension-reader
   (lambda (read-one_0 read-recur_0 dispatch-c_0 in_0 config_0)
     (let ((extend-str_0
@@ -70159,6 +70445,22 @@
                                v_1)))))))))
                 (loop_0 v_0))))))
         (void)))))
+(define peek-intmap-literal-start?
+  (lambda (in_0 config_0)
+    (if (eqv?
+         (let ((source_0
+                (read-config/inner-source (read-config/outer-inner config_0))))
+           (let ((c_0 (peek-char-or-special in_0 0 'special source_0)))
+             (if (eq? c_0 'special) (special1.1 'special) c_0)))
+         '#\x6e)
+      (let ((c_0
+             (let ((source_0
+                    (read-config/inner-source
+                     (read-config/outer-inner config_0))))
+               (let ((c_0 (peek-char-or-special in_0 1 'special source_0)))
+                 (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+        (not (eqv? c_0 '#\x66)))
+      #f)))
 (define read-undotted
   (lambda (init-c_0 in_0 config_0)
     (let ((c_0
@@ -70947,81 +71249,127 @@
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 20)
-                            (let ((temp219_0 "#i"))
+                            (let ((c2_0
+                                   (if (peek-intmap-literal-start?
+                                        in_0
+                                        config_0)
+                                     (let ((source_0
+                                            (read-config/inner-source
+                                             (read-config/outer-inner
+                                              config_0))))
+                                       (let ((c_1
+                                              (peek-char-or-special
+                                               in_0
+                                               0
+                                               'special
+                                               source_0)))
+                                         (if (eq? c_1 'special)
+                                           (special1.1 'special)
+                                           c_1)))
+                                     #f)))
+                              (if c2_0
+                                (let ((accum-str_0
+                                       (accum-string-init! config_0)))
+                                  (begin
+                                    (accum-string-add!
+                                     accum-str_0
+                                     dispatch-c_0)
+                                    (accum-string-add! accum-str_0 c_0)
+                                    (let ((source_0
+                                           (read-config/inner-source
+                                            (read-config/outer-inner
+                                             config_0))))
+                                      (read-char-or-special
+                                       in_0
+                                       special1.1
+                                       source_0))
+                                    (accum-string-add! accum-str_0 c2_0)
+                                    (read-intmap
+                                     read-one
+                                     dispatch-c_0
+                                     c_0
+                                     c2_0
+                                     (accum-string-get!.1
+                                      0
+                                      accum-str_0
+                                      config_0)
+                                     in_0
+                                     config_0)))
+                                (let ((temp221_0 "#i"))
+                                  (read-symbol-or-number.1
+                                   #f
+                                   temp221_0
+                                   #f
+                                   in_0
+                                   config_0))))
+                            (let ((temp225_0 "#I"))
                               (read-symbol-or-number.1
                                #f
-                               temp219_0
-                               #f
-                               in_0
-                               config_0))
-                            (let ((temp223_0 "#I"))
-                              (read-symbol-or-number.1
-                               #f
-                               temp223_0
+                               temp225_0
                                #f
                                in_0
                                config_0)))))
                       (if (unsafe-fx< index_0 23)
                         (if (unsafe-fx< index_0 22)
-                          (let ((temp227_0 "#d"))
+                          (let ((temp229_0 "#d"))
                             (read-symbol-or-number.1
                              #f
-                             temp227_0
+                             temp229_0
                              #f
                              in_0
                              config_0))
-                          (let ((temp231_0 "#B"))
+                          (let ((temp233_0 "#B"))
                             (read-symbol-or-number.1
                              #f
-                             temp231_0
+                             temp233_0
                              #f
                              in_0
                              config_0)))
                         (if (unsafe-fx< index_0 24)
-                          (let ((temp235_0 "#o"))
+                          (let ((temp237_0 "#o"))
                             (read-symbol-or-number.1
                              #f
-                             temp235_0
+                             temp237_0
                              #f
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 25)
-                            (let ((temp239_0 "#O"))
+                            (let ((temp241_0 "#O"))
                               (read-symbol-or-number.1
                                #f
-                               temp239_0
+                               temp241_0
                                #f
                                in_0
                                config_0))
-                            (let ((temp243_0 "#D"))
+                            (let ((temp245_0 "#D"))
                               (read-symbol-or-number.1
                                #f
-                               temp243_0
+                               temp245_0
                                #f
                                in_0
                                config_0))))))
                     (if (unsafe-fx< index_0 30)
                       (if (unsafe-fx< index_0 27)
-                        (let ((temp247_0 "#b"))
+                        (let ((temp249_0 "#b"))
                           (read-symbol-or-number.1
                            #f
-                           temp247_0
+                           temp249_0
                            #f
                            in_0
                            config_0))
                         (if (unsafe-fx< index_0 28)
-                          (let ((temp251_0 "#x"))
+                          (let ((temp253_0 "#x"))
                             (read-symbol-or-number.1
                              #f
-                             temp251_0
+                             temp253_0
                              #f
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 29)
-                            (let ((temp255_0 "#X"))
+                            (let ((temp257_0 "#X"))
                               (read-symbol-or-number.1
                                #f
-                               temp255_0
+                               temp257_0
                                #f
                                in_0
                                config_0))
@@ -71052,7 +71400,7 @@
                                     read-case-sensitive
                                     config_0
                                     #f))
-                                  (let ((temp259_0
+                                  (let ((temp261_0
                                          "expected `s', `S`, `i`, or `I` after `~a~a`"))
                                     (reader-error.1
                                      unsafe-undefined
@@ -71061,7 +71409,7 @@
                                      unsafe-undefined
                                      in_0
                                      config_0
-                                     temp259_0
+                                     temp261_0
                                      (list dispatch-c_0 c_0)))))))))
                       (if (unsafe-fx< index_0 32)
                         (if (unsafe-fx< index_0 31)
@@ -71097,7 +71445,7 @@
                                          dispatch-c_0
                                          in_0
                                          config_0)
-                                        (let ((temp265_0
+                                        (let ((temp267_0
                                                (accum-string-get!.1
                                                 0
                                                 accum-str_0
@@ -71106,7 +71454,7 @@
                                            c2_0
                                            in_0
                                            config_0
-                                           temp265_0))))))))))
+                                           temp267_0))))))))))
                         (if (unsafe-fx< index_0 33)
                           (let ((accum-str_0 (accum-string-init! config_0)))
                             (begin
@@ -71132,16 +71480,28 @@
                                        accum-str_0
                                        in_0
                                        config_0)
-                                      (let ((temp271_0
-                                             (accum-string-get!.1
-                                              0
-                                              accum-str_0
-                                              config_0)))
-                                        (bad-syntax-error.1
+                                      (if (eqv? c2_0 '#\x76)
+                                        (read-pvector
+                                         read-one
+                                         dispatch-c_0
+                                         c_0
                                          c2_0
+                                         (accum-string-get!.1
+                                          0
+                                          accum-str_0
+                                          config_0)
                                          in_0
-                                         config_0
-                                         temp271_0))))))))
+                                         config_0)
+                                        (let ((temp275_0
+                                               (accum-string-get!.1
+                                                0
+                                                accum-str_0
+                                                config_0)))
+                                          (bad-syntax-error.1
+                                           c2_0
+                                           in_0
+                                           config_0
+                                           temp275_0)))))))))
                           (if (unsafe-fx< index_0 34)
                             (read-extension-lang.1
                              #f
@@ -71167,7 +71527,7 @@
                                  in_0
                                  config_0
                                  c_0)
-                                (let ((temp284_0
+                                (let ((temp288_0
                                        "`~a~~` compiled expressions not enabled"))
                                   (reader-error.1
                                    unsafe-undefined
@@ -71176,7 +71536,7 @@
                                    unsafe-undefined
                                    in_0
                                    config_0
-                                   temp284_0
+                                   temp288_0
                                    (list dispatch-c_0)))))))))))))))))))
 (define retry-special-comment
   (lambda (v_0 in_0 config_0)
@@ -75146,6 +75506,16 @@
    1/read-accept-compiled
    'read-accept-box
    1/read-accept-box
+   'read-accept-pvector
+   1/read-accept-pvector
+   'read-accept-pvector-raw
+   1/read-accept-pvector-raw
+   'read-accept-intmap
+   1/read-accept-intmap
+   'read-accept-intmap-unordered
+   1/read-accept-intmap-unordered
+   'read-accept-intmap-duplicate-keys
+   1/read-accept-intmap-duplicate-keys
    'read-decimal-as-inexact
    1/read-decimal-as-inexact
    'read-single-flonum
@@ -76027,6 +76397,10 @@
       1/read-curly-brace-with-tag
       #f
       1/read-accept-box
+      #t
+      1/read-accept-pvector
+      #t
+      1/read-accept-pvector-raw
       #t
       read-accept-bar-quote
       #t
