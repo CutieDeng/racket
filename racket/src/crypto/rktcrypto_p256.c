@@ -198,15 +198,43 @@ static void jac_add(jac *r,const jac *p,const jac *q){
   mont_mul(r->Z,p->Z,q->Z,&FP); mont_mul(r->Z,r->Z,H,&FP);
 }
 
+/* Mixed Jacobian + affine addition: q must be affine (q->Z == mont(1)).
+   Identical result to jac_add for such q, but skips the ~7 field
+   multiplications by 1 that a full Jacobian add would waste on Z2. Every
+   jac_scalarmult caller passes an affine base point, so this is what the
+   inner loop uses. */
+static void mixed_add(jac *r,const jac *p,const jac *q){
+  u64 Z1Z1[4],U2[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4];
+  int i;
+  if(fp_iszero(p->Z)){ *r=*q; return; }         /* p identity -> q (already affine) */
+  mont_sqr(Z1Z1,p->Z,&FP);
+  mont_mul(U2,q->X,Z1Z1,&FP);
+  mont_mul(S2,q->Y,p->Z,&FP); mont_mul(S2,S2,Z1Z1,&FP);
+  mont_sub(H,U2,p->X,FP.m);                     /* H  = U2 - X1 */
+  mont_sub(Rr,S2,p->Y,FP.m);                    /* R  = S2 - Y1 */
+  if(fp_iszero(H)){
+    if(fp_iszero(Rr)){ jac_double(r,p); return; }
+    for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
+  }
+  mont_sqr(HH,H,&FP); mont_mul(HHH,HH,H,&FP);
+  mont_mul(t,p->X,HH,&FP);                       /* t = X1*HH */
+  mont_sqr(r->X,Rr,&FP);
+  mont_sub(r->X,r->X,HHH,FP.m);
+  mont_sub(r->X,r->X,t,FP.m); mont_sub(r->X,r->X,t,FP.m);   /* X3 = R^2 - HHH - 2*X1*HH */
+  mont_sub(t2,t,r->X,FP.m); mont_mul(t2,Rr,t2,&FP);
+  mont_mul(tt,p->Y,HHH,&FP);                     /* Y1*HHH */
+  mont_sub(r->Y,t2,tt,FP.m);
+  mont_mul(r->Z,p->Z,H,&FP);                     /* Z3 = Z1*H */
+}
+
 static void jac_scalarmult(jac *r,const u64 k[4],const jac *p){
   jac acc; int i; int bit;
   for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
   for(i=255;i>=0;i--){
     jac t,s;
     jac_double(&t,&acc);
-    jac_add(&s,&t,p);
+    mixed_add(&s,&t,p);
     bit=(k[i>>6]>>(i&63))&1;
-    /* acc = bit ? s : t (variable-time add is fine for ECDH secret? use cmov) */
     acc=t; fp_cmov(acc.X,s.X,bit);fp_cmov(acc.Y,s.Y,bit);fp_cmov(acc.Z,s.Z,bit);
   }
   *r=acc;
