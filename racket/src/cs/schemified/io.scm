@@ -49,6 +49,7 @@
                 (1/crypto-siphash-1-3 crypto-siphash-1-3)
                 (1/crypto-siphash-2-4 crypto-siphash-2-4)
                 (1/crypto-subsystem-self-test? crypto-subsystem-self-test?)
+                (crypto-x25519 crypto-x25519)
                 (1/current-command-line-arguments
                  current-command-line-arguments)
                 (1/current-directory current-directory)
@@ -35350,6 +35351,7 @@
 (define rktcrypto_aead_seal (hash-ref rktcrypto-table 'rktcrypto_aead_seal))
 (define rktcrypto_aead_open (hash-ref rktcrypto-table 'rktcrypto_aead_open))
 (define rktcrypto_argon2id (hash-ref rktcrypto-table 'rktcrypto_argon2id))
+(define rktcrypto_x25519 (hash-ref rktcrypto-table 'rktcrypto_x25519))
 (define rktcrypto_siphash (hash-ref rktcrypto-table 'rktcrypto_siphash))
 (define rktcrypto_selftest_core
   (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
@@ -36027,6 +36029,36 @@
                                app_0
                                (current-continuation-marks)))))
                          out_0)))))))))))))
+(define crypto-x25519
+  (lambda (scalar_0 point_0)
+    (begin
+      (if (bytes? scalar_0)
+        (void)
+        (raise-argument-error 'crypto-x25519 "bytes?" scalar_0))
+      (begin
+        (if (bytes? point_0)
+          (void)
+          (raise-argument-error 'crypto-x25519 "bytes?" point_0))
+        (begin
+          (if (eqv? (unsafe-bytes-length scalar_0) 32)
+            (void)
+            (raise-arguments-error
+             'crypto-x25519
+             "scalar must be 32 bytes"
+             "given"
+             (unsafe-bytes-length scalar_0)))
+          (begin
+            (if (eqv? (unsafe-bytes-length point_0) 32)
+              (void)
+              (raise-arguments-error
+               'crypto-x25519
+               "point must be 32 bytes"
+               "given"
+               (unsafe-bytes-length point_0)))
+            (let ((out_0 (make-bytes 32)))
+              (if (eqv? 1 (|#%app| rktcrypto_x25519 out_0 scalar_0 point_0))
+                out_0
+                #f))))))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

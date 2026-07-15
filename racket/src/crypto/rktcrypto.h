@@ -180,6 +180,18 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_argon2id(const unsigned char *pwd, intptr_t
    parameters or allocation failure. */
 
 /*************************************************/
+/* X25519 key exchange (RFC 7748)                */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
+                                            const unsigned char *scalar,
+                                            const unsigned char *point);
+/* Computes the X25519 shared secret out = scalar * point on
+   Curve25519. out, scalar, and point are all 32 bytes. Constant-time
+   in the scalar. Returns 1 on success, 0 if the result is all-zero
+   (a low-order input point), in which case the output must be
+   rejected. */
+
+/*************************************************/
 /* SipHash keyed PRF                             */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,

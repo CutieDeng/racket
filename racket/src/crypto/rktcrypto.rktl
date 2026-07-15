@@ -138,6 +138,13 @@
 (define-function
  ()
  int
+ rktcrypto_x25519
+ (((*ref unsigned-8) out)
+  ((*ref unsigned-8) scalar)
+  ((*ref unsigned-8) point)))
+(define-function
+ ()
+ int
  rktcrypto_siphash
  (((*ref unsigned-8) key)
   (intptr_t key_len)

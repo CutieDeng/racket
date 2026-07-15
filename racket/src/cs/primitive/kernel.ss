@@ -309,6 +309,7 @@
   [crypto-siphash-1-3 (known-procedure/single-valued 28)]
   [crypto-siphash-2-4 (known-procedure/single-valued 28)]
   [crypto-subsystem-self-test? (known-procedure/single-valued 1)]
+  [crypto-x25519 (known-procedure/single-valued 4)]
   [current-code-inspector (known-procedure/parameter 3)]
   [current-command-line-arguments (known-procedure/parameter 3)]
   [current-compile-target-machine (known-procedure/parameter 3)]

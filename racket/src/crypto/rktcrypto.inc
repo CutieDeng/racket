@@ -17,5 +17,6 @@ Sforeign_symbol("rktcrypto_aead_tag_size", (void *)rktcrypto_aead_tag_size);
 Sforeign_symbol("rktcrypto_aead_seal", (void *)rktcrypto_aead_seal);
 Sforeign_symbol("rktcrypto_aead_open", (void *)rktcrypto_aead_open);
 Sforeign_symbol("rktcrypto_argon2id", (void *)rktcrypto_argon2id);
+Sforeign_symbol("rktcrypto_x25519", (void *)rktcrypto_x25519);
 Sforeign_symbol("rktcrypto_siphash", (void *)rktcrypto_siphash);
 Sforeign_symbol("rktcrypto_selftest_core", (void *)rktcrypto_selftest_core);

@@ -539,6 +539,36 @@ NIST GCM 全零向量；SHA-256 过 NIST 向量 + python hashlib 差分（全块
 - **x86 加速**：AES-NI/SHA-NI/AVX2 需运行时 cpuid dispatch，待接。
 - **ChaCha20/BLAKE NEON**、**scrypt**、**PBKDF2 C 内循环**：可选后补。
 
+## 7.x M3 公钥（进行中）
+
+vendor 政策更新（2026-07-15）：**最终实现模块零依赖从零手写**；但
+**测试/验收阶段可引入 vendor 作差分 oracle + 性能基线**（增强验收）。
+
+### M3-1 X25519 — 完成（2026-07-15）
+
+`rktcrypto_x25519.c`：from-scratch X25519（RFC 7748）。Curve25519 域算术
+GF(2^255-19) 用 5 个 51-bit limbs（add/sub/mul/sq、`__uint128_t` 中间积、
+19 折叠约减、z^(p-2) 加法链求逆）；Montgomery ladder 用常量时间 cswap，
+scalar 逐位驱动，对秘密标量常量时间；scalar clamp。生产代码零依赖
+（连 rktcrypto.h 都不 include）。
+
+接入 `racket/crypto/kex`：`x25519-generate-private-key`、
+`x25519-public-key`、`x25519`（低阶点返回 #f）。
+
+验收（三重）：① RFC 7748 §6.1 官方向量（单次 + **1000 次迭代**链式，
+约 25 万 ladder 步）；② **vendor 差分:与 LibreSSL 2000 随机样本 0 不匹配**
+（测试 harness 链接 -lcrypto,生产代码零依赖）；③ Racket 层 DH 一致性
+（Alice/Bob 共享密钥相等)+ 低阶点拒绝 + 负向。`crypto-kex.rktl` 72 项、
+C 层 KAT、全量回归通过。
+
+排查中修一个 ladder step bug：变量复用把 `AA + a24·E` 误写成
+`BB + a24·E`（AA 被覆盖丢失）——用命名临时变量按 donna 标准序列重写。
+另遇构建陷阱：bump 版本后 raco make 命令一度失效，raco setup
+compiler-lib 恢复。
+
+尚未完成（M3 后续）：Ed25519（签名，需 Edwards 点运算 + SHA-512）、
+P-256（ECDH/ECDSA，NIST 曲线）。
+
 ## 8. 明确不做（non-goals）
 
 

@@ -196,6 +196,30 @@ Finalizes @racket[h] and returns the MAC.}
 
 @; ------------------------------------------------------------------------
 
+@section{Key Exchange}
+
+@defmodule[racket/crypto/kex]
+
+X25519 (RFC 7748) is Diffie-Hellman on Curve25519. A private key is 32
+random bytes; the public key is the private key applied to the curve
+base point.
+
+@defproc[(x25519-generate-private-key) bytes?]{
+Generates a fresh 32-byte X25519 private key.}
+
+@defproc[(x25519-public-key [private-key bytes?]) bytes?]{
+Derives the 32-byte public key for @racket[private-key].}
+
+@defproc[(x25519 [private-key bytes?] [peer-public-key bytes?])
+         (or/c bytes? #f)]{
+
+Computes the 32-byte shared secret between @racket[private-key] and a
+peer's public key, or @racket[#f] if the peer key is a low-order point
+(the shared secret would be all-zero). A typical exchange derives a
+symmetric key from the shared secret with @racket[hkdf].}
+
+@; ------------------------------------------------------------------------
+
 @section{Key Derivation}
 
 @defmodule[racket/crypto/kdf]

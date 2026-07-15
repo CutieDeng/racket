@@ -15,7 +15,7 @@
 
 #define MZSCHEME_VERSION_X 9
 #define MZSCHEME_VERSION_Y 2
-#define MZSCHEME_VERSION_Z 9
+#define MZSCHEME_VERSION_Z 10
 #define MZSCHEME_VERSION_W 0
 
 /* A level of indirection makes `#` work as needed: */

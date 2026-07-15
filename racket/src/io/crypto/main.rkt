@@ -21,7 +21,8 @@
          crypto-aead-open!
          crypto-siphash-2-4
          crypto-siphash-1-3
-         crypto-argon2id)
+         crypto-argon2id
+         crypto-x25519)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -275,3 +276,18 @@
     (raise (exn:fail (string-append (symbol->string who) ": Argon2id failed (bad parameters)")
                      (current-continuation-marks))))
   out)
+
+;; ----------------------------------------
+;; X25519 key exchange (RFC 7748)
+
+;; Computes the 32-byte X25519 shared secret scalar*point. Returns the
+;; secret, or #f if the result is all-zero (a low-order point).
+(define/who (crypto-x25519 scalar point)
+  (check who bytes? scalar)
+  (check who bytes? point)
+  (unless (eqv? (bytes-length scalar) 32)
+    (raise-arguments-error who "scalar must be 32 bytes" "given" (bytes-length scalar)))
+  (unless (eqv? (bytes-length point) 32)
+    (raise-arguments-error who "point must be 32 bytes" "given" (bytes-length point)))
+  (define out (make-bytes 32))
+  (and (eqv? 1 (rktcrypto_x25519 out scalar point)) out))
