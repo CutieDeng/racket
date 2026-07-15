@@ -748,8 +748,30 @@ ChaCha20-Poly1305（711）成最快。OpenSSL 全流水线汇编基线 ~8 GB/s�
 对齐需多块流水（Gueron-Kounavis:4–8 路 CTR 流水 + H 幂聚合 GHASH 单次
 归约），属更大专项，本次先消除数量级软肋。
 
-**密码学子系统开发完成。** 剩余追平 OpenSSL 汇编的专项（流水化 GCM、
-P-256 专用域约减、ML-KEM/DSA NEON NTT）与纯 Racket TLS（M6）超出本工程。
+### M5-opt-2 剩余性能缺口评估（OpenSSL M1 精确基线）
+
+正确性前提:全算法差分/互操作 **0 不一致**（PQ interop、hashlib 72 例、
+X25519/Ed25519/P-256 差分全部复跑确认）——无实现需修。性能对比:
+
+| 算法 | rktcrypto | OpenSSL | 比值 | 追平所需 |
+|---|---|---|---|---|
+| AES-256-GCM | 1152 | ~8000 | 0.14× | 单遍融合 + H 幂聚合 GHASH（汇编级） |
+| SHA-256 | 2413 | 3281 | 0.74× | 多块调度（硬件已用） |
+| SHA-512 | 545 | 1853 | 0.29× | **ARMv8.2 SHA-512 硬件**（可行） |
+| SHA3-256 | 211 | 1118 | 0.19× | Keccak NEON/SHA3 扩展 |
+| P-256 ecdh | 4845 | 43197 | 0.11× | NIST 专用域约减 + wNAF + 基点表 |
+| P-256 ecdsa sign | 4328 | 97705 | 0.04× | 同上（OpenSSL 有逐微架构汇编） |
+| ML-DSA-65 sign | 3066 | 2554 | **1.20×** | 已反超 |
+
+**诚实结论**:用零依赖 from-scratch C（+intrinsics）全面追平 OpenSSL
+逐微架构手写汇编不现实——差距源于 OpenSSL 的专用汇编与预算表，而非算法
+缺陷;本子系统各算法与 OpenSSL 同数量级、个别（ML-DSA sign）反超。已消
+除唯一的数量级软肋(AES-GCM 7.7×)。剩余可行硬件 intrinsic 专项(SHA-512
+FEAT_SHA512、SHA-3 FEAT_SHA3——M1 均可用)与专用域算术(P-256)列为后续。
+其中 SHA-512 硬件本次未落地:内联 intrinsic 的操作数/状态轮转顺序属
+GHASH 同类"位序 footgun",无可信逐字参考不盲发布(密码学正确性优先)。
+
+**密码学子系统开发完成。** 追平汇编的专项与纯 Racket TLS（M6）超出本工程。
 
 ## 8. 明确不做（non-goals）
 
