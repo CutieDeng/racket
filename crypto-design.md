@@ -512,11 +512,29 @@ C 层 KAT 加 DRBG 基本冒烟；Racket 层随机数测试（长度/非全零/6
 **M2 对称+KDF+DRBG 至此完整**：对称(ChaCha20/AES-256)、AEAD 三件套、
 KDF(HKDF/PBKDF2/Argon2id)、secretbox、DRBG。
 
+### M2c 硬件加速（第一批：ARMv8-CE）— 完成（2026-07-15）
+
+为已有算法接 ARMv8 Crypto Extensions 硬件加速（本机 Apple Silicon，
+编译期 `__ARM_FEATURE_AES`/`__ARM_FEATURE_SHA2` 守卫，便携常量时间路径
+保留于 `#else`）：
+
+- **AES-256**（`rktcrypto_aes.c`）：vaeseq/vaesmcq 指令（硬件常量时间）。
+  AES-256-GCM 从便携有限域 S-box 提到 125 MiB/s（GHASH 仍是便携逐位
+  瓶颈，PMULL 待接）。
+- **SHA-256**（`rktcrypto_sha256.c`）：vsha256hq/h2q/su0q/su1q 指令。
+  **366 → 1434 MiB/s（3.9×，且超 rktio 内置 538 的 2.7×）**。
+
+验收：硬件路径输出与便携完全一致 —— AES 过 FIPS-197 C.3 + SP800-38A、
+NIST GCM 全零向量；SHA-256 过 NIST 向量 + python hashlib 差分（全块
+边界）；crypto-digest/aead 测试与全量回归通过。纯 C 库内部改动
+（transform 走硬件），不涉及原语/io/绑定，无需 bump 版本。
+
 尚未完成（可选后补）：
-- **scrypt**：PBKDF2/Argon2id 已覆盖密码哈希需求，scrypt 可选。
-- **PBKDF2 C 内循环**：当前纯 Racket，高迭代次数 CPU-bound，C 化待优化。
-- **硬件加速 dispatch**（SHA-NI/AVX2/ARMv8-CE/AES-NI）：便携路径已就位，
-  加速路径待接入。
+- **PMULL GHASH**：GCM 的 GHASH 仍便携逐位（AES-GCM 的当前瓶颈），
+  PMULL 无进位乘法（位反射域 + Gueron 约减）待接，接后 AES-GCM 可达
+  GB/s 级。精密易错,单列。
+- **x86 加速**：AES-NI/SHA-NI/AVX2 需运行时 cpuid dispatch，待接。
+- **ChaCha20/BLAKE NEON**、**scrypt**、**PBKDF2 C 内循环**：可选后补。
 
 ## 8. 明确不做（non-goals）
 

@@ -90,6 +90,7 @@ static void aes256_expand(const unsigned char key[32], unsigned char rk[240])
   }
 }
 
+#if !(defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO))
 static void add_round_key(unsigned char s[16], const unsigned char *rk)
 {
   int i;
@@ -127,10 +128,11 @@ static void mix_columns(unsigned char s[16])
   }
 }
 
-/* Encrypts a single 16-byte block in place using expanded round keys. */
-void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
-                                    const unsigned char in[16],
-                                    unsigned char out[16])
+/* Portable constant-time block encryption (used where there is no
+   hardware AES). */
+static void aes256_encrypt_block_portable(const unsigned char rk[240],
+                                          const unsigned char in[16],
+                                          unsigned char out[16])
 {
   unsigned char s[16];
   int r, i;
@@ -148,6 +150,43 @@ void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
   add_round_key(s, rk + 16 * 14);
 
   for (i = 0; i < 16; i++) out[i] = s[i];
+}
+#endif
+
+#if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
+# include <arm_neon.h>
+/* Hardware AES-256 using the ARMv8 Crypto Extensions. The AESE
+   instruction does AddRoundKey then SubBytes then ShiftRows; AESMC
+   does MixColumns. The instructions are constant-time in hardware.
+   Uses the same expanded round keys as the portable path. */
+static void aes256_encrypt_block_hw(const unsigned char rk[240],
+                                    const unsigned char in[16],
+                                    unsigned char out[16])
+{
+  uint8x16_t state = vld1q_u8(in);
+  int r;
+  for (r = 0; r < 13; r++) {
+    state = vaeseq_u8(state, vld1q_u8(rk + 16 * r));
+    state = vaesmcq_u8(state);
+  }
+  state = vaeseq_u8(state, vld1q_u8(rk + 16 * 13));
+  state = veorq_u8(state, vld1q_u8(rk + 16 * 14));
+  vst1q_u8(out, state);
+}
+#endif
+
+/* Encrypts a single 16-byte block using expanded round keys. Uses the
+   hardware path on platforms with AES acceleration, the portable
+   constant-time path otherwise. */
+void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
+                                    const unsigned char in[16],
+                                    unsigned char out[16])
+{
+#if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
+  aes256_encrypt_block_hw(rk, in, out);
+#else
+  aes256_encrypt_block_portable(rk, in, out);
+#endif
 }
 
 void rktcrypto_aes256_expand_key(const unsigned char key[32], unsigned char rk[240])

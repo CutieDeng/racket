@@ -44,7 +44,65 @@ void rktcrypto_sha256_core_init(rktcrypto_sha256_ctx_t *ctx, const uint32_t iv[8
   ctx->buf_len = 0;
 }
 
-static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
+#if defined(__ARM_FEATURE_SHA2) || (defined(__ARM_FEATURE_CRYPTO) && defined(__ARM_NEON))
+# include <arm_neon.h>
+/* Hardware SHA-256 block transform using the ARMv8 SHA-256 extension.
+   Produces the same result as the portable path; validated by the
+   NIST vectors. */
+static void sha256_transform_hw(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
+{
+  uint32x4_t state0 = vld1q_u32(&ctx->h[0]);
+  uint32x4_t state1 = vld1q_u32(&ctx->h[4]);
+  uint32x4_t abef = state0, cdgh = state1;
+  uint32x4_t msg0, msg1, msg2, msg3, tmp0, tmp1;
+  int i;
+
+  /* Load 4 message vectors, big-endian to host order. */
+  msg0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 0)));
+  msg1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 16)));
+  msg2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 32)));
+  msg3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 48)));
+
+# define RND4(m, koff)                                          \
+  do {                                                          \
+    tmp0 = vaddq_u32(m, vld1q_u32(&K256[koff]));                \
+    tmp1 = abef;                                                \
+    abef = vsha256hq_u32(abef, cdgh, tmp0);                     \
+    cdgh = vsha256h2q_u32(cdgh, tmp1, tmp0);                    \
+  } while (0)
+# define SCHED(a, b, c, d) do { a = vsha256su1q_u32(vsha256su0q_u32(a, b), c, d); } while (0)
+
+  /* Rounds 0-15 with message scheduling interleaved. */
+  RND4(msg0, 0);   SCHED(msg0, msg1, msg2, msg3);
+  RND4(msg1, 4);   SCHED(msg1, msg2, msg3, msg0);
+  RND4(msg2, 8);   SCHED(msg2, msg3, msg0, msg1);
+  RND4(msg3, 12);  SCHED(msg3, msg0, msg1, msg2);
+  RND4(msg0, 16);  SCHED(msg0, msg1, msg2, msg3);
+  RND4(msg1, 20);  SCHED(msg1, msg2, msg3, msg0);
+  RND4(msg2, 24);  SCHED(msg2, msg3, msg0, msg1);
+  RND4(msg3, 28);  SCHED(msg3, msg0, msg1, msg2);
+  RND4(msg0, 32);  SCHED(msg0, msg1, msg2, msg3);
+  RND4(msg1, 36);  SCHED(msg1, msg2, msg3, msg0);
+  RND4(msg2, 40);  SCHED(msg2, msg3, msg0, msg1);
+  RND4(msg3, 44);  SCHED(msg3, msg0, msg1, msg2);
+  RND4(msg0, 48);
+  RND4(msg1, 52);
+  RND4(msg2, 56);
+  RND4(msg3, 60);
+
+# undef RND4
+# undef SCHED
+  (void)i;
+
+  state0 = vaddq_u32(abef, state0);
+  state1 = vaddq_u32(cdgh, state1);
+  vst1q_u32(&ctx->h[0], state0);
+  vst1q_u32(&ctx->h[4], state1);
+}
+#endif
+
+#if !(defined(__ARM_FEATURE_SHA2) || (defined(__ARM_FEATURE_CRYPTO) && defined(__ARM_NEON)))
+static void sha256_transform_portable(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
 {
   uint32_t w[64];
   uint32_t a, b, c, d, e, f, g, h;
@@ -70,6 +128,16 @@ static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p
 
   ctx->h[0] += a; ctx->h[1] += b; ctx->h[2] += c; ctx->h[3] += d;
   ctx->h[4] += e; ctx->h[5] += f; ctx->h[6] += g; ctx->h[7] += h;
+}
+#endif
+
+static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
+{
+#if defined(__ARM_FEATURE_SHA2) || (defined(__ARM_FEATURE_CRYPTO) && defined(__ARM_NEON))
+  sha256_transform_hw(ctx, p);
+#else
+  sha256_transform_portable(ctx, p);
+#endif
 }
 
 void rktcrypto_sha256_core_update(rktcrypto_sha256_ctx_t *ctx,
