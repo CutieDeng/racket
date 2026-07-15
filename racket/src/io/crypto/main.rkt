@@ -22,7 +22,10 @@
          crypto-siphash-2-4
          crypto-siphash-1-3
          crypto-argon2id
-         crypto-x25519)
+         crypto-x25519
+         crypto-ed25519-public-key
+         crypto-ed25519-sign
+         crypto-ed25519-verify)
 
 (define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
 
@@ -291,3 +294,31 @@
     (raise-arguments-error who "point must be 32 bytes" "given" (bytes-length point)))
   (define out (make-bytes 32))
   (and (eqv? 1 (rktcrypto_x25519 out scalar point)) out))
+
+;; ----------------------------------------
+;; Ed25519 signatures (RFC 8032)
+
+(define/who (crypto-ed25519-public-key seed)
+  (check who bytes? seed)
+  (unless (eqv? (bytes-length seed) 32)
+    (raise-arguments-error who "seed must be 32 bytes" "given" (bytes-length seed)))
+  (define pk (make-bytes 32))
+  (rktcrypto_ed25519_pubkey pk seed)
+  pk)
+
+(define/who (crypto-ed25519-sign seed msg)
+  (check who bytes? seed)
+  (check who bytes? msg)
+  (unless (eqv? (bytes-length seed) 32)
+    (raise-arguments-error who "seed must be 32 bytes" "given" (bytes-length seed)))
+  (define sig (make-bytes 64))
+  (rktcrypto_ed25519_sign sig msg (bytes-length msg) seed)
+  sig)
+
+(define/who (crypto-ed25519-verify pk msg sig)
+  (check who bytes? pk)
+  (check who bytes? msg)
+  (check who bytes? sig)
+  (and (eqv? (bytes-length pk) 32)
+       (eqv? (bytes-length sig) 64)
+       (eqv? 1 (rktcrypto_ed25519_verify sig msg (bytes-length msg) pk))))

@@ -145,6 +145,27 @@
 (define-function
  ()
  int
+ rktcrypto_ed25519_pubkey
+ (((*ref unsigned-8) pk) ((*ref unsigned-8) seed)))
+(define-function
+ ()
+ int
+ rktcrypto_ed25519_sign
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) msg)
+  (intptr_t msglen)
+  ((*ref unsigned-8) seed)))
+(define-function
+ ()
+ int
+ rktcrypto_ed25519_verify
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) msg)
+  (intptr_t msglen)
+  ((*ref unsigned-8) pk)))
+(define-function
+ ()
+ int
  rktcrypto_siphash
  (((*ref unsigned-8) key)
   (intptr_t key_len)

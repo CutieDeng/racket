@@ -18,5 +18,8 @@ rktcrypto_aead_seal
 rktcrypto_aead_open
 rktcrypto_argon2id
 rktcrypto_x25519
+rktcrypto_ed25519_pubkey
+rktcrypto_ed25519_sign
+rktcrypto_ed25519_verify
 rktcrypto_siphash
 rktcrypto_selftest_core

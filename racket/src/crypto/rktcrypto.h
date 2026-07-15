@@ -192,6 +192,24 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
    rejected. */
 
 /*************************************************/
+/* Ed25519 signatures (RFC 8032)                 */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_pubkey(unsigned char *pk, const unsigned char *seed);
+/* Derives the 32-byte public key from a 32-byte seed (private key). */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_sign(unsigned char *sig,
+                                                  const unsigned char *msg, intptr_t msglen,
+                                                  const unsigned char *seed);
+/* Signs msg[0..msglen) with the 32-byte seed, writing a 64-byte
+   signature to sig. Constant-time in the secret. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_verify(const unsigned char *sig,
+                                                    const unsigned char *msg, intptr_t msglen,
+                                                    const unsigned char *pk);
+/* Verifies a 64-byte signature over msg under the 32-byte public key.
+   Returns 1 if valid, 0 otherwise. */
+
+/*************************************************/
 /* SipHash keyed PRF                             */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,

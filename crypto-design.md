@@ -566,8 +566,26 @@ C 层 KAT、全量回归通过。
 另遇构建陷阱：bump 版本后 raco make 命令一度失效，raco setup
 compiler-lib 恢复。
 
-尚未完成（M3 后续）：Ed25519（签名，需 Edwards 点运算 + SHA-512）、
-P-256（ECDH/ECDSA，NIST 曲线）。
+### M3-2 Ed25519 — 完成（2026-07-15）
+
+`rktcrypto_ed25519.c`：from-scratch Ed25519（RFC 8032）签名。复用 radix
+2^51 域算术 + 加 neg/cmov/pow22523(sqrt)/isnegative/iszero；扩展坐标点
+运算（unified twisted-Edwards 加法、常量时间 double-and-add 标量乘、点
+压缩/解压含 sqrt 恢复 x）；**scalar mod L 运算 sc_reduce/sc_muladd**
+（ref10 21-bit-limb 方法,Ed25519 最易错的部分）；SHA-512 复用已有 core
+驱动 keygen/sign/verify。生产零依赖。接入 `racket/crypto/sign`。
+
+验收：**与 OpenSSL@3 差分 200 样本 —— pubkey/signature/verify 全 0 不匹配**
+（这是关键:排除了我手抄 RFC seed 出错的干扰,直接确认从零实现与成熟库
+逐位一致;测试链接 -lcrypto,生产零依赖）；`crypto-sign.rktl`（KAT +
+sign/verify 往返 + 篡改/错消息/错密钥拒绝 + 负向）；C 层 KAT；全量回归。
+
+实现教训:首版仓促(verify 有垃圾代码、sc 运算缺失)——删掉重写,ref10
+scalar 运算仔细转写一次通过。sign→verify 自洽不足以证明与标准一致
+(错 seed 也会自洽),vendor 差分是决定性验收。
+
+尚未完成（M3 后续）：P-256（ECDH/ECDSA，NIST 曲线,需 Weierstrass 点
+运算 + 模 p256 域）。
 
 ## 8. 明确不做（non-goals）
 

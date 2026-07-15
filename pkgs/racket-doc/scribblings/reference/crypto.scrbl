@@ -6,6 +6,8 @@
                               racket/crypto/mac
                               racket/crypto/aead
                               racket/crypto/secretbox
+                              racket/crypto/kex
+                              racket/crypto/sign
                               racket/random))
 
 @title[#:tag "crypto"]{Cryptography}
@@ -217,6 +219,28 @@ Computes the 32-byte shared secret between @racket[private-key] and a
 peer's public key, or @racket[#f] if the peer key is a low-order point
 (the shared secret would be all-zero). A typical exchange derives a
 symmetric key from the shared secret with @racket[hkdf].}
+
+@; ------------------------------------------------------------------------
+
+@section{Signatures}
+
+@defmodule[racket/crypto/sign]
+
+Ed25519 (RFC 8032) signatures. A private key is a 32-byte seed; public
+keys are 32 bytes and signatures are 64 bytes.
+
+@defproc[(ed25519-generate-private-key) bytes?]{
+Generates a fresh 32-byte Ed25519 private key.}
+
+@defproc[(ed25519-public-key [private-key bytes?]) bytes?]{
+Derives the 32-byte public key for @racket[private-key].}
+
+@defproc[(ed25519-sign [private-key bytes?] [message bytes?]) bytes?]{
+Signs @racket[message], returning a 64-byte signature.}
+
+@defproc[(ed25519-verify [public-key bytes?] [message bytes?] [signature bytes?]) boolean?]{
+Returns @racket[#t] if @racket[signature] is a valid Ed25519 signature
+of @racket[message] under @racket[public-key].}
 
 @; ------------------------------------------------------------------------
 

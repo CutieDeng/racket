@@ -222,6 +222,24 @@ static int test_x25519(void)
   return memcmp(out, want, 32) == 0;
 }
 
+/* Ed25519 KAT: seed = 00 01 .. 1f, verified against OpenSSL. */
+static int test_ed25519(void)
+{
+  unsigned char seed[32], pk[32], sig[64];
+  int i;
+  static const unsigned char want_pk[32] = {
+    0x03,0xa1,0x07,0xbf,0xf3,0xce,0x10,0xbe,0x1d,0x70,0xdd,0x18,0xe7,0x4b,0xc0,0x99,
+    0x67,0xe4,0xd6,0x30,0x9b,0xa5,0x0d,0x5f,0x1d,0xdc,0x86,0x64,0x12,0x55,0x31,0xb8};
+  for (i = 0; i < 32; i++) seed[i] = (unsigned char)i;
+  rktcrypto_ed25519_pubkey(pk, seed);
+  if (memcmp(pk, want_pk, 32) != 0) return 0;
+  rktcrypto_ed25519_sign(sig, (const unsigned char *)"abc", 3, seed);
+  if (!rktcrypto_ed25519_verify(sig, (const unsigned char *)"abc", 3, pk)) return 0;
+  sig[0] ^= 1;
+  if (rktcrypto_ed25519_verify(sig, (const unsigned char *)"abc", 3, pk)) return 0;
+  return 1;
+}
+
 int rktcrypto_selftest_core(void)
 {
   if (!test_ct_bytes_equal()) return 0;
@@ -233,5 +251,6 @@ int rktcrypto_selftest_core(void)
   if (!test_siphash()) return 0;
   if (!test_argon2id()) return 0;
   if (!test_x25519()) return 0;
+  if (!test_ed25519()) return 0;
   return 1;
 }
