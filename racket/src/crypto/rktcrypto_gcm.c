@@ -172,7 +172,10 @@ static void inc32(unsigned char ctr[16])
   ctr[14] = (unsigned char)(c >> 8);  ctr[15] = (unsigned char)c;
 }
 
-/* CTR-mode keystream XOR, starting from counter block `ctr`. */
+/* CTR-mode keystream XOR, starting from counter block `ctr`. The AES
+   block itself uses the hardware path; the CTR latency is not the
+   AES-GCM bottleneck (GHASH's serial reduction and the two-pass memory
+   traffic are), so a wider pipeline here did not help in practice. */
 static void gctr(const unsigned char rk[240], unsigned char ctr[16],
                  const unsigned char *in, unsigned char *out, intptr_t len)
 {
