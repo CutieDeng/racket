@@ -724,9 +724,32 @@ KAT;crypto-digest.rktl 增正例、原把 md5 当"未知算法"的负例改用 s
 leaky memcmp 正控制 |t|=85(正确报 LEAK?)**——证明该 harness 真能检出
 泄漏,而非恒过。确认常量时间比较与 Montgomery ladder 无数据依赖分支。
 
-**M5 收尾:SHA-1/MD5 内建化去 libcrypto、全栈性能基准、常量时间护栏。
-密码学子系统开发完成。**(注:openssl collection 的 TLS 仍链 libssl,属
-M6 纯 Racket TLS 重写范围,不在本工程。)
+**M5 收尾:SHA-1/MD5 内建化去 libcrypto、全栈性能基准、常量时间护栏。**
+
+### M5-opt-1 AES-GCM PMULL 硬件 GHASH — 完成（2026-07-15）
+
+针对基准暴露的唯一软肋 AES-256-GCM 149 MB/s 优化。定位:AES-CTR 早已走
+硬件 <code>vaeseq</code>,瓶颈纯粹是逐位软件 GHASH。实现 ARMv8 PMULL
+(<code>vmull_p64</code>) 硬件 GHASH：
+- GHASH 位序（块字节 0 的 bit7 = x⁰）与 PMULL 多项式序相反，用单条
+  <code>vrbitq_u8</code> 做整 128 位翻转转成正常序，Karatsuba 128×128→256
+  无缝相乘，再用 0x87 折叠常量归约。H 每消息只翻转一次、累加器全程保持
+  正常序、末尾只翻回一次。
+- **吸取位反射 footgun 教训**：先离线对拍便携 <code>ghash_mul</code>
+  <strong>20 万随机 0 错</strong>再集成；集成后对 OpenSSL AES-256-GCM
+  <strong>500 组随机 (pt,aad) 长度 0 不一致</strong>。首版翻转 bug 也是
+  200000/200000 全错，改用显式位索引提取定位、再回落到正确的
+  <code>vrbitq_u8</code>。
+- 便携逐位路径 <code>#else</code> 完整保留（无硬件时）。PMULL/vrbitq/折叠
+  归约无数据依赖分支或访存，常量时间性质不变。
+
+结果:**AES-256-GCM 149 → 1152 MB/s（7.7×）**，从最慢 AEAD 反超
+ChaCha20-Poly1305（711）成最快。OpenSSL 全流水线汇编基线 ~8 GB/s——完全
+对齐需多块流水（Gueron-Kounavis:4–8 路 CTR 流水 + H 幂聚合 GHASH 单次
+归约），属更大专项，本次先消除数量级软肋。
+
+**密码学子系统开发完成。** 剩余追平 OpenSSL 汇编的专项（流水化 GCM、
+P-256 专用域约减、ML-KEM/DSA NEON NTT）与纯 Racket TLS（M6）超出本工程。
 
 ## 8. 明确不做（non-goals）
 
