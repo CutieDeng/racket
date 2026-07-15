@@ -703,6 +703,31 @@ KAT;crypto-digest.rktl 增正例、原把 md5 当"未知算法"的负例改用 s
 纯 Racket。教训:落入统一框架的 digest 必须跑吞吐基准对比回退实现,否则
 "内建"可能是性能倒退。
 
+### M5-2 benchmark 套件 + dudect 常量时间护栏 — 完成（2026-07-15）
+
+`racket/src/crypto/benchmarks/crypto-benchmark.rkt`：全栈吞吐/延迟基准
+(可直接 racket 运行),digest/MAC/AEAD 报 MB/s,公钥/PQ 报 ops/s。作为
+性能验收仪器与回归绊线。实测(M1 Air):
+- digest:SHA-256 2413、BLAKE3 1075、BLAKE2b 1108、SHA-1 995、MD5 807、
+  SHA3-256 211 MB/s(SHA-256 因 ARMv8 SHA 扩展领先)。
+- MAC:HMAC-SHA256 2112、SipHash-2-4 2869 MB/s。
+- AEAD:ChaCha20-Poly1305 684、**AES-256-GCM 仅 149**(常量时间逐位
+  GHASH 的代价;PMULL 硬件 GHASH 因位反射 bug 暂缓)——**建议默认用
+  ChaCha20-Poly1305**。
+- 公钥:X25519 46k、Ed25519 sign 12k/verify 11k、P-256 ecdh 4.8k ops/s。
+- PQ:ML-KEM keygen/encaps/decaps ~29k、ML-DSA sign 3k/verify 7.9k、
+  混合 KEM encaps 13k ops/s。
+
+`benchmarks/dudect_ct.c` + `run-dudect.sh`：dudect 风格常量时间检查,对两
+类输入(密钥相关差异)做 Welch t 检验,|t|<4.5 视为未检出时序泄漏。实测:
+`ct_bytes_equal` |t|=0.29、X25519 ladder |t|=1.30(均 OK);**故意早退的
+leaky memcmp 正控制 |t|=85(正确报 LEAK?)**——证明该 harness 真能检出
+泄漏,而非恒过。确认常量时间比较与 Montgomery ladder 无数据依赖分支。
+
+**M5 收尾:SHA-1/MD5 内建化去 libcrypto、全栈性能基准、常量时间护栏。
+密码学子系统开发完成。**(注:openssl collection 的 TLS 仍链 libssl,属
+M6 纯 Racket TLS 重写范围,不在本工程。)
+
 ## 8. 明确不做（non-goals）
 
 
