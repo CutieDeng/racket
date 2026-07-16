@@ -942,10 +942,23 @@ vendor 分析。拉取 ecp_nistz256-armv8.pl 精读，关键发现：
   p256 verify  10402 -> 15042 ops/s (0.31x -> 0.46x OpenSSL)
 ```
 
-**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.50×、sign 0.16→0.41×、
-verify 0.18→0.46×（各 ~2.6×）**。到 1.0× 的剩余差距：点运算仍跑在域乘延迟
-(~57cyc)而非吞吐(~19cyc)，ILP 重排已推近但未满；深挖需更激进 ILP（2-路点运算/
-手写交错双乘）+ 更快求逆（Bernstein-Yang），progressively 难。
+**定基窗口化消除在线加倍（15d5178d57）**——拉 ecp_nistz256.c 分析:OpenSSL 定基
+(sign/keygen)用**每窗预算表→零在线加倍**(37 加法)，我方 comb 是宽 4 Lim-Lee(64
+加倍+64 加)。改**定基 4-bit 窗口化**:comb_win[i][d]=d·2^(4i)·G 每 nibble 位置预算,
+k·G=Σcomb_win[i][d_i]=64 次常量时间加、**零在线加倍**(加倍烘焙进表)。表 64×16
+仿射点~98KiB,每位置 15 倍点用 Montgomery-trick 单次求逆批量归一(init 64 求逆非
+960)。**sign 40668→62057(+52%,0.41→0.60×)、verify 15042→18013(0.46→0.52×)**。
+pubkey vs OpenSSL 0/40。(inversion 与我方同为 Fermat 链,非 OpenSSL 优势点。)
+
+**双乘死路**:profile 显 OpenSSL 加倍跑域乘吞吐(~17.5cyc)、我方部分重叠(~47cyc);
+试 mont_mul_p256_dual(2 独立乘指令交错单函数)欲满重叠,但 2× 寄存器压(36 vreg)→
+180 fmov 溢出→比两次独立调用慢 1.75×(且实测两次独立调用已重叠到 32cyc/mul)。
+故加倍 47 vs 32 的差距在 mont_add/sub + 关键路径依赖,非缺双乘。弃。
+
+**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.50×、sign 0.16→0.60×、
+verify 0.18→0.52×（sign ~3.8×、ecdh/verify ~2.7×）**。到 1.0× 剩余:ecdh/verify 变基
+256 加倍主导且跑在域乘部分重叠(~47cyc)而非吞吐(~32);差距在 mont_add/sub+关键路径,
+需惰性约简(P-256 近 2^256 素数须 5 字松弛值,复杂)或更低延迟域乘。
 
 **其余缺口（plan #5 续）**：P-256（现 ~0.5×，进一步需更深 ILP/快速求逆）、
 AES-GCM
