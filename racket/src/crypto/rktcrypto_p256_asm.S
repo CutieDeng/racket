@@ -12,317 +12,244 @@
 _mont_mul_asm:
 Lmont_mul_asm$entry:
     mov x16, x0
-    fmov d20, x16
-    mov x16, x1
+    fmov d23, x16
+    mov x0, x1
+    mov x1, x3
+    ldr x16, [x0, #0]
     fmov d16, x16
-    mov x1, x2
-    mov x0, x3
-    ldr x16, [x1, #0]
+    ldr x16, [x0, #8]
     fmov d17, x16
-    ldr x16, [x1, #8]
+    ldr x16, [x0, #16]
     fmov d18, x16
-    ldr x15, [x1, #16]
-    ldr x14, [x1, #24]
-    ldr x11, [x0, #0]
-    ldr x10, [x0, #8]
-    ldr x9, [x0, #16]
-    ldr x8, [x0, #24]
-    ldr x16, [x0, #32]
+    ldr x16, [x0, #24]
     fmov d19, x16
-    mov x5, xzr
-    mov x4, xzr
-    mov x3, xzr
-    mov x2, xzr
-    mov x1, xzr
-    mov x0, xzr
+    ldr x0, [x2, #0]
+    ldr x16, [x2, #8]
+    fmov d20, x16
+    ldr x16, [x2, #16]
+    fmov d21, x16
+    ldr x15, [x2, #24]
+    ldr x9, [x1, #0]
+    ldr x8, [x1, #8]
+    ldr x7, [x1, #16]
+    ldr x6, [x1, #24]
+    ldr x16, [x1, #32]
+    fmov d22, x16
     fmov x16, d16
-    ldr x7, [x16, #0]
-    mov x6, xzr
+    mul x14, x16, x0
     fmov x16, d17
-    mul x12, x7, x16
-    fmov x16, d17
-    umulh x13, x7, x16
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
+    mul x13, x16, x0
     fmov x16, d18
-    mul x12, x7, x16
-    fmov x16, d18
-    umulh x13, x7, x16
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x15
-    umulh x13, x7, x15
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x14
-    umulh x13, x7, x14
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
+    mul x12, x16, x0
     fmov x16, d19
-    mul x7, x5, x16
-    mov x6, xzr
-    mul x12, x7, x11
-    umulh x13, x7, x11
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
-    mul x12, x7, x10
-    umulh x13, x7, x10
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x9
-    umulh x13, x7, x9
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x8
-    umulh x13, x7, x8
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
-    mov x5, x4
-    mov x4, x3
-    mov x3, x2
-    mov x2, x1
-    mov x1, x0
-    mov x0, xzr
+    mul x11, x16, x0
     fmov x16, d16
-    ldr x7, [x16, #8]
-    mov x6, xzr
+    umulh x4, x16, x0
     fmov x16, d17
-    mul x12, x7, x16
-    fmov x16, d17
-    umulh x13, x7, x16
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
+    umulh x3, x16, x0
     fmov x16, d18
-    mul x12, x7, x16
-    fmov x16, d18
-    umulh x13, x7, x16
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x15
-    umulh x13, x7, x15
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x14
-    umulh x13, x7, x14
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
+    umulh x2, x16, x0
     fmov x16, d19
-    mul x7, x5, x16
-    mov x6, xzr
-    mul x12, x7, x11
-    umulh x13, x7, x11
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
-    mul x12, x7, x10
-    umulh x13, x7, x10
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x9
-    umulh x13, x7, x9
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x8
-    umulh x13, x7, x8
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
-    mov x5, x4
-    mov x4, x3
-    mov x3, x2
-    mov x2, x1
-    mov x1, x0
+    umulh x1, x16, x0
+    adds x13, x13, x4
+    adcs x12, x12, x3
+    adcs x11, x11, x2
+    adc x10, xzr, x1
     mov x0, xzr
+    fmov x16, d22
+    mul x5, x14, x16
+    mul x4, x5, x9
+    mul x3, x5, x8
+    mul x2, x5, x7
+    mul x1, x5, x6
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adcs x10, x10, xzr
+    adc x0, x0, xzr
+    umulh x4, x5, x9
+    umulh x3, x5, x8
+    umulh x2, x5, x7
+    umulh x1, x5, x6
+    adds x14, x13, x4
+    adcs x13, x12, x3
+    adcs x12, x11, x2
+    adcs x11, x10, x1
+    adc x10, x0, xzr
     fmov x16, d16
-    ldr x7, [x16, #16]
-    mov x6, xzr
+    fmov x17, d20
+    mul x4, x16, x17
     fmov x16, d17
-    mul x12, x7, x16
-    fmov x16, d17
-    umulh x13, x7, x16
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
+    fmov x17, d20
+    mul x3, x16, x17
     fmov x16, d18
-    mul x12, x7, x16
-    fmov x16, d18
-    umulh x13, x7, x16
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x15
-    umulh x13, x7, x15
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x14
-    umulh x13, x7, x14
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
+    fmov x17, d20
+    mul x2, x16, x17
     fmov x16, d19
-    mul x7, x5, x16
-    mov x6, xzr
-    mul x12, x7, x11
-    umulh x13, x7, x11
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
-    mul x12, x7, x10
-    umulh x13, x7, x10
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x9
-    umulh x13, x7, x9
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x8
-    umulh x13, x7, x8
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
-    mov x5, x4
-    mov x4, x3
-    mov x3, x2
-    mov x2, x1
-    mov x1, x0
-    mov x0, xzr
+    fmov x17, d20
+    mul x1, x16, x17
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adc x10, x10, xzr
     fmov x16, d16
-    ldr x7, [x16, #24]
-    mov x6, xzr
+    fmov x17, d20
+    umulh x4, x16, x17
     fmov x16, d17
-    mul x12, x7, x16
-    fmov x16, d17
-    umulh x13, x7, x16
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
+    fmov x17, d20
+    umulh x3, x16, x17
     fmov x16, d18
-    mul x12, x7, x16
-    fmov x16, d18
-    umulh x13, x7, x16
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x15
-    umulh x13, x7, x15
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x14
-    umulh x13, x7, x14
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
-    adc x0, x0, xzr
+    fmov x17, d20
+    umulh x2, x16, x17
     fmov x16, d19
-    mul x7, x5, x16
-    mov x6, xzr
-    mul x12, x7, x11
-    umulh x13, x7, x11
-    adds x5, x5, x12
-    adc x13, x13, xzr
-    adds x5, x5, x6
-    adc x6, x13, xzr
-    mul x12, x7, x10
-    umulh x13, x7, x10
-    adds x4, x4, x12
-    adc x13, x13, xzr
-    adds x4, x4, x6
-    adc x6, x13, xzr
-    mul x12, x7, x9
-    umulh x13, x7, x9
-    adds x3, x3, x12
-    adc x13, x13, xzr
-    adds x3, x3, x6
-    adc x6, x13, xzr
-    mul x12, x7, x8
-    umulh x13, x7, x8
-    adds x2, x2, x12
-    adc x13, x13, xzr
-    adds x2, x2, x6
-    adc x6, x13, xzr
-    adds x1, x1, x6
+    fmov x17, d20
+    umulh x1, x16, x17
+    adds x13, x13, x4
+    adcs x12, x12, x3
+    adcs x11, x11, x2
+    adcs x10, x10, x1
+    adc x0, xzr, xzr
+    fmov x16, d22
+    mul x5, x14, x16
+    mul x4, x5, x9
+    mul x3, x5, x8
+    mul x2, x5, x7
+    mul x1, x5, x6
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adcs x10, x10, xzr
     adc x0, x0, xzr
-    mov x5, x4
-    mov x4, x3
-    mov x3, x2
-    mov x2, x1
-    mov x1, x0
-    mov x0, xzr
-    subs x11, x5, x11
-    sbcs x7, x4, x10
-    sbcs x6, x3, x9
-    sbcs x0, x2, x8
-    sbcs xzr, x1, xzr
-    csel x5, x11, x5, CS
-    csel x4, x7, x4, CS
-    csel x1, x6, x3, CS
-    csel x0, x0, x2, CS
-    fmov x16, d20
-    str x5, [x16, #0]
-    fmov x16, d20
-    str x4, [x16, #8]
-    fmov x16, d20
-    str x1, [x16, #16]
-    fmov x16, d20
+    umulh x4, x5, x9
+    umulh x3, x5, x8
+    umulh x2, x5, x7
+    umulh x1, x5, x6
+    adds x14, x13, x4
+    adcs x13, x12, x3
+    adcs x12, x11, x2
+    adcs x11, x10, x1
+    adc x10, x0, xzr
+    fmov x16, d16
+    fmov x17, d21
+    mul x4, x16, x17
+    fmov x16, d17
+    fmov x17, d21
+    mul x3, x16, x17
+    fmov x16, d18
+    fmov x17, d21
+    mul x2, x16, x17
+    fmov x16, d19
+    fmov x17, d21
+    mul x1, x16, x17
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adc x10, x10, xzr
+    fmov x16, d16
+    fmov x17, d21
+    umulh x4, x16, x17
+    fmov x16, d17
+    fmov x17, d21
+    umulh x3, x16, x17
+    fmov x16, d18
+    fmov x17, d21
+    umulh x2, x16, x17
+    fmov x16, d19
+    fmov x17, d21
+    umulh x1, x16, x17
+    adds x13, x13, x4
+    adcs x12, x12, x3
+    adcs x11, x11, x2
+    adcs x10, x10, x1
+    adc x0, xzr, xzr
+    fmov x16, d22
+    mul x5, x14, x16
+    mul x4, x5, x9
+    mul x3, x5, x8
+    mul x2, x5, x7
+    mul x1, x5, x6
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adcs x10, x10, xzr
+    adc x0, x0, xzr
+    umulh x4, x5, x9
+    umulh x3, x5, x8
+    umulh x2, x5, x7
+    umulh x1, x5, x6
+    adds x14, x13, x4
+    adcs x13, x12, x3
+    adcs x12, x11, x2
+    adcs x11, x10, x1
+    adc x10, x0, xzr
+    fmov x16, d16
+    mul x4, x16, x15
+    fmov x16, d17
+    mul x3, x16, x15
+    fmov x16, d18
+    mul x2, x16, x15
+    fmov x16, d19
+    mul x1, x16, x15
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adc x10, x10, xzr
+    fmov x16, d16
+    umulh x4, x16, x15
+    fmov x16, d17
+    umulh x3, x16, x15
+    fmov x16, d18
+    umulh x2, x16, x15
+    fmov x16, d19
+    umulh x1, x16, x15
+    adds x13, x13, x4
+    adcs x12, x12, x3
+    adcs x11, x11, x2
+    adcs x10, x10, x1
+    adc x0, xzr, xzr
+    fmov x16, d22
+    mul x5, x14, x16
+    mul x4, x5, x9
+    mul x3, x5, x8
+    mul x2, x5, x7
+    mul x1, x5, x6
+    adds x14, x14, x4
+    adcs x13, x13, x3
+    adcs x12, x12, x2
+    adcs x11, x11, x1
+    adcs x10, x10, xzr
+    adc x0, x0, xzr
+    umulh x4, x5, x9
+    umulh x3, x5, x8
+    umulh x2, x5, x7
+    umulh x1, x5, x6
+    adds x14, x13, x4
+    adcs x13, x12, x3
+    adcs x12, x11, x2
+    adcs x11, x10, x1
+    adc x10, x0, xzr
+    subs x4, x14, x9
+    sbcs x3, x13, x8
+    sbcs x2, x12, x7
+    sbcs x1, x11, x6
+    sbcs xzr, x10, xzr
+    csel x4, x4, x14, CS
+    csel x3, x3, x13, CS
+    csel x2, x2, x12, CS
+    csel x0, x1, x11, CS
+    fmov x16, d23
+    str x4, [x16, #0]
+    fmov x16, d23
+    str x3, [x16, #8]
+    fmov x16, d23
+    str x2, [x16, #16]
+    fmov x16, d23
     str x0, [x16, #24]
     ret
 
