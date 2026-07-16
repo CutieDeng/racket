@@ -955,12 +955,32 @@ pubkey vs OpenSSL 0/40。(inversion 与我方同为 Fermat 链,非 OpenSSL 优�
 180 fmov 溢出→比两次独立调用慢 1.75×(且实测两次独立调用已重叠到 32cyc/mul)。
 故加倍 47 vs 32 的差距在 mont_add/sub + 关键路径依赖,非缺双乘。弃。
 
-**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.50×、sign 0.16→0.60×、
-verify 0.18→0.52×（sign ~3.8×、ecdh/verify ~2.7×）**。到 1.0× 剩余:ecdh/verify 变基
-256 加倍主导且跑在域乘部分重叠(~47cyc)而非吞吐(~32);差距在 mont_add/sub+关键路径,
-需惰性约简(P-256 近 2^256 素数须 5 字松弛值,复杂)或更低延迟域乘。
+**自建 OpenSSL 对照 + 软流水域乘（741b7e89d2）**——用户令自行构建 OpenSSL 对照。
+`curl` 拉 ecp_nistz256-armv8.pl + perlasm/arm-xlate.pl；桩 ecp_nistz256_table.c
+(64·16·37 个零 TOBN) 与 arch/arm_arch.h(空 BTI/PAC 宏)，`perl ...pl ios64 nistz256.S`
+生成、编译。因 OpenSSL Montgomery 域同 p/R=2^256，可**直接对拍**：extern
+ecp_nistz256_mul_mont/point_double，喂我方 Montgomery 值。**决定性测量**:
+- OpenSSL mul_mont **与我方逐位相同(0/1000000)**，但**延迟低 1.52×(37.6 vs 57.1cyc)**，
+  point_double 快 1.86×(177 vs 329)。差异**纯在指令调度**:OpenSSL **软流水**——在
+  reduce[i] 期间发射 b[i+1] 的乘(mul 织入 reduce、umulh 织入 accumulate)，把乘法延迟
+  藏在进位链下。我的 CIOS 是顺序 reduce-then-mul。
+- **照抄该软流水调度**(从结构重写非复制)→mont_mul_p256 延迟 62.7→**37.8cyc,追平
+  OpenSSL 36.9**。对拍 C 0/1000000 + 对拍 OpenSSL 自身 mul_mont 0/1000000。
+  **ecdh 21026→27697(0.49→0.64×)、sign 56714→69696(0.59→0.73×)、verify 16318→20935
+  (0.51→0.65×)**。
+- **域乘追平后剩点运算级**:我方 jac_double 288 vs OpenSSL point_double 183(1.57×);
+  实测新域乘 2-way 吞吐 17.6cyc/mul(vs 44 延迟)有大余量，但 doubling 跑近延迟。
+  加倍依赖图允许**3-宽独立乘组**({Y²,Z²,Y·Z}{X·YY,YY²,(X-ZZ)(X+ZZ)})，重排成
+  3-way→303→249cyc(1.22×,43c4026f60)。
+- 工具经验:asmp 交错调度=在源码里逐行按 OpenSSL 顺序发射(asmp 不重排,OoO 靠预排布)。
 
-**其余缺口（plan #5 续）**：P-256（现 ~0.5×，进一步需更深 ILP/快速求逆）、
+**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.65×、sign 0.16→0.71×、
+verify 0.18→0.66×（各 ~3.4-4.4×）**。域乘已追平 OpenSSL；到 1.0× 剩余在**点运算级
+overlap**(jac_double 288 vs 183)——OpenSSL point_double 用寄存器传参域乘+forward-load
+把多个域乘重叠到吞吐；我方 C 调 asm(内存传参)只重叠到部分。进一步需寄存器传参域乘
+或整体 asm point_double(寄存器压敏感)。
+
+**其余缺口（plan #5 续）**：P-256（现 ~0.65-0.71×，域乘已追平，剩点运算 overlap）、
 AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
 与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
