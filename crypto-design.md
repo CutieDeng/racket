@@ -868,8 +868,47 @@ x86 AVX2 SHA-512/Keccak 与纯 Racket TLS（M6）仍属后续。
 verify 4733→6274(1.32×)。**可移植 C 算法侧至此触顶**（预算表/窗口、SIMD 加宽、
 加法链/窗口求逆全落地）。
 
-**剩余缺口属汇编层（plan #5）**：P-256（~0.2×，通用 Montgomery 乘 vs
-OpenSSL Solinas+手调 asm——曾试专用约简 0% 增益，u128 乘已够快）、AES-GCM
+### M5-opt-5 汇编级内核（asmp 工具链 + P-256 mont_mul）— 进行中（2026-07-16）
+
+用户决定启动汇编级开发，并指出已有增强型汇编器项目 asmp
+（`/Users/cutiedeng/Y2026/M05/D29/asmp.git`，Racket 写的 ARM64 汇编器：虚拟
+寄存器 `x.name` + 图着色分配 + `--dump=interference/allocation` 冲突/分配日志
++ ABI 感知 prologue/epilogue + Apple/GNU 双语法）。架构约束：**源与汇编输出
+两份都入库**，构建只依赖committed `.S`（asmp 仅开发期依赖）——perlasm 模式。
+
+**首个内核：P-256 Montgomery 乘**（c114460dcf）。mont_mul 是 P-256 每个域/
+标量乘的主导开销。asmp 生成的 CIOS 全寄存器驻留（0 栈溢出；高压时溢出到
+caller-saved FP 寄存器 d16-d20 而非栈，fmov 比 stack 便宜），**2.2× 便携 C
+（62 vs 28 Mmul/s）**，带动整条曲线 ~1.7×。
+
+- 工作流（已在 `asm/README.md` 固化）：`asm/mont_mul.asm`（asmp 源，脚本
+  `gen_montmul.py` 生成）→ `--gnu-input --apple --elim --default-abi aapcs64`
+  → 包 `#if defined(__aarch64__)&&defined(__APPLE__)` 守卫存为 committed
+  `rktcrypto_p256_asm.S`。`build.zuo` 直接编该 `.S`（预处理汇编），无 asmp/
+  Racket 构建期依赖；非 Apple-AArch64 时 `.S` 空、mont_mul 回退
+  `mont_mul_portable`（原 C，改名保留为 oracle）。drop-in 同 ABI 读 ctx→
+  同时服务 p 和 n 两模数。
+- **验证纪律**（`asm/mont_mul_test.c`，oracle=mont_mul_portable）：bit-exact
+  0/200000（p 和 n 两模数含边界）；**ABI callee-saved 护栏**（x19-x28、
+  v8-v15 哨兵存活）通过；端到端 KAT 自检 #t、consistency 0/2500、OpenSSL
+  差分 0/40。
+- 关键工具经验：leaf ABI 默认只给 caller-saved→高压溢出；`--default-abi
+  aapcs64` 解锁 callee-saved（自动 save/restore）。惰性加载 a[i] 削减长活
+  跨迭代压力消除栈溢出。allocator 会把 GP 值 fmov 进 FP 寄存器当廉价溢出槽
+  （只用 caller-saved v16-v31，ABI 安全，护栏已证）。
+
+```
+  p256 ecdh    ~9000 -> 14943 ops/s (0.19x -> 0.34x OpenSSL)
+  p256 sign   ~16640 -> 28914 ops/s (0.16x -> 0.29x OpenSSL)
+  p256 verify  ~6200 -> 10402 ops/s (0.18x -> 0.31x OpenSSL)
+```
+
+后续汇编杠杆：mont_mul 更紧的进位链/消 fmov 溢出、mont_sqr 专用（省一半偏
+积）、P-256 专用 Solinas 约简（省约简乘）、AES-GCM AES/PMULL 端口调度、
+aarch64-linux GNU 变体。
+
+**其余缺口（plan #5 续）**：P-256（现 ~0.3×，仍可经更紧汇编/Solinas 推进）、
+AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
 与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
 算法侧已基本触顶；进一步需专用汇编，风险/收益需单独立项。
