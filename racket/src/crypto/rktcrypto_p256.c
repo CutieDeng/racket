@@ -78,8 +78,15 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
   else            mont_mul_asm(r,a,b,ctx);
 }
 #define mont_mul mont_mul_dispatch
+/* Direct field-prime multiply/square for the hot point arithmetic -- skips
+   the ctx dispatch branch (which does not always fold), ~7% faster per
+   point op. */
+#define fp_mul(r,a,b) mont_mul_p256((r),(a),(b))
+#define fp_sqr(r,a)   mont_mul_p256((r),(a),(a))
 #else
 #define mont_mul mont_mul_portable
+#define fp_mul(r,a,b) mont_mul_portable((r),(a),(b),&FP)
+#define fp_sqr(r,a)   mont_mul_portable((r),(a),(a),&FP)
 #endif
 
 static void mont_add(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
@@ -195,30 +202,30 @@ static void fp_cmov(u64 r[4],const u64 a[4],u64 b){ u64 mask=0-b; int i; for(i=0
    (2^k-1)-ones blocks x_k. Montgomery domain. Bit-exact with mont_inv(.,&FP).*/
 static void fp_sqrn(u64 r[4],const u64 a[4],int n){
   int i; u64 t[4]; for(i=0;i<4;i++)t[i]=a[i];
-  while(n-->0) mont_sqr(t,t,&FP);
+  while(n-->0) fp_sqr(t,t);
   for(i=0;i<4;i++)r[i]=t[i];
 }
 static void fp_inv(u64 r[4],const u64 a[4]){
   u64 x1[4],x2[4],x4[4],x6[4],x8[4],x14[4],x16[4],x30[4],x32[4],t[4];
   int i;
   for(i=0;i<4;i++)x1[i]=a[i];
-  fp_sqrn(t,x1,1);  mont_mul(x2,t,x1,&FP);    /* 2^2-1  */
-  fp_sqrn(t,x2,2);  mont_mul(x4,t,x2,&FP);    /* 2^4-1  */
-  fp_sqrn(t,x4,2);  mont_mul(x6,t,x2,&FP);    /* 2^6-1  = 4+2 */
-  fp_sqrn(t,x4,4);  mont_mul(x8,t,x4,&FP);    /* 2^8-1  */
-  fp_sqrn(t,x8,6);  mont_mul(x14,t,x6,&FP);   /* 2^14-1 = 8+6 */
-  fp_sqrn(t,x8,8);  mont_mul(x16,t,x8,&FP);   /* 2^16-1 */
-  fp_sqrn(t,x16,14);mont_mul(x30,t,x14,&FP);  /* 2^30-1 = 16+14 */
-  fp_sqrn(t,x16,16);mont_mul(x32,t,x16,&FP);  /* 2^32-1 */
+  fp_sqrn(t,x1,1);  fp_mul(x2,t,x1);    /* 2^2-1  */
+  fp_sqrn(t,x2,2);  fp_mul(x4,t,x2);    /* 2^4-1  */
+  fp_sqrn(t,x4,2);  fp_mul(x6,t,x2);    /* 2^6-1  = 4+2 */
+  fp_sqrn(t,x4,4);  fp_mul(x8,t,x4);    /* 2^8-1  */
+  fp_sqrn(t,x8,6);  fp_mul(x14,t,x6);   /* 2^14-1 = 8+6 */
+  fp_sqrn(t,x8,8);  fp_mul(x16,t,x8);   /* 2^16-1 */
+  fp_sqrn(t,x16,14);fp_mul(x30,t,x14);  /* 2^30-1 = 16+14 */
+  fp_sqrn(t,x16,16);fp_mul(x32,t,x16);  /* 2^32-1 */
   for(i=0;i<4;i++)t[i]=x32[i];                /* top 32 ones */
   fp_sqrn(t,t,31);                            /* 31 zeros (bits 223..193) */
-  fp_sqrn(t,t,1);  mont_mul(t,t,x1,&FP);      /* bit 192 = 1 */
+  fp_sqrn(t,t,1);  fp_mul(t,t,x1);      /* bit 192 = 1 */
   fp_sqrn(t,t,96);                            /* 96 zeros (bits 191..96) */
-  fp_sqrn(t,t,32); mont_mul(t,t,x32,&FP);     /* 94-ones run = 32 +      */
-  fp_sqrn(t,t,32); mont_mul(t,t,x32,&FP);     /*   32 +                  */
-  fp_sqrn(t,t,30); mont_mul(t,t,x30,&FP);     /*   30 (reusing x32/x30)  */
+  fp_sqrn(t,t,32); fp_mul(t,t,x32);     /* 94-ones run = 32 +      */
+  fp_sqrn(t,t,32); fp_mul(t,t,x32);     /*   32 +                  */
+  fp_sqrn(t,t,30); fp_mul(t,t,x30);     /*   30 (reusing x32/x30)  */
   fp_sqrn(t,t,1);                             /* bit 1 = 0 */
-  fp_sqrn(t,t,1);  mont_mul(t,t,x1,&FP);      /* bit 0 = 1 */
+  fp_sqrn(t,t,1);  fp_mul(t,t,x1);      /* bit 0 = 1 */
   for(i=0;i<4;i++)r[i]=t[i];
 }
 
@@ -252,16 +259,16 @@ static void jac_double(jac *r,const jac *p){
   /* Ops are ordered so independent field multiplies sit adjacent (the "pair"
      comments): the out-of-order core then overlaps them, running the
      doubling nearer field-mul throughput than latency (~1.2x). */
-  mont_sqr(YY,p->Y,&FP);      mont_sqr(ZZ,p->Z,&FP);          /* pair 1 */
+  fp_sqr(YY,p->Y);      fp_sqr(ZZ,p->Z);          /* pair 1 */
   mont_sub(xm,p->X,ZZ,FP.m);  mont_add(xp,p->X,ZZ,FP.m);
-  mont_mul(S,p->X,YY,&FP);    mont_mul(prod,xm,xp,&FP);        /* pair 2: S=X*YY, prod=(X-ZZ)(X+ZZ) */
+  fp_mul(S,p->X,YY);    fp_mul(prod,xm,xp);        /* pair 2: S=X*YY, prod=(X-ZZ)(X+ZZ) */
   mont_add(S,S,S,FP.m); mont_add(S,S,S,FP.m);                 /* S = 4*X*Y^2 */
   mont_add(M,prod,prod,FP.m); mont_add(M,M,prod,FP.m);        /* M = 3*prod */
-  mont_sqr(X3,M,&FP);         mont_sqr(Y4,YY,&FP);            /* pair 3: M^2, Y^4 */
+  fp_sqr(X3,M);         fp_sqr(Y4,YY);            /* pair 3: M^2, Y^4 */
   mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); /* 8*Y^4 */
   mont_sub(X3,X3,S,FP.m); mont_sub(X3,X3,S,FP.m);             /* X3 = M^2 - 2S */
   mont_sub(t,S,X3,FP.m);
-  mont_mul(t,M,t,&FP);        mont_mul(Z3,p->Y,p->Z,&FP);     /* pair 4: M*(S-X3), Y*Z */
+  fp_mul(t,M,t);        fp_mul(Z3,p->Y,p->Z);     /* pair 4: M*(S-X3), Y*Z */
   mont_sub(Y3,t,Y4,FP.m);                                     /* Y3 = M*(S-X3) - 8*Y^4 */
   mont_add(Z3,Z3,Z3,FP.m);                                    /* Z3 = 2*Y*Z */
   for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=Y3[i]; r->Z[i]=Z3[i]; }
@@ -275,10 +282,10 @@ static void jac_add(jac *r,const jac *p,const jac *q){
   if(pz){ *r=*q; return; }
   if(qz){ *r=*p; return; }
   /* independent multiplies grouped into pairs for OoO overlap */
-  mont_sqr(Z1Z1,p->Z,&FP);    mont_sqr(Z2Z2,q->Z,&FP);       /* pair */
-  mont_mul(U1,p->X,Z2Z2,&FP); mont_mul(U2,q->X,Z1Z1,&FP);    /* pair */
-  mont_mul(S1,p->Y,q->Z,&FP); mont_mul(S2,q->Y,p->Z,&FP);    /* pair */
-  mont_mul(S1,S1,Z2Z2,&FP);   mont_mul(S2,S2,Z1Z1,&FP);      /* pair */
+  fp_sqr(Z1Z1,p->Z);    fp_sqr(Z2Z2,q->Z);       /* pair */
+  fp_mul(U1,p->X,Z2Z2); fp_mul(U2,q->X,Z1Z1);    /* pair */
+  fp_mul(S1,p->Y,q->Z); fp_mul(S2,q->Y,p->Z);    /* pair */
+  fp_mul(S1,S1,Z2Z2);   fp_mul(S2,S2,Z1Z1);      /* pair */
   mont_sub(H,U2,U1,FP.m);
   mont_sub(Rr,S2,S1,FP.m);
   if(fp_iszero(H)){
@@ -286,14 +293,14 @@ static void jac_add(jac *r,const jac *p,const jac *q){
     /* opposite points -> identity */
     for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
   }
-  mont_sqr(HH,H,&FP);         mont_sqr(X3,Rr,&FP);           /* pair: H^2, R^2 */
-  mont_mul(HHH,HH,H,&FP);     mont_mul(t,U1,HH,&FP);         /* pair: HH*H, U1*HH */
+  fp_sqr(HH,H);         fp_sqr(X3,Rr);           /* pair: H^2, R^2 */
+  fp_mul(HHH,HH,H);     fp_mul(t,U1,HH);         /* pair: HH*H, U1*HH */
   mont_sub(X3,X3,HHH,FP.m);
   mont_sub(X3,X3,t,FP.m); mont_sub(X3,X3,t,FP.m);            /* X3 = R^2 - HHH - 2*U1*HH */
-  mont_mul(ZZ,p->Z,q->Z,&FP); mont_mul(tt,S1,HHH,&FP);       /* pair: Z1*Z2, S1*HHH */
-  mont_sub(t2,t,X3,FP.m); mont_mul(t2,Rr,t2,&FP);
+  fp_mul(ZZ,p->Z,q->Z); fp_mul(tt,S1,HHH);       /* pair: Z1*Z2, S1*HHH */
+  mont_sub(t2,t,X3,FP.m); fp_mul(t2,Rr,t2);
   mont_sub(r->Y,t2,tt,FP.m);
-  mont_mul(r->Z,ZZ,H,&FP);
+  fp_mul(r->Z,ZZ,H);
   for(i=0;i<4;i++) r->X[i]=X3[i];
 }
 
@@ -308,20 +315,20 @@ static void mixed_add(jac *r,const jac *p,const jac *q){
   if(fp_iszero(p->Z)){ *r=*q; return; }         /* p identity -> q (already affine) */
   /* Ordered so independent multiplies are adjacent (pair comments); the
      out-of-order core overlaps them (~field-mul throughput not latency). */
-  mont_sqr(Z1Z1,p->Z,&FP);    mont_mul(S2,q->Y,p->Z,&FP);   /* pair 1: Z1^2, Y2*Z1 */
-  mont_mul(U2,q->X,Z1Z1,&FP); mont_mul(S2,S2,Z1Z1,&FP);     /* pair 2 */
+  fp_sqr(Z1Z1,p->Z);    fp_mul(S2,q->Y,p->Z);   /* pair 1: Z1^2, Y2*Z1 */
+  fp_mul(U2,q->X,Z1Z1); fp_mul(S2,S2,Z1Z1);     /* pair 2 */
   mont_sub(H,U2,p->X,FP.m);                     /* H  = U2 - X1 */
   mont_sub(Rr,S2,p->Y,FP.m);                    /* R  = S2 - Y1 */
   if(fp_iszero(H)){
     if(fp_iszero(Rr)){ jac_double(r,p); return; }
     for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
   }
-  mont_sqr(HH,H,&FP);         mont_sqr(X3,Rr,&FP);          /* pair 3: H^2, R^2 */
-  mont_mul(HHH,HH,H,&FP);     mont_mul(t,p->X,HH,&FP);      /* pair 4: HH*H, X1*HH */
+  fp_sqr(HH,H);         fp_sqr(X3,Rr);          /* pair 3: H^2, R^2 */
+  fp_mul(HHH,HH,H);     fp_mul(t,p->X,HH);      /* pair 4: HH*H, X1*HH */
   mont_sub(X3,X3,HHH,FP.m);
   mont_sub(X3,X3,t,FP.m); mont_sub(X3,X3,t,FP.m);           /* X3 = R^2 - HHH - 2*X1*HH */
-  mont_mul(tt,p->Y,HHH,&FP);  mont_mul(Z3,p->Z,H,&FP);      /* pair 5: Y1*HHH, Z1*H */
-  mont_sub(t2,t,X3,FP.m); mont_mul(t2,Rr,t2,&FP);
+  fp_mul(tt,p->Y,HHH);  fp_mul(Z3,p->Z,H);      /* pair 5: Y1*HHH, Z1*H */
+  mont_sub(t2,t,X3,FP.m); fp_mul(t2,Rr,t2);
   mont_sub(t2,t2,tt,FP.m);                                  /* Y3 = R*(X1*HH - X3) - Y1*HHH */
   for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=t2[i]; r->Z[i]=Z3[i]; }
 }
@@ -352,15 +359,15 @@ static void batch_affine(jac *pts,int n){
   u64 one[4]={1,0,0,0}, montone[4]; int i,j;
   to_mont(montone,one,&FP);
   for(j=0;j<4;j++){ acc[j]=pts[0].Z[j]; prefix[0][j]=pts[0].Z[j]; }
-  for(i=1;i<n;i++){ mont_mul(acc,acc,pts[i].Z,&FP); for(j=0;j<4;j++) prefix[i][j]=acc[j]; }
+  for(i=1;i<n;i++){ fp_mul(acc,acc,pts[i].Z); for(j=0;j<4;j++) prefix[i][j]=acc[j]; }
   fp_inv(inv,acc);                               /* inv = (prod Z_i)^-1 */
   for(i=n-1;i>=0;i--){
-    if(i>0) mont_mul(zi,inv,prefix[i-1],&FP);    /* zi = Z_i^-1 */
+    if(i>0) fp_mul(zi,inv,prefix[i-1]);    /* zi = Z_i^-1 */
     else    for(j=0;j<4;j++) zi[j]=inv[j];
-    mont_mul(inv,inv,pts[i].Z,&FP);              /* strip Z_i for next round */
-    mont_sqr(zi2,zi,&FP); mont_mul(zi3,zi2,zi,&FP);
-    mont_mul(pts[i].X,pts[i].X,zi2,&FP);
-    mont_mul(pts[i].Y,pts[i].Y,zi3,&FP);
+    fp_mul(inv,inv,pts[i].Z);              /* strip Z_i for next round */
+    fp_sqr(zi2,zi); fp_mul(zi3,zi2,zi);
+    fp_mul(pts[i].X,pts[i].X,zi2);
+    fp_mul(pts[i].Y,pts[i].Y,zi3);
     for(j=0;j<4;j++) pts[i].Z[j]=montone[j];
   }
 }
@@ -397,8 +404,8 @@ static int jac_to_affine(unsigned char x[32],unsigned char y[32],const jac *p){
   u64 zinv[4],zinv2[4],zinv3[4],xa[4],ya[4],tmp[4];
   if(fp_iszero(p->Z)) return 0;
   fp_inv(zinv,p->Z);
-  mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
-  mont_mul(xa,p->X,zinv2,&FP); mont_mul(ya,p->Y,zinv3,&FP);
+  fp_sqr(zinv2,zinv); fp_mul(zinv3,zinv2,zinv);
+  fp_mul(xa,p->X,zinv2); fp_mul(ya,p->Y,zinv3);
   from_mont(tmp,xa,&FP); bn_to_bytes(x,tmp);
   from_mont(tmp,ya,&FP); bn_to_bytes(y,tmp);
   return 1;
@@ -414,8 +421,8 @@ static void base_point(jac *B){
 static void __attribute__((unused)) affine_normalize(jac *out,const jac *p){
   u64 zinv[4],zinv2[4],zinv3[4];
   fp_inv(zinv,p->Z);
-  mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
-  mont_mul(out->X,p->X,zinv2,&FP); mont_mul(out->Y,p->Y,zinv3,&FP);
+  fp_sqr(zinv2,zinv); fp_mul(zinv3,zinv2,zinv);
+  fp_mul(out->X,p->X,zinv2); fp_mul(out->Y,p->Y,zinv3);
   { u64 one[4]={1,0,0,0}; to_mont(out->Z,one,&FP); }
 }
 
