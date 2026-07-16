@@ -974,11 +974,18 @@ ecp_nistz256_mul_mont/point_double，喂我方 Montgomery 值。**决定性测�
   3-way→303→249cyc(1.22×,43c4026f60)。
 - 工具经验:asmp 交错调度=在源码里逐行按 OpenSSL 顺序发射(asmp 不重排,OoO 靠预排布)。
 
-**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.65×、sign 0.16→0.71×、
-verify 0.18→0.66×（各 ~3.4-4.4×）**。域乘已追平 OpenSSL；到 1.0× 剩余在**点运算级
-overlap**(jac_double 288 vs 183)——OpenSSL point_double 用寄存器传参域乘+forward-load
-把多个域乘重叠到吞吐；我方 C 调 asm(内存传参)只重叠到部分。进一步需寄存器传参域乘
-或整体 asm point_double(寄存器压敏感)。
+**紧凑进位内建 add/sub（6712682d55）**：profile 隔离出剩余差距在 mont_add/sub
+而非域乘——我方 mul-only doubling floor 172cyc 已 <OpenSSL point_double 183。原
+u128+bn_sub 编成 ~45 指令在点运算关键路径。改 `__builtin_addcll/subcll`→紧凑
+adcs/sbcs+csel(~13 指令)。**ecdh 28171→31156(0.72×)、sign→70825(0.74×)、
+verify→23029(0.71×)**。
+
+**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.72×、sign 0.16→0.74×、
+verify 0.18→0.71×（各 ~3.9-4.6×）**。**域乘已追平 OpenSSL**(38.1 vs 37.4cyc)。到 1.0×
+剩：jac_double 223 vs OpenSSL point_double 174(1.28×)；mul-only floor 172≈OpenSSL 174，
+故差距全在 **add/sub 在关键路径未与域乘重叠**(OpenSSL 寄存器传参 add/sub→ALU 与乘并行;
+我方 C 内存传参 add/sub 串行 ~49cyc)。到 1.0× 需寄存器传参 asm point_double 或惰性约简
+(P-256 近 2^256 须 5 字松弛值)，寄存器压敏感、大工程。
 
 **其余缺口（plan #5 续）**：P-256（现 ~0.65-0.71×，域乘已追平，剩点运算 overlap）、
 AES-GCM
