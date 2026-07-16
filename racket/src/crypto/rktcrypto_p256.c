@@ -178,9 +178,11 @@ static void p256_init(void){
 
 typedef struct { u64 X[4],Y[4],Z[4]; } jac;
 
-/* Fixed-base comb table for k*G: comb_tbl[I] = sum over set bits i of I
-   of 2^(64i)*G, in affine (Z = mont(1)). Built once, lazily. */
-static jac comb_tbl[16];
+/* Fixed-base windowing table for k*G. comb_win[i][d] = d * 2^(4i) * G in
+   affine (Z = mont(1)), for nibble position i (0..63) and digit d (1..15).
+   Then k*G = sum_i comb_win[i][digit_i]: 64 additions and NO doublings (the
+   doublings are baked into the precomputed table). ~98 KiB, built once. */
+static jac comb_win[64][16];
 static int comb_inited = 0;
 
 static int fp_iszero(const u64 a[4]){ return (a[0]|a[1]|a[2]|a[3])==0; }
@@ -407,8 +409,9 @@ static void base_point(jac *B){
   { u64 one[4]={1,0,0,0}; to_mont(B->Z,one,&FP); }
 }
 
-/* Jacobian -> affine (Montgomery coords, Z set to mont(1)). */
-static void affine_normalize(jac *out,const jac *p){
+/* Jacobian -> affine (Montgomery coords, Z set to mont(1)). Retained for the
+   offline selftest harness (comb_init now batch-normalizes instead). */
+static void __attribute__((unused)) affine_normalize(jac *out,const jac *p){
   u64 zinv[4],zinv2[4],zinv3[4];
   fp_inv(zinv,p->Z);
   mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
@@ -416,37 +419,41 @@ static void affine_normalize(jac *out,const jac *p){
   { u64 one[4]={1,0,0,0}; to_mont(out->Z,one,&FP); }
 }
 
-/* Build the width-4 comb table (one-time). comb_tbl[I] = sum_{i:bit i of I}
-   2^(64i)*G. Uses branchy point ops -- inputs are the public base point. */
+/* Build the fixed-base windowing table (one-time, lazy). For each nibble
+   position i, comb_win[i][d] = d * 2^(4i) * G. The 15 multiples per position
+   are normalized to affine with a single field inversion (Montgomery's
+   trick), so init costs 64 inversions rather than 960. Branchy point ops --
+   the base point is public. */
 static void comb_init(void){
-  jac Pw[4], acc; int I,i,j,first;
-  base_point(&Pw[0]);
-  for(i=1;i<4;i++){ Pw[i]=Pw[i-1]; for(j=0;j<64;j++) jac_double(&Pw[i],&Pw[i]); }
-  for(i=0;i<4;i++){ comb_tbl[0].X[i]=0;comb_tbl[0].Y[i]=0;comb_tbl[0].Z[i]=0; }
-  comb_tbl[0].X[0]=1; comb_tbl[0].Y[0]=1;               /* O (unused, kept valid) */
-  for(I=1;I<16;I++){
-    first=1;
-    for(i=0;i<4;i++) if(I&(1<<i)){ if(first){acc=Pw[i];first=0;} else jac_add(&acc,&acc,&Pw[i]); }
-    affine_normalize(&comb_tbl[I],&acc);
+  jac P, mult[15]; int i,d,k;
+  base_point(&P);                                    /* P = 2^(4i)*G, starts at G */
+  for(i=0;i<64;i++){
+    mult[0]=P;
+    for(d=1;d<15;d++) jac_add(&mult[d],&mult[d-1],&P);   /* (d+1)*P */
+    batch_affine(mult,15);                              /* one inversion for 15 pts */
+    for(d=0;d<15;d++) comb_win[i][d+1]=mult[d];          /* comb_win[i][1..15] */
+    for(k=0;k<4;k++){comb_win[i][0].X[k]=0;comb_win[i][0].Y[k]=0;comb_win[i][0].Z[k]=0;}
+    comb_win[i][0].X[0]=1; comb_win[i][0].Y[0]=1;        /* O (digit 0, masked out) */
+    if(i<63){ jac_double(&P,&P); jac_double(&P,&P); jac_double(&P,&P); jac_double(&P,&P); } /* P *= 2^4 */
   }
   comb_inited=1;
 }
 
-/* Fixed-base k*G via the width-4 comb: 64 columns, each a doubling plus a
-   constant-time-selected table add. Table lookup scans all entries with
-   cmov (no secret-dependent memory access); the add of the zero digit is
-   masked out. */
+/* Fixed-base k*G via 4-bit windowing: k = sum_i d_i*2^(4i), so
+   k*G = sum_i comb_win[i][d_i] -- 64 constant-time-selected additions, no
+   doublings. Table lookup scans all entries with cmov (no secret-dependent
+   memory access); the add of the zero digit is masked out. */
 static void jac_scalarmult_base(jac *r,const u64 k[4]){
-  jac acc, sel, tmp; int j, idx, i;
+  jac acc, sel, tmp; int i, idx;
   if(!comb_inited) comb_init();
   for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
-  for(j=63;j>=0;j--){
-    u64 I = ((k[0]>>j)&1) | (((k[1]>>j)&1)<<1) | (((k[2]>>j)&1)<<2) | (((k[3]>>j)&1)<<3);
-    jac_double(&acc,&acc);
-    sel=comb_tbl[1];
-    for(idx=1;idx<16;idx++){ u64 m=(idx==(int)I); fp_cmov(sel.X,comb_tbl[idx].X,m);fp_cmov(sel.Y,comb_tbl[idx].Y,m);fp_cmov(sel.Z,comb_tbl[idx].Z,m); }
+  for(i=0;i<64;i++){
+    int sh=(4*i)&63;
+    u64 d=(k[(4*i)>>6]>>sh)&0xF;
+    sel=comb_win[i][1];
+    for(idx=1;idx<16;idx++){ u64 m=(idx==(int)d); fp_cmov(sel.X,comb_win[i][idx].X,m);fp_cmov(sel.Y,comb_win[i][idx].Y,m);fp_cmov(sel.Z,comb_win[i][idx].Z,m); }
     mixed_add(&tmp,&acc,&sel);
-    { u64 m=(I!=0); fp_cmov(acc.X,tmp.X,m);fp_cmov(acc.Y,tmp.Y,m);fp_cmov(acc.Z,tmp.Z,m); }
+    { u64 m=(d!=0); fp_cmov(acc.X,tmp.X,m);fp_cmov(acc.Y,tmp.Y,m);fp_cmov(acc.Z,tmp.Z,m); }
   }
   *r=acc;
 }
