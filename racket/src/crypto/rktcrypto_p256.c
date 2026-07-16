@@ -267,15 +267,16 @@ static void jac_double(jac *r,const jac *p){
 
 static void jac_add(jac *r,const jac *p,const jac *q){
   /* If p is identity (Z=0), return q; if q identity, return p. */
-  u64 Z1Z1[4],Z2Z2[4],U1[4],U2[4],S1[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4];
+  u64 Z1Z1[4],Z2Z2[4],U1[4],U2[4],S1[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4],X3[4],ZZ[4];
   int i;
   int pz=fp_iszero(p->Z), qz=fp_iszero(q->Z);
   if(pz){ *r=*q; return; }
   if(qz){ *r=*p; return; }
-  mont_sqr(Z1Z1,p->Z,&FP); mont_sqr(Z2Z2,q->Z,&FP);
-  mont_mul(U1,p->X,Z2Z2,&FP); mont_mul(U2,q->X,Z1Z1,&FP);
-  mont_mul(S1,p->Y,q->Z,&FP); mont_mul(S1,S1,Z2Z2,&FP);
-  mont_mul(S2,q->Y,p->Z,&FP); mont_mul(S2,S2,Z1Z1,&FP);
+  /* independent multiplies grouped into pairs for OoO overlap */
+  mont_sqr(Z1Z1,p->Z,&FP);    mont_sqr(Z2Z2,q->Z,&FP);       /* pair */
+  mont_mul(U1,p->X,Z2Z2,&FP); mont_mul(U2,q->X,Z1Z1,&FP);    /* pair */
+  mont_mul(S1,p->Y,q->Z,&FP); mont_mul(S2,q->Y,p->Z,&FP);    /* pair */
+  mont_mul(S1,S1,Z2Z2,&FP);   mont_mul(S2,S2,Z1Z1,&FP);      /* pair */
   mont_sub(H,U2,U1,FP.m);
   mont_sub(Rr,S2,S1,FP.m);
   if(fp_iszero(H)){
@@ -283,15 +284,15 @@ static void jac_add(jac *r,const jac *p,const jac *q){
     /* opposite points -> identity */
     for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
   }
-  mont_sqr(HH,H,&FP); mont_mul(HHH,HH,H,&FP);
-  mont_mul(t,U1,HH,&FP);         /* U1*HH */
-  mont_sqr(r->X,Rr,&FP);
-  mont_sub(r->X,r->X,HHH,FP.m);
-  mont_sub(r->X,r->X,t,FP.m); mont_sub(r->X,r->X,t,FP.m);   /* X3 = R^2 - HHH - 2*U1*HH */
-  mont_sub(t2,t,r->X,FP.m); mont_mul(t2,Rr,t2,&FP);
-  mont_mul(t,S1,HHH,&FP);
-  mont_sub(r->Y,t2,t,FP.m);
-  mont_mul(r->Z,p->Z,q->Z,&FP); mont_mul(r->Z,r->Z,H,&FP);
+  mont_sqr(HH,H,&FP);         mont_sqr(X3,Rr,&FP);           /* pair: H^2, R^2 */
+  mont_mul(HHH,HH,H,&FP);     mont_mul(t,U1,HH,&FP);         /* pair: HH*H, U1*HH */
+  mont_sub(X3,X3,HHH,FP.m);
+  mont_sub(X3,X3,t,FP.m); mont_sub(X3,X3,t,FP.m);            /* X3 = R^2 - HHH - 2*U1*HH */
+  mont_mul(ZZ,p->Z,q->Z,&FP); mont_mul(tt,S1,HHH,&FP);       /* pair: Z1*Z2, S1*HHH */
+  mont_sub(t2,t,X3,FP.m); mont_mul(t2,Rr,t2,&FP);
+  mont_sub(r->Y,t2,tt,FP.m);
+  mont_mul(r->Z,ZZ,H,&FP);
+  for(i=0;i<4;i++) r->X[i]=X3[i];
 }
 
 /* Mixed Jacobian + affine addition: q must be affine (q->Z == mont(1)).
