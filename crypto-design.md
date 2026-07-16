@@ -828,6 +828,42 @@ crypto 在 librktcrypto)。当前 Apple 目标编译期守卫已正确;运行时
 **密码学子系统开发完成。** P-256 专用汇编、单遍 GCM、x86 SHA-NI 真机验、
 x86 AVX2 SHA-512/Keccak 与纯 Racket TLS（M6）仍属后续。
 
+### M5-opt-4 结构性算法优化（曲线 comb/window + ChaCha 8-way）— 完成（2026-07-16）
+
+用户授权"任何手段（汇编/JIT/…）只要正确且最大化性能"。本轮全部为**可验证
+的可移植 C 结构性优化**（非微架构汇编），四项，各自离线 bit-exact 对拍 +
+标准向量/OpenSSL 差分：
+
+- **P-256 变基宽 4 窗口**（`jac_scalarmult_win`）：ECDH 与 verify 的 u2·Q
+  项从逐位 double-and-add（256 double + 256 add）改为宽 4 窗口（256 double
+  + 64 add），表 T[1..15] 一次 Montgomery-trick 批量求逆归一到仿射，供
+  `mixed_add`。秘密标量常量时间（cmov 扫表 + 零位掩码），点为公开值故建表
+  可分支。对拍参考 double-and-add 20000/0；OpenSSL 差分 50/0（ECDH 双向、
+  互验签名、篡改拒绝）。ECDH ~6160→8585、verify 4733→5992 ops/s。
+- **ChaCha20 8-way NEON**（`chacha20_8block_xor`）：两组独立 4-block（A:
+  ctr..+3, B: ctr+4..+7）交错，倍增在途依赖链喂饱宽 NEON 单元；组转置/XOR/
+  存储抽为 `cc_store4` 共用。逐长度 0..1500 × 5 计数器（含回绕）对拍标量核
+  0 错；RFC 8439 §2.8.2 AEAD KAT 通过。**2109→3148 MB/s（0.94× OpenSSL
+  3335）**；ChaCha20-Poly1305 1171→1455（0.49→0.61×，两遍理想 1565 的 93%）。
+- **Ed25519 定基 comb**（`ge_scalarmult_base`，宽 4）：ed_comb[I]=Σ2^(64i)·B。
+  签名做**两次**定基乘（公钥 A + 承诺 R）故收益最大。扭曲 Edwards(a=-1) 加法
+  律完备→无例外分支，cmov 扫表常量时间、I=0 选单位元。对拍 20000/0；RFC 8032
+  测例 1/3 确定性签名**逐字节**复现。**sign 13229→40088（0.19→0.58×）、
+  verify 12182→17242**。
+- **Ed25519 变基宽 4 窗口**（`ge_scalarmult_win`）：verify 的 h·A 项。加法律
+  完备→投影表无需仿射归一；verify 全公开数据故直接索引（免扫表）。对拍
+  20000/0。**verify 17242→20291（本轮累计 0.44→0.73×）**。
+
+四项均 `-Wall` 干净、内建 KAT 自检 `#t`。参考实现（`jac_scalarmult` /
+`ge_scalarmult`）降级为 selftest oracle，分别 `P256_SELFTEST` /
+`ED25519_SELFTEST` 守卫，生产不编译。
+
+**剩余缺口属汇编层（plan #5）**：P-256（0.16-0.19×，通用 Montgomery 乘 vs
+OpenSSL Solinas+手调 asm——曾试专用约简 0% 增益，u128 乘已够快）、AES-GCM
+（0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
+与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
+算法侧已基本触顶；进一步需专用汇编，风险/收益需单独立项。
+
 ## 8. 明确不做（non-goals）
 
 
