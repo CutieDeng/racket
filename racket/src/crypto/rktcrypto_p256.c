@@ -102,7 +102,10 @@ static void ctx_init(mont_ctx *ctx,const u64 m[4]){
 static void to_mont(u64 r[4],const u64 a[4],const mont_ctx *ctx){ mont_mul(r,a,ctx->rr,ctx); }
 static void from_mont(u64 r[4],const u64 a[4],const mont_ctx *ctx){ u64 one[4]={1,0,0,0}; mont_mul(r,a,one,ctx); }
 
-/* Modular inverse via Fermat: a^(m-2). Works for prime m. In Montgomery. */
+/* Modular inverse via Fermat: a^(m-2). Works for prime m. In Montgomery.
+   Superseded in production by fp_inv (mod p) and scn_inv (mod n); retained
+   as the oracle those are checked against. */
+#ifdef P256_SELFTEST
 static void mont_inv(u64 r[4],const u64 a[4],const mont_ctx *ctx,const u64 m[4]){
   /* exponent = m-2 */
   u64 e[4]; u64 two[4]={2,0,0,0}; bn_sub(e,m,two);
@@ -117,6 +120,7 @@ static void mont_inv(u64 r[4],const u64 a[4],const mont_ctx *ctx,const u64 m[4])
   }
   for(i=0;i<4;i++)r[i]=acc[i];
 }
+#endif
 
 static void bytes_to_bn(u64 a[4],const unsigned char s[32]){
   int i; for(i=0;i<4;i++){ u64 v=0;int j; for(j=0;j<8;j++)v=(v<<8)|s[i*8+j]; a[3-i]=v; }
@@ -185,6 +189,28 @@ static void fp_inv(u64 r[4],const u64 a[4]){
   fp_sqrn(t,t,1);                             /* bit 1 = 0 */
   fp_sqrn(t,t,1);  mont_mul(t,t,x1,&FP);      /* bit 0 = 1 */
   for(i=0;i<4;i++)r[i]=t[i];
+}
+
+/* Scalar inverse mod n via 4-bit windowed exponentiation of the fixed public
+   exponent n-2. The group order has no exploitable structure for a short
+   addition chain, but windowing still cuts mults ~128 -> 79 vs Fermat. The
+   window/nibble pattern comes from n-2 (public), not the base, so this is
+   constant-time in the secret scalar. Montgomery domain. Bit-exact with
+   mont_inv(.,&FN). */
+static void scn_inv(u64 r[4],const u64 a[4]){
+  u64 e[4],two[4]={2,0,0,0}, pw[16][4], acc[4]; int w,i,j;
+  bn_sub(e,N,two);
+  { u64 one[4]={1,0,0,0}; to_mont(pw[0],one,&FN); }   /* pw[i] = a^i */
+  for(j=0;j<4;j++)pw[1][j]=a[j];
+  for(i=2;i<16;i++) mont_mul(pw[i],pw[i-1],a,&FN);
+  for(j=0;j<4;j++)acc[j]=pw[0][j];                    /* acc = 1 */
+  for(w=63;w>=0;w--){
+    int shift=w*4; unsigned nib=(e[shift>>6]>>(shift&63))&0xF;
+    mont_sqr(acc,acc,&FN); mont_sqr(acc,acc,&FN);
+    mont_sqr(acc,acc,&FN); mont_sqr(acc,acc,&FN);
+    mont_mul(acc,acc,pw[nib],&FN);                    /* nib=0 -> * mont(1) */
+  }
+  for(j=0;j<4;j++)r[j]=acc[j];
 }
 
 static void jac_double(jac *r,const jac *p){
@@ -450,7 +476,7 @@ int rktcrypto_p256_ecdsa_sign(unsigned char sig[64],const unsigned char *msg,int
     to_mont(kmont,knum,&FN); to_mont(dmont,d,&FN); to_mont(zmont,z,&FN); to_mont(rmont,r_,&FN);
     mont_mul(tmp,rmont,dmont,&FN);           /* r*d */
     mont_add(tmp,tmp,zmont,FN.m);            /* z + r*d */
-    mont_inv(kinv,kmont,&FN,FN.m);           /* k^-1 */
+    scn_inv(kinv,kmont);                     /* k^-1 */
     mont_mul(s_,kinv,tmp,&FN);
     from_mont(s_,s_,&FN);
     if(fp_iszero(s_)) continue;
@@ -472,7 +498,7 @@ int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char 
   bytes_to_bn(z,digest);
   if(bn_geq(z,N)) bn_sub(z,z,N);
   /* w = s^-1 mod n; u1 = z*w; u2 = r*w */
-  to_mont(smont,s_,&FN); mont_inv(winv,smont,&FN,FN.m);
+  to_mont(smont,s_,&FN); scn_inv(winv,smont);
   to_mont(zmont,z,&FN); to_mont(rmont,r_,&FN);
   mont_mul(u1m,zmont,winv,&FN); mont_mul(u2m,rmont,winv,&FN);
   from_mont(u1,u1m,&FN); from_mont(u2,u2m,&FN); (void)w;
