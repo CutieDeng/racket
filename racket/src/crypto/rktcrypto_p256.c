@@ -145,6 +145,11 @@ static void p256_init(void){
 
 typedef struct { u64 X[4],Y[4],Z[4]; } jac;
 
+/* Fixed-base comb table for k*G: comb_tbl[I] = sum over set bits i of I
+   of 2^(64i)*G, in affine (Z = mont(1)). Built once, lazily. */
+static jac comb_tbl[16];
+static int comb_inited = 0;
+
 static int fp_iszero(const u64 a[4]){ return (a[0]|a[1]|a[2]|a[3])==0; }
 static void fp_cmov(u64 r[4],const u64 a[4],u64 b){ u64 mask=0-b; int i; for(i=0;i<4;i++)r[i]^=mask&(r[i]^a[i]); }
 
@@ -257,6 +262,50 @@ static void base_point(jac *B){
   { u64 one[4]={1,0,0,0}; to_mont(B->Z,one,&FP); }
 }
 
+/* Jacobian -> affine (Montgomery coords, Z set to mont(1)). */
+static void affine_normalize(jac *out,const jac *p){
+  u64 zinv[4],zinv2[4],zinv3[4];
+  mont_inv(zinv,p->Z,&FP,FP.m);
+  mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
+  mont_mul(out->X,p->X,zinv2,&FP); mont_mul(out->Y,p->Y,zinv3,&FP);
+  { u64 one[4]={1,0,0,0}; to_mont(out->Z,one,&FP); }
+}
+
+/* Build the width-4 comb table (one-time). comb_tbl[I] = sum_{i:bit i of I}
+   2^(64i)*G. Uses branchy point ops -- inputs are the public base point. */
+static void comb_init(void){
+  jac Pw[4], acc; int I,i,j,first;
+  base_point(&Pw[0]);
+  for(i=1;i<4;i++){ Pw[i]=Pw[i-1]; for(j=0;j<64;j++) jac_double(&Pw[i],&Pw[i]); }
+  for(i=0;i<4;i++){ comb_tbl[0].X[i]=0;comb_tbl[0].Y[i]=0;comb_tbl[0].Z[i]=0; }
+  comb_tbl[0].X[0]=1; comb_tbl[0].Y[0]=1;               /* O (unused, kept valid) */
+  for(I=1;I<16;I++){
+    first=1;
+    for(i=0;i<4;i++) if(I&(1<<i)){ if(first){acc=Pw[i];first=0;} else jac_add(&acc,&acc,&Pw[i]); }
+    affine_normalize(&comb_tbl[I],&acc);
+  }
+  comb_inited=1;
+}
+
+/* Fixed-base k*G via the width-4 comb: 64 columns, each a doubling plus a
+   constant-time-selected table add. Table lookup scans all entries with
+   cmov (no secret-dependent memory access); the add of the zero digit is
+   masked out. */
+static void jac_scalarmult_base(jac *r,const u64 k[4]){
+  jac acc, sel, tmp; int j, idx, i;
+  if(!comb_inited) comb_init();
+  for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
+  for(j=63;j>=0;j--){
+    u64 I = ((k[0]>>j)&1) | (((k[1]>>j)&1)<<1) | (((k[2]>>j)&1)<<2) | (((k[3]>>j)&1)<<3);
+    jac_double(&acc,&acc);
+    sel=comb_tbl[1];
+    for(idx=1;idx<16;idx++){ u64 m=(idx==(int)I); fp_cmov(sel.X,comb_tbl[idx].X,m);fp_cmov(sel.Y,comb_tbl[idx].Y,m);fp_cmov(sel.Z,comb_tbl[idx].Z,m); }
+    mixed_add(&tmp,&acc,&sel);
+    { u64 m=(I!=0); fp_cmov(acc.X,tmp.X,m);fp_cmov(acc.Y,tmp.Y,m);fp_cmov(acc.Z,tmp.Z,m); }
+  }
+  *r=acc;
+}
+
 /* ---- public API ---- */
 
 /* ECDH: out = scalar * point (65-byte uncompressed point 0x04||x||y in, 32-byte x out). */
@@ -276,11 +325,10 @@ int rktcrypto_p256_ecdh(unsigned char out[32],const unsigned char scalar[32],con
 
 /* Public key (65-byte uncompressed) from a 32-byte private scalar. */
 int rktcrypto_p256_pubkey(unsigned char out65[65],const unsigned char priv[32]){
-  jac B,R; u64 k[4]; unsigned char xa[32],ya[32];
+  jac R; u64 k[4]; unsigned char xa[32],ya[32];
   if(!inited)p256_init();
   bytes_to_bn(k,priv);
-  base_point(&B);
-  jac_scalarmult(&R,k,&B);
+  jac_scalarmult_base(&R,k);
   if(!jac_to_affine(xa,ya,&R)) return 0;
   out65[0]=4; memcpy(out65+1,xa,32); memcpy(out65+33,ya,32);
   return 1;
@@ -293,20 +341,19 @@ static void sha256(const unsigned char *m,intptr_t len,unsigned char out[32]){
 /* ECDSA sign: sig = r||s (64 bytes). Random nonce via rejection sampling. */
 int rktcrypto_p256_ecdsa_sign(unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char priv[32]){
   unsigned char digest[32]; u64 z[4],d[4],knum[4],r_[4],s_[4],tmp[4];
-  jac B,R; int tries;
+  jac R; int tries;
   if(!inited)p256_init();
   sha256(msg,msglen,digest);
   bytes_to_bn(z,digest);
   if(bn_geq(z,N)) bn_sub(z,z,N);
   bytes_to_bn(d,priv);
-  base_point(&B);
   for(tries=0;tries<256;tries++){
     unsigned char kb[32]; u64 kmont[4],dmont[4],zmont[4],rmont[4],kinv[4];
     unsigned char xa[32],ya[32]; u64 rx[4];
     if(!rktcrypto_random_bytes(kb,0,32)) return 0;
     bytes_to_bn(knum,kb);
     if(fp_iszero(knum)||bn_geq(knum,N)) continue;
-    jac_scalarmult(&R,knum,&B);
+    jac_scalarmult_base(&R,knum);
     if(!jac_to_affine(xa,ya,&R)) continue;
     bytes_to_bn(rx,xa);
     if(bn_geq(rx,N)) bn_sub(rx,rx,N);
@@ -329,7 +376,7 @@ int rktcrypto_p256_ecdsa_sign(unsigned char sig[64],const unsigned char *msg,int
 int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char pub65[65]){
   unsigned char digest[32]; u64 z[4],r_[4],s_[4],w[4],u1[4],u2[4];
   u64 smont[4],winv[4],zmont[4],rmont[4],u1m[4],u2m[4];
-  jac B,Pub,A1,A2,R; u64 px[4],py[4]; unsigned char xa[32],ya[32]; u64 rx[4];
+  jac Pub,A1,A2,R; u64 px[4],py[4]; unsigned char xa[32],ya[32]; u64 rx[4];
   if(!inited)p256_init();
   if(pub65[0]!=4) return 0;
   bytes_to_bn(r_,sig); bytes_to_bn(s_,sig+32);
@@ -343,11 +390,10 @@ int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char 
   mont_mul(u1m,zmont,winv,&FN); mont_mul(u2m,rmont,winv,&FN);
   from_mont(u1,u1m,&FN); from_mont(u2,u2m,&FN); (void)w;
   /* R = u1*G + u2*Pub */
-  base_point(&B);
   bytes_to_bn(px,pub65+1); bytes_to_bn(py,pub65+33);
   to_mont(Pub.X,px,&FP); to_mont(Pub.Y,py,&FP);
   { u64 one[4]={1,0,0,0}; to_mont(Pub.Z,one,&FP); }
-  jac_scalarmult(&A1,u1,&B);
+  jac_scalarmult_base(&A1,u1);
   jac_scalarmult(&A2,u2,&Pub);
   jac_add(&R,&A1,&A2);
   if(!jac_to_affine(xa,ya,&R)) return 0;
