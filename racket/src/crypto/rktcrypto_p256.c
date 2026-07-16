@@ -63,11 +63,21 @@ mont_mul_portable(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
 }
 
 /* Route every field/scalar multiply to the fastest available backend.
-   AArch64: asmp-generated register-resident CIOS. Otherwise: portable C.
-   Same ABI, so mont_sqr and all point/inverse code are unchanged. */
+   AArch64/Apple: asmp-generated register-resident assembly -- the field
+   prime p (all point arithmetic) uses mont_mul_p256, whose Montgomery
+   reduction is pure shifts/subtracts (n0=1, Solinas limbs), 1.28x the
+   generic CIOS; the scalar order n keeps the generic mont_mul_asm. The ctx
+   pointer is a compile-time constant at essentially every call site, so the
+   dispatch branch folds away under inlining. Otherwise: portable C. */
+static mont_ctx FP, FN;   /* defined (initialised) in p256_init below */
 #if defined(__aarch64__) && defined(__APPLE__) && !defined(RKTCRYPTO_P256_NO_ASM)
 extern void mont_mul_asm(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
-#define mont_mul mont_mul_asm
+extern void mont_mul_p256(u64 r[4],const u64 a[4],const u64 b[4]);
+static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
+  if (ctx == &FP) mont_mul_p256(r,a,b);
+  else            mont_mul_asm(r,a,b,ctx);
+}
+#define mont_mul mont_mul_dispatch
 #else
 #define mont_mul mont_mul_portable
 #endif
@@ -147,7 +157,7 @@ static void bn_to_bytes(unsigned char s[32],const u64 a[4]){
 }
 
 /* ---- curve: y^2 = x^3 - 3x + b, Jacobian coords (X,Y,Z) ---- */
-static mont_ctx FP, FN;
+/* FP, FN declared above (before the mont_mul dispatch). */
 static u64 CURVE_B[4];       /* b in Montgomery (mod p) */
 static u64 GX[4],GY[4];      /* base point in Montgomery */
 static int inited=0;

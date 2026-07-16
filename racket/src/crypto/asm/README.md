@@ -22,12 +22,23 @@ So a fresh checkout builds with only a C toolchain; asmp is needed only to
 
 | kernel | source | generated | routed from |
 |--------|--------|-----------|-------------|
-| P-256 Montgomery multiply (CIOS) | `asm/mont_mul.asm` (via `asm/gen_montmul.py`) | `rktcrypto_p256_asm.S` | `mont_mul` in `rktcrypto_p256.c` (AArch64/Apple) |
+| generic Montgomery multiply (CIOS) | `asm/mont_mul.asm` (`asm/gen_montmul.py`) | `rktcrypto_p256_asm.S` | `mont_mul` dispatch (mod n) |
+| P-256 field multiply (specialised) | `asm/mont_mul_p256.asm` (`asm/gen_montmul_p256.py`) | `rktcrypto_p256_asm.S` | `mont_mul` dispatch (mod p) |
 
-`mont_mul_asm` is a drop-in for the C `mont_mul(r,a,b,ctx)` — same ABI, reads
-`ctx->m` / `ctx->n0`, so it serves both the field prime p and the group
-order n. Fully register-resident; ~2.2x the portable C, which lifts every
-P-256 operation (ecdh/sign/verify ~1.7x end-to-end).
+Both live in one committed `.S` (the two `.asm` sources are concatenated
+before assembling). `rktcrypto_p256.c`'s `mont_mul` dispatch picks by ctx:
+
+- `mont_mul_p256(r,a,b)` — **field prime p** (all point arithmetic). SOS:
+  full 4×4 product then a Montgomery reduction that is pure shifts/subtracts
+  (n0 = 1 for p, and p's Solinas limbs 2^64-1 / 2^32-1 / 2^64-2^32+1 let each
+  `u*p` be shift-based, freeing the multiply ports for the product). 2.73x
+  the C, 1.28x the generic asm.
+- `mont_mul_asm(r,a,b,ctx)` — **group order n** (scalar ops). Generic CIOS
+  reading ctx->m/ctx->n0. 2.1x the C.
+
+The ctx pointer is a compile-time constant at essentially every call, so the
+dispatch branch folds away under inlining. End-to-end this lifts P-256
+ecdh/sign/verify ~1.9x over portable C.
 
 ## Regenerating a kernel
 
