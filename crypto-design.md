@@ -853,12 +853,22 @@ x86 AVX2 SHA-512/Keccak 与纯 Racket TLS（M6）仍属后续。
 - **Ed25519 变基宽 4 窗口**（`ge_scalarmult_win`）：verify 的 h·A 项。加法律
   完备→投影表无需仿射归一；verify 全公开数据故直接索引（免扫表）。对拍
   20000/0。**verify 17242→20291（本轮累计 0.44→0.73×）**。
+- **P-256 域求逆加法链**（`fp_inv`，cb492a8d67）：通用 Fermat mont_inv（256
+  平方 + ~128 乘逐位过 p-2）→p-2 加法链（~277 平方 + 13 乘）。p-2=[32 ones]
+  [31 z][1][96 z][94 ones][0][1]，94-ones 段拆 32+32+30 **复用 x32**（避免
+  建专用 x94 白费 ~60 平方）。所有域求逆（jac_to_affine/affine_normalize/
+  batch_affine）。对拍 mont_inv 20000/0，微基准 1.30×。
+- **P-256 标量域窗口求逆**（`scn_inv`，7951b41b19）：k^-1/s^-1（mod n）。n 无
+  短加法链结构→宽 4 窗口幂（定指数 n-2，15 预算 + 64 窗乘，~128→79 乘）。窗位
+  来自公开 n-2 非秘密 base→常量时间。对拍 20000/0，微基准 1.26×。ecdh 不变。
 
-四项均 `-Wall` 干净、内建 KAT 自检 `#t`。参考实现（`jac_scalarmult` /
-`ge_scalarmult`）降级为 selftest oracle，分别 `P256_SELFTEST` /
-`ED25519_SELFTEST` 守卫，生产不编译。
+六项均 `-Wall` 干净、内建 KAT 自检 `#t`。参考实现（`jac_scalarmult` /
+`ge_scalarmult` / `mont_inv`）降级为 selftest oracle，`P256_SELFTEST` /
+`ED25519_SELFTEST` 守卫，生产不编译。P-256 本轮累计 ecdh~6160→9000(1.46×)、
+verify 4733→6274(1.32×)。**可移植 C 算法侧至此触顶**（预算表/窗口、SIMD 加宽、
+加法链/窗口求逆全落地）。
 
-**剩余缺口属汇编层（plan #5）**：P-256（0.16-0.19×，通用 Montgomery 乘 vs
+**剩余缺口属汇编层（plan #5）**：P-256（~0.2×，通用 Montgomery 乘 vs
 OpenSSL Solinas+手调 asm——曾试专用约简 0% 增益，u128 乘已够快）、AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
 与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
