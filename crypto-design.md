@@ -987,6 +987,17 @@ verify 0.18→0.71×（各 ~3.9-4.6×）**。**域乘已追平 OpenSSL**(38.1 vs
 我方 C 内存传参 add/sub 串行 ~49cyc)。到 1.0× 需寄存器传参 asm point_double 或惰性约简
 (P-256 近 2^256 须 5 字松弛值)，寄存器压敏感、大工程。
 
+**asmp wideargs ABI + 寄存器传参 point_double 实验**（asmp 81b3f28）：用户令加
+asmp 性能特性至持平。asmp 默认 .call ABI 只 8 GPR 参数槽，域乘 8入4出=12槽超限→
+**加 wideargs ABI**（x0-x13 参数、x0-x3 返回、leaf 风格、限 caller-saved 以保 C ABI
+一致）。写寄存器传参 mont_mul_p256_rr + jac_double_asm（内联 add/sub）。踩坑：.call
+的 caller 须 `.save all`（保存用到的 callee-saved，否则 clobber lr/x19 崩溃）。**结论：
+managed .call 打不过 clang C**——asmp 在每个 .call 处溢出所有活 vreg（同样内存流量、
+无 forward-load）：jac_double_asm 223 vs C 207 vs OpenSSL 165。到 165 需**手排度 naked
+asm**（逐指令镜像 OpenSSL 的 forward-load 调度，clang 都达不到），大工程、近抄写。
+**P-256 域算术(mul/sqr/add/sub)已与 OpenSSL 逐位持平，端到端 0.72×；点运算级持平的
+唯一路径是手排度 naked asm point_double。**
+
 **其余缺口（plan #5 续）**：P-256（现 ~0.65-0.71×，域乘已追平，剩点运算 overlap）、
 AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
