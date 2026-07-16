@@ -903,11 +903,26 @@ caller-saved FP 寄存器 d16-d20 而非栈，fmov 比 stack 便宜），**2.2×
   p256 verify  ~6200 -> 10402 ops/s (0.18x -> 0.31x OpenSSL)
 ```
 
-后续汇编杠杆：mont_mul 更紧的进位链/消 fmov 溢出、mont_sqr 专用（省一半偏
-积）、P-256 专用 Solinas 约简（省约简乘）、AES-GCM AES/PMULL 端口调度、
-aarch64-linux GNU 变体。
+**专用域乘/平方（4c764e3200 + d8274fc375）**——用户要求 P-256 对齐并尝试超越：
+- **mont_mul_p256**（专用 mod-p）：n0=-p^-1 mod 2^64 = **1**，p 的 Solinas limbs
+  使每个约简字 u*p 用 lsl/lsr/subs 实现（无乘），乘法端口让给 schoolbook。SOS。
+  **2.73×C、1.28× 通用 CIOS（78 vs 61 vs 28 Mmul/s）**。对拍 mod p 0/1000000
+  （含 (p-1)^2）。
+- **mont_sqr_p256**：对称积省半偏积乘，共用移位约简。1.14× mont_mul(a,a)。对拍 0/1000000。
+- C `mont_mul` 按 ctx 派发：&FP→mont_mul_p256、&FN→通用；ctx 恒编译期常量→分支折叠。
+  工具经验：asmp 标量移位立即数用 `ubfm Xd,Xn,#immr,#imms`（lsl#s=#(64-s),#(63-s)）。
 
-**其余缺口（plan #5 续）**：P-256（现 ~0.3×，仍可经更紧汇编/Solinas 推进）、
+```
+  p256 ecdh    14943 -> 17359 ops/s (0.34x -> 0.39x OpenSSL)
+  p256 sign    28914 -> 32593 ops/s (0.29x -> 0.32x OpenSSL)
+  p256 verify  10402 -> 11989 ops/s (0.31x -> 0.36x OpenSSL)
+```
+
+**字段级汇编至此触顶**（本 session P-256 累计 ecdh 2.8×/sign 6×/verify 4×）。到
+OpenSSL ecp_nistz256（~0.4×→1.0×）的剩余差距在**点运算级汇编**：jac_double/
+mixed_add 整体 asm、坐标+中间量全程寄存器驻留、延迟约简、消 load/store——大工程。
+
+**其余缺口（plan #5 续）**：P-256（现 ~0.35×，进一步需点运算级 asm）、
 AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
 与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
