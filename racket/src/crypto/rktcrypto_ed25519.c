@@ -134,7 +134,10 @@ static void ge_add(ge *r,const ge *p,const ge *q,const fe d2){
   fe_mul(r->X,e,f); fe_mul(r->Y,g,h); fe_mul(r->T,e,h); fe_mul(r->Z,f,g);
 }
 
-/* r = s * p, s 32-byte little-endian scalar. Constant-time in s. */
+#ifdef ED25519_SELFTEST
+/* Reference bit-by-bit double-and-add. Superseded in production by the
+   fixed-base comb and the variable-base window; kept as the oracle the
+   offline selftest checks those against. */
 static void ge_scalarmult(ge *r,const unsigned char s[32],const ge *p,const fe d2){
   int i;
   ge_identity(r);
@@ -147,6 +150,7 @@ static void ge_scalarmult(ge *r,const unsigned char s[32],const ge *p,const fe d
     *r=t;
   }
 }
+#endif
 
 /* Fixed-base comb for s*B (width 4): ed_comb[I] = sum over set bits i of I
    of 2^(64i)*B, built once from the base point. Cuts a base-point scalar
@@ -183,6 +187,23 @@ static void ge_scalarmult_base(ge *r,const unsigned char s[32],const fe d2){
     sel=ed_comb[0];
     for(idx=1;idx<16;idx++) ge_cmov(&sel,&ed_comb[idx],(uint64_t)(idx==(int)I));
     ge_add(r,r,&sel,d2);                              /* + selected multiple */
+  }
+}
+
+/* Variable-base s*P via a width-4 window (verification only, all public
+   data -- direct table indexing, no constant-time scan). Builds T[i]=i*P
+   for i=0..15 and runs 64 nibbles of 4 doublings + 1 add. The complete
+   addition law means the projective table needs no affine normalization.
+   Bit-exact with ge_scalarmult. */
+static void ge_scalarmult_win(ge *r,const unsigned char s[32],const ge *p,const fe d2){
+  ge T[16]; int i,w;
+  ge_identity(&T[0]); T[1]=*p;
+  for(i=2;i<16;i++) ge_add(&T[i],&T[i-1],p,d2);
+  ge_identity(r);
+  for(w=63;w>=0;w--){
+    unsigned digit=(s[w>>1]>>((w&1)*4))&0xF;
+    ge_add(r,r,r,d2); ge_add(r,r,r,d2); ge_add(r,r,r,d2); ge_add(r,r,r,d2);
+    ge_add(r,r,&T[digit],d2);
   }
 }
 
@@ -501,7 +522,7 @@ int rktcrypto_ed25519_verify(const unsigned char sig[64],
   sha512_3(sig,32,pk,32,msg,msglen,h);
   sc_reduce(h);
   ge_scalarmult_base(&sB,sig+32,d2); (void)B;
-  ge_scalarmult(&hA,h,&A,d2);
+  ge_scalarmult_win(&hA,h,&A,d2);
   neg=hA; fe_neg(neg.X,hA.X); fe_neg(neg.T,hA.T);
   ge_add(&sBmhA,&sB,&neg,d2);
   ge_tobytes(rcheck,&sBmhA);
