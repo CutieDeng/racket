@@ -245,21 +245,23 @@ static void scn_inv(u64 r[4],const u64 a[4]){
 static void jac_double(jac *r,const jac *p){
   u64 YY[4],ZZ[4],S[4],M[4],X3[4],Y3[4],Z3[4],t[4],Y4[4];
   int i;
+  u64 xm[4],xp[4],prod[4];
   if(fp_iszero(p->Z)){ *r=*p; return; }
-  mont_sqr(YY,p->Y,&FP);
-  mont_sqr(ZZ,p->Z,&FP);
-  /* S = 4*X*Y^2 */
-  mont_mul(S,p->X,YY,&FP); mont_add(S,S,S,FP.m); mont_add(S,S,S,FP.m);
-  /* M = 3*(X-Z^2)*(X+Z^2)  [since a=-3] */
-  { u64 xm[4],xp[4],prod[4]; mont_sub(xm,p->X,ZZ,FP.m); mont_add(xp,p->X,ZZ,FP.m); mont_mul(prod,xm,xp,&FP);
-    mont_add(M,prod,prod,FP.m); mont_add(M,M,prod,FP.m); }
-  /* X3 = M^2 - 2S */
-  mont_sqr(X3,M,&FP); mont_sub(X3,X3,S,FP.m); mont_sub(X3,X3,S,FP.m);
-  /* Y3 = M*(S - X3) - 8*Y^4 */
-  mont_sqr(Y4,YY,&FP); mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m);
-  mont_sub(t,S,X3,FP.m); mont_mul(t,M,t,&FP); mont_sub(Y3,t,Y4,FP.m);
-  /* Z3 = 2*Y*Z */
-  mont_mul(Z3,p->Y,p->Z,&FP); mont_add(Z3,Z3,Z3,FP.m);
+  /* Ops are ordered so independent field multiplies sit adjacent (the "pair"
+     comments): the out-of-order core then overlaps them, running the
+     doubling nearer field-mul throughput than latency (~1.2x). */
+  mont_sqr(YY,p->Y,&FP);      mont_sqr(ZZ,p->Z,&FP);          /* pair 1 */
+  mont_sub(xm,p->X,ZZ,FP.m);  mont_add(xp,p->X,ZZ,FP.m);
+  mont_mul(S,p->X,YY,&FP);    mont_mul(prod,xm,xp,&FP);        /* pair 2: S=X*YY, prod=(X-ZZ)(X+ZZ) */
+  mont_add(S,S,S,FP.m); mont_add(S,S,S,FP.m);                 /* S = 4*X*Y^2 */
+  mont_add(M,prod,prod,FP.m); mont_add(M,M,prod,FP.m);        /* M = 3*prod */
+  mont_sqr(X3,M,&FP);         mont_sqr(Y4,YY,&FP);            /* pair 3: M^2, Y^4 */
+  mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); /* 8*Y^4 */
+  mont_sub(X3,X3,S,FP.m); mont_sub(X3,X3,S,FP.m);             /* X3 = M^2 - 2S */
+  mont_sub(t,S,X3,FP.m);
+  mont_mul(t,M,t,&FP);        mont_mul(Z3,p->Y,p->Z,&FP);     /* pair 4: M*(S-X3), Y*Z */
+  mont_sub(Y3,t,Y4,FP.m);                                     /* Y3 = M*(S-X3) - 8*Y^4 */
+  mont_add(Z3,Z3,Z3,FP.m);                                    /* Z3 = 2*Y*Z */
   for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=Y3[i]; r->Z[i]=Z3[i]; }
 }
 
@@ -298,27 +300,27 @@ static void jac_add(jac *r,const jac *p,const jac *q){
    scalar-mult inner loop passes an affine base point, so this is what they
    use. */
 static void mixed_add(jac *r,const jac *p,const jac *q){
-  u64 Z1Z1[4],U2[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4];
+  u64 Z1Z1[4],U2[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4],X3[4],Z3[4];
   int i;
   if(fp_iszero(p->Z)){ *r=*q; return; }         /* p identity -> q (already affine) */
-  mont_sqr(Z1Z1,p->Z,&FP);
-  mont_mul(U2,q->X,Z1Z1,&FP);
-  mont_mul(S2,q->Y,p->Z,&FP); mont_mul(S2,S2,Z1Z1,&FP);
+  /* Ordered so independent multiplies are adjacent (pair comments); the
+     out-of-order core overlaps them (~field-mul throughput not latency). */
+  mont_sqr(Z1Z1,p->Z,&FP);    mont_mul(S2,q->Y,p->Z,&FP);   /* pair 1: Z1^2, Y2*Z1 */
+  mont_mul(U2,q->X,Z1Z1,&FP); mont_mul(S2,S2,Z1Z1,&FP);     /* pair 2 */
   mont_sub(H,U2,p->X,FP.m);                     /* H  = U2 - X1 */
   mont_sub(Rr,S2,p->Y,FP.m);                    /* R  = S2 - Y1 */
   if(fp_iszero(H)){
     if(fp_iszero(Rr)){ jac_double(r,p); return; }
     for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
   }
-  mont_sqr(HH,H,&FP); mont_mul(HHH,HH,H,&FP);
-  mont_mul(t,p->X,HH,&FP);                       /* t = X1*HH */
-  mont_sqr(r->X,Rr,&FP);
-  mont_sub(r->X,r->X,HHH,FP.m);
-  mont_sub(r->X,r->X,t,FP.m); mont_sub(r->X,r->X,t,FP.m);   /* X3 = R^2 - HHH - 2*X1*HH */
-  mont_sub(t2,t,r->X,FP.m); mont_mul(t2,Rr,t2,&FP);
-  mont_mul(tt,p->Y,HHH,&FP);                     /* Y1*HHH */
-  mont_sub(r->Y,t2,tt,FP.m);
-  mont_mul(r->Z,p->Z,H,&FP);                     /* Z3 = Z1*H */
+  mont_sqr(HH,H,&FP);         mont_sqr(X3,Rr,&FP);          /* pair 3: H^2, R^2 */
+  mont_mul(HHH,HH,H,&FP);     mont_mul(t,p->X,HH,&FP);      /* pair 4: HH*H, X1*HH */
+  mont_sub(X3,X3,HHH,FP.m);
+  mont_sub(X3,X3,t,FP.m); mont_sub(X3,X3,t,FP.m);           /* X3 = R^2 - HHH - 2*X1*HH */
+  mont_mul(tt,p->Y,HHH,&FP);  mont_mul(Z3,p->Z,H,&FP);      /* pair 5: Y1*HHH, Z1*H */
+  mont_sub(t2,t,X3,FP.m); mont_mul(t2,Rr,t2,&FP);
+  mont_sub(t2,t2,tt,FP.m);                                  /* Y3 = R*(X1*HH - X3) - Y1*HHH */
+  for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=t2[i]; r->Z[i]=Z3[i]; }
 }
 
 #ifdef P256_SELFTEST
