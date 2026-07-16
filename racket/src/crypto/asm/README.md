@@ -23,22 +23,30 @@ So a fresh checkout builds with only a C toolchain; asmp is needed only to
 | kernel | source | generated | routed from |
 |--------|--------|-----------|-------------|
 | generic Montgomery multiply (CIOS) | `asm/mont_mul.asm` (`asm/gen_montmul.py`) | `rktcrypto_p256_asm.S` | `mont_mul` dispatch (mod n) |
-| P-256 field multiply (specialised) | `asm/mont_mul_p256.asm` (`asm/gen_montmul_p256.py`) | `rktcrypto_p256_asm.S` | `mont_mul` dispatch (mod p) |
+| P-256 field multiply (interleaved CIOS) | `asm/mont_mul_p256.asm` (`asm/gen_montmul_p256.py`) | `rktcrypto_p256_asm.S` | `mont_mul` dispatch (mod p) |
 
-Both live in one committed `.S` (the two `.asm` sources are concatenated
-before assembling). `rktcrypto_p256.c`'s `mont_mul` dispatch picks by ctx:
+Both live in one committed `.S` (the `.asm` sources are concatenated before
+assembling). `rktcrypto_p256.c`'s `mont_mul` dispatch picks by ctx:
 
-- `mont_mul_p256(r,a,b)` — **field prime p** (all point arithmetic). SOS:
-  full 4×4 product then a Montgomery reduction that is pure shifts/subtracts
-  (n0 = 1 for p, and p's Solinas limbs 2^64-1 / 2^32-1 / 2^64-2^32+1 let each
-  `u*p` be shift-based, freeing the multiply ports for the product). 2.73x
-  the C, 1.28x the generic asm.
+- `mont_mul_p256(r,a,b)` — **field prime p** (all point arithmetic).
+  Interleaved CIOS (OpenSSL ecp_nistz256-armv8 structure): 4 iterations of
+  {multiply-accumulate one word of b, then reduce}, keeping the accumulator
+  at 6 words. Because n0 = 1 for p and p has Solinas limbs, each reduction is
+  9 instructions (lsl/lsr + subs/sbc + 5 adds) — no reduction multiply.
+  ~147 instructions vs an SOS full-product's ~235; **170 Mmul/s throughput
+  (independent muls) vs SOS 97**, the number point arithmetic actually hits.
+  Squaring routes here too (mont_mul_p256(a,a) = 150 Msq/s, beats a separate
+  SOS symmetric squarer).
 - `mont_mul_asm(r,a,b,ctx)` — **group order n** (scalar ops). Generic CIOS
   reading ctx->m/ctx->n0. 2.1x the C.
 
-The ctx pointer is a compile-time constant at essentially every call, so the
-dispatch branch folds away under inlining. End-to-end this lifts P-256
-ecdh/sign/verify ~1.9x over portable C.
+Key lesson (measured): on the wide OoO M1 core the field multiply is
+*latency-bound* on the serial carry chain when muls are chained, but point
+arithmetic runs *independent* muls, so **throughput** is what matters — and
+the interleaved CIOS's lower instruction count wins there even though its
+chained-latency is similar to SOS. The ctx pointer is a compile-time
+constant at essentially every call, so the dispatch branch folds under
+inlining.
 
 ## Regenerating a kernel
 
