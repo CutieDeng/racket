@@ -148,6 +148,44 @@ static void ge_scalarmult(ge *r,const unsigned char s[32],const ge *p,const fe d
   }
 }
 
+/* Fixed-base comb for s*B (width 4): ed_comb[I] = sum over set bits i of I
+   of 2^(64i)*B, built once from the base point. Cuts a base-point scalar
+   mult from 256 doublings + 256 adds to 64 doublings + 64 table-adds.
+   Because the twisted-Edwards (a=-1) addition law here is complete there
+   are no exceptional cases; the table entry is chosen with a full cmov scan
+   (no secret-dependent memory access) and I=0 selects the identity. */
+static void ge_base(ge *B);
+static ge ed_comb[16];
+static int ed_comb_inited=0;
+static void ge_cmov(ge *r,const ge *a,uint64_t b){
+  fe_cmov(r->X,a->X,b);fe_cmov(r->Y,a->Y,b);fe_cmov(r->Z,a->Z,b);fe_cmov(r->T,a->T,b);
+}
+static void ed_comb_init(const fe d2){
+  ge Pw[4],acc; int I,i,j,first;
+  ge_base(&Pw[0]);
+  for(i=1;i<4;i++){ Pw[i]=Pw[i-1]; for(j=0;j<64;j++) ge_add(&Pw[i],&Pw[i],&Pw[i],d2); }
+  ge_identity(&ed_comb[0]);
+  for(I=1;I<16;I++){
+    first=1;
+    for(i=0;i<4;i++) if(I&(1<<i)){ if(first){acc=Pw[i];first=0;} else ge_add(&acc,&acc,&Pw[i],d2); }
+    ed_comb[I]=acc;
+  }
+  ed_comb_inited=1;
+}
+static void ge_scalarmult_base(ge *r,const unsigned char s[32],const fe d2){
+  uint64_t k[4]; int j,idx; ge sel;
+  if(!ed_comb_inited) ed_comb_init(d2);
+  k[0]=load64_le(s); k[1]=load64_le(s+8); k[2]=load64_le(s+16); k[3]=load64_le(s+24);
+  ge_identity(r);
+  for(j=63;j>=0;j--){
+    uint64_t I=((k[0]>>j)&1)|(((k[1]>>j)&1)<<1)|(((k[2]>>j)&1)<<2)|(((k[3]>>j)&1)<<3);
+    ge_add(r,r,r,d2);                                 /* double */
+    sel=ed_comb[0];
+    for(idx=1;idx<16;idx++) ge_cmov(&sel,&ed_comb[idx],(uint64_t)(idx==(int)I));
+    ge_add(r,r,&sel,d2);                              /* + selected multiple */
+  }
+}
+
 static void ge_tobytes(unsigned char *s,const ge *p){
   fe recip,x,y;
   fe_invert(recip,p->Z);
@@ -428,8 +466,8 @@ int rktcrypto_ed25519_pubkey(unsigned char pk[32],const unsigned char seed[32]){
   unsigned char h[64]; ge A,B; fe d2;
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
-  curve_d2(d2); ge_base(&B);
-  ge_scalarmult(&A,h,&B,d2);
+  curve_d2(d2); (void)B;
+  ge_scalarmult_base(&A,h,d2);
   ge_tobytes(pk,&A);
   return 1;
 }
@@ -441,11 +479,11 @@ int rktcrypto_ed25519_sign(unsigned char sig[64],
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
   memcpy(a,h,32);
-  curve_d2(d2); ge_base(&B);
-  ge_scalarmult(&A,a,&B,d2); ge_tobytes(pk,&A);
+  curve_d2(d2); (void)B;
+  ge_scalarmult_base(&A,a,d2); ge_tobytes(pk,&A);
   sha512_3(h+32,32,msg,msglen,0,0,rr);
   sc_reduce(rr);
-  ge_scalarmult(&R,rr,&B,d2); ge_tobytes(sig,&R);
+  ge_scalarmult_base(&R,rr,d2); ge_tobytes(sig,&R);
   sha512_3(sig,32,pk,32,msg,msglen,k);
   sc_reduce(k);
   sc_muladd(sig+32,k,a,rr);
@@ -462,7 +500,7 @@ int rktcrypto_ed25519_verify(const unsigned char sig[64],
   if(!ge_frombytes(&R,sig)) return 0;
   sha512_3(sig,32,pk,32,msg,msglen,h);
   sc_reduce(h);
-  ge_scalarmult(&sB,sig+32,&B,d2);
+  ge_scalarmult_base(&sB,sig+32,d2); (void)B;
   ge_scalarmult(&hA,h,&A,d2);
   neg=hA; fe_neg(neg.X,hA.X); fe_neg(neg.T,hA.T);
   ge_add(&sBmhA,&sB,&neg,d2);
