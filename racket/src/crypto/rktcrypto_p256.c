@@ -206,8 +206,8 @@ static void jac_add(jac *r,const jac *p,const jac *q){
 /* Mixed Jacobian + affine addition: q must be affine (q->Z == mont(1)).
    Identical result to jac_add for such q, but skips the ~7 field
    multiplications by 1 that a full Jacobian add would waste on Z2. Every
-   jac_scalarmult caller passes an affine base point, so this is what the
-   inner loop uses. */
+   scalar-mult inner loop passes an affine base point, so this is what they
+   use. */
 static void mixed_add(jac *r,const jac *p,const jac *q){
   u64 Z1Z1[4],U2[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4];
   int i;
@@ -232,6 +232,10 @@ static void mixed_add(jac *r,const jac *p,const jac *q){
   mont_mul(r->Z,p->Z,H,&FP);                     /* Z3 = Z1*H */
 }
 
+#ifdef P256_SELFTEST
+/* Reference bit-by-bit double-and-add: 256 doublings + 256 masked mixed-adds.
+   Superseded in production by the width-4 window below; retained as the
+   correctness oracle the selftest compares against. */
 static void jac_scalarmult(jac *r,const u64 k[4],const jac *p){
   jac acc; int i; int bit;
   for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
@@ -241,6 +245,55 @@ static void jac_scalarmult(jac *r,const u64 k[4],const jac *p){
     mixed_add(&s,&t,p);
     bit=(k[i>>6]>>(i&63))&1;
     acc=t; fp_cmov(acc.X,s.X,bit);fp_cmov(acc.Y,s.Y,bit);fp_cmov(acc.Z,s.Z,bit);
+  }
+  *r=acc;
+}
+#endif
+
+/* Batch Jacobian->affine (Z = mont(1)) for pts[0..n-1] using Montgomery's
+   trick: one field inversion for the whole array instead of one per point.
+   All Z must be nonzero (true for small multiples i*P of a curve point). */
+static void batch_affine(jac *pts,int n){
+  u64 prefix[16][4], acc[4], inv[4], zi[4], zi2[4], zi3[4];
+  u64 one[4]={1,0,0,0}, montone[4]; int i,j;
+  to_mont(montone,one,&FP);
+  for(j=0;j<4;j++){ acc[j]=pts[0].Z[j]; prefix[0][j]=pts[0].Z[j]; }
+  for(i=1;i<n;i++){ mont_mul(acc,acc,pts[i].Z,&FP); for(j=0;j<4;j++) prefix[i][j]=acc[j]; }
+  mont_inv(inv,acc,&FP,FP.m);                    /* inv = (prod Z_i)^-1 */
+  for(i=n-1;i>=0;i--){
+    if(i>0) mont_mul(zi,inv,prefix[i-1],&FP);    /* zi = Z_i^-1 */
+    else    for(j=0;j<4;j++) zi[j]=inv[j];
+    mont_mul(inv,inv,pts[i].Z,&FP);              /* strip Z_i for next round */
+    mont_sqr(zi2,zi,&FP); mont_mul(zi3,zi2,zi,&FP);
+    mont_mul(pts[i].X,pts[i].X,zi2,&FP);
+    mont_mul(pts[i].Y,pts[i].Y,zi3,&FP);
+    for(j=0;j<4;j++) pts[i].Z[j]=montone[j];
+  }
+}
+
+/* Variable-base k*P via a width-4 fixed window. Builds T[i]=i*P for
+   i=1..15, batch-normalizes to affine, then runs 64 windows of 4 doublings
+   plus one constant-time-selected masked add. Bit-exact with jac_scalarmult.
+   The point P is public in every caller (peer key / signature term); only
+   the per-window digit is secret, so it is handled constant-time (cmov scan
+   over the table + mask of the zero digit), mirroring the comb. */
+static void jac_scalarmult_win(jac *r,const u64 k[4],const jac *p){
+  jac T[16], acc, sel, tmp; int i,w,idx;
+  for(i=0;i<4;i++){T[0].X[i]=0;T[0].Y[i]=0;T[0].Z[i]=0;} T[0].X[0]=1;T[0].Y[0]=1; /* O */
+  T[1]=*p;
+  jac_double(&T[2],p);
+  for(i=3;i<16;i++) jac_add(&T[i],&T[i-1],p);    /* branchy build: P is public */
+  batch_affine(&T[1],15);                         /* T[1..15] -> affine */
+  for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
+  for(w=63;w>=0;w--){
+    int shift=w*4;                                /* multiple of 4 -> digit within one limb */
+    u64 digit=(k[shift>>6]>>(shift&63))&0xF;
+    jac_double(&acc,&acc); jac_double(&acc,&acc);
+    jac_double(&acc,&acc); jac_double(&acc,&acc);
+    sel=T[1];
+    for(idx=1;idx<16;idx++){ u64 m=(idx==(int)digit); fp_cmov(sel.X,T[idx].X,m);fp_cmov(sel.Y,T[idx].Y,m);fp_cmov(sel.Z,T[idx].Z,m); }
+    mixed_add(&tmp,&acc,&sel);
+    { u64 m=(digit!=0); fp_cmov(acc.X,tmp.X,m);fp_cmov(acc.Y,tmp.Y,m);fp_cmov(acc.Z,tmp.Z,m); }
   }
   *r=acc;
 }
@@ -317,7 +370,7 @@ int rktcrypto_p256_ecdh(unsigned char out[32],const unsigned char scalar[32],con
   bytes_to_bn(px,point65+1); bytes_to_bn(py,point65+33);
   to_mont(P_.X,px,&FP); to_mont(P_.Y,py,&FP);
   { u64 one[4]={1,0,0,0}; to_mont(P_.Z,one,&FP); }
-  jac_scalarmult(&R,k,&P_);
+  jac_scalarmult_win(&R,k,&P_);
   if(!jac_to_affine(xa,ya,&R)) return 0;
   memcpy(out,xa,32);
   return 1;
@@ -394,7 +447,7 @@ int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char 
   to_mont(Pub.X,px,&FP); to_mont(Pub.Y,py,&FP);
   { u64 one[4]={1,0,0,0}; to_mont(Pub.Z,one,&FP); }
   jac_scalarmult_base(&A1,u1);
-  jac_scalarmult(&A2,u2,&Pub);
+  jac_scalarmult_win(&A2,u2,&Pub);
   jac_add(&R,&A1,&A2);
   if(!jac_to_affine(xa,ya,&R)) return 0;
   bytes_to_bn(rx,xa);
