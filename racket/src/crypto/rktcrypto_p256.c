@@ -73,11 +73,13 @@ static mont_ctx FP, FN;   /* defined (initialised) in p256_init below */
 #if defined(__aarch64__) && defined(__APPLE__) && !defined(RKTCRYPTO_P256_NO_ASM)
 extern void mont_mul_asm(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
 extern void mont_mul_p256(u64 r[4],const u64 a[4],const u64 b[4]);
+extern void mont_sqr_p256(u64 r[4],const u64 a[4]);
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
   if (ctx == &FP) mont_mul_p256(r,a,b);
   else            mont_mul_asm(r,a,b,ctx);
 }
 #define mont_mul mont_mul_dispatch
+#define RKTCRYPTO_P256_HAVE_ASM 1
 #else
 #define mont_mul mont_mul_portable
 #endif
@@ -94,7 +96,12 @@ static void mont_sub(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
   bn_cadd(t,m,borrow);
   for(int i=0;i<4;i++)r[i]=t[i];
 }
-static void mont_sqr(u64 r[4],const u64 a[4],const mont_ctx *ctx){ mont_mul(r,a,a,ctx); }
+static void mont_sqr(u64 r[4],const u64 a[4],const mont_ctx *ctx){
+#ifdef RKTCRYPTO_P256_HAVE_ASM
+  if (ctx == &FP) { mont_sqr_p256(r,a); return; }   /* dedicated field squarer */
+#endif
+  mont_mul(r,a,a,ctx);
+}
 
 /* n0 = -m^-1 mod 2^64 via Newton iteration. */
 static u64 compute_n0(u64 m0){
