@@ -153,6 +153,40 @@ static int comb_inited = 0;
 static int fp_iszero(const u64 a[4]){ return (a[0]|a[1]|a[2]|a[3])==0; }
 static void fp_cmov(u64 r[4],const u64 a[4],u64 b){ u64 mask=0-b; int i; for(i=0;i<4;i++)r[i]^=mask&(r[i]^a[i]); }
 
+/* Field inverse mod p via a p-2 addition chain (~13 mults + 255 squarings),
+   replacing the generic Fermat mont_inv (~128 mults + 256 squarings) for the
+   field prime. p = 2^256-2^224+2^192+2^96-1, so p-2 (MSB->LSB) is
+   [32 ones][31 zeros][1][96 zeros][94 ones][0][1]; the one-runs assemble from
+   (2^k-1)-ones blocks x_k. Montgomery domain. Bit-exact with mont_inv(.,&FP).*/
+static void fp_sqrn(u64 r[4],const u64 a[4],int n){
+  int i; u64 t[4]; for(i=0;i<4;i++)t[i]=a[i];
+  while(n-->0) mont_sqr(t,t,&FP);
+  for(i=0;i<4;i++)r[i]=t[i];
+}
+static void fp_inv(u64 r[4],const u64 a[4]){
+  u64 x1[4],x2[4],x4[4],x6[4],x8[4],x14[4],x16[4],x30[4],x32[4],t[4];
+  int i;
+  for(i=0;i<4;i++)x1[i]=a[i];
+  fp_sqrn(t,x1,1);  mont_mul(x2,t,x1,&FP);    /* 2^2-1  */
+  fp_sqrn(t,x2,2);  mont_mul(x4,t,x2,&FP);    /* 2^4-1  */
+  fp_sqrn(t,x4,2);  mont_mul(x6,t,x2,&FP);    /* 2^6-1  = 4+2 */
+  fp_sqrn(t,x4,4);  mont_mul(x8,t,x4,&FP);    /* 2^8-1  */
+  fp_sqrn(t,x8,6);  mont_mul(x14,t,x6,&FP);   /* 2^14-1 = 8+6 */
+  fp_sqrn(t,x8,8);  mont_mul(x16,t,x8,&FP);   /* 2^16-1 */
+  fp_sqrn(t,x16,14);mont_mul(x30,t,x14,&FP);  /* 2^30-1 = 16+14 */
+  fp_sqrn(t,x16,16);mont_mul(x32,t,x16,&FP);  /* 2^32-1 */
+  for(i=0;i<4;i++)t[i]=x32[i];                /* top 32 ones */
+  fp_sqrn(t,t,31);                            /* 31 zeros (bits 223..193) */
+  fp_sqrn(t,t,1);  mont_mul(t,t,x1,&FP);      /* bit 192 = 1 */
+  fp_sqrn(t,t,96);                            /* 96 zeros (bits 191..96) */
+  fp_sqrn(t,t,32); mont_mul(t,t,x32,&FP);     /* 94-ones run = 32 +      */
+  fp_sqrn(t,t,32); mont_mul(t,t,x32,&FP);     /*   32 +                  */
+  fp_sqrn(t,t,30); mont_mul(t,t,x30,&FP);     /*   30 (reusing x32/x30)  */
+  fp_sqrn(t,t,1);                             /* bit 1 = 0 */
+  fp_sqrn(t,t,1);  mont_mul(t,t,x1,&FP);      /* bit 0 = 1 */
+  for(i=0;i<4;i++)r[i]=t[i];
+}
+
 static void jac_double(jac *r,const jac *p){
   u64 YY[4],ZZ[4],S[4],M[4],X3[4],Y3[4],Z3[4],t[4],Y4[4];
   int i;
@@ -259,7 +293,7 @@ static void batch_affine(jac *pts,int n){
   to_mont(montone,one,&FP);
   for(j=0;j<4;j++){ acc[j]=pts[0].Z[j]; prefix[0][j]=pts[0].Z[j]; }
   for(i=1;i<n;i++){ mont_mul(acc,acc,pts[i].Z,&FP); for(j=0;j<4;j++) prefix[i][j]=acc[j]; }
-  mont_inv(inv,acc,&FP,FP.m);                    /* inv = (prod Z_i)^-1 */
+  fp_inv(inv,acc);                               /* inv = (prod Z_i)^-1 */
   for(i=n-1;i>=0;i--){
     if(i>0) mont_mul(zi,inv,prefix[i-1],&FP);    /* zi = Z_i^-1 */
     else    for(j=0;j<4;j++) zi[j]=inv[j];
@@ -302,7 +336,7 @@ static void jac_scalarmult_win(jac *r,const u64 k[4],const jac *p){
 static int jac_to_affine(unsigned char x[32],unsigned char y[32],const jac *p){
   u64 zinv[4],zinv2[4],zinv3[4],xa[4],ya[4],tmp[4];
   if(fp_iszero(p->Z)) return 0;
-  mont_inv(zinv,p->Z,&FP,FP.m);
+  fp_inv(zinv,p->Z);
   mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
   mont_mul(xa,p->X,zinv2,&FP); mont_mul(ya,p->Y,zinv3,&FP);
   from_mont(tmp,xa,&FP); bn_to_bytes(x,tmp);
@@ -318,7 +352,7 @@ static void base_point(jac *B){
 /* Jacobian -> affine (Montgomery coords, Z set to mont(1)). */
 static void affine_normalize(jac *out,const jac *p){
   u64 zinv[4],zinv2[4],zinv3[4];
-  mont_inv(zinv,p->Z,&FP,FP.m);
+  fp_inv(zinv,p->Z);
   mont_sqr(zinv2,zinv,&FP); mont_mul(zinv3,zinv2,zinv,&FP);
   mont_mul(out->X,p->X,zinv2,&FP); mont_mul(out->Y,p->Y,zinv3,&FP);
   { u64 one[4]={1,0,0,0}; to_mont(out->Z,one,&FP); }
