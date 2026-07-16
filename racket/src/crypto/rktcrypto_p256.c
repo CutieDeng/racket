@@ -256,19 +256,19 @@ static void jac_double(jac *r,const jac *p){
   int i;
   u64 xm[4],xp[4],prod[4];
   if(fp_iszero(p->Z)){ *r=*p; return; }
-  /* Ops are ordered so independent field multiplies sit adjacent (the "pair"
-     comments): the out-of-order core then overlaps them, running the
-     doubling nearer field-mul throughput than latency (~1.2x). */
-  fp_sqr(YY,p->Y);      fp_sqr(ZZ,p->Z);          /* pair 1 */
+  /* Ordered into 3-wide groups of independent field multiplies so the OoO
+     core keeps three in flight (2-way pairs left ILP unused). Each group's
+     multiplies depend only on earlier groups. */
+  fp_sqr(YY,p->Y);  fp_sqr(ZZ,p->Z);  fp_mul(Z3,p->Y,p->Z);   /* group 1: Y^2, Z^2, Y*Z */
   mont_sub(xm,p->X,ZZ,FP.m);  mont_add(xp,p->X,ZZ,FP.m);
-  fp_mul(S,p->X,YY);    fp_mul(prod,xm,xp);        /* pair 2: S=X*YY, prod=(X-ZZ)(X+ZZ) */
+  fp_mul(S,p->X,YY);  fp_sqr(Y4,YY);  fp_mul(prod,xm,xp);     /* group 2: X*YY, YY^2, (X-ZZ)(X+ZZ) */
   mont_add(S,S,S,FP.m); mont_add(S,S,S,FP.m);                 /* S = 4*X*Y^2 */
   mont_add(M,prod,prod,FP.m); mont_add(M,M,prod,FP.m);        /* M = 3*prod */
-  fp_sqr(X3,M);         fp_sqr(Y4,YY);            /* pair 3: M^2, Y^4 */
   mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); mont_add(Y4,Y4,Y4,FP.m); /* 8*Y^4 */
+  fp_sqr(X3,M);                                               /* X3 = M^2 (critical path) */
   mont_sub(X3,X3,S,FP.m); mont_sub(X3,X3,S,FP.m);             /* X3 = M^2 - 2S */
   mont_sub(t,S,X3,FP.m);
-  fp_mul(t,M,t);        fp_mul(Z3,p->Y,p->Z);     /* pair 4: M*(S-X3), Y*Z */
+  fp_mul(t,M,t);                                              /* M*(S-X3) (critical path) */
   mont_sub(Y3,t,Y4,FP.m);                                     /* Y3 = M*(S-X3) - 8*Y^4 */
   mont_add(Z3,Z3,Z3,FP.m);                                    /* Z3 = 2*Y*Z */
   for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=Y3[i]; r->Z[i]=Z3[i]; }
