@@ -31,10 +31,6 @@ static u64 bn_sub(u64 r[4],const u64 a[4],const u64 b[4]){
   for(i=0;i<4;i++){ u128 t=(u128)a[i]-b[i]-br; r[i]=(u64)t; br=(t>>64)&1; }
   return (u64)br;
 }
-static void bn_cadd(u64 r[4],const u64 m[4],u64 cond){
-  u128 c=0; u64 mask=0-cond; int i;
-  for(i=0;i<4;i++){ u128 t=(u128)r[i]+(m[i]&mask)+c; r[i]=(u64)t; c=t>>64; }
-}
 
 /* Montgomery multiply: r = a*b*R^-1 mod m.
 
@@ -89,17 +85,26 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
 #define fp_sqr(r,a)   mont_mul_portable((r),(a),(a),&FP)
 #endif
 
+/* Field add/sub mod m, written with carry intrinsics so the compiler emits
+   a tight adcs/sbcs + csel chain (~13 instr) rather than the ~45 the u128 +
+   bn_sub form produced -- the add/sub sit on the point-op critical path, so
+   this directly shortens jac_double/mixed_add. */
 static void mont_add(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
-  u128 c=0; int i; u64 t[4];
-  for(i=0;i<4;i++){ u128 s=(u128)a[i]+b[i]+c; t[i]=(u64)s; c=s>>64; }
-  u64 tmp[4]; u64 borrow=bn_sub(tmp,t,m);
-  u64 ge=(c!=0)|(borrow==0);
-  for(i=0;i<4;i++)r[i]=ge?tmp[i]:t[i];
+  unsigned long long c,br,t0,t1,t2,t3,s0,s1,s2,s3,ge;
+  t0=__builtin_addcll(a[0],b[0],0,&c);  t1=__builtin_addcll(a[1],b[1],c,&c);
+  t2=__builtin_addcll(a[2],b[2],c,&c);  t3=__builtin_addcll(a[3],b[3],c,&c);
+  s0=__builtin_subcll(t0,m[0],0,&br);   s1=__builtin_subcll(t1,m[1],br,&br);
+  s2=__builtin_subcll(t2,m[2],br,&br);  s3=__builtin_subcll(t3,m[3],br,&br);
+  ge = c | (br^1);                       /* carry-out OR (t >= m) */
+  r[0]=ge?s0:t0; r[1]=ge?s1:t1; r[2]=ge?s2:t2; r[3]=ge?s3:t3;
 }
 static void mont_sub(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
-  u64 t[4]; u64 borrow=bn_sub(t,a,b);
-  bn_cadd(t,m,borrow);
-  for(int i=0;i<4;i++)r[i]=t[i];
+  unsigned long long br,c,t0,t1,t2,t3,mask;
+  t0=__builtin_subcll(a[0],b[0],0,&br);  t1=__builtin_subcll(a[1],b[1],br,&br);
+  t2=__builtin_subcll(a[2],b[2],br,&br); t3=__builtin_subcll(a[3],b[3],br,&br);
+  mask=0-br;                             /* all-ones iff a<b */
+  r[0]=__builtin_addcll(t0,m[0]&mask,0,&c);  r[1]=__builtin_addcll(t1,m[1]&mask,c,&c);
+  r[2]=__builtin_addcll(t2,m[2]&mask,c,&c);  r[3]=__builtin_addcll(t3,m[3]&mask,c,&c);
 }
 /* Squaring uses the CIOS multiply: its interleaved reduction gives higher
    throughput than a separate SOS symmetric squarer on this core. */
