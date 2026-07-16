@@ -918,11 +918,36 @@ caller-saved FP 寄存器 d16-d20 而非栈，fmov 比 stack 便宜），**2.2×
   p256 verify  10402 -> 11989 ops/s (0.31x -> 0.36x OpenSSL)
 ```
 
-**字段级汇编至此触顶**（本 session P-256 累计 ecdh 2.8×/sign 6×/verify 4×）。到
-OpenSSL ecp_nistz256（~0.4×→1.0×）的剩余差距在**点运算级汇编**：jac_double/
-mixed_add 整体 asm、坐标+中间量全程寄存器驻留、延迟约简、消 load/store——大工程。
+**分析 OpenSSL + 交叉 CIOS/点运算级 ILP（bab..→560..）**——用户令拉取 OpenSSL
+vendor 分析。拉取 ecp_nistz256-armv8.pl 精读，关键发现：
+- OpenSSL 域乘是**交错 CIOS**（每乘一个 b 字立即约简，累加器仅 6 字，~95 指令），
+  非我的 SOS（全 8 字积后大约简，~235 指令）。约简每字 9 指令
+  （lsl/lsr+subs/sbc+5 adds，n0=1 无约简乘）。
+- OpenSSL **point_double 用子程序 bl、无延迟约简**——整个优势就在紧凑域乘。
+  ⇒ 之前判断"需点运算级 asm/延迟约简"是错的；只需把域乘做成交错 CIOS。
+- **重定 mont_mul_p256 为交错 CIOS**：147 指令。关键测量：宽 OoO M1 上域乘链式
+  是**延迟约束**(~57cyc)、独立乘是**吞吐约束**(~19cyc)；点运算跑独立乘，故看
+  **吞吐**——交错 CIOS 170 vs SOS 97 Mmul/s。平方走 mont_mul_p256(a,a)=150>SOS
+  squarer 97，删专用 squarer。通用 mod-n 亦改交错 CIOS(1.32×)。对拍 0/1000000。
+- **点运算级 ILP 重排（纯 C，零风险）**：profile 显示 jac_double=8×域乘延迟(464cyc,
+  零重叠)；实测两个独立域乘 back-to-back 会重叠(38 vs 67cyc)，但编译器对 extern
+  asm 调用保持源序，故须**源码上把独立乘写相邻**。重排 jac_double/mixed_add/
+  jac_add 成"pair"结构→OoO 重叠→**ecdh/sign/verify +15-23%**。教训:cmov 扫表前移
+  到 doubling 前反而回退(sel 活跃期跨 doubling 增压)，已撤。绝对 ops/s 随核温漂移,
+  须同期基线对比。
 
-**其余缺口（plan #5 续）**：P-256（现 ~0.35×，进一步需点运算级 asm）、
+```
+  p256 ecdh    14943 -> 21242 ops/s (0.34x -> 0.50x OpenSSL)
+  p256 sign    28914 -> 40668 ops/s (0.29x -> 0.41x OpenSSL)
+  p256 verify  10402 -> 15042 ops/s (0.31x -> 0.46x OpenSSL)
+```
+
+**本 session P-256 累计 vs OpenSSL：ecdh 0.19→0.50×、sign 0.16→0.41×、
+verify 0.18→0.46×（各 ~2.6×）**。到 1.0× 的剩余差距：点运算仍跑在域乘延迟
+(~57cyc)而非吞吐(~19cyc)，ILP 重排已推近但未满；深挖需更激进 ILP（2-路点运算/
+手写交错双乘）+ 更快求逆（Bernstein-Yang），progressively 难。
+
+**其余缺口（plan #5 续）**：P-256（现 ~0.5×，进一步需更深 ILP/快速求逆）、
 AES-GCM
 （0.47×，AES/PMULL 端口调度）、ChaCha-Poly（0.61×，需软流水融合让 NEON 密文
 与标量 MAC 真正重叠）、SHA-256/3（0.76-0.78×，硬件已用，多缓冲调度）。结构性
