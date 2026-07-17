@@ -397,664 +397,499 @@ Lmont_mul_p256$entry:
     ret
 
 
-/* --- OpenSSL-aligned acc-flow point-double (jac_double_flow): accumulator
-   flows in x0-x3 (in-place field ops), b-operands via pointer, side values in
-   frame; asmp b-via-pointer mul + operation scheduler. 245 -> 199cyc (< clang
-   212, < prior jac_double_rr2 208; OpenSSL 175). Bit-exact KAT 0/200000. --- */
-
-
-.p2align 2
-_fadd_bp:
-Lfadd_bp$entry:
-    ldr x7, [x4, #0]
-    ldr x6, [x4, #8]
-    ldr x5, [x4, #16]
-    ldr x4, [x4, #24]
-    adds x0, x0, x7
-    adcs x1, x1, x6
-    adcs x2, x2, x5
-    adcs x3, x3, x4
-    adc x8, xzr, xzr
-    movn x5, #0
-    movz x6, #65535
-    movk x6, #65535, LSL #16
-    movz x4, #1
-    movk x4, #65535, LSL #32
-    movk x4, #65535, LSL #48
-    subs x5, x0, x5
-    sbcs x6, x1, x6
-    sbcs x7, x2, xzr
-    sbcs x4, x3, x4
-    sbcs xzr, x8, xzr
-    csel x5, x5, x0, CS
-    csel x6, x6, x1, CS
-    csel x7, x7, x2, CS
-    csel x8, x4, x3, CS
+/* --- P-256 point-double at OpenSSL parity: hand-transcription of OpenSSL's
+   ecp_nistz256_point_double schedule (result-bank x14-x17, forward-loads, mul
+   overlap) driving from-scratch field kernels (CIOS mul + dedicated square +
+   carry-chain add/sub). 160cyc == OpenSSL 162 (< clang 183, < acc-flow 199).
+   KAT 0/200000. Automated scheduler plateaus ~199; hand schedule reaches parity. --- */
+.text
+_p256_mul:
+Lp256_mul$entry:
+    ldr x12, [x2, #8]
+    ldr x11, [x2, #16]
+    ldr x17, [x2, #24]
+    mul x14, x4, x3
+    umulh x10, x4, x3
+    mul x15, x5, x3
+    umulh x9, x5, x3
+    mul x16, x6, x3
+    umulh x8, x6, x3
+    mul x13, x7, x3
+    umulh x2, x7, x3
+    adds x15, x15, x10
+    ubfm x10, x14, #32, #31
+    adcs x16, x16, x9
+    ubfm x9, x14, #32, #63
+    adcs x13, x13, x8
+    adc x3, xzr, x2
+    mov x1, xzr
+    subs x8, x14, x10
+    sbc x2, x14, x9
+    adds x14, x15, x10
+    mul x10, x4, x12
+    adcs x15, x16, x9
+    mul x9, x5, x12
+    adcs x16, x13, x8
+    mul x8, x6, x12
+    adcs x13, x3, x2
+    mul x2, x7, x12
+    adc x3, x1, xzr
+    adds x14, x14, x10
+    umulh x10, x4, x12
+    adcs x15, x15, x9
+    umulh x9, x5, x12
+    adcs x16, x16, x8
+    umulh x8, x6, x12
+    adcs x13, x13, x2
+    umulh x2, x7, x12
+    adc x3, x3, xzr
+    adds x15, x15, x10
+    ubfm x10, x14, #32, #31
+    adcs x16, x16, x9
+    ubfm x9, x14, #32, #63
+    adcs x13, x13, x8
+    adcs x3, x3, x2
+    adc x1, xzr, xzr
+    subs x8, x14, x10
+    sbc x2, x14, x9
+    adds x14, x15, x10
+    mul x10, x4, x11
+    adcs x15, x16, x9
+    mul x9, x5, x11
+    adcs x16, x13, x8
+    mul x8, x6, x11
+    adcs x13, x3, x2
+    mul x2, x7, x11
+    adc x3, x1, xzr
+    adds x14, x14, x10
+    umulh x10, x4, x11
+    adcs x15, x15, x9
+    umulh x9, x5, x11
+    adcs x16, x16, x8
+    umulh x8, x6, x11
+    adcs x13, x13, x2
+    umulh x2, x7, x11
+    adc x3, x3, xzr
+    adds x15, x15, x10
+    ubfm x10, x14, #32, #31
+    adcs x16, x16, x9
+    ubfm x9, x14, #32, #63
+    adcs x13, x13, x8
+    adcs x3, x3, x2
+    adc x1, xzr, xzr
+    subs x8, x14, x10
+    sbc x2, x14, x9
+    adds x14, x15, x10
+    mul x10, x4, x17
+    adcs x15, x16, x9
+    mul x9, x5, x17
+    adcs x16, x13, x8
+    mul x8, x6, x17
+    adcs x13, x3, x2
+    mul x2, x7, x17
+    adc x3, x1, xzr
+    adds x14, x14, x10
+    umulh x10, x4, x17
+    adcs x15, x15, x9
+    umulh x9, x5, x17
+    adcs x16, x16, x8
+    umulh x8, x6, x17
+    adcs x13, x13, x2
+    umulh x2, x7, x17
+    adc x3, x3, xzr
+    adds x15, x15, x10
+    ubfm x10, x14, #32, #31
+    adcs x16, x16, x9
+    ubfm x9, x14, #32, #63
+    adcs x13, x13, x8
+    adcs x3, x3, x2
+    adc x1, xzr, xzr
+    subs x8, x14, x10
+    sbc x2, x14, x9
+    adds x14, x15, x10
+    adcs x15, x16, x9
+    adcs x16, x13, x8
+    adcs x13, x3, x2
+    adc x3, x1, xzr
+    movz x2, #65535
+    movk x2, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    adds x10, x14, #1
+    sbcs x9, x15, x2
+    sbcs x8, x16, xzr
+    sbcs x2, x13, x1
+    sbcs xzr, x3, xzr
+    csel x14, x14, x10, LO
+    csel x15, x15, x9, LO
+    csel x16, x16, x8, LO
+    csel x17, x13, x2, LO
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
     ret
 
 .p2align 2
-_fsub_bp:
-Lfsub_bp$entry:
-    ldr x8, [x4, #0]
-    ldr x6, [x4, #8]
-    ldr x5, [x4, #16]
-    ldr x4, [x4, #24]
-    subs x0, x0, x8
-    sbcs x1, x1, x6
-    sbcs x2, x2, x5
-    sbcs x3, x3, x4
-    sbc x7, xzr, xzr
-    movn x6, #0
-    movz x5, #65535
-    movk x5, #65535, LSL #16
-    movz x4, #1
-    movk x4, #65535, LSL #32
-    movk x4, #65535, LSL #48
-    and x8, x6, x7
-    and x6, x5, x7
-    and x4, x4, x7
-    adds x5, x0, x8
-    adcs x6, x1, x6
-    adcs x7, x2, xzr
-    adc x8, x3, x4
-    ret
+_p256_sqr:
+	//  |  |  |  |  |  |a1*a0|  |
+	//  |  |  |  |  |a2*a0|  |  |
+	//  |  |a3*a2|a3*a0|  |  |  |
+	//  |  |  |  |a2*a1|  |  |  |
+	//  |  |  |a3*a1|  |  |  |  |
+	// *|  |  |  |  |  |  |  | 2|
+	// +|a3*a3|a2*a2|a1*a1|a0*a0|
+	//  |--+--+--+--+--+--+--+--|
+	//  |A7|A6|A5|A4|A3|A2|A1|A0|, where Ax is , i.e. follow 
+	//
+	//  "can't overflow" below mark carrying into high part of
+	//  multiplication result, which can't overflow, because it
+	//  can never be all ones.
 
-.p2align 2
-_fsubfrom_bp:
-Lfsubfrom_bp$entry:
-    ldr x8, [x4, #0]
-    ldr x6, [x4, #8]
-    ldr x5, [x4, #16]
-    ldr x4, [x4, #24]
-    subs x0, x8, x0
-    sbcs x1, x6, x1
-    sbcs x2, x5, x2
-    sbcs x3, x4, x3
-    sbc x7, xzr, xzr
-    movn x6, #0
-    movz x5, #65535
-    movk x5, #65535, LSL #16
-    movz x4, #1
-    movk x4, #65535, LSL #32
-    movk x4, #65535, LSL #48
-    and x8, x6, x7
-    and x6, x5, x7
-    and x4, x4, x7
-    adds x5, x0, x8
-    adcs x6, x1, x6
-    adcs x7, x2, xzr
-    adc x8, x3, x4
-    ret
+	mul	x15,x5,x4		// a[1]*a[0]
+	umulh	x9,x5,x4
+	mul	x16,x6,x4		// a[2]*a[0]
+	umulh	x10,x6,x4
+	mul	x17,x7,x4		// a[3]*a[0]
+	umulh	x19,x7,x4
 
-.p2align 2
-_fdbl:
-Lfdbl$entry:
-    adds x0, x0, x0
-    adcs x1, x1, x1
-    adcs x2, x2, x2
-    adcs x3, x3, x3
-    adc x8, xzr, xzr
-    movn x4, #0
-    movz x5, #65535
-    movk x5, #65535, LSL #16
-    movz x7, #1
-    movk x7, #65535, LSL #32
-    movk x7, #65535, LSL #48
-    subs x4, x0, x4
-    sbcs x5, x1, x5
-    sbcs x6, x2, xzr
-    sbcs x7, x3, x7
-    sbcs xzr, x8, xzr
-    csel x4, x4, x0, CS
-    csel x5, x5, x1, CS
-    csel x6, x6, x2, CS
-    csel x7, x7, x3, CS
-    ret
+	adds	x16,x16,x9		// accumulate high parts of multiplication
+	mul	x8,x6,x5		// a[2]*a[1]
+	umulh	x9,x6,x5
+	adcs	x17,x17,x10
+	mul	x10,x7,x5		// a[3]*a[1]
+	umulh	x11,x7,x5
+	adc	x19,x19,xzr		// can't overflow
 
-.p2align 2
-_fmul3:
-Lfmul3$entry:
-    adds x7, x0, x0
-    adcs x6, x1, x1
-    adcs x5, x2, x2
-    adcs x4, x3, x3
-    adc x14, xzr, xzr
-    movn x15, #0
-    movz x13, #65535
-    movk x13, #65535, LSL #16
-    movz x12, #1
-    movk x12, #65535, LSL #32
-    movk x12, #65535, LSL #48
-    subs x11, x7, x15
-    sbcs x10, x6, x13
-    sbcs x9, x5, xzr
-    sbcs x8, x4, x12
-    sbcs xzr, x14, xzr
-    csel x7, x11, x7, CS
-    csel x6, x10, x6, CS
-    csel x5, x9, x5, CS
-    csel x4, x8, x4, CS
-    adds x0, x7, x0
-    adcs x1, x6, x1
-    adcs x2, x5, x2
-    adcs x3, x4, x3
-    adc x14, xzr, xzr
-    subs x11, x0, x15
-    sbcs x10, x1, x13
-    sbcs x9, x2, xzr
-    sbcs x8, x3, x12
-    sbcs xzr, x14, xzr
-    csel x4, x11, x0, CS
-    csel x5, x10, x1, CS
-    csel x6, x9, x2, CS
-    csel x7, x8, x3, CS
-    ret
+	mul	x20,x7,x6		// a[3]*a[2]
+	umulh	x1,x7,x6
 
-.p2align 2
-_fdiv2:
-Lfdiv2$entry:
-    and x7, x0, #1
-    neg x7, x7
-    movn x6, #0
-    movz x5, #65535
-    movk x5, #65535, LSL #16
-    movz x4, #1
-    movk x4, #65535, LSL #32
-    movk x4, #65535, LSL #48
-    and x6, x6, x7
-    and x5, x5, x7
-    and x4, x4, x7
-    adds x0, x0, x6
-    adcs x1, x1, x5
-    adcs x2, x2, xzr
-    adcs x3, x3, x4
-    adc x7, xzr, xzr
-    extr x4, x1, x0, #1
-    extr x5, x2, x1, #1
-    extr x6, x3, x2, #1
-    extr x7, x7, x3, #1
-    ret
+	adds	x9,x9,x10		// accumulate high parts of multiplication
+	mul	x14,x4,x4		// a[0]*a[0]
+	adc	x10,x11,xzr		// can't overflow
 
-.globl _jac_double_flow
-.p2align 2
-_jac_double_flow:
-Ljac_double_flow$entry:
-    stp x29, x30, [sp, #-48]!
-    stp x19, x20, [sp, #16]
-    stp x21, x22, [sp, #32]
-    mov x29, sp
-    mov x19, x0
-    mov x20, x1
-    sub sp, sp, #128
-    mov x21, sp
-    ldr x0, [x20, #32]
-    ldr x1, [x20, #40]
-    ldr x2, [x20, #48]
-    ldr x3, [x20, #56]
-    add x22, x20, #0
-    bl _fdbl
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    str x0, [x21, #0]
-    str x1, [x21, #8]
-    str x2, [x21, #16]
-    str x3, [x21, #24]
-    ldr x0, [x20, #64]
-    ldr x1, [x20, #72]
-    ldr x2, [x20, #80]
-    ldr x3, [x20, #88]
-    bl _fsqr
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    str x0, [x21, #32]
-    str x1, [x21, #40]
-    str x2, [x21, #48]
-    str x3, [x21, #56]
-    mov x4, x22
-    bl _fadd_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    str x0, [x21, #64]
-    add x22, x20, #0
-    str x1, [x21, #72]
-    ldr x0, [x21, #32]
-    str x2, [x21, #80]
-    ldr x1, [x21, #40]
-    str x3, [x21, #88]
-    ldr x2, [x21, #48]
-    ldr x3, [x21, #56]
-    mov x4, x22
-    bl _fsubfrom_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    str x0, [x21, #32]
-    add x22, x20, #32
-    str x1, [x21, #40]
-    ldr x0, [x21, #0]
-    str x2, [x21, #48]
-    ldr x1, [x21, #8]
-    str x3, [x21, #56]
-    ldr x2, [x21, #16]
-    ldr x3, [x21, #24]
-    bl _fsqr
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    str x0, [x21, #0]
-    str x1, [x21, #8]
-    str x2, [x21, #16]
-    str x3, [x21, #24]
-    ldr x0, [x20, #64]
-    ldr x1, [x20, #72]
-    ldr x2, [x20, #80]
-    ldr x3, [x20, #88]
-    mov x4, x22
-    bl _fmul_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    bl _fdbl
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    add x22, x21, #32
-    str x0, [x19, #64]
-    str x1, [x19, #72]
-    str x2, [x19, #80]
-    str x3, [x19, #88]
-    ldr x0, [x21, #0]
-    ldr x1, [x21, #8]
-    ldr x2, [x21, #16]
-    ldr x3, [x21, #24]
-    bl _fsqr
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    bl _fdiv2
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    str x0, [x19, #32]
-    str x1, [x19, #40]
-    str x2, [x19, #48]
-    str x3, [x19, #56]
-    ldr x0, [x21, #64]
-    ldr x1, [x21, #72]
-    ldr x2, [x21, #80]
-    ldr x3, [x21, #88]
-    mov x4, x22
-    bl _fmul_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    bl _fmul3
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    add x22, x20, #0
-    str x0, [x21, #64]
-    str x1, [x21, #72]
-    ldr x0, [x21, #0]
-    str x2, [x21, #80]
-    ldr x1, [x21, #8]
-    str x3, [x21, #88]
-    ldr x2, [x21, #16]
-    ldr x3, [x21, #24]
-    mov x4, x22
-    bl _fmul_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    str x0, [x21, #0]
-    add x22, x21, #96
-    str x1, [x21, #8]
-    str x2, [x21, #16]
-    str x3, [x21, #24]
-    bl _fdbl
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    str x0, [x21, #96]
-    str x1, [x21, #104]
-    ldr x0, [x21, #64]
-    str x2, [x21, #112]
-    ldr x1, [x21, #72]
-    str x3, [x21, #120]
-    ldr x2, [x21, #80]
-    ldr x3, [x21, #88]
-    bl _fsqr
-    mov x0, x4
-    mov x1, x5
-    mov x2, x6
-    mov x3, x7
-    mov x4, x22
-    bl _fsub_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    str x0, [x19, #0]
-    add x22, x21, #96
-    str x1, [x19, #8]
-    str x2, [x19, #16]
-    str x3, [x19, #24]
-    str x0, [x21, #96]
-    str x1, [x21, #104]
-    ldr x0, [x21, #0]
-    str x2, [x21, #112]
-    ldr x1, [x21, #8]
-    str x3, [x21, #120]
-    ldr x2, [x21, #16]
-    ldr x3, [x21, #24]
-    mov x4, x22
-    bl _fsub_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    add x22, x21, #64
-    mov x4, x22
-    bl _fmul_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    add x22, x19, #32
-    mov x4, x22
-    bl _fsub_bp
-    mov x0, x5
-    mov x1, x6
-    mov x2, x7
-    mov x3, x8
-    str x0, [x19, #32]
-    str x1, [x19, #40]
-    str x2, [x19, #48]
-    str x3, [x19, #56]
-    mov sp, x29
-    ldp x21, x22, [sp, #32]
-    ldp x19, x20, [sp, #16]
-    ldp x29, x30, [sp], #48
-    ret
+	adds	x17,x17,x8		// accumulate low parts of multiplication
+	umulh	x4,x4,x4
+	adcs	x19,x19,x9
+	mul	x9,x5,x5		// a[1]*a[1]
+	adcs	x20,x20,x10
+	umulh	x5,x5,x5
+	adc	x1,x1,xzr		// can't overflow
 
-.p2align 2
-_fmul_bp:
-Lfmul_bp$entry:
-    mov x5, x0
-    mov x6, x4
-    ldr x4, [x6, #0]
-    ldr x9, [x6, #8]
-    mov x0, xzr
-    ldr x15, [x6, #16]
-    ldr x16, [x6, #24]
-    fmov d16, x16
-    umulh x8, x5, x4
-    mul x13, x1, x4
-    umulh x7, x1, x4
-    mul x12, x2, x4
-    umulh x6, x2, x4
-    mul x11, x3, x4
-    mul x14, x5, x4
-    umulh x4, x3, x4
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    adcs x11, x11, x6
-    ubfm x8, x14, #32, #31
-    ubfm x7, x14, #32, #63
-    adc x10, xzr, x4
-    subs x6, x14, x8
-    sbc x4, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    mul x8, x5, x9
-    adcs x12, x11, x6
-    mul x7, x1, x9
-    adcs x11, x10, x4
-    mul x6, x2, x9
-    adc x10, x0, xzr
-    mul x4, x3, x9
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    umulh x8, x5, x9
-    adcs x12, x12, x6
-    umulh x7, x1, x9
-    adcs x11, x11, x4
-    umulh x6, x2, x9
-    adc x10, x10, xzr
-    umulh x4, x3, x9
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x4
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x4, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    mul x8, x5, x15
-    adcs x12, x11, x6
-    mul x7, x1, x15
-    adcs x11, x10, x4
-    mul x6, x2, x15
-    adc x10, x0, xzr
-    mul x4, x3, x15
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    umulh x8, x5, x15
-    adcs x12, x12, x6
-    umulh x7, x1, x15
-    adcs x11, x11, x4
-    umulh x6, x2, x15
-    adc x10, x10, xzr
-    umulh x4, x3, x15
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x4
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x4, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    fmov x16, d16
-    mul x8, x5, x16
-    adcs x12, x11, x6
-    fmov x16, d16
-    mul x7, x1, x16
-    adcs x11, x10, x4
-    fmov x16, d16
-    mul x6, x2, x16
-    adc x10, x0, xzr
-    fmov x16, d16
-    mul x4, x3, x16
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    fmov x16, d16
-    umulh x8, x5, x16
-    adcs x12, x12, x6
-    fmov x16, d16
-    umulh x7, x1, x16
-    adcs x11, x11, x4
-    fmov x16, d16
-    umulh x6, x2, x16
-    adc x10, x10, xzr
-    fmov x16, d16
-    umulh x4, x3, x16
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x4
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x4, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    adcs x12, x11, x6
-    adcs x11, x10, x4
-    adc x10, x0, xzr
-    adds x8, x14, #1
-    movz x16, #65535
-    movk x16, #65535, LSL #16
-    sbcs x7, x13, x16
-    sbcs x6, x12, xzr
-    movz x16, #1
-    movk x16, #65535, LSL #32
-    movk x16, #65535, LSL #48
-    sbcs x4, x11, x16
-    sbcs xzr, x10, xzr
-    csel x5, x14, x8, LO
-    csel x0, x13, x7, LO
-    csel x7, x12, x6, LO
-    csel x8, x11, x4, LO
-    mov x6, x0
-    ret
+	adds	x15,x15,x15	// acc[1-6]*=2
+	mul	x10,x6,x6		// a[2]*a[2]
+	adcs	x16,x16,x16
+	umulh	x6,x6,x6
+	adcs	x17,x17,x17
+	mul	x11,x7,x7		// a[3]*a[3]
+	adcs	x19,x19,x19
+	umulh	x7,x7,x7
+	adcs	x20,x20,x20
+	adcs	x1,x1,x1
+	adc	x2,xzr,xzr
 
-.p2align 2
-_fsqr:
-Lfsqr$entry:
-    mov x4, x0
-    umulh x8, x4, x4
-    mul x13, x1, x4
-    umulh x7, x1, x4
-    mul x12, x2, x4
-    umulh x6, x2, x4
-    mul x11, x3, x4
-    mul x14, x4, x4
-    umulh x5, x3, x4
-    mov x0, xzr
-    adds x13, x13, x8
-    movz x9, #65535
-    movz x15, #1
-    adcs x12, x12, x7
-    movk x9, #65535, LSL #16
-    movk x15, #65535, LSL #32
-    adcs x11, x11, x6
-    ubfm x8, x14, #32, #31
-    ubfm x7, x14, #32, #63
-    adc x10, xzr, x5
-    movk x15, #65535, LSL #48
-    subs x6, x14, x8
-    sbc x5, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    mul x8, x4, x1
-    adcs x12, x11, x6
-    mul x7, x1, x1
-    adcs x11, x10, x5
-    mul x6, x2, x1
-    adc x10, x0, xzr
-    mul x5, x3, x1
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    umulh x8, x4, x1
-    adcs x12, x12, x6
-    umulh x7, x1, x1
-    adcs x11, x11, x5
-    umulh x6, x2, x1
-    adc x10, x10, xzr
-    umulh x5, x3, x1
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x5
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x5, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    mul x8, x4, x2
-    adcs x12, x11, x6
-    mul x7, x1, x2
-    adcs x11, x10, x5
-    mul x6, x2, x2
-    adc x10, x0, xzr
-    mul x5, x3, x2
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    umulh x8, x4, x2
-    adcs x12, x12, x6
-    umulh x7, x1, x2
-    adcs x11, x11, x5
-    umulh x6, x2, x2
-    adc x10, x10, xzr
-    umulh x5, x3, x2
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x5
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x5, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    mul x8, x4, x3
-    adcs x12, x11, x6
-    mul x7, x1, x3
-    adcs x11, x10, x5
-    mul x6, x2, x3
-    adc x10, x0, xzr
-    mul x5, x3, x3
-    adds x14, x14, x8
-    adcs x13, x13, x7
-    umulh x8, x4, x3
-    adcs x12, x12, x6
-    umulh x7, x1, x3
-    adcs x11, x11, x5
-    umulh x6, x2, x3
-    adc x10, x10, xzr
-    umulh x5, x3, x3
-    adds x13, x13, x8
-    adcs x12, x12, x7
-    ubfm x8, x14, #32, #31
-    adcs x11, x11, x6
-    ubfm x7, x14, #32, #63
-    adcs x10, x10, x5
-    adc x0, xzr, xzr
-    subs x6, x14, x8
-    sbc x5, x14, x7
-    adds x14, x13, x8
-    adcs x13, x12, x7
-    adcs x12, x11, x6
-    adcs x11, x10, x5
-    adc x10, x0, xzr
-    adds x8, x14, #1
-    sbcs x7, x13, x9
-    sbcs x6, x12, xzr
-    sbcs x5, x11, x15
-    sbcs xzr, x10, xzr
-    csel x4, x14, x8, LO
-    csel x0, x13, x7, LO
-    csel x6, x12, x6, LO
-    csel x7, x11, x5, LO
-    mov x5, x0
-    ret
+	adds	x15,x15,x4		// +a[i]*a[i]
+	adcs	x16,x16,x9
+	adcs	x17,x17,x5
+	adcs	x19,x19,x10
+	adcs	x20,x20,x6
+	lsl	x8,x14,#32
+	adcs	x1,x1,x11
+	lsr	x9,x14,#32
+	adc	x2,x2,x7
+	subs	x10,x14,x8		// "*0xffff0001"
+	sbc	x11,x14,x9
+	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
+	adcs	x15,x16,x9
+	lsl	x8,x14,#32
+	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
+	lsr	x9,x14,#32
+	adc	x17,x11,xzr		// can't overflow
+	subs	x10,x14,x8		// "*0xffff0001"
+	sbc	x11,x14,x9
+	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
+	adcs	x15,x16,x9
+	lsl	x8,x14,#32
+	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
+	lsr	x9,x14,#32
+	adc	x17,x11,xzr		// can't overflow
+	subs	x10,x14,x8		// "*0xffff0001"
+	sbc	x11,x14,x9
+	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
+	adcs	x15,x16,x9
+	lsl	x8,x14,#32
+	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
+	lsr	x9,x14,#32
+	adc	x17,x11,xzr		// can't overflow
+	subs	x10,x14,x8		// "*0xffff0001"
+	sbc	x11,x14,x9
+	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
+	adcs	x15,x16,x9
+	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
+	adc	x17,x11,xzr		// can't overflow
 
+	adds	x14,x14,x19	// accumulate upper half
+	adcs	x15,x15,x20
+	adcs	x16,x16,x1
+	adcs	x17,x17,x2
+	adc	x19,xzr,xzr
+
+	movz	x12,#0xffff
+	movk	x12,#0xffff,lsl#16
+	movz	x13,#0x0001
+	movk	x13,#0xffff,lsl#32
+	movk	x13,#0xffff,lsl#48
+	adds	x8,x14,#1		// subs	x8,x14,#-1 // tmp = ret-modulus
+	sbcs	x9,x15,x12
+	sbcs	x10,x16,xzr
+	sbcs	x11,x17,x13
+	sbcs	xzr,x19,xzr		// did it borrow?
+
+	csel	x14,x14,x8,lo	// ret = borrow ? ret : ret-modulus
+	csel	x15,x15,x9,lo
+	csel	x16,x16,x10,lo
+	stp	x14,x15,[x0]
+	csel	x17,x17,x11,lo
+	stp	x16,x17,[x0,#16]
+
+	ret
+.text
+.p2align 4
+_p256_add:
+    adds x14,x14,x8
+    adcs x15,x15,x9
+    adcs x16,x16,x10
+    adcs x17,x17,x11
+    adc  x1,xzr,xzr
+    movn x8,#0
+    movz x9,#0xffff
+    movk x9,#0xffff,lsl#16
+    movz x11,#0x0001
+    movk x11,#0xffff,lsl#32
+    movk x11,#0xffff,lsl#48
+    subs x8,x14,x8
+    sbcs x9,x15,x9
+    sbcs x10,x16,xzr
+    sbcs x11,x17,x11
+    sbcs xzr,x1,xzr
+    csel x14,x8,x14,cs
+    csel x15,x9,x15,cs
+    csel x16,x10,x16,cs
+    csel x17,x11,x17,cs
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
+    ret
+.p2align 4
+_p256_sub_from:
+    ldp x8,x9,[x2]
+    ldp x10,x11,[x2,#16]
+    subs x14,x14,x8
+    sbcs x15,x15,x9
+    sbcs x16,x16,x10
+    sbcs x17,x17,x11
+    sbc  x1,xzr,xzr
+    movn x8,#0
+    and  x8,x8,x1
+    movz x9,#0xffff
+    movk x9,#0xffff,lsl#16
+    and  x9,x9,x1
+    movz x11,#0x0001
+    movk x11,#0xffff,lsl#32
+    movk x11,#0xffff,lsl#48
+    and  x11,x11,x1
+    adds x14,x14,x8
+    adcs x15,x15,x9
+    adcs x16,x16,xzr
+    adc  x17,x17,x11
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
+    ret
+.p2align 4
+_p256_sub_morf:
+    ldp x8,x9,[x2]
+    ldp x10,x11,[x2,#16]
+    subs x14,x8,x14
+    sbcs x15,x9,x15
+    sbcs x16,x10,x16
+    sbcs x17,x11,x17
+    sbc  x1,xzr,xzr
+    movn x8,#0
+    and  x8,x8,x1
+    movz x9,#0xffff
+    movk x9,#0xffff,lsl#16
+    and  x9,x9,x1
+    movz x11,#0x0001
+    movk x11,#0xffff,lsl#32
+    movk x11,#0xffff,lsl#48
+    and  x11,x11,x1
+    adds x14,x14,x8
+    adcs x15,x15,x9
+    adcs x16,x16,xzr
+    adc  x17,x17,x11
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
+    ret
+.p2align 4
+_p256_div2:
+    and  x1,x14,#1
+    neg  x1,x1
+    movn x8,#0
+    and  x8,x8,x1
+    movz x9,#0xffff
+    movk x9,#0xffff,lsl#16
+    and  x9,x9,x1
+    movz x11,#0x0001
+    movk x11,#0xffff,lsl#32
+    movk x11,#0xffff,lsl#48
+    and  x11,x11,x1
+    adds x14,x14,x8
+    adcs x15,x15,x9
+    adcs x16,x16,xzr
+    adcs x17,x17,x11
+    adc  x1,xzr,xzr
+    extr x14,x15,x14,#1
+    extr x15,x16,x15,#1
+    extr x16,x17,x16,#1
+    extr x17,x1,x17,#1
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
+    ret
+.globl _jac_double_hw
+_jac_double_hw:
+	
+	stp	x29,x30,[sp,#-96]!
+	add	x29,sp,#0
+	stp	x19,x20,[sp,#16]
+	stp	x21,x22,[sp,#32]
+	sub	sp,sp,#32*4
+
+
+	ldp	x14,x15,[x1,#32]
+	mov	x21,x0
+	ldp	x16,x17,[x1,#48]
+	mov	x22,x1
+	mov	x8,x14
+	mov	x9,x15
+	ldp	x4,x5,[x22,#64]	// forward load for p256_sqr_mont
+	mov	x10,x16
+	mov	x11,x17
+	ldp	x6,x7,[x22,#64+16]
+	add	x0,sp,#0
+	bl	_p256_add	// p256_mul_by_2(S, in_y);
+
+	add	x0,sp,#64
+	bl	_p256_sqr	// p256_sqr_mont(Zsqr, in_z);
+
+	ldp	x8,x9,[x22]
+	ldp	x10,x11,[x22,#16]
+	mov	x4,x14		// put Zsqr aside for p256_sub
+	mov	x5,x15
+	mov	x6,x16
+	mov	x7,x17
+	add	x0,sp,#32
+	bl	_p256_add	// p256_add(M, Zsqr, in_x);
+
+	add	x2,x22,#0
+	mov	x14,x4		// restore Zsqr
+	mov	x15,x5
+	ldp	x4,x5,[sp,#0]	// forward load for p256_sqr_mont
+	mov	x16,x6
+	mov	x17,x7
+	ldp	x6,x7,[sp,#0+16]
+	add	x0,sp,#64
+	bl	_p256_sub_morf	// p256_sub(Zsqr, in_x, Zsqr);
+
+	add	x0,sp,#0
+	bl	_p256_sqr	// p256_sqr_mont(S, S);
+
+	ldr	x3,[x22,#32]
+	ldp	x4,x5,[x22,#64]
+	ldp	x6,x7,[x22,#64+16]
+	add	x2,x22,#32
+	add	x0,sp,#96
+	bl	_p256_mul	// p256_mul_mont(tmp0, in_z, in_y);
+
+	mov	x8,x14
+	mov	x9,x15
+	ldp	x4,x5,[sp,#0]	// forward load for p256_sqr_mont
+	mov	x10,x16
+	mov	x11,x17
+	ldp	x6,x7,[sp,#0+16]
+	add	x0,x21,#64
+	bl	_p256_add	// p256_mul_by_2(res_z, tmp0);
+
+	add	x0,sp,#96
+	bl	_p256_sqr	// p256_sqr_mont(tmp0, S);
+
+	ldr	x3,[sp,#64]		// forward load for p256_mul_mont
+	ldp	x4,x5,[sp,#32]
+	ldp	x6,x7,[sp,#32+16]
+	add	x0,x21,#32
+	bl	_p256_div2	// p256_div_by_2(res_y, tmp0);
+
+	add	x2,sp,#64
+	add	x0,sp,#32
+	bl	_p256_mul	// p256_mul_mont(M, M, Zsqr);
+
+	mov	x8,x14		// duplicate M
+	mov	x9,x15
+	mov	x10,x16
+	mov	x11,x17
+	mov	x4,x14		// put M aside
+	mov	x5,x15
+	mov	x6,x16
+	mov	x7,x17
+	add	x0,sp,#32
+	bl	_p256_add
+	mov	x8,x4			// restore M
+	mov	x9,x5
+	ldr	x3,[x22]		// forward load for p256_mul_mont
+	mov	x10,x6
+	ldp	x4,x5,[sp,#0]
+	mov	x11,x7
+	ldp	x6,x7,[sp,#0+16]
+	bl	_p256_add	// p256_mul_by_3(M, M);
+
+	add	x2,x22,#0
+	add	x0,sp,#0
+	bl	_p256_mul	// p256_mul_mont(S, S, in_x);
+
+	mov	x8,x14
+	mov	x9,x15
+	ldp	x4,x5,[sp,#32]	// forward load for p256_sqr_mont
+	mov	x10,x16
+	mov	x11,x17
+	ldp	x6,x7,[sp,#32+16]
+	add	x0,sp,#96
+	bl	_p256_add	// p256_mul_by_2(tmp0, S);
+
+	add	x0,x21,#0
+	bl	_p256_sqr	// p256_sqr_mont(res_x, M);
+
+	add	x2,sp,#96
+	bl	_p256_sub_from	// p256_sub(res_x, res_x, tmp0);
+
+	add	x2,sp,#0
+	add	x0,sp,#0
+	bl	_p256_sub_morf	// p256_sub(S, S, res_x);
+
+	ldr	x3,[sp,#32]
+	mov	x4,x14		// copy S
+	mov	x5,x15
+	mov	x6,x16
+	mov	x7,x17
+	add	x2,sp,#32
+	bl	_p256_mul	// p256_mul_mont(S, S, M);
+
+	add	x2,x21,#32
+	add	x0,x21,#32
+	bl	_p256_sub_from	// p256_sub(res_y, S, res_y);
+
+	add	sp,x29,#0		// destroy frame
+	ldp	x19,x20,[x29,#16]
+	ldp	x21,x22,[x29,#32]
+	ldp	x29,x30,[sp],#96
+	
+	ret
 
 .subsections_via_symbols
 #endif
