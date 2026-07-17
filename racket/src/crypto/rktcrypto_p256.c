@@ -260,10 +260,10 @@ static void scn_inv(u64 r[4],const u64 a[4]){
 /* Scheduled asm point-doubling (asmp: operation-level list scheduler +
    critical-path-aware spilling; jac layout X@0,Y@32,Z@64 matches this struct).
    Bit-exact with the portable formula below (P-256 differential KAT 0/200000). */
-extern void jac_double_rr2(jac *r,const jac *p);
+extern void jac_double_flow(jac *r,const jac *p);
 static void jac_double(jac *r,const jac *p){
   if(fp_iszero(p->Z)){ *r=*p; return; }   /* identity: asm assumes Z!=0 path */
-  jac_double_rr2(r,p);
+  jac_double_flow(r,p);
 }
 #define JAC_DOUBLE_ASM 1
 #endif
