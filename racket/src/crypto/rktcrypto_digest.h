@@ -93,6 +93,18 @@ void rktcrypto_keccak_core_update(rktcrypto_keccak_ctx_t *ctx,
 void rktcrypto_keccak_core_final(rktcrypto_keccak_ctx_t *ctx,
                                  unsigned char *out, intptr_t out_len);
 
+/* ---- KMAC128 / KMAC256 (SP 800-185), fixed-output variant ----
+   key/msg/cust may be empty (pass len 0); cust is the customization
+   string S. Writes outlen bytes to out (bound into the tag). */
+void rktcrypto_kmac128(const unsigned char *key, intptr_t klen,
+                       const unsigned char *msg, intptr_t mlen,
+                       const unsigned char *cust, intptr_t clen,
+                       unsigned char *out, intptr_t outlen);
+void rktcrypto_kmac256(const unsigned char *key, intptr_t klen,
+                       const unsigned char *msg, intptr_t mlen,
+                       const unsigned char *cust, intptr_t clen,
+                       unsigned char *out, intptr_t outlen);
+
 /* ---- BLAKE2b (RFC 7693) ---- */
 
 typedef struct rktcrypto_blake2b_ctx_t {
