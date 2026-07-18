@@ -447,7 +447,7 @@ static void jac_scalarmult_win(jac *r,const u64 k[4],const jac *p){
   for(i=0;i<4;i++){T[0].X[i]=0;T[0].Y[i]=0;T[0].Z[i]=0;} T[0].X[0]=1;T[0].Y[0]=1; /* O */
   T[1]=*p;
   jac_double(&T[2],p);
-  for(i=3;i<16;i++) jac_add(&T[i],&T[i-1],p);    /* branchy build: P is public */
+  for(i=3;i<16;i++) mixed_add(&T[i],&T[i-1],p);  /* P affine (Z=mont1) -> mixed add; branchy, P public */
   batch_affine(&T[1],15);                         /* T[1..15] -> affine */
   for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
   for(w=63;w>=0;w--){
