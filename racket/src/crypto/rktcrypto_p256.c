@@ -217,6 +217,16 @@ static unsigned booth_recode_w7(unsigned in){
   d = (d >> 1) + (d & 1);
   return (d << 1) + (s & 1);
 }
+/* Width-5 Booth recoding: 6-bit window (5 value bits + 1 overlap) -> packed
+   (magnitude<<1)|sign, magnitude in [0,16]. Branch-free. */
+static unsigned booth_recode_w5(unsigned in){
+  unsigned s,d;
+  s = ~((in >> 5) - 1);
+  d = (1u << 6) - in - 1;
+  d = (d & s) | (in & ~s);
+  d = (d >> 1) + (d & 1);
+  return (d << 1) + (s & 1);
+}
 
 static int fp_iszero(const u64 a[4]){ return (a[0]|a[1]|a[2]|a[3])==0; }
 static void fp_cmov(u64 r[4],const u64 a[4],u64 b){ u64 mask=0-b; int i; for(i=0;i<4;i++)r[i]^=mask&(r[i]^a[i]); }
@@ -443,20 +453,29 @@ static void batch_affine(jac *pts,int n){
    the per-window digit is secret, so it is handled constant-time (cmov scan
    over the table + mask of the zero digit), mirroring the comb. */
 static void jac_scalarmult_win(jac *r,const u64 k[4],const jac *p){
-  jac T[16], acc, sel, tmp; int i,w,idx;
+  jac T[17], acc, sel, tmp; int i,j,d;
+  unsigned char p_str[33]; u64 negY[4], zero[4]={0,0,0,0};
+  /* signed width-5 window: table of |digit| multiples 1P..16P, affine. P is
+     affine (Z=mont1) in every caller, so build with mixed_add. */
   for(i=0;i<4;i++){T[0].X[i]=0;T[0].Y[i]=0;T[0].Z[i]=0;} T[0].X[0]=1;T[0].Y[0]=1; /* O */
   T[1]=*p;
   jac_double(&T[2],p);
-  for(i=3;i<16;i++) mixed_add(&T[i],&T[i-1],p);  /* P affine (Z=mont1) -> mixed add; branchy, P public */
-  batch_affine(&T[1],15);                         /* T[1..15] -> affine */
+  for(i=3;i<=16;i++) mixed_add(&T[i],&T[i-1],p);
+  batch_affine(&T[1],16);                          /* T[1..16] -> affine */
+  /* scalar -> 33 little-endian bytes (top zero, for the Booth overlap) */
+  for(i=0;i<4;i++){ u64 wv=k[i]; for(j=0;j<8;j++) p_str[i*8+j]=(unsigned char)(wv>>(8*j)); }
+  p_str[32]=0;
   for(i=0;i<4;i++){acc.X[i]=0;acc.Y[i]=0;acc.Z[i]=0;} acc.X[0]=1;acc.Y[0]=1; /* identity */
-  for(w=63;w>=0;w--){
-    int shift=w*4;                                /* multiple of 4 -> digit within one limb */
-    u64 digit=(k[shift>>6]>>(shift&63))&0xF;
+  for(j=51;j>=0;j--){                              /* 52 signed width-5 windows, MSB first */
+    unsigned wv,digit,sign; int lo=5*j-1;
+    jac_double(&acc,&acc); jac_double(&acc,&acc); jac_double(&acc,&acc);
     jac_double(&acc,&acc); jac_double(&acc,&acc);
-    jac_double(&acc,&acc); jac_double(&acc,&acc);
-    sel=T[1];
-    for(idx=1;idx<16;idx++){ u64 m=(idx==(int)digit); fp_cmov(sel.X,T[idx].X,m);fp_cmov(sel.Y,T[idx].Y,m);fp_cmov(sel.Z,T[idx].Z,m); }
+    if(lo<0) wv=((unsigned)p_str[0]<<1)&0x3F;
+    else { int off=lo>>3; wv=(((unsigned)p_str[off])|((unsigned)p_str[off+1]<<8))>>(lo&7); wv&=0x3F; }
+    wv=booth_recode_w5(wv); digit=wv>>1; sign=wv&1;
+    for(i=0;i<4;i++){sel.X[i]=T[1].X[i];sel.Y[i]=T[1].Y[i];sel.Z[i]=T[1].Z[i];}
+    for(d=1;d<=16;d++){ u64 m=(d==(int)digit); fp_cmov(sel.X,T[d].X,m);fp_cmov(sel.Y,T[d].Y,m);fp_cmov(sel.Z,T[d].Z,m); }
+    mont_sub(negY,zero,sel.Y,FP.m); fp_cmov(sel.Y,negY,(u64)sign);   /* conditional negate for sign */
     mixed_add(&tmp,&acc,&sel);
     { u64 m=(digit!=0); fp_cmov(acc.X,tmp.X,m);fp_cmov(acc.Y,tmp.Y,m);fp_cmov(acc.Z,tmp.Z,m); }
   }
