@@ -82,7 +82,7 @@ static void __attribute__((unused)) bn_montmul_k##K(BN*r,const BN*a,const BN*b,c
 MONTMUL_FIXED(16)
 /* k=32: full unroll spills 32 limbs; an 8x-unrolled rolled loop keeps register
    pressure sane while cutting branch overhead. */
-static void bn_montmul_k32u(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+static void __attribute__((unused)) bn_montmul_k32u(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   const int K=32; uint64_t t[34]; for(int i=0;i<K+2;i++)t[i]=0;
   const uint64_t*bd=b->d,*md=m->d,*ad=a->d; int at=a->top;
   for(int i=0;i<K;i++){ u128 c=0; uint64_t ai=(i<at)?ad[i]:0;
@@ -129,8 +129,25 @@ static void bn_montmul_k16asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0)
   for(i=16;i<BN_LIMBS;i++) r->d[i]=0; r->top=16; while(r->top>0&&r->d[r->top-1]==0) r->top--;
 }
 #endif
+#if defined(__aarch64__) && defined(__APPLE__)
+/* Comba product-scanning asm kernel (rktcrypto_bn_comba.S): 782 ns vs the
+   unrolled C's 1167 ns at k=32 -- the independent per-column multiplies expose
+   the ILP the CIOS carry chain hides. Used for the RSA-2048 public op. */
+extern void bn_mul_mont_comba32(uint64_t*r,const uint64_t*a,const uint64_t*b,const uint64_t*m,uint64_t n0);
+static void bn_montmul_k32asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+  uint64_t ab[32],bb[32]; int i;
+  for(i=0;i<32;i++){ ab[i]=(i<a->top)?a->d[i]:0; bb[i]=(i<b->top)?b->d[i]:0; }
+  bn_mul_mont_comba32(r->d, ab, bb, m->d, n0);
+  for(i=32;i<BN_LIMBS;i++) r->d[i]=0; r->top=32; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+}
+#endif
 void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
-  if(m->top==32) bn_montmul_k32u(r,a,b,m,n0);
+  if(m->top==32)
+#if defined(__aarch64__) && defined(__APPLE__)
+    bn_montmul_k32asm(r,a,b,m,n0);
+#else
+    bn_montmul_k32u(r,a,b,m,n0);
+#endif
   else if(m->top==16)
 #if defined(__aarch64__) && defined(__APPLE__)
     bn_montmul_k16asm(r,a,b,m,n0);
@@ -147,7 +164,9 @@ void bn_montsqr(BN*r,const BN*a,const BN*m,uint64_t n0){
   int k=m->top,i,j; const uint64_t*ad=a->d,*md=m->d; int at=a->top;
   uint64_t z[BN_LIMBS*2];
 #if defined(__aarch64__) && defined(__APPLE__)
-  if(k==16){ bn_montmul(r,a,a,m,n0); return; }
+  /* On Apple the asm kernels beat the SOS square at both k=16 (register-
+     resident) and k=32 (Comba product-scanning). */
+  if(k==16 || k==32){ bn_montmul(r,a,a,m,n0); return; }
 #endif
   if(k!=32){ bn_montmul(r,a,a,m,n0); return; }
   for(i=0;i<2*k+1;i++)z[i]=0;
