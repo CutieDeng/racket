@@ -21,4 +21,8 @@ int rsa_oaep_sha256_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,co
 /* RSAES-PKCS1-v1_5 encryption. msg up to klen-11 bytes. */
 int rsa_pkcs1_v15_encrypt(unsigned char*out,const unsigned char*msg,int mlen,const rsa_key*k);
 int rsa_pkcs1_v15_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,const rsa_key*k);
+/* Generate an RSA key of klen bytes with public exponent e (e.g. 65537).
+   Fills every field of k and precomputes Montgomery contexts. Returns 1 on
+   success, 0 on failure. Uses Miller-Rabin probable primes. */
+int rsa_keygen(rsa_key*k,int klen,uint64_t e);
 #endif
