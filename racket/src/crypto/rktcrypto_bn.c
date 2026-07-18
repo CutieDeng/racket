@@ -61,8 +61,46 @@ void bn_mont_rr(BN*rr,const BN*m){   /* R^2 mod m via 128*k modular doublings fr
   bn_copy(rr,&t);
 }
 void bn_mont_setup(uint64_t*n0,BN*rr,const BN*m){ *n0=bn_mont_n0(m); bn_mont_rr(rr,m); }
+/* Fixed-size CIOS montmul: with K a compile-time constant clang unrolls the
+   inner loops (no branch/counter overhead, better carry scheduling). */
+#define MONTMUL_FIXED(K) \
+static void bn_montmul_k##K(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){ \
+  uint64_t t[K+2]; for(int i=0;i<K+2;i++)t[i]=0; \
+  const uint64_t*bd=b->d,*md=m->d,*ad=a->d; int at=a->top; \
+  for(int i=0;i<K;i++){ u128 c=0; uint64_t ai=(i<at)?ad[i]:0; \
+    for(int j=0;j<K;j++){ u128 s=(u128)ai*bd[j]+t[j]+c; t[j]=(uint64_t)s; c=s>>64; } \
+    { u128 s=(u128)t[K]+c; t[K]=(uint64_t)s; t[K+1]+=(uint64_t)(s>>64); } \
+    uint64_t mi=t[0]*n0; c=0; \
+    for(int j=0;j<K;j++){ u128 s=(u128)mi*md[j]+t[j]+c; t[j]=(uint64_t)s; c=s>>64; } \
+    { u128 s=(u128)t[K]+c; t[K]=(uint64_t)s; t[K+1]+=(uint64_t)(s>>64); } \
+    for(int j=0;j<=K;j++)t[j]=t[j+1]; t[K+1]=0; } \
+  int ge=(t[K]!=0); \
+  if(!ge) for(int i=K-1;i>=0;i--){ if(t[i]!=md[i]){ge=t[i]>md[i];break;} } \
+  if(ge){ u128 br=0; for(int i=0;i<K;i++){ u128 s=(u128)t[i]-md[i]-br; t[i]=(uint64_t)s; br=(s>>64)&1; } } \
+  for(int i=0;i<K;i++)r->d[i]=t[i]; for(int i=K;i<BN_LIMBS;i++)r->d[i]=0; r->top=K; \
+  while(r->top>0&&r->d[r->top-1]==0)r->top--; }
+MONTMUL_FIXED(16)
+/* k=32: full unroll spills 32 limbs; an 8x-unrolled rolled loop keeps register
+   pressure sane while cutting branch overhead. */
+static void bn_montmul_k32u(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+  const int K=32; uint64_t t[34]; for(int i=0;i<K+2;i++)t[i]=0;
+  const uint64_t*bd=b->d,*md=m->d,*ad=a->d; int at=a->top;
+  for(int i=0;i<K;i++){ u128 c=0; uint64_t ai=(i<at)?ad[i]:0;
+    _Pragma("clang loop unroll_count(8)")
+    for(int j=0;j<K;j++){ u128 s=(u128)ai*bd[j]+t[j]+c; t[j]=(uint64_t)s; c=s>>64; }
+    { u128 s=(u128)t[K]+c; t[K]=(uint64_t)s; t[K+1]+=(uint64_t)(s>>64); }
+    uint64_t mi=t[0]*n0; c=0;
+    _Pragma("clang loop unroll_count(8)")
+    for(int j=0;j<K;j++){ u128 s=(u128)mi*md[j]+t[j]+c; t[j]=(uint64_t)s; c=s>>64; }
+    { u128 s=(u128)t[K]+c; t[K]=(uint64_t)s; t[K+1]+=(uint64_t)(s>>64); }
+    for(int j=0;j<=K;j++)t[j]=t[j+1]; t[K+1]=0; }
+  int ge=(t[K]!=0);
+  if(!ge) for(int i=K-1;i>=0;i--){ if(t[i]!=md[i]){ge=t[i]>md[i];break;} }
+  if(ge){ u128 br=0; for(int i=0;i<K;i++){ u128 s=(u128)t[i]-md[i]-br; t[i]=(uint64_t)s; br=(s>>64)&1; } }
+  for(int i=0;i<K;i++)r->d[i]=t[i]; for(int i=K;i<BN_LIMBS;i++)r->d[i]=0; r->top=K;
+  while(r->top>0&&r->d[r->top-1]==0)r->top--; }
 /* Montgomery multiply r=a*b*R^-1 mod m (CIOS). a,b<m. Buffers sized to k. */
-void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+static void bn_montmul_gen(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   int k=m->top; uint64_t t[BN_LIMBS+2]; for(int i=0;i<=k+1;i++)t[i]=0;
   const uint64_t*bd=b->d; int bt=b->top, at=a->top; const uint64_t*ad=a->d,*md=m->d;
   for(int i=0;i<k;i++){
@@ -79,6 +117,11 @@ void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   if(!ge) for(int i=k-1;i>=0;i--){ if(t[i]!=md[i]){ge=t[i]>md[i];break;} }
   if(ge){ u128 br=0; for(int i=0;i<k;i++){ u128 s=(u128)t[i]-md[i]-br; t[i]=(uint64_t)s; br=(s>>64)&1; } }
   for(int i=0;i<k;i++)r->d[i]=t[i]; for(int i=k;i<BN_LIMBS;i++)r->d[i]=0; r->top=k; bn_norm(r);
+}
+void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+  if(m->top==32) bn_montmul_k32u(r,a,b,m,n0);
+  else if(m->top==16) bn_montmul_k16(r,a,b,m,n0);
+  else bn_montmul_gen(r,a,b,m,n0);
 }
 void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const BN*rr){
   BN one,mbase,acc,br; bn_set_u64(&one,1);
