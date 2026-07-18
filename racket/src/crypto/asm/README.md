@@ -38,7 +38,11 @@ assembling). `rktcrypto_p256.c`'s `mont_mul` dispatch picks by ctx:
   Squaring routes here too (mont_mul_p256(a,a) = 150 Msq/s, beats a separate
   SOS symmetric squarer).
 - `mont_mul_asm(r,a,b,ctx)` — **group order n** (scalar ops). Generic CIOS
-  reading ctx->m/ctx->n0. 2.1x the C.
+  reading ctx->m/ctx->n0. Uses `.save all` so the ~19-live working set spills
+  into callee-saved GPRs (x19-x26, saved once) instead of NEON (an `fmov`
+  before every mul); 0 fmov, ~11.5 ns/op (n/p 1.58x). This is the mod-n
+  multiply under ECDSA's `scn_inv` (Fermat inverse mod n) — the change lifted
+  ECDSA sign ~+9%, verify ~+3%.
 
 Key lesson (measured): on the wide OoO M1 core the field multiply is
 *latency-bound* on the serial carry chain when muls are chained, but point
