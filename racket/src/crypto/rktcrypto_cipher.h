@@ -97,4 +97,15 @@ void rktcrypto_aes_enc_block(const unsigned char *rk, int Nr, const unsigned cha
 void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
                         const unsigned char *msg, intptr_t len, unsigned char tag[16]);
 
+/* ---- Legacy ciphers (weak; interop only) ---- */
+/* Triple-DES EDE (FIPS 46-3), key = k1||k2||k3 (24 bytes), 8-byte blocks.
+   Operates on nblk whole blocks; padding is the caller's concern. */
+void rktcrypto_des3_ecb(const unsigned char key[24], const unsigned char *in,
+                        unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
+                        const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+/* RC4 stream cipher; in/out may alias. */
+void rktcrypto_rc4(const unsigned char *key, intptr_t keylen,
+                   const unsigned char *in, unsigned char *out, intptr_t len);
+
 #endif

@@ -37,6 +37,7 @@
       "rktcrypto_sha3.c"
       "rktcrypto_kmac.c"
       "rktcrypto_legacy.c"
+      "rktcrypto_legacy_ciphers.c"
       "rktcrypto_blake2b.c"
       "rktcrypto_blake3.c"
       "rktcrypto_digest.c"
