@@ -397,12 +397,15 @@ Lmont_mul_p256$entry:
     ret
 
 
-/* --- P-256 point-double at OpenSSL parity: hand-transcription of OpenSSL's
-   ecp_nistz256_point_double schedule (result-bank x14-x17, forward-loads, mul
-   overlap) driving from-scratch field kernels. mul + add/sub/div2 are written in
-   asmp's vreg DSL (in-place via inout ABIs -- no concrete registers in the body,
-   only in the ABI); square + the schedule itself are hand asm. 160cyc == OpenSSL
-   162 (< clang 183). KAT 0/200000. --- */
+/* --- P-256 point-double at OpenSSL parity. Field kernels (mul, square,
+   add/sub/div2) are ALL written in asmp's vreg DSL -- asmp's register allocator
+   assigns every internal register (no hard-coded registers in kernel bodies);
+   physical registers appear only in the ABI declarations. asmp's pure (leaf)
+   allocation inserts no extra instructions, so this matches hand-written: the
+   square in vregs is at parity, same as the mul. Only the point_double SCHEDULE
+   below is hand asm -- and its concrete registers are all call-boundary
+   coordination (operand setup, result flow), the sanctioned exception.
+   160cyc == OpenSSL. KAT 0/200000. --- */
 .text
 .text
 _p256_mul:
@@ -533,127 +536,105 @@ Lp256_mul$entry:
 
 .p2align 2
 _p256_sqr:
-	//  |  |  |  |  |  |a1*a0|  |
-	//  |  |  |  |  |a2*a0|  |  |
-	//  |  |a3*a2|a3*a0|  |  |  |
-	//  |  |  |  |a2*a1|  |  |  |
-	//  |  |  |a3*a1|  |  |  |  |
-	// *|  |  |  |  |  |  |  | 2|
-	// +|a3*a3|a2*a2|a1*a1|a0*a0|
-	//  |--+--+--+--+--+--+--+--|
-	//  |A7|A6|A5|A4|A3|A2|A1|A0|, where Ax is , i.e. follow 
-	//
-	//  "can't overflow" below mark carrying into high part of
-	//  multiplication result, which can't overflow, because it
-	//  can never be all ones.
+Lp256_sqr$entry:
+    mul x15, x5, x4
+    umulh x11, x5, x4
+    mul x16, x6, x4
+    umulh x10, x6, x4
+    mul x17, x7, x4
+    umulh x2, x7, x4
+    adds x16, x16, x11
+    mul x12, x6, x5
+    umulh x11, x6, x5
+    adcs x17, x17, x10
+    mul x10, x7, x5
+    umulh x9, x7, x5
+    adc x2, x2, xzr
+    mul x1, x7, x6
+    umulh x8, x7, x6
+    adds x11, x11, x10
+    mul x14, x4, x4
+    adc x10, x9, xzr
+    adds x17, x17, x12
+    umulh x4, x4, x4
+    adcs x2, x2, x11
+    mul x11, x5, x5
+    adcs x1, x1, x10
+    umulh x5, x5, x5
+    adc x8, x8, xzr
+    adds x15, x15, x15
+    mul x10, x6, x6
+    adcs x16, x16, x16
+    umulh x6, x6, x6
+    adcs x17, x17, x17
+    mul x9, x7, x7
+    adcs x2, x2, x2
+    umulh x7, x7, x7
+    adcs x1, x1, x1
+    adcs x8, x8, x8
+    adc x3, xzr, xzr
+    adds x15, x15, x4
+    adcs x16, x16, x11
+    adcs x17, x17, x5
+    adcs x2, x2, x10
+    adcs x1, x1, x6
+    ubfm x12, x14, #32, #31
+    adcs x8, x8, x9
+    ubfm x11, x14, #32, #63
+    adc x3, x3, x7
+    subs x10, x14, x12
+    sbc x9, x14, x11
+    adds x14, x15, x12
+    adcs x15, x16, x11
+    ubfm x12, x14, #32, #31
+    adcs x16, x17, x10
+    ubfm x11, x14, #32, #63
+    adc x17, x9, xzr
+    subs x10, x14, x12
+    sbc x9, x14, x11
+    adds x14, x15, x12
+    adcs x15, x16, x11
+    ubfm x12, x14, #32, #31
+    adcs x16, x17, x10
+    ubfm x11, x14, #32, #63
+    adc x17, x9, xzr
+    subs x10, x14, x12
+    sbc x9, x14, x11
+    adds x14, x15, x12
+    adcs x15, x16, x11
+    ubfm x12, x14, #32, #31
+    adcs x16, x17, x10
+    ubfm x11, x14, #32, #63
+    adc x17, x9, xzr
+    subs x10, x14, x12
+    sbc x9, x14, x11
+    adds x14, x15, x12
+    adcs x15, x16, x11
+    adcs x16, x17, x10
+    adc x17, x9, xzr
+    adds x14, x14, x2
+    adcs x15, x15, x1
+    adcs x16, x16, x8
+    adcs x17, x17, x3
+    adc x2, xzr, xzr
+    movz x3, #65535
+    movk x3, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    adds x12, x14, #1
+    sbcs x11, x15, x3
+    sbcs x10, x16, xzr
+    sbcs x9, x17, x1
+    sbcs xzr, x2, xzr
+    csel x14, x14, x12, LO
+    csel x15, x15, x11, LO
+    csel x16, x16, x10, LO
+    csel x17, x17, x9, LO
+    stp x14,x15,[x0]
+    stp x16,x17,[x0,#16]
+    ret
 
-	mul	x15,x5,x4		// a[1]*a[0]
-	umulh	x9,x5,x4
-	mul	x16,x6,x4		// a[2]*a[0]
-	umulh	x10,x6,x4
-	mul	x17,x7,x4		// a[3]*a[0]
-	umulh	x19,x7,x4
-
-	adds	x16,x16,x9		// accumulate high parts of multiplication
-	mul	x8,x6,x5		// a[2]*a[1]
-	umulh	x9,x6,x5
-	adcs	x17,x17,x10
-	mul	x10,x7,x5		// a[3]*a[1]
-	umulh	x11,x7,x5
-	adc	x19,x19,xzr		// can't overflow
-
-	mul	x20,x7,x6		// a[3]*a[2]
-	umulh	x1,x7,x6
-
-	adds	x9,x9,x10		// accumulate high parts of multiplication
-	mul	x14,x4,x4		// a[0]*a[0]
-	adc	x10,x11,xzr		// can't overflow
-
-	adds	x17,x17,x8		// accumulate low parts of multiplication
-	umulh	x4,x4,x4
-	adcs	x19,x19,x9
-	mul	x9,x5,x5		// a[1]*a[1]
-	adcs	x20,x20,x10
-	umulh	x5,x5,x5
-	adc	x1,x1,xzr		// can't overflow
-
-	adds	x15,x15,x15	// acc[1-6]*=2
-	mul	x10,x6,x6		// a[2]*a[2]
-	adcs	x16,x16,x16
-	umulh	x6,x6,x6
-	adcs	x17,x17,x17
-	mul	x11,x7,x7		// a[3]*a[3]
-	adcs	x19,x19,x19
-	umulh	x7,x7,x7
-	adcs	x20,x20,x20
-	adcs	x1,x1,x1
-	adc	x2,xzr,xzr
-
-	adds	x15,x15,x4		// +a[i]*a[i]
-	adcs	x16,x16,x9
-	adcs	x17,x17,x5
-	adcs	x19,x19,x10
-	adcs	x20,x20,x6
-	lsl	x8,x14,#32
-	adcs	x1,x1,x11
-	lsr	x9,x14,#32
-	adc	x2,x2,x7
-	subs	x10,x14,x8		// "*0xffff0001"
-	sbc	x11,x14,x9
-	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
-	adcs	x15,x16,x9
-	lsl	x8,x14,#32
-	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
-	lsr	x9,x14,#32
-	adc	x17,x11,xzr		// can't overflow
-	subs	x10,x14,x8		// "*0xffff0001"
-	sbc	x11,x14,x9
-	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
-	adcs	x15,x16,x9
-	lsl	x8,x14,#32
-	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
-	lsr	x9,x14,#32
-	adc	x17,x11,xzr		// can't overflow
-	subs	x10,x14,x8		// "*0xffff0001"
-	sbc	x11,x14,x9
-	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
-	adcs	x15,x16,x9
-	lsl	x8,x14,#32
-	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
-	lsr	x9,x14,#32
-	adc	x17,x11,xzr		// can't overflow
-	subs	x10,x14,x8		// "*0xffff0001"
-	sbc	x11,x14,x9
-	adds	x14,x15,x8		// +=acc[0]<<96 and omit acc[0]
-	adcs	x15,x16,x9
-	adcs	x16,x17,x10		// +=acc[0]*0xffff0001
-	adc	x17,x11,xzr		// can't overflow
-
-	adds	x14,x14,x19	// accumulate upper half
-	adcs	x15,x15,x20
-	adcs	x16,x16,x1
-	adcs	x17,x17,x2
-	adc	x19,xzr,xzr
-
-	movz	x12,#0xffff
-	movk	x12,#0xffff,lsl#16
-	movz	x13,#0x0001
-	movk	x13,#0xffff,lsl#32
-	movk	x13,#0xffff,lsl#48
-	adds	x8,x14,#1		// subs	x8,x14,#-1 // tmp = ret-modulus
-	sbcs	x9,x15,x12
-	sbcs	x10,x16,xzr
-	sbcs	x11,x17,x13
-	sbcs	xzr,x19,xzr		// did it borrow?
-
-	csel	x14,x14,x8,lo	// ret = borrow ? ret : ret-modulus
-	csel	x15,x15,x9,lo
-	csel	x16,x16,x10,lo
-	stp	x14,x15,[x0]
-	csel	x17,x17,x11,lo
-	stp	x16,x17,[x0,#16]
-
-	ret
 _p256_add:
 Lp256_add$entry:
     adds x14, x14, x8
