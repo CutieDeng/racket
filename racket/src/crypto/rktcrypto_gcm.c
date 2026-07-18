@@ -114,17 +114,37 @@ static inline uint64x2_t gcm_mk2(uint64_t a, uint64_t b)
 {
   return vsetq_lane_u64(b, vdupq_n_u64(a), 1);
 }
-static inline void gcm_clmul256(uint64_t a0, uint64_t a1, uint64_t hh0, uint64_t hh1,
-                                uint64x2_t *lo, uint64x2_t *hi)
+/* Three-way XOR: one eor3 (SHA3 extension, simd port) where available, else two
+   eors. Used for the GHASH Karatsuba mid-term fold and product accumulation. */
+#if defined(__ARM_FEATURE_SHA3)
+static inline uint64x2_t gcm_veor3(uint64x2_t a, uint64x2_t b, uint64x2_t c)
+{ return vreinterpretq_u64_u8(veor3q_u8(vreinterpretq_u8_u64(a),
+                                        vreinterpretq_u8_u64(b), vreinterpretq_u8_u64(c))); }
+#else
+static inline uint64x2_t gcm_veor3(uint64x2_t a, uint64x2_t b, uint64x2_t c)
+{ return veorq_u64(veorq_u64(a, b), c); }
+#endif
+
+/* 128x128 -> 256 carryless multiply (Karatsuba), vector-native: operands and the
+   result stay in vector lanes -- no vgetq_lane extraction / gcm_mk2
+   reconstruction -- and the mid-term fold is one eor3. The scalar-extraction form
+   this replaces emitted a pile of mov/eor on the simd port that failed to hide
+   under the crypto-port-bound AES/PMULL work. lo/hi = low/high 128 bits of the
+   product (same layout gcm_reduce256 consumes). */
+static inline void gcm_clmul128(uint64x2_t a, uint64x2_t h, uint64x2_t *lo, uint64x2_t *hi)
 {
-  uint64x2_t l  = vreinterpretq_u64_p128(gcm_cl(a0, hh0));
-  uint64x2_t h  = vreinterpretq_u64_p128(gcm_cl(a1, hh1));
-  uint64x2_t md = vreinterpretq_u64_p128(gcm_cl(a0 ^ a1, hh0 ^ hh1));
-  uint64_t mlo, mhi;
-  md = veorq_u64(md, veorq_u64(l, h));
-  mlo = vgetq_lane_u64(md, 0); mhi = vgetq_lane_u64(md, 1);
-  *lo = gcm_mk2(vgetq_lane_u64(l, 0),       vgetq_lane_u64(l, 1) ^ mlo);
-  *hi = gcm_mk2(vgetq_lane_u64(h, 0) ^ mhi, vgetq_lane_u64(h, 1));
+  uint64x2_t z  = vdupq_n_u64(0);
+  uint64x2_t l  = vreinterpretq_u64_p128(vmull_p64((poly64_t)vgetq_lane_u64(a,0),
+                                                   (poly64_t)vgetq_lane_u64(h,0)));
+  uint64x2_t hh = vreinterpretq_u64_p128(vmull_high_p64(vreinterpretq_p64_u64(a),
+                                                        vreinterpretq_p64_u64(h)));
+  uint64x2_t am = veorq_u64(a, vextq_u64(a, a, 1));    /* a0^a1 in the low lane */
+  uint64x2_t hm = veorq_u64(h, vextq_u64(h, h, 1));
+  uint64x2_t md = vreinterpretq_u64_p128(vmull_p64((poly64_t)vgetq_lane_u64(am,0),
+                                                   (poly64_t)vgetq_lane_u64(hm,0)));
+  md = gcm_veor3(md, l, hh);
+  *lo = veorq_u64(l,  vextq_u64(z,  md, 1));           /* lo ^ (md_low  << 64) */
+  *hi = veorq_u64(hh, vextq_u64(md, z,  1));           /* hi ^ (md_high >> 64) */
 }
 static inline uint64x2_t gcm_reduce256(uint64x2_t X0, uint64x2_t X1)
 {
@@ -144,17 +164,17 @@ static inline uint64x2_t gcm_revbits(uint64x2_t v)
 static inline uint64x2_t gcm_gfmul_n(uint64x2_t a, uint64x2_t hh)
 {
   uint64x2_t lo, hi;
-  gcm_clmul256(vgetq_lane_u64(a,0), vgetq_lane_u64(a,1), vgetq_lane_u64(hh,0), vgetq_lane_u64(hh,1), &lo, &hi);
+  gcm_clmul128(a, hh, &lo, &hi);
   return gcm_reduce256(lo, hi);
 }
 static inline uint64x2_t gcm_agg4(uint64x2_t acc, uint64x2_t c0, uint64x2_t c1, uint64x2_t c2, uint64x2_t c3,
                                   uint64x2_t H1, uint64x2_t H2, uint64x2_t H3, uint64x2_t H4)
 {
-  uint64x2_t a0 = veorq_u64(acc, c0), lo, hi, lo1, hi1;
-  gcm_clmul256(vgetq_lane_u64(a0,0), vgetq_lane_u64(a0,1), vgetq_lane_u64(H4,0), vgetq_lane_u64(H4,1), &lo, &hi);
-  gcm_clmul256(vgetq_lane_u64(c1,0), vgetq_lane_u64(c1,1), vgetq_lane_u64(H3,0), vgetq_lane_u64(H3,1), &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
-  gcm_clmul256(vgetq_lane_u64(c2,0), vgetq_lane_u64(c2,1), vgetq_lane_u64(H2,0), vgetq_lane_u64(H2,1), &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
-  gcm_clmul256(vgetq_lane_u64(c3,0), vgetq_lane_u64(c3,1), vgetq_lane_u64(H1,0), vgetq_lane_u64(H1,1), &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
+  uint64x2_t lo, hi, lo1, hi1;
+  gcm_clmul128(veorq_u64(acc, c0), H4, &lo, &hi);
+  gcm_clmul128(c1, H3, &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
+  gcm_clmul128(c2, H2, &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
+  gcm_clmul128(c3, H1, &lo1, &hi1); lo=veorq_u64(lo,lo1); hi=veorq_u64(hi,hi1);
   return gcm_reduce256(lo, hi);
 }
 static inline uint64x2_t gcm_ghash1(uint64x2_t acc, uint64x2_t crev, uint64_t h0, uint64_t h1)
@@ -166,11 +186,11 @@ static inline uint64x2_t gcm_ghash1(uint64x2_t acc, uint64x2_t crev, uint64_t h0
 static inline uint64x2_t gcm_agg8(uint64x2_t acc, const uint64x2_t c[8], const uint64x2_t Hp[8])
 {
   /* Hp[k] = H^(k+1); the block that acc folds into uses the highest power. */
-  uint64x2_t a0 = veorq_u64(acc, c[0]), lo, hi, lo1, hi1;
+  uint64x2_t lo, hi, lo1, hi1;
   int j;
-  gcm_clmul256(vgetq_lane_u64(a0,0), vgetq_lane_u64(a0,1), vgetq_lane_u64(Hp[7],0), vgetq_lane_u64(Hp[7],1), &lo, &hi);
+  gcm_clmul128(veorq_u64(acc, c[0]), Hp[7], &lo, &hi);
   for (j = 1; j < 8; j++) {
-    gcm_clmul256(vgetq_lane_u64(c[j],0), vgetq_lane_u64(c[j],1), vgetq_lane_u64(Hp[7-j],0), vgetq_lane_u64(Hp[7-j],1), &lo1, &hi1);
+    gcm_clmul128(c[j], Hp[7-j], &lo1, &hi1);
     lo = veorq_u64(lo, lo1); hi = veorq_u64(hi, hi1);
   }
   return gcm_reduce256(lo, hi);
