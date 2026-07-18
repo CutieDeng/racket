@@ -254,6 +254,16 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
    rejected. */
 
 /*************************************************/
+/* X448 key exchange (RFC 7748)                  */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_x448(unsigned char *out, const unsigned char *scalar,
+                                          const unsigned char *point);
+/* X448 shared secret out = scalar*point on Curve448. All three are 56
+   bytes. Returns 1, or 0 if the result is all-zero (low-order point). */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_x448_pubkey(unsigned char *out, const unsigned char *scalar);
+/* Public key = X448(scalar, 5); out and scalar are 56 bytes. */
+
+/*************************************************/
 /* Ed25519 signatures (RFC 8032)                 */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_pubkey(unsigned char *pk, const unsigned char *seed);
