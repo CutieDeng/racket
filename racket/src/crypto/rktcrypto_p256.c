@@ -69,6 +69,8 @@ static mont_ctx FP, FN;   /* defined (initialised) in p256_init below */
 #if defined(__aarch64__) && defined(__APPLE__) && !defined(RKTCRYPTO_P256_NO_ASM)
 extern void mont_mul_asm(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
 extern void mont_mul_p256(u64 r[4],const u64 a[4],const u64 b[4]);
+extern void mont_sqrn_asm(u64 r[4],const u64 a[4],u64 rep,const mont_ctx *ctx);
+#define HAVE_MONT_SQRN_ASM 1
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
   if (ctx == &FP) mont_mul_p256(r,a,b);
   else            mont_mul_asm(r,a,b,ctx);
@@ -108,7 +110,7 @@ static void mont_sub(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
 }
 /* Squaring uses the CIOS multiply: its interleaved reduction gives higher
    throughput than a separate SOS symmetric squarer on this core. */
-static void mont_sqr(u64 r[4],const u64 a[4],const mont_ctx *ctx){ mont_mul(r,a,a,ctx); }
+static void __attribute__((unused)) mont_sqr(u64 r[4],const u64 a[4],const mont_ctx *ctx){ mont_mul(r,a,a,ctx); }
 
 /* n0 = -m^-1 mod 2^64 via Newton iteration. */
 static u64 compute_n0(u64 m0){
@@ -259,9 +261,13 @@ static void fp_inv(u64 r[4],const u64 a[4]){
    k^-1). Montgomery domain in and out (a = a*R -> a^-1*R). Bit-exact with the
    old windowed scn_inv / mont_inv(.,&FN). */
 static void scn_sqrn(u64 d[4],const u64 s[4],int n){
+#ifdef HAVE_MONT_SQRN_ASM
+  mont_sqrn_asm(d,s,(u64)n,&FN);        /* value register-resident across the run */
+#else
   u64 t[4]; int i; for(i=0;i<4;i++)t[i]=s[i];
   for(i=0;i<n;i++) mont_sqr(t,t,&FN);
   for(i=0;i<4;i++)d[i]=t[i];
+#endif
 }
 static void scn_inv(u64 r[4],const u64 a[4]){
   /* named powers of a (Montgomery); index order matches OpenSSL's enum */

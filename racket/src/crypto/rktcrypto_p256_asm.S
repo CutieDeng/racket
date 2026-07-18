@@ -697,6 +697,193 @@ Lp256_div2$entry:
     str x17, [x0, #24]
     ret
 
+
+.globl _mont_sqrn_asm
+.p2align 2
+_mont_sqrn_asm:
+Lmont_sqrn_asm$entry:
+    stp x29, x30, [sp, #-64]!
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
+    ldr x6, [x1, #0]
+    ldr x5, [x1, #8]
+    ldr x4, [x1, #16]
+    ldr x1, [x1, #24]
+    ldr x19, [x3, #0]
+    ldr x15, [x3, #8]
+    ldr x14, [x3, #16]
+    ldr x13, [x3, #24]
+    ldr x11, [x3, #32]
+Lmont_sqrn_asm$sqloop:
+    mul x24, x6, x6
+    mul x23, x5, x6
+    mul x22, x4, x6
+    mul x21, x1, x6
+    umulh x10, x6, x6
+    umulh x9, x5, x6
+    umulh x8, x4, x6
+    umulh x7, x1, x6
+    adds x23, x23, x10
+    adcs x22, x22, x9
+    adcs x21, x21, x8
+    adc x20, xzr, x7
+    mov x3, xzr
+    mul x12, x24, x11
+    mul x10, x12, x19
+    mul x9, x12, x15
+    mul x8, x12, x14
+    mul x7, x12, x13
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adcs x20, x20, xzr
+    adc x3, x3, xzr
+    umulh x10, x12, x19
+    umulh x9, x12, x15
+    umulh x8, x12, x14
+    umulh x7, x12, x13
+    adds x24, x23, x10
+    adcs x23, x22, x9
+    adcs x22, x21, x8
+    adcs x21, x20, x7
+    adc x20, x3, xzr
+    mul x10, x6, x5
+    mul x9, x5, x5
+    mul x8, x4, x5
+    mul x7, x1, x5
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adc x20, x20, xzr
+    umulh x10, x6, x5
+    umulh x9, x5, x5
+    umulh x8, x4, x5
+    umulh x7, x1, x5
+    adds x23, x23, x10
+    adcs x22, x22, x9
+    adcs x21, x21, x8
+    adcs x20, x20, x7
+    adc x3, xzr, xzr
+    mul x12, x24, x11
+    mul x10, x12, x19
+    mul x9, x12, x15
+    mul x8, x12, x14
+    mul x7, x12, x13
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adcs x20, x20, xzr
+    adc x3, x3, xzr
+    umulh x10, x12, x19
+    umulh x9, x12, x15
+    umulh x8, x12, x14
+    umulh x7, x12, x13
+    adds x24, x23, x10
+    adcs x23, x22, x9
+    adcs x22, x21, x8
+    adcs x21, x20, x7
+    adc x20, x3, xzr
+    mul x10, x6, x4
+    mul x9, x5, x4
+    mul x8, x4, x4
+    mul x7, x1, x4
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adc x20, x20, xzr
+    umulh x10, x6, x4
+    umulh x9, x5, x4
+    umulh x8, x4, x4
+    umulh x7, x1, x4
+    adds x23, x23, x10
+    adcs x22, x22, x9
+    adcs x21, x21, x8
+    adcs x20, x20, x7
+    adc x3, xzr, xzr
+    mul x12, x24, x11
+    mul x10, x12, x19
+    mul x9, x12, x15
+    mul x8, x12, x14
+    mul x7, x12, x13
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adcs x20, x20, xzr
+    adc x3, x3, xzr
+    umulh x10, x12, x19
+    umulh x9, x12, x15
+    umulh x8, x12, x14
+    umulh x7, x12, x13
+    adds x24, x23, x10
+    adcs x23, x22, x9
+    adcs x22, x21, x8
+    adcs x21, x20, x7
+    adc x20, x3, xzr
+    mul x10, x6, x1
+    mul x9, x5, x1
+    mul x8, x4, x1
+    mul x7, x1, x1
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adc x20, x20, xzr
+    umulh x10, x6, x1
+    umulh x9, x5, x1
+    umulh x8, x4, x1
+    umulh x7, x1, x1
+    adds x23, x23, x10
+    adcs x22, x22, x9
+    adcs x21, x21, x8
+    adcs x20, x20, x7
+    adc x3, xzr, xzr
+    mul x12, x24, x11
+    mul x10, x12, x19
+    mul x9, x12, x15
+    mul x8, x12, x14
+    mul x7, x12, x13
+    adds x24, x24, x10
+    adcs x23, x23, x9
+    adcs x22, x22, x8
+    adcs x21, x21, x7
+    adcs x20, x20, xzr
+    adc x3, x3, xzr
+    umulh x10, x12, x19
+    umulh x9, x12, x15
+    umulh x8, x12, x14
+    umulh x7, x12, x13
+    adds x24, x23, x10
+    adcs x23, x22, x9
+    adcs x22, x21, x8
+    adcs x21, x20, x7
+    adc x20, x3, xzr
+    subs x10, x24, x19
+    sbcs x9, x23, x15
+    sbcs x8, x22, x14
+    sbcs x7, x21, x13
+    sbcs xzr, x20, xzr
+    csel x6, x10, x24, CS
+    csel x5, x9, x23, CS
+    csel x4, x8, x22, CS
+    csel x1, x7, x21, CS
+    subs x2, x2, #1
+    b.ne Lmont_sqrn_asm$sqloop
+    str x6, [x0, #0]
+    str x5, [x0, #8]
+    str x4, [x0, #16]
+    str x1, [x0, #24]
+    ldp x23, x24, [sp, #48]
+    ldp x21, x22, [sp, #32]
+    ldp x19, x20, [sp, #16]
+    ldp x29, x30, [sp], #64
+    ret
+
 .globl _jac_double_hw
 _jac_double_hw:
 	
