@@ -371,6 +371,26 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem768_enc_derand(unsigned char *ct, unsi
 /*************************************************/
 /* ML-DSA-65 (Dilithium), FIPS 204               */
 
+#define RKTCRYPTO_MLDSA44_PUBLICKEYBYTES 1312
+#define RKTCRYPTO_MLDSA44_SECRETKEYBYTES 2560
+#define RKTCRYPTO_MLDSA44_SIGBYTES       2420
+#define RKTCRYPTO_MLDSA87_PUBLICKEYBYTES 2592
+#define RKTCRYPTO_MLDSA87_SECRETKEYBYTES 4896
+#define RKTCRYPTO_MLDSA87_SIGBYTES       4627
+
+/* Same API shape as ML-DSA-65 below; derand keygen takes a 32-byte seed,
+   sign_derand uses a zero randomizer (for known-answer tests). */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa44_keypair(unsigned char *pk, unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa44_sign(unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa44_verify(const unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *pk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa44_keypair_derand(unsigned char *pk, unsigned char *sk, const unsigned char *seed);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa44_sign_derand(unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa87_keypair(unsigned char *pk, unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa87_sign(unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa87_verify(const unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *pk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa87_keypair_derand(unsigned char *pk, unsigned char *sk, const unsigned char *seed);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa87_sign_derand(unsigned char *sig, const unsigned char *m, intptr_t mlen, const unsigned char *sk);
+
 #define RKTCRYPTO_MLDSA65_PUBLICKEYBYTES 1952
 #define RKTCRYPTO_MLDSA65_SECRETKEYBYTES 4032
 #define RKTCRYPTO_MLDSA65_SIGBYTES       3309
