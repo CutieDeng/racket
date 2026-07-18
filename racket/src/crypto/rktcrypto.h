@@ -202,6 +202,46 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_scrypt(const unsigned char *pw, intptr_t pw
    allocation failure. */
 
 /*************************************************/
+/* HMAC, HKDF, and misc KDFs over the digests    */
+
+RKTCRYPTO_EXTERN_NOERR void rktcrypto_hmac(int alg, const unsigned char *key, intptr_t keylen,
+                                           const unsigned char *msg, intptr_t msglen, unsigned char *out);
+/* One-shot HMAC-<alg>; out receives digest_size(alg) bytes. */
+
+RKTCRYPTO_EXTERN_NOERR void rktcrypto_hkdf_extract(int alg, const unsigned char *ikm, intptr_t ikmlen,
+                                                   const unsigned char *salt, intptr_t saltlen, unsigned char *prk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_hkdf_expand(int alg, const unsigned char *prk, intptr_t prklen,
+                                                 const unsigned char *info, intptr_t infolen,
+                                                 unsigned char *out, intptr_t outlen);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_hkdf(int alg, const unsigned char *ikm, intptr_t ikmlen,
+                                          const unsigned char *salt, intptr_t saltlen,
+                                          const unsigned char *info, intptr_t infolen,
+                                          unsigned char *out, intptr_t outlen);
+/* HKDF (RFC 5869). Expand returns 0 if outlen > 255*digest_size. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_expand_label(int alg, const unsigned char *secret, intptr_t secretlen,
+                                                        const unsigned char *label, intptr_t labellen,
+                                                        const unsigned char *context, intptr_t contextlen,
+                                                        unsigned char *out, intptr_t outlen);
+/* TLS 1.3 HKDF-Expand-Label (RFC 8446); prepends "tls13 " to label. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_kbkdf_hmac(int alg, const unsigned char *key, intptr_t keylen,
+                                                const unsigned char *label, intptr_t labellen,
+                                                const unsigned char *context, intptr_t contextlen,
+                                                unsigned char *out, intptr_t outlen);
+/* SP 800-108 counter-mode KBKDF with HMAC (OpenSSL's fixed-input layout). */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_sskdf(int alg, const unsigned char *z, intptr_t zlen,
+                                           const unsigned char *info, intptr_t infolen,
+                                           unsigned char *out, intptr_t outlen);
+/* SP 800-56C one-step KDF, hash variant. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_x963kdf(int alg, const unsigned char *z, intptr_t zlen,
+                                             const unsigned char *info, intptr_t infolen,
+                                             unsigned char *out, intptr_t outlen);
+/* ANSI X9.63 KDF (hash). */
+
+/*************************************************/
 /* X25519 key exchange (RFC 7748)                */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
