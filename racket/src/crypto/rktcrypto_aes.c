@@ -8,6 +8,7 @@
    encryption is implemented, which is all AES-GCM (CTR mode) needs. */
 
 #include "rktcrypto_cipher.h"
+#include <string.h>
 #if defined(__x86_64__) || defined(__i386__)
 # include "rktcrypto_cpu.h"
 # include "rktcrypto_x86.h"
@@ -68,8 +69,9 @@ static unsigned char aes_sbox(unsigned char a)
                          ^ rotl8(inv, 3) ^ rotl8(inv, 4) ^ 0x63);
 }
 
-/* AES-256 key expansion: 15 round keys (240 bytes). */
-static void aes256_expand(const unsigned char key[32], unsigned char rk[240])
+/* AES-256 key expansion: 15 round keys (240 bytes). Portable software S-box
+   path; superseded by aes256_expand_hw where hardware AES is available. */
+static void __attribute__((unused)) aes256_expand(const unsigned char key[32], unsigned char rk[240])
 {
   int i;
   unsigned char rcon = 1;
@@ -177,6 +179,34 @@ static void aes256_encrypt_block_hw(const unsigned char rk[240],
   state = veorq_u8(state, vld1q_u8(rk + 16 * 14));
   vst1q_u8(out, state);
 }
+
+/* SubWord via the AES instruction: broadcasting the word to all four columns
+   makes ShiftRows a no-op (identical columns), and AddRoundKey with zero is the
+   identity, so AESE(broadcast(w),0) = broadcast(SubBytes(w)). Constant-time
+   (hardware S-box) and ~100x cheaper than the x^254 software S-box. */
+static inline uint32_t aes_subword_hw(uint32_t w)
+{
+  uint8x16_t v = vreinterpretq_u8_u32(vdupq_n_u32(w));
+  v = vaeseq_u8(v, vdupq_n_u8(0));
+  return vgetq_lane_u32(vreinterpretq_u32_u8(v), 0);
+}
+
+/* Hardware AES-256 key expansion. Produces byte-for-byte the same round keys as
+   the portable path, but replaces the ~52 software S-box evaluations (the whole
+   per-call fixed cost of AES-GCM) with the hardware AES instruction. */
+static void aes256_expand_hw(const unsigned char key[32], unsigned char rk[240])
+{
+  static const uint32_t rcon[7] = { 0x01,0x02,0x04,0x08,0x10,0x20,0x40 };
+  uint32_t w[60]; int i;
+  memcpy(w, key, 32);                       /* w[0..7], little-endian words */
+  for (i = 8; i < 60; i++) {
+    uint32_t t = w[i-1];
+    if ((i & 7) == 0)      t = aes_subword_hw((t >> 8) | (t << 24)) ^ rcon[i/8 - 1];
+    else if ((i & 7) == 4) t = aes_subword_hw(t);
+    w[i] = w[i-8] ^ t;
+  }
+  memcpy(rk, w, 240);
+}
 #endif
 
 /* Encrypts a single 16-byte block using expanded round keys. Uses the
@@ -201,5 +231,9 @@ void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
 
 void rktcrypto_aes256_expand_key(const unsigned char key[32], unsigned char rk[240])
 {
+#if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
+  aes256_expand_hw(key, rk);   /* hardware S-box; ~100x cheaper than software */
+#else
   aes256_expand(key, rk);
+#endif
 }
