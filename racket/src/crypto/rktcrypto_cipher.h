@@ -83,5 +83,7 @@ void rktcrypto_aes_cbc_encrypt(const unsigned char *key, intptr_t keylen, const 
                                const unsigned char *in, unsigned char *out, intptr_t len);
 void rktcrypto_aes_cbc_decrypt(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
                                const unsigned char *in, unsigned char *out, intptr_t len);
+/* AES-CMAC (SP 800-38B) */
+void rktcrypto_aes_cmac(const unsigned char *key, intptr_t keylen, const unsigned char *msg, intptr_t len, unsigned char tag[16]);
 
 #endif

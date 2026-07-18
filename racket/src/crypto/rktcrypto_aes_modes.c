@@ -61,10 +61,29 @@ void rktcrypto_aes_cbc_decrypt(const unsigned char*key,intptr_t keylen,const uns
     for(b=0;b<8;b++){ vst1q_u8(out+o+16*b,veorq_u8(d[b],prev)); prev=c[b]; } }
   for(;o+16<=len;o+=16){ uint8x16_t c=vld1q_u8(in+o); vst1q_u8(out+o,veorq_u8(aes_dec1(c,dk,Nr),prev)); prev=c; }
 }
+
+/* AES-CMAC (NIST SP 800-38B): subkeys K1,K2 from AES(0), CBC-MAC with the last
+   block tweaked by K1 (complete) or K2 (padded). */
+static void cmac_dbl(unsigned char o[16],const unsigned char in[16]){
+  int carry=in[0]>>7; for(int i=0;i<15;i++) o[i]=(unsigned char)((in[i]<<1)|(in[i+1]>>7));
+  o[15]=(unsigned char)(in[15]<<1); if(carry) o[15]^=0x87;
+}
+void rktcrypto_aes_cmac(const unsigned char*key,intptr_t keylen,const unsigned char*msg,intptr_t len,unsigned char tag[16]){
+  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk);
+  unsigned char L[16],K1[16],K2[16],zero[16]={0}; vst1q_u8(L,aes_enc1(vld1q_u8(zero),rk,Nr));
+  cmac_dbl(K1,L); cmac_dbl(K2,K1);
+  uint8x16_t X=vdupq_n_u8(0); intptr_t nblk=(len+15)/16; if(nblk==0)nblk=1; intptr_t o=0;
+  for(intptr_t i=0;i<nblk-1;i++){ X=aes_enc1(veorq_u8(X,vld1q_u8(msg+o)),rk,Nr); o+=16; }
+  unsigned char last[16]; intptr_t rem=len-o;
+  if(rem==16){ for(int i=0;i<16;i++) last[i]=msg[o+i]^K1[i]; }
+  else { for(int i=0;i<rem;i++) last[i]=msg[o+i]; last[rem]=0x80; for(int i=(int)rem+1;i<16;i++) last[i]=0; for(int i=0;i<16;i++) last[i]^=K2[i]; }
+  vst1q_u8(tag, aes_enc1(veorq_u8(X,vld1q_u8(last)),rk,Nr));
+}
 #else
 /* Portable fallback would reuse rktcrypto_aes.c's software block; stubbed for the
    non-AES-hardware build (Apple M / ARMv8-crypto is the target). */
 void rktcrypto_aes_ctr(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
 void rktcrypto_aes_cbc_encrypt(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
 void rktcrypto_aes_cbc_decrypt(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
+void rktcrypto_aes_cmac(const unsigned char*k,intptr_t kl,const unsigned char*m,intptr_t len,unsigned char tag[16]){ (void)k;(void)kl;(void)m;(void)len;(void)tag; }
 #endif
