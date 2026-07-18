@@ -461,6 +461,24 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_mldsa65_sign_derand(unsigned char *sig,
    Returns 1. */
 
 /*************************************************/
+/* SLH-DSA-SHAKE-128s (FIPS 205)                 */
+
+#define RKTCRYPTO_SLHDSA_128S_PUBLICKEYBYTES 32
+#define RKTCRYPTO_SLHDSA_128S_SECRETKEYBYTES 64
+#define RKTCRYPTO_SLHDSA_128S_SIGBYTES       7856
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_slhdsa_shake_128s_keygen(unsigned char *pk, unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_slhdsa_shake_128s_keygen_derand(unsigned char *pk, unsigned char *sk, const unsigned char *seed48);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_slhdsa_shake_128s_sign(unsigned char *sig,
+                                                            const unsigned char *msg, intptr_t msglen,
+                                                            const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_slhdsa_shake_128s_verify(const unsigned char *sig, intptr_t siglen,
+                                                              const unsigned char *msg, intptr_t msglen,
+                                                              const unsigned char *pk);
+/* SLH-DSA-SHAKE-128s (pure mode, empty context). keygen_derand takes 48
+   seed bytes (SK.seed||SK.prf||PK.seed). Deterministic signing. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);
