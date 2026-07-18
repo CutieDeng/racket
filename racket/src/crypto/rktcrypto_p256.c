@@ -70,6 +70,7 @@ static mont_ctx FP, FN;   /* defined (initialised) in p256_init below */
 extern void mont_mul_asm(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
 extern void mont_mul_p256(u64 r[4],const u64 a[4],const u64 b[4]);
 extern void mont_sqrn_asm(u64 r[4],const u64 a[4],u64 rep,const mont_ctx *ctx);
+extern void mont_sqrn_p256(u64 r[4],const u64 a[4],u64 rep);
 #define HAVE_MONT_SQRN_ASM 1
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
   if (ctx == &FP) mont_mul_p256(r,a,b);
@@ -226,9 +227,13 @@ static void fp_cmov(u64 r[4],const u64 a[4],u64 b){ u64 mask=0-b; int i; for(i=0
    [32 ones][31 zeros][1][96 zeros][94 ones][0][1]; the one-runs assemble from
    (2^k-1)-ones blocks x_k. Montgomery domain. Bit-exact with mont_inv(.,&FP).*/
 static void fp_sqrn(u64 r[4],const u64 a[4],int n){
+#ifdef HAVE_MONT_SQRN_ASM
+  mont_sqrn_p256(r,a,(u64)n);           /* value register-resident across the run */
+#else
   int i; u64 t[4]; for(i=0;i<4;i++)t[i]=a[i];
   while(n-->0) fp_sqr(t,t);
   for(i=0;i<4;i++)r[i]=t[i];
+#endif
 }
 static void fp_inv(u64 r[4],const u64 a[4]){
   u64 x1[4],x2[4],x4[4],x6[4],x8[4],x14[4],x16[4],x30[4],x32[4],t[4];

@@ -884,6 +884,149 @@ Lmont_sqrn_asm$sqloop:
     ldp x29, x30, [sp], #64
     ret
 
+
+.globl _mont_sqrn_p256
+.p2align 2
+_mont_sqrn_p256:
+Lmont_sqrn_p256$entry:
+    stp x29, x30, [sp, #-32]!
+    str x19, [sp, #16]
+    ldr x5, [x1, #0]
+    ldr x4, [x1, #8]
+    ldr x3, [x1, #16]
+    ldr x1, [x1, #24]
+Lmont_sqrn_p256$sqloop:
+    mov x6, x5
+    mul x19, x5, x6
+    umulh x11, x5, x6
+    mul x15, x4, x6
+    umulh x10, x4, x6
+    mul x14, x3, x6
+    umulh x9, x3, x6
+    mul x13, x1, x6
+    umulh x8, x1, x6
+    mov x6, x4
+    adds x15, x15, x11
+    ubfm x11, x19, #32, #31
+    adcs x14, x14, x10
+    ubfm x10, x19, #32, #63
+    adcs x13, x13, x9
+    adc x12, xzr, x8
+    mov x7, xzr
+    subs x9, x19, x11
+    sbc x8, x19, x10
+    adds x19, x15, x11
+    mul x11, x5, x6
+    adcs x15, x14, x10
+    mul x10, x4, x6
+    adcs x14, x13, x9
+    mul x9, x3, x6
+    adcs x13, x12, x8
+    mul x8, x1, x6
+    adc x12, x7, xzr
+    adds x19, x19, x11
+    umulh x11, x5, x6
+    adcs x15, x15, x10
+    umulh x10, x4, x6
+    adcs x14, x14, x9
+    umulh x9, x3, x6
+    adcs x13, x13, x8
+    umulh x8, x1, x6
+    adc x12, x12, xzr
+    mov x6, x3
+    adds x15, x15, x11
+    ubfm x11, x19, #32, #31
+    adcs x14, x14, x10
+    ubfm x10, x19, #32, #63
+    adcs x13, x13, x9
+    adcs x12, x12, x8
+    adc x7, xzr, xzr
+    subs x9, x19, x11
+    sbc x8, x19, x10
+    adds x19, x15, x11
+    mul x11, x5, x6
+    adcs x15, x14, x10
+    mul x10, x4, x6
+    adcs x14, x13, x9
+    mul x9, x3, x6
+    adcs x13, x12, x8
+    mul x8, x1, x6
+    adc x12, x7, xzr
+    adds x19, x19, x11
+    umulh x11, x5, x6
+    adcs x15, x15, x10
+    umulh x10, x4, x6
+    adcs x14, x14, x9
+    umulh x9, x3, x6
+    adcs x13, x13, x8
+    umulh x8, x1, x6
+    adc x12, x12, xzr
+    mov x6, x1
+    adds x15, x15, x11
+    ubfm x11, x19, #32, #31
+    adcs x14, x14, x10
+    ubfm x10, x19, #32, #63
+    adcs x13, x13, x9
+    adcs x12, x12, x8
+    adc x7, xzr, xzr
+    subs x9, x19, x11
+    sbc x8, x19, x10
+    adds x19, x15, x11
+    mul x11, x5, x6
+    adcs x15, x14, x10
+    mul x10, x4, x6
+    adcs x14, x13, x9
+    mul x9, x3, x6
+    adcs x13, x12, x8
+    mul x8, x1, x6
+    adc x12, x7, xzr
+    adds x19, x19, x11
+    umulh x11, x5, x6
+    adcs x15, x15, x10
+    umulh x10, x4, x6
+    adcs x14, x14, x9
+    umulh x9, x3, x6
+    adcs x13, x13, x8
+    umulh x8, x1, x6
+    adc x12, x12, xzr
+    adds x15, x15, x11
+    ubfm x11, x19, #32, #31
+    adcs x14, x14, x10
+    ubfm x10, x19, #32, #63
+    adcs x13, x13, x9
+    adcs x12, x12, x8
+    adc x7, xzr, xzr
+    subs x9, x19, x11
+    sbc x8, x19, x10
+    adds x19, x15, x11
+    adcs x15, x14, x10
+    adcs x14, x13, x9
+    adcs x13, x12, x8
+    adc x12, x7, xzr
+    movz x3, #65535
+    movk x3, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    adds x11, x19, #1
+    sbcs x10, x15, x3
+    sbcs x9, x14, xzr
+    sbcs x8, x13, x1
+    sbcs xzr, x12, xzr
+    csel x5, x19, x11, LO
+    csel x4, x15, x10, LO
+    csel x3, x14, x9, LO
+    csel x1, x13, x8, LO
+    subs x2, x2, #1
+    b.ne Lmont_sqrn_p256$sqloop
+    str x5, [x0, #0]
+    str x4, [x0, #8]
+    str x3, [x0, #16]
+    str x1, [x0, #24]
+    ldr x19, [sp, #16]
+    ldp x29, x30, [sp], #32
+    ret
+
 .globl _jac_double_hw
 _jac_double_hw:
 	
