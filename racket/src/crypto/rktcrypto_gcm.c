@@ -320,6 +320,51 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
   for (i=0;i<16;i++) tag[i] = s[i] ^ ej0[i];
 }
 
+/* AES-GMAC (SP 800-38D): the GCM authenticator over `msg` treated entirely as
+   AAD, with empty plaintext and a 12-byte IV, for AES-128/192/256. Only two
+   block encryptions run (H and E(J0)); the cost is the GHASH over msg, which
+   reuses the same aggregated hardware path as the AEAD. */
+void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
+                        const unsigned char *msg, intptr_t len, unsigned char tag[16])
+{
+  unsigned char rk[240], zero[16], hb[16], blk[16], j0[16], ej0[16], s[16];
+  uint64x2_t H1, H2, H3, H4, acc;
+  uint64_t h0, h1;
+  intptr_t l = len;
+  int Nr, i;
+
+  Nr = rktcrypto_aes_expand_key(key, keylen, rk);
+  memset(zero, 0, 16);
+  rktcrypto_aes_enc_block(rk, Nr, zero, hb);           /* H = AES_K(0) */
+  H1 = gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(hb)));
+  H2 = gcm_gfmul_n(H1, H1); H3 = gcm_gfmul_n(H2, H1); H4 = gcm_gfmul_n(H3, H1);
+  h0 = vgetq_lane_u64(H1, 0); h1 = vgetq_lane_u64(H1, 1);
+  acc = vdupq_n_u64(0);
+
+  while (l >= 64) {
+    acc = gcm_agg4(acc,
+                   gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(msg))),
+                   gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(msg+16))),
+                   gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(msg+32))),
+                   gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(msg+48))),
+                   H1, H2, H3, H4);
+    msg += 64; l -= 64;
+  }
+  while (l >= 16) { acc = gcm_ghash1(acc, gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(msg))), h0, h1); msg += 16; l -= 16; }
+  if (l > 0) { memset(blk, 0, 16); for (i = 0; i < l; i++) blk[i] = msg[i];
+    acc = gcm_ghash1(acc, gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(blk))), h0, h1); }
+
+  { uint64_t abits = (uint64_t)len << 3;                /* len(aad) || len(ct)=0 */
+    for (i=0;i<8;i++) blk[i]=(unsigned char)(abits>>(56-8*i));
+    for (i=8;i<16;i++) blk[i]=0; }
+  acc = gcm_ghash1(acc, gcm_revbits(vreinterpretq_u64_u8(vld1q_u8(blk))), h0, h1);
+
+  vst1q_u8(s, vrbitq_u8(vreinterpretq_u8_u64(acc)));
+  memcpy(j0, iv, 12); j0[12]=0;j0[13]=0;j0[14]=0;j0[15]=1;
+  rktcrypto_aes_enc_block(rk, Nr, j0, ej0);
+  for (i=0;i<16;i++) tag[i] = s[i] ^ ej0[i];
+}
+
 #else  /* portable, constant-time bit-by-bit GHASH */
 
 /* GF(2^128) multiply z = x * h, NIST bit ordering (block byte 0 bit 7
@@ -383,6 +428,10 @@ static void ghash_bytes(uint64_t acc[2], const uint64_t h[2],
     ghash_block(acc, h, block);
   }
 }
+/* Portable GMAC stub (non-AES-hardware build is not the target). */
+void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
+                        const unsigned char *msg, intptr_t len, unsigned char tag[16])
+{ (void)key;(void)keylen;(void)iv;(void)msg;(void)len;(void)tag; }
 #endif
 
 static void inc32(unsigned char ctr[16])

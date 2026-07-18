@@ -88,5 +88,13 @@ void rktcrypto_aes_cmac(const unsigned char *key, intptr_t keylen, const unsigne
 /* AES-XTS (IEEE 1619). key=key1||key2 each keylen bytes; encrypt!=0 to encrypt. */
 void rktcrypto_aes_xts(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
                        const unsigned char *in, unsigned char *out, intptr_t len, int encrypt);
+/* General AES key schedule / single-block encrypt (128/192/256). Returns the
+   number of rounds Nr; rk must hold 240 bytes. Used by GMAC. */
+int rktcrypto_aes_expand_key(const unsigned char *key, intptr_t keylen, unsigned char rk[240]);
+void rktcrypto_aes_enc_block(const unsigned char *rk, int Nr, const unsigned char in[16], unsigned char out[16]);
+/* AES-GMAC (SP 800-38D): GCM authentication over msg-as-AAD with empty
+   plaintext; 12-byte iv. key is 16/24/32 bytes. Writes the 16-byte tag. */
+void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
+                        const unsigned char *msg, intptr_t len, unsigned char tag[16]);
 
 #endif

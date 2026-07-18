@@ -41,6 +41,9 @@ void rktcrypto_aes_ctr(const unsigned char*key,intptr_t keylen,const unsigned ch
 static inline uint8x16_t aes_enc1(uint8x16_t s,const unsigned char*rk,int Nr){
   for(int r=0;r<Nr-1;r++) s=vaesmcq_u8(vaeseq_u8(s,vld1q_u8(rk+16*r)));
   return veorq_u8(vaeseq_u8(s,vld1q_u8(rk+16*(Nr-1))),vld1q_u8(rk+16*Nr)); }
+/* General AES key schedule / single-block encrypt, exported for GMAC (gcm.c). */
+int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return aes_expand(key,(int)keylen,rk); }
+void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ vst1q_u8(out,aes_enc1(vld1q_u8(in),rk,Nr)); }
 void rktcrypto_aes_cbc_encrypt(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                                const unsigned char*in,unsigned char*out,intptr_t len){
   unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); uint8x16_t prev=vld1q_u8(iv);
@@ -114,4 +117,6 @@ void rktcrypto_aes_cbc_encrypt(const unsigned char*k,intptr_t kl,const unsigned 
 void rktcrypto_aes_cbc_decrypt(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
 void rktcrypto_aes_cmac(const unsigned char*k,intptr_t kl,const unsigned char*m,intptr_t len,unsigned char tag[16]){ (void)k;(void)kl;(void)m;(void)len;(void)tag; }
 void rktcrypto_aes_xts(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len,int e){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len;(void)e; }
+int rktcrypto_aes_expand_key(const unsigned char*k,intptr_t kl,unsigned char rk[240]){ (void)k;(void)kl;(void)rk; return 0; }
+void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ (void)rk;(void)Nr;(void)in;(void)out; }
 #endif
