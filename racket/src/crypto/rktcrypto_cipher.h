@@ -107,5 +107,10 @@ void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
 /* RC4 stream cipher; in/out may alias. */
 void rktcrypto_rc4(const unsigned char *key, intptr_t keylen,
                    const unsigned char *in, unsigned char *out, intptr_t len);
+/* Camellia (RFC 3713), 128-bit blocks, key 16/24/32 bytes. */
+void rktcrypto_camellia_ecb(const unsigned char *key, intptr_t keylen, const unsigned char *in,
+                            unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_camellia_cbc(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                            const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
 
 #endif
