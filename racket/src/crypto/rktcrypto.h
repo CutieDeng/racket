@@ -295,6 +295,19 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_ecdsa_verify(const unsigned char *sig,
 /* Verifies a 64-byte ECDSA signature. Returns 1 if valid, 0 otherwise. */
 
 /*************************************************/
+/* NIST P-384 (secp384r1) and P-521 (secp521r1)  */
+/* Uncompressed points 0x04||x||y; ECDSA uses SHA-384 (P-384) / SHA-512
+   (P-521). priv/coord widths: P-384 = 48 bytes, P-521 = 66 bytes. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p384_pubkey(unsigned char *out97, const unsigned char *priv);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p384_ecdh(unsigned char *out48, const unsigned char *scalar, const unsigned char *point97);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p384_ecdsa_sign(unsigned char *sig96, const unsigned char *msg, intptr_t msglen, const unsigned char *priv);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p384_ecdsa_verify(const unsigned char *sig96, const unsigned char *msg, intptr_t msglen, const unsigned char *pub97);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_pubkey(unsigned char *out133, const unsigned char *priv);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdh(unsigned char *out66, const unsigned char *scalar, const unsigned char *point133);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdsa_sign(unsigned char *sig132, const unsigned char *msg, intptr_t msglen, const unsigned char *priv);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdsa_verify(const unsigned char *sig132, const unsigned char *msg, intptr_t msglen, const unsigned char *pub133);
+
+/*************************************************/
 /* SipHash keyed PRF                             */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t key_len,

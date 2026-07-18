@@ -57,6 +57,7 @@
       ;; asmp-generated AArch64/Apple field-multiply (self-disables via
       ;; #if guard on other targets; compiled as a preprocessed .S).
       "rktcrypto_p256_asm.S"
+      "rktcrypto_ecc.c"
       "rktcrypto_mlkem.c"
       "rktcrypto_mlkem512.c"
       "rktcrypto_mlkem1024.c"
