@@ -218,29 +218,37 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
   memcpy(ctr, nonce, 12); ctr[12]=0; ctr[13]=0; ctr[14]=0; ctr[15]=2;
 
   l = len;
-  while (l >= 128) {
-    uint8x16_t st8[8], k, iv8[8], ov8[8];
+  /* Stitched 8-way: GHASH the previous block-set while the current set's AES is
+     in flight. GHASH(prev) reads only already-stored ciphertext, so it is
+     independent of AES(current); the wide OoO core issues the PMULL chain and
+     the AES chain to their separate units concurrently -- roughly max(AES,GHASH)
+     per iteration rather than AES+GHASH. */
+  {
     uint64x2_t cg[8];
-    uint32x4_t bv = vreinterpretq_u32_u8(vld1q_u8(ctr));
-    uint32_t c0 = __builtin_bswap32(vgetq_lane_u32(bv, 3));   /* big-endian counter */
-    int r, b;
-    /* build the 8 counter blocks by setting the big-endian counter lane -- no
-       scalar byte shuffling, which otherwise stalls the AES pipeline. */
-    for (b = 0; b < 8; b++)
-      st8[b] = vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0 + (uint32_t)b), bv, 3));
-    for (r = 0; r < 13; r++) { k = vld1q_u8(rk+16*r);
-      for (b = 0; b < 8; b++) st8[b] = vaesmcq_u8(vaeseq_u8(st8[b], k)); }
-    { uint8x16_t k13=vld1q_u8(rk+16*13), k14=vld1q_u8(rk+16*14);
-      for (b = 0; b < 8; b++) st8[b] = veorq_u8(vaeseq_u8(st8[b], k13), k14); }
-    for (b = 0; b < 8; b++) {
-      iv8[b] = vld1q_u8(in+16*b);
-      ov8[b] = veorq_u8(iv8[b], st8[b]);
-      vst1q_u8(out+16*b, ov8[b]);
-      cg[b] = gcm_revbits(vreinterpretq_u64_u8(encrypt ? ov8[b] : iv8[b]));
+    int have_prev = 0;
+    while (l >= 128) {
+      uint8x16_t st8[8], k, iv8[8], ov8[8];
+      uint32x4_t bv = vreinterpretq_u32_u8(vld1q_u8(ctr));
+      uint32_t c0 = __builtin_bswap32(vgetq_lane_u32(bv, 3));   /* big-endian counter */
+      int r, b;
+      for (b = 0; b < 8; b++)
+        st8[b] = vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0 + (uint32_t)b), bv, 3));
+      for (r = 0; r < 13; r++) { k = vld1q_u8(rk+16*r);
+        for (b = 0; b < 8; b++) st8[b] = vaesmcq_u8(vaeseq_u8(st8[b], k)); }
+      { uint8x16_t k13=vld1q_u8(rk+16*13), k14=vld1q_u8(rk+16*14);
+        for (b = 0; b < 8; b++) st8[b] = veorq_u8(vaeseq_u8(st8[b], k13), k14); }
+      if (have_prev) acc = gcm_agg8(acc, cg, Hp);   /* fold prev, overlaps AES above */
+      for (b = 0; b < 8; b++) {
+        iv8[b] = vld1q_u8(in+16*b);
+        ov8[b] = veorq_u8(iv8[b], st8[b]);
+        vst1q_u8(out+16*b, ov8[b]);
+        cg[b] = gcm_revbits(vreinterpretq_u64_u8(encrypt ? ov8[b] : iv8[b]));
+      }
+      have_prev = 1;
+      vst1q_u8(ctr, vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0 + 8u), bv, 3)));
+      in += 128; out += 128; l -= 128;
     }
-    acc = gcm_agg8(acc, cg, Hp);
-    vst1q_u8(ctr, vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0 + 8u), bv, 3)));
-    in += 128; out += 128; l -= 128;
+    if (have_prev) acc = gcm_agg8(acc, cg, Hp);      /* final set */
   }
   while (l >= 64) {
     uint8x16_t s0, s1, s2, s3, k, i0, i1, i2, i3, o0, o1, o2, o3, g0, g1, g2, g3;
