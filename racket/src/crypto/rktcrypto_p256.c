@@ -252,26 +252,42 @@ static void fp_inv(u64 r[4],const u64 a[4]){
   for(i=0;i<4;i++)r[i]=t[i];
 }
 
-/* Scalar inverse mod n via 4-bit windowed exponentiation of the fixed public
-   exponent n-2. The group order has no exploitable structure for a short
-   addition chain, but windowing still cuts mults ~128 -> 79 vs Fermat. The
-   window/nibble pattern comes from n-2 (public), not the base, so this is
-   constant-time in the secret scalar. Montgomery domain. Bit-exact with
-   mont_inv(.,&FN). */
+/* Scalar inverse mod n: a^(n-2) via the fixed briansmith addition chain (same
+   as OpenSSL ecp_nistz256_inv_mod_ord): 253 squarings + 41 multiplications, vs
+   the old 4-bit window's 256 sqr + 79 mul. The chain is a fixed operation
+   sequence independent of a, so it is constant-time in the secret nonce (sign's
+   k^-1). Montgomery domain in and out (a = a*R -> a^-1*R). Bit-exact with the
+   old windowed scn_inv / mont_inv(.,&FN). */
+static void scn_sqrn(u64 d[4],const u64 s[4],int n){
+  u64 t[4]; int i; for(i=0;i<4;i++)t[i]=s[i];
+  for(i=0;i<n;i++) mont_sqr(t,t,&FN);
+  for(i=0;i<4;i++)d[i]=t[i];
+}
 static void scn_inv(u64 r[4],const u64 a[4]){
-  u64 e[4],two[4]={2,0,0,0}, pw[16][4], acc[4]; int w,i,j;
-  bn_sub(e,N,two);
-  { u64 one[4]={1,0,0,0}; to_mont(pw[0],one,&FN); }   /* pw[i] = a^i */
-  for(j=0;j<4;j++)pw[1][j]=a[j];
-  for(i=2;i<16;i++) mont_mul(pw[i],pw[i-1],a,&FN);
-  for(j=0;j<4;j++)acc[j]=pw[0][j];                    /* acc = 1 */
-  for(w=63;w>=0;w--){
-    int shift=w*4; unsigned nib=(e[shift>>6]>>(shift&63))&0xF;
-    mont_sqr(acc,acc,&FN); mont_sqr(acc,acc,&FN);
-    mont_sqr(acc,acc,&FN); mont_sqr(acc,acc,&FN);
-    mont_mul(acc,acc,pw[nib],&FN);                    /* nib=0 -> * mont(1) */
+  /* named powers of a (Montgomery); index order matches OpenSSL's enum */
+  u64 t[14][4], acc[4]; int i;
+  enum { i_1,i_10,i_11,i_101,i_111,i_1010,i_1111,i_10101,i_101010,i_101111,i_x6,i_x8,i_x16,i_x32 };
+  for(i=0;i<4;i++)t[i_1][i]=a[i];
+  scn_sqrn(t[i_10],t[i_1],1);
+  mont_mul(t[i_11],  t[i_1],   t[i_10], &FN);
+  mont_mul(t[i_101], t[i_11],  t[i_10], &FN);
+  mont_mul(t[i_111], t[i_101], t[i_10], &FN);
+  scn_sqrn(t[i_1010],t[i_101],1);
+  mont_mul(t[i_1111],t[i_1010],t[i_101],&FN);
+  scn_sqrn(t[i_10101],t[i_1010],1);  mont_mul(t[i_10101],t[i_10101],t[i_1],&FN);
+  scn_sqrn(t[i_101010],t[i_10101],1);
+  mont_mul(t[i_101111],t[i_101010],t[i_101],&FN);
+  mont_mul(t[i_x6],  t[i_101010],t[i_10101],&FN);
+  scn_sqrn(t[i_x8], t[i_x6],2);  mont_mul(t[i_x8], t[i_x8], t[i_11], &FN);
+  scn_sqrn(t[i_x16],t[i_x8],8);  mont_mul(t[i_x16],t[i_x16],t[i_x8], &FN);
+  scn_sqrn(t[i_x32],t[i_x16],16);mont_mul(t[i_x32],t[i_x32],t[i_x16],&FN);
+  scn_sqrn(acc,t[i_x32],64);     mont_mul(acc,acc,t[i_x32],&FN);
+  { static const unsigned char cp[27]={32,6,5,4,5,5,4,3,3,5,9,6,2,5,6,5,4,5,5,3,10,2,5,5,3,7,6};
+    static const unsigned char ci[27]={i_x32,i_101111,i_111,i_11,i_1111,i_10101,i_101,i_101,i_101,
+      i_111,i_101111,i_1111,i_1,i_1,i_1111,i_111,i_111,i_111,i_101,i_11,i_101111,i_11,i_11,i_11,i_1,i_10101,i_1111};
+    for(i=0;i<27;i++){ scn_sqrn(acc,acc,cp[i]); mont_mul(acc,acc,t[ci[i]],&FN); }
   }
-  for(j=0;j<4;j++)r[j]=acc[j];
+  for(i=0;i<4;i++)r[i]=acc[i];
 }
 
 #if defined(__aarch64__) && defined(__APPLE__) && !defined(RKTCRYPTO_P256_NO_ASM)
