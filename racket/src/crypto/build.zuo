@@ -48,6 +48,7 @@
       "rktcrypto_aead.c"
       "rktcrypto_siphash.c"
       "rktcrypto_argon2.c"
+      "rktcrypto_scrypt.c"
       "rktcrypto_drbg.c"
       "rktcrypto_x25519.c"
       "rktcrypto_ed25519.c"

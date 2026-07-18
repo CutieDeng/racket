@@ -183,6 +183,25 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_argon2id(const unsigned char *pwd, intptr_t
    parameters or allocation failure. */
 
 /*************************************************/
+/* PBKDF2 and scrypt password KDFs               */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_pbkdf2(int alg,
+                                            const unsigned char *pw, intptr_t pwlen,
+                                            const unsigned char *salt, intptr_t saltlen,
+                                            uint32_t iterations,
+                                            unsigned char *dk, intptr_t dklen);
+/* PBKDF2-HMAC-<alg> (RFC 8018) for any fixed-size built-in digest.
+   Returns 1 on success, 0 on bad algorithm or zero iterations. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_scrypt(const unsigned char *pw, intptr_t pwlen,
+                                            const unsigned char *salt, intptr_t saltlen,
+                                            uint32_t N, uint32_t r, uint32_t p,
+                                            unsigned char *dk, intptr_t dklen);
+/* scrypt (RFC 7914). N must be a power of two > 1; r, p > 0. Allocates
+   128*r*(N+p) bytes. Returns 1 on success, 0 on invalid parameters or
+   allocation failure. */
+
+/*************************************************/
 /* X25519 key exchange (RFC 7748)                */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
