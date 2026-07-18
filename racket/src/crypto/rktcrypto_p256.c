@@ -586,7 +586,7 @@ int rktcrypto_p256_ecdsa_sign(unsigned char sig[64],const unsigned char *msg,int
 int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char pub65[65]){
   unsigned char digest[32]; u64 z[4],r_[4],s_[4],w[4],u1[4],u2[4];
   u64 smont[4],winv[4],zmont[4],rmont[4],u1m[4],u2m[4];
-  jac Pub,A1,A2,R; u64 px[4],py[4]; unsigned char xa[32],ya[32]; u64 rx[4];
+  jac Pub,A1,A2,R; u64 px[4],py[4];
   if(!inited)p256_init();
   if(pub65[0]!=4) return 0;
   bytes_to_bn(r_,sig); bytes_to_bn(s_,sig+32);
@@ -606,9 +606,24 @@ int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char 
   jac_scalarmult_base(&A1,u1);
   jac_scalarmult_win(&A2,u2,&Pub);
   jac_add(&R,&A1,&A2);
-  if(!jac_to_affine(xa,ya,&R)) return 0;
-  bytes_to_bn(rx,xa);
-  if(bn_geq(rx,N)) bn_sub(rx,rx,N);
-  /* valid iff rx == r */
-  { int i,diff=0; for(i=0;i<4;i++) diff|=(rx[i]!=r_[i]); return diff==0; }
+  /* Verify is entirely public data, so compare the x-coordinate projectively
+     and skip the final field inversion: affine_x(R) = X/Z^2, and the signature
+     is valid iff affine_x == r (mod n), i.e. X == r*Z^2 (mod p) -- or, when the
+     x-coordinate landed in [n,p), the wrapped case X == (r+n)*Z^2 (mod p).
+     Replaces a ~2.6 us fp_inv + affine conversion with one square + two muls. */
+  if(fp_iszero(R.Z)) return 0;                 /* R at infinity -> invalid */
+  { u64 z2[4],rp[4],t[4],rn[4]; int i,eq; u128 c=0;
+    fp_sqr(z2,R.Z);                            /* mont(Z^2) */
+    to_mont(rp,r_,&FP); fp_mul(t,rp,z2);       /* mont(r*Z^2) */
+    eq=1; for(i=0;i<4;i++) eq&=(t[i]==R.X[i]);
+    if(eq) return 1;
+    /* wrapped x == r + n, valid only if r + n < p */
+    for(i=0;i<4;i++){ u128 s=(u128)r_[i]+N[i]+c; rn[i]=(u64)s; c=s>>64; }
+    if(c==0 && !bn_geq(rn,P)){
+      to_mont(rp,rn,&FP); fp_mul(t,rp,z2);
+      eq=1; for(i=0;i<4;i++) eq&=(t[i]==R.X[i]);
+      if(eq) return 1;
+    }
+  }
+  return 0;
 }
