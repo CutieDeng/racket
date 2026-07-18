@@ -399,9 +399,11 @@ Lmont_mul_p256$entry:
 
 /* --- P-256 point-double at OpenSSL parity: hand-transcription of OpenSSL's
    ecp_nistz256_point_double schedule (result-bank x14-x17, forward-loads, mul
-   overlap) driving from-scratch field kernels (CIOS mul + dedicated square +
-   carry-chain add/sub). 160cyc == OpenSSL 162 (< clang 183, < acc-flow 199).
-   KAT 0/200000. Automated scheduler plateaus ~199; hand schedule reaches parity. --- */
+   overlap) driving from-scratch field kernels. mul + add/sub/div2 are written in
+   asmp's vreg DSL (in-place via inout ABIs -- no concrete registers in the body,
+   only in the ABI); square + the schedule itself are hand asm. 160cyc == OpenSSL
+   162 (< clang 183). KAT 0/200000. --- */
+.text
 .text
 _p256_mul:
 Lp256_mul$entry:
@@ -652,107 +654,125 @@ _p256_sqr:
 	stp	x16,x17,[x0,#16]
 
 	ret
-.text
-.p2align 4
 _p256_add:
-    adds x14,x14,x8
-    adcs x15,x15,x9
-    adcs x16,x16,x10
-    adcs x17,x17,x11
-    adc  x1,xzr,xzr
-    movn x8,#0
-    movz x9,#0xffff
-    movk x9,#0xffff,lsl#16
-    movz x11,#0x0001
-    movk x11,#0xffff,lsl#32
-    movk x11,#0xffff,lsl#48
-    subs x8,x14,x8
-    sbcs x9,x15,x9
-    sbcs x10,x16,xzr
-    sbcs x11,x17,x11
-    sbcs xzr,x1,xzr
-    csel x14,x8,x14,cs
-    csel x15,x9,x15,cs
-    csel x16,x10,x16,cs
-    csel x17,x11,x17,cs
-    stp x14,x15,[x0]
-    stp x16,x17,[x0,#16]
+Lp256_add$entry:
+    adds x14, x14, x8
+    adcs x15, x15, x9
+    adcs x16, x16, x10
+    adcs x17, x17, x11
+    adc x10, xzr, xzr
+    movn x8, #0
+    movz x2, #65535
+    movk x2, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    subs x9, x14, x8
+    sbcs x8, x15, x2
+    sbcs x2, x16, xzr
+    sbcs x1, x17, x1
+    sbcs xzr, x10, xzr
+    csel x14, x9, x14, CS
+    csel x15, x8, x15, CS
+    csel x16, x2, x16, CS
+    csel x17, x1, x17, CS
+    str x14, [x0, #0]
+    str x15, [x0, #8]
+    str x16, [x0, #16]
+    str x17, [x0, #24]
     ret
-.p2align 4
+
+.p2align 2
 _p256_sub_from:
-    ldp x8,x9,[x2]
-    ldp x10,x11,[x2,#16]
-    subs x14,x14,x8
-    sbcs x15,x15,x9
-    sbcs x16,x16,x10
-    sbcs x17,x17,x11
-    sbc  x1,xzr,xzr
-    movn x8,#0
-    and  x8,x8,x1
-    movz x9,#0xffff
-    movk x9,#0xffff,lsl#16
-    and  x9,x9,x1
-    movz x11,#0x0001
-    movk x11,#0xffff,lsl#32
-    movk x11,#0xffff,lsl#48
-    and  x11,x11,x1
-    adds x14,x14,x8
-    adcs x15,x15,x9
-    adcs x16,x16,xzr
-    adc  x17,x17,x11
-    stp x14,x15,[x0]
-    stp x16,x17,[x0,#16]
+Lp256_sub_from$entry:
+    ldr x10, [x2, #0]
+    ldr x9, [x2, #8]
+    ldr x8, [x2, #16]
+    ldr x1, [x2, #24]
+    subs x14, x14, x10
+    sbcs x15, x15, x9
+    sbcs x16, x16, x8
+    sbcs x17, x17, x1
+    sbc x9, xzr, xzr
+    movn x8, #0
+    movz x2, #65535
+    movk x2, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    and x8, x8, x9
+    and x2, x2, x9
+    and x1, x1, x9
+    adds x14, x14, x8
+    adcs x15, x15, x2
+    adcs x16, x16, xzr
+    adc x17, x17, x1
+    str x14, [x0, #0]
+    str x15, [x0, #8]
+    str x16, [x0, #16]
+    str x17, [x0, #24]
     ret
-.p2align 4
+
+.p2align 2
 _p256_sub_morf:
-    ldp x8,x9,[x2]
-    ldp x10,x11,[x2,#16]
-    subs x14,x8,x14
-    sbcs x15,x9,x15
-    sbcs x16,x10,x16
-    sbcs x17,x11,x17
-    sbc  x1,xzr,xzr
-    movn x8,#0
-    and  x8,x8,x1
-    movz x9,#0xffff
-    movk x9,#0xffff,lsl#16
-    and  x9,x9,x1
-    movz x11,#0x0001
-    movk x11,#0xffff,lsl#32
-    movk x11,#0xffff,lsl#48
-    and  x11,x11,x1
-    adds x14,x14,x8
-    adcs x15,x15,x9
-    adcs x16,x16,xzr
-    adc  x17,x17,x11
-    stp x14,x15,[x0]
-    stp x16,x17,[x0,#16]
+Lp256_sub_morf$entry:
+    ldr x10, [x2, #0]
+    ldr x9, [x2, #8]
+    ldr x8, [x2, #16]
+    ldr x1, [x2, #24]
+    subs x14, x10, x14
+    sbcs x15, x9, x15
+    sbcs x16, x8, x16
+    sbcs x17, x1, x17
+    sbc x9, xzr, xzr
+    movn x8, #0
+    movz x2, #65535
+    movk x2, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    and x8, x8, x9
+    and x2, x2, x9
+    and x1, x1, x9
+    adds x14, x14, x8
+    adcs x15, x15, x2
+    adcs x16, x16, xzr
+    adc x17, x17, x1
+    str x14, [x0, #0]
+    str x15, [x0, #8]
+    str x16, [x0, #16]
+    str x17, [x0, #24]
     ret
-.p2align 4
+
+.p2align 2
 _p256_div2:
-    and  x1,x14,#1
-    neg  x1,x1
-    movn x8,#0
-    and  x8,x8,x1
-    movz x9,#0xffff
-    movk x9,#0xffff,lsl#16
-    and  x9,x9,x1
-    movz x11,#0x0001
-    movk x11,#0xffff,lsl#32
-    movk x11,#0xffff,lsl#48
-    and  x11,x11,x1
-    adds x14,x14,x8
-    adcs x15,x15,x9
-    adcs x16,x16,xzr
-    adcs x17,x17,x11
-    adc  x1,xzr,xzr
-    extr x14,x15,x14,#1
-    extr x15,x16,x15,#1
-    extr x16,x17,x16,#1
-    extr x17,x1,x17,#1
-    stp x14,x15,[x0]
-    stp x16,x17,[x0,#16]
+Lp256_div2$entry:
+    and x9, x14, #1
+    neg x9, x9
+    movn x8, #0
+    movz x2, #65535
+    movk x2, #65535, LSL #16
+    movz x1, #1
+    movk x1, #65535, LSL #32
+    movk x1, #65535, LSL #48
+    and x8, x8, x9
+    and x2, x2, x9
+    and x1, x1, x9
+    adds x14, x14, x8
+    adcs x15, x15, x2
+    adcs x16, x16, xzr
+    adcs x17, x17, x1
+    adc x1, xzr, xzr
+    extr x14, x15, x14, #1
+    extr x15, x16, x15, #1
+    extr x16, x17, x16, #1
+    extr x17, x1, x17, #1
+    str x14, [x0, #0]
+    str x15, [x0, #8]
+    str x16, [x0, #16]
+    str x17, [x0, #24]
     ret
+
 .globl _jac_double_hw
 _jac_double_hw:
 	
