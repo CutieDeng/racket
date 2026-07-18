@@ -69,7 +69,7 @@
       "rktcrypto_slhdsa.c"
       "rktcrypto_bn.c"
       "rktcrypto_bn_asm.S"
-      "rktcrypto_bn_comba.S"
+      "rktcrypto_bn_fips.S"
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"
       "rktcrypto_x509.c"

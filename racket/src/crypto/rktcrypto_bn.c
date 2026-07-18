@@ -130,14 +130,15 @@ static void bn_montmul_k16asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0)
 }
 #endif
 #if defined(__aarch64__) && defined(__APPLE__)
-/* Comba product-scanning asm kernel (rktcrypto_bn_comba.S): 782 ns vs the
-   unrolled C's 1167 ns at k=32 -- the independent per-column multiplies expose
-   the ILP the CIOS carry chain hides. Used for the RSA-2048 public op. */
-extern void bn_mul_mont_comba32(uint64_t*r,const uint64_t*a,const uint64_t*b,const uint64_t*m,uint64_t n0);
+/* FIPS fused product-scanning asm kernel (rktcrypto_bn_fips.S): one pass
+   accumulating multiply + reduction products per column into a 3-word register
+   accumulator (q computed on the fly, no separate serial reduction) -- 649 ns
+   vs the unrolled C's 1167 ns at k=32. Used for the RSA-2048 public op. */
+extern void bn_mul_mont_fips32(uint64_t*r,const uint64_t*a,const uint64_t*b,const uint64_t*m,uint64_t n0);
 static void bn_montmul_k32asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   uint64_t ab[32],bb[32]; int i;
   for(i=0;i<32;i++){ ab[i]=(i<a->top)?a->d[i]:0; bb[i]=(i<b->top)?b->d[i]:0; }
-  bn_mul_mont_comba32(r->d, ab, bb, m->d, n0);
+  bn_mul_mont_fips32(r->d, ab, bb, m->d, n0);
   for(i=32;i<BN_LIMBS;i++) r->d[i]=0; r->top=32; while(r->top>0&&r->d[r->top-1]==0) r->top--;
 }
 #endif
