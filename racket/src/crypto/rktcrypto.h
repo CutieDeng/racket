@@ -491,6 +491,11 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_x509_verify_selfsigned(const unsigned char 
 /* Parses an X.509 certificate (DER) and verifies its own signature under the
    embedded public key. Handles RSA PKCS#1 v1.5 SHA-256 and ECDSA-P-256
    SHA-256. Returns 1 if the signature is valid, 0 otherwise. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_cms_verify(const unsigned char *der, intptr_t derlen);
+/* Verifies a CMS SignedData message (DER, RSA/SHA-256, embedded content, one
+   signer): checks the signer's signature under the embedded certificate's key
+   and that the messageDigest signed attribute equals SHA-256 of the
+   encapsulated content. Returns 1 if valid, 0 otherwise. */
 
 /*************************************************/
 /* Self-test                                     */

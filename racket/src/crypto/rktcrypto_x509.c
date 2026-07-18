@@ -146,3 +146,91 @@ int rktcrypto_x509_verify_selfsigned(const unsigned char *der_buf, intptr_t derl
   }
   return 0;
 }
+
+/* ---- CMS SignedData (RFC 5652) verification ---- */
+#include <stdlib.h>
+
+/* Extracts an RSA public key (n,e) from an X.509 certificate (DER) into a
+   verify-only rsa_key (n-Montgomery context set). Returns 1 on success. */
+static int cert_rsa_pubkey(const unsigned char *cert_der, intptr_t len, rsa_key *k){
+  der top,cert,t,spki; int tag; const unsigned char *cp,*ce;
+  top.p=cert_der; top.end=cert_der+len;
+  if(!der_into(&top,0x30,&cert)) return 0;
+  if(!der_into(&cert,0x30,&t)) return 0;                 /* TBSCertificate */
+  if(t.p<t.end && (unsigned char)*t.p==0xA0){ if(!der_skip(&t)) return 0; }  /* version [0] */
+  if(!der_skip(&t)||!der_skip(&t)||!der_skip(&t)||!der_skip(&t)||!der_skip(&t)) return 0; /* serial,sig,issuer,validity,subject */
+  if(!der_into(&t,0x30,&spki)) return 0;                 /* SubjectPublicKeyInfo */
+  { der a; if(!der_into(&spki,0x30,&a)) return 0; }      /* algorithm */
+  if(!der_tlv(&spki,&tag,&cp,&ce)||tag!=0x03) return 0;  /* subjectPublicKey BIT STRING */
+  { der pk,rk; const unsigned char *np,*ep; intptr_t nlen,elen; uint64_t ev=0; int i;
+    pk.p=cp+1; pk.end=ce;
+    if(!der_into(&pk,0x30,&rk)) return 0;
+    if(!der_tlv(&rk,&tag,&cp,&ce)||tag!=0x02) return 0; np=cp; nlen=ce-cp; trim_int(&np,&nlen);
+    if(!der_tlv(&rk,&tag,&cp,&ce)||tag!=0x02) return 0; ep=cp; elen=ce-cp; trim_int(&ep,&elen);
+    memset(k,0,sizeof *k); k->klen=(int)nlen; bn_from_be(&k->n,np,(int)nlen);
+    for(i=0;i<elen;i++) ev=(ev<<8)|ep[i];
+    { unsigned char eb[16]; int j; for(j=0;j<16;j++) eb[j]=(unsigned char)(ev>>(120-8*j)); bn_from_be(&k->e,eb,16); }
+    bn_mont_setup(&k->n0_n,&k->rr_n,&k->n);
+  }
+  return 1;
+}
+
+/* Verifies a CMS SignedData message (DER, RSA/SHA-256, attached content, one
+   signer). Checks the signer's signature under the embedded certificate's
+   public key, and that the messageDigest signed attribute equals SHA-256 of
+   the encapsulated content. Returns 1 if valid, 0 otherwise. */
+int rktcrypto_cms_verify(const unsigned char *der_buf, intptr_t derlen){
+  der top,ci,sd,eci,ex,sis,si; int tag; const unsigned char *cp,*ce;
+  const unsigned char *econtent=0; intptr_t econtent_len=0;
+  const unsigned char *cert_der=0; intptr_t cert_len=0;
+  const unsigned char *signedattrs=0; intptr_t sa_len=0;
+  const unsigned char *sig; intptr_t siglen;
+  rsa_key k; unsigned char hash[32],cd[32]; int rc;
+
+  top.p=der_buf; top.end=der_buf+derlen;
+  if(!der_into(&top,0x30,&ci)) return 0;                 /* ContentInfo */
+  if(!der_tlv(&ci,&tag,&cp,&ce)||tag!=0x06) return 0;    /* contentType = signedData */
+  if(!der_into(&ci,0xA0,&ex)) return 0;                  /* [0] EXPLICIT */
+  if(!der_into(&ex,0x30,&sd)) return 0;                  /* SignedData */
+  if(!der_skip(&sd)||!der_skip(&sd)) return 0;           /* version, digestAlgorithms */
+  if(!der_into(&sd,0x30,&eci)) return 0;                 /* encapContentInfo */
+  if(!der_skip(&eci)) return 0;                          /* eContentType */
+  if(eci.p<eci.end){ der ec; if(der_into(&eci,0xA0,&ec)){ if(der_tlv(&ec,&tag,&cp,&ce)&&tag==0x04){ econtent=cp; econtent_len=ce-cp; } } }
+  if(sd.p<sd.end && (unsigned char)*sd.p==0xA0){ der certs; const unsigned char *s; der c2;
+    der_into(&sd,0xA0,&certs); s=certs.p; c2=certs;
+    if(der_tlv(&c2,&tag,&cp,&ce)&&tag==0x30){ cert_der=s; cert_len=ce-s; } }
+  if(sd.p<sd.end && (unsigned char)*sd.p==0xA1){ der_skip(&sd); }   /* crls [1] */
+  if(!der_into(&sd,0x31,&sis)) return 0;                 /* signerInfos SET */
+  if(!der_into(&sis,0x30,&si)) return 0;                 /* first SignerInfo */
+  if(!der_skip(&si)||!der_skip(&si)||!der_skip(&si)) return 0;  /* version, sid, digestAlg */
+  if(si.p<si.end && (unsigned char)*si.p==0xA0){ signedattrs=si.p; if(!der_tlv(&si,&tag,&cp,&ce)) return 0; sa_len=ce-signedattrs; }
+  if(!der_skip(&si)) return 0;                           /* signatureAlgorithm */
+  if(!der_tlv(&si,&tag,&cp,&ce)||tag!=0x04) return 0;    /* signature */
+  sig=cp; siglen=ce-cp; (void)siglen;
+  if(!cert_der || !econtent) return 0;
+  if(!cert_rsa_pubkey(cert_der,cert_len,&k)) return 0;
+
+  rktcrypto_digest_oneshot(RKTCRYPTO_SHA256,econtent,0,econtent_len,cd,0,32);
+  if(signedattrs){
+    /* verify the messageDigest attribute equals SHA-256(eContent) */
+    der sa; int found=0; sa.p=signedattrs+2; sa.end=signedattrs+sa_len;   /* skip [0]+len (short form assumed for attrs? use tlv) */
+    { der s2; s2.p=signedattrs; s2.end=signedattrs+sa_len; if(!der_tlv(&s2,&tag,&cp,&ce)) return 0; sa.p=cp; sa.end=ce; }
+    while(sa.p<sa.end){ der attr; const unsigned char *oid; intptr_t oidlen;
+      if(!der_into(&sa,0x30,&attr)) break;
+      if(!der_tlv(&attr,&tag,&cp,&ce)||tag!=0x06) continue; oid=cp; oidlen=ce-cp;
+      { static const unsigned char MD_OID[]={0x2a,0x86,0x48,0x86,0xf7,0x0d,0x01,0x09,0x04};
+        if(oidlen==(intptr_t)sizeof MD_OID && memcmp(oid,MD_OID,sizeof MD_OID)==0){
+          der vs; if(der_into(&attr,0x31,&vs) && der_tlv(&vs,&tag,&cp,&ce) && tag==0x04 && (ce-cp)==32){
+            if(memcmp(cp,cd,32)==0) found=1; } } }
+    }
+    if(!found) return 0;
+    /* signature is over DER(signedAttrs) with the implicit [0] tag replaced by SET (0x31) */
+    { unsigned char *buf=malloc(sa_len); if(!buf) return 0; memcpy(buf,signedattrs,sa_len); buf[0]=0x31;
+      rktcrypto_digest_oneshot(RKTCRYPTO_SHA256,buf,0,sa_len,hash,0,32); free(buf); }
+    rc=rsa_pkcs1_sha256_verify(sig,hash,&k);
+  } else {
+    memcpy(hash,cd,32);
+    rc=rsa_pkcs1_sha256_verify(sig,hash,&k);
+  }
+  return rc;
+}
