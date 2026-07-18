@@ -479,6 +479,20 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_slhdsa_shake_128s_verify(const unsigned cha
    seed bytes (SK.seed||SK.prf||PK.seed). Deterministic signing. */
 
 /*************************************************/
+/* PEM / DER / X.509 parsing                     */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_base64_decode(const unsigned char *in, intptr_t inlen, unsigned char *out);
+/* Decodes base64 (whitespace/'=' ignored). Returns byte count, or -1. out
+   needs at most inlen*3/4 bytes. */
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_pem_to_der(const unsigned char *pem, intptr_t pemlen, unsigned char *out);
+/* Extracts and base64-decodes the first PEM block's body. Returns DER length,
+   or -1. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_x509_verify_selfsigned(const unsigned char *der, intptr_t derlen);
+/* Parses an X.509 certificate (DER) and verifies its own signature under the
+   embedded public key. Handles RSA PKCS#1 v1.5 SHA-256 and ECDSA-P-256
+   SHA-256. Returns 1 if the signature is valid, 0 otherwise. */
+
+/*************************************************/
 /* Self-test                                     */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_selftest_core(void);
