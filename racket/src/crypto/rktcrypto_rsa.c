@@ -130,3 +130,24 @@ int rsa_oaep_sha256_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,co
   i=32; while(i<dblen && db[i]==0) i++; if(i==dblen || db[i]!=1) return 0; i++;
   *mlen=dblen-i; memcpy(msg,db+i,*mlen); return 1;
 }
+
+/* RSAES-PKCS1-v1_5 (RFC 8017 sec 7.2): EM = 0x00 || 0x02 || PS || 0x00 || M,
+   where PS is >= 8 nonzero random bytes. */
+int rsa_pkcs1_v15_encrypt(unsigned char*out,const unsigned char*msg,int mlen,const rsa_key*k){
+  int K=k->klen, pslen=K-mlen-3, i; unsigned char em[512];
+  if(mlen>K-11 || mlen<0) return 0;
+  em[0]=0; em[1]=2;
+  if(!rktcrypto_random_bytes(em+2,0,pslen)) return 0;
+  for(i=2;i<2+pslen;i++) while(em[i]==0){ if(!rktcrypto_random_bytes(em+i,0,1)) return 0; }  /* PS must be nonzero */
+  em[2+pslen]=0; memcpy(em+3+pslen,msg,mlen);
+  rsa_public(out,em,k); return 1;
+}
+int rsa_pkcs1_v15_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,const rsa_key*k){
+  int K=k->klen, i; unsigned char em[512];
+  rsa_private_crt(em,in,k);
+  if(em[0]!=0 || em[1]!=2) return 0;
+  i=2; while(i<K && em[i]!=0) i++;
+  if(i<10 || i==K) return 0;   /* PS must be >= 8 bytes and terminator present */
+  i++;
+  *mlen=K-i; memcpy(msg,em+i,*mlen); return 1;
+}

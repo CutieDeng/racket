@@ -18,4 +18,7 @@ int rsa_pss_sha256_verify(const unsigned char*sig,const unsigned char*mHash,int 
 int rsa_oaep_sha256_encrypt(unsigned char*out,const unsigned char*msg,int mlen,const rsa_key*k);
 int rsa_oaep_sha256_encrypt_seed(unsigned char*out,const unsigned char*msg,int mlen,const unsigned char*seed,const rsa_key*k);
 int rsa_oaep_sha256_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,const rsa_key*k);
+/* RSAES-PKCS1-v1_5 encryption. msg up to klen-11 bytes. */
+int rsa_pkcs1_v15_encrypt(unsigned char*out,const unsigned char*msg,int mlen,const rsa_key*k);
+int rsa_pkcs1_v15_decrypt(unsigned char*msg,int*mlen,const unsigned char*in,const rsa_key*k);
 #endif
