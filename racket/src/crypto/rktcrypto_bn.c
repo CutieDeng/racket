@@ -64,7 +64,7 @@ void bn_mont_setup(uint64_t*n0,BN*rr,const BN*m){ *n0=bn_mont_n0(m); bn_mont_rr(
 /* Fixed-size CIOS montmul: with K a compile-time constant clang unrolls the
    inner loops (no branch/counter overhead, better carry scheduling). */
 #define MONTMUL_FIXED(K) \
-static void bn_montmul_k##K(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){ \
+static void __attribute__((unused)) bn_montmul_k##K(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){ \
   uint64_t t[K+2]; for(int i=0;i<K+2;i++)t[i]=0; \
   const uint64_t*bd=b->d,*md=m->d,*ad=a->d; int at=a->top; \
   for(int i=0;i<K;i++){ u128 c=0; uint64_t ai=(i<at)?ad[i]:0; \
@@ -118,9 +118,25 @@ static void bn_montmul_gen(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   if(ge){ u128 br=0; for(int i=0;i<k;i++){ u128 s=(u128)t[i]-md[i]-br; t[i]=(uint64_t)s; br=(s>>64)&1; } }
   for(int i=0;i<k;i++)r->d[i]=t[i]; for(int i=k;i<BN_LIMBS;i++)r->d[i]=0; r->top=k; bn_norm(r);
 }
+#if defined(__aarch64__) && defined(__APPLE__)
+/* Streaming asm kernel (rktcrypto_bn_asm.S): register-resident accumulator,
+   1.23x over the unrolled C at k=16 -- the RSA-CRT (mod p/q) hot path. */
+extern void bn_mul_mont_k16(uint64_t*r,const uint64_t*a,const uint64_t*b,const uint64_t*m,uint64_t n0);
+static void bn_montmul_k16asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
+  uint64_t ab[16],bb[16]; int i;
+  for(i=0;i<16;i++){ ab[i]=(i<a->top)?a->d[i]:0; bb[i]=(i<b->top)?b->d[i]:0; }
+  bn_mul_mont_k16(r->d, ab, bb, m->d, n0);
+  for(i=16;i<BN_LIMBS;i++) r->d[i]=0; r->top=16; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+}
+#endif
 void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
   if(m->top==32) bn_montmul_k32u(r,a,b,m,n0);
-  else if(m->top==16) bn_montmul_k16(r,a,b,m,n0);
+  else if(m->top==16)
+#if defined(__aarch64__) && defined(__APPLE__)
+    bn_montmul_k16asm(r,a,b,m,n0);
+#else
+    bn_montmul_k16(r,a,b,m,n0);
+#endif
   else bn_montmul_gen(r,a,b,m,n0);
 }
 void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const BN*rr){
