@@ -165,7 +165,8 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_open(int alg,
                                                unsigned char *out, intptr_t out_start);
 /* Verifies and decrypts ct[ct_start..ct_end) (ciphertext followed by
    tag) to out[out_start..]. Returns 1 on success, 0 if authentication
-   fails or on bad arguments; on failure `out` is not written. */
+   fails or on bad arguments. On authentication failure no valid plaintext
+   is released -- `out` is either left unwritten or zeroed. */
 
 /*************************************************/
 /* Argon2id password hashing                     */

@@ -26,7 +26,8 @@ static void poly1305_le64(rktcrypto_poly1305_ctx_t *ctx, uint64_t v)
 }
 
 /* Computes the Poly1305 tag over aad || pad || ct || pad || lens. */
-static void chacha20poly1305_tag(const unsigned char key[32],
+static void __attribute__((unused))
+chacha20poly1305_tag(const unsigned char key[32],
                                  const unsigned char nonce[12],
                                  const unsigned char *aad, intptr_t aad_len,
                                  const unsigned char *ct, intptr_t ct_len,
@@ -95,7 +96,7 @@ static int rktcrypto_chacha20poly1305_seal(const unsigned char key[32],
 
 /* Decrypts ct[ct_start..ct_end) (which includes the trailing 16-byte
    tag) to out[out_start..]. Returns 1 on success, 0 if authentication
-   fails (in which case `out` is not written with plaintext). */
+   fails -- in which case the plaintext output is zeroed (never released). */
 static int rktcrypto_chacha20poly1305_open(const unsigned char key[32],
                                     const unsigned char nonce[12],
                                     const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
@@ -111,12 +112,42 @@ static int rktcrypto_chacha20poly1305_open(const unsigned char key[32],
   if (total < 16 || aad_len < 0) return 0;
   ct_len = total - 16;
 
+#if defined(__aarch64__)
+  {
+    /* Fused: Poly1305 authenticates the ciphertext while ChaCha20 decrypts it,
+       both in one interleaved pass. The tag is verified afterwards; on failure
+       the plaintext (already written) is zeroed so nothing unauthenticated
+       leaves the function. */
+    unsigned char otk[64];
+    rktcrypto_poly1305_ctx_t poly;
+    unsigned char *pt = out + out_start;
+    intptr_t done;
+    int i, ok;
+    rktcrypto_chacha20_block(key, nonce, 0, otk);
+    rktcrypto_poly1305_init(&poly, otk);
+    rktcrypto_poly1305_update(&poly, aad + aad_start, aad_len);
+    poly1305_pad16(&poly, aad_len);
+    done = rktcrypto_chacha20poly1305_fused(key, nonce, cbody, pt, ct_len, 0, &poly);
+    if (done < ct_len) {
+      rktcrypto_chacha20_xor(key, nonce, (uint32_t)(1 + done / 64),
+                             cbody + done, pt + done, ct_len - done);
+      rktcrypto_poly1305_update(&poly, cbody + done, ct_len - done);
+    }
+    poly1305_pad16(&poly, ct_len);
+    poly1305_le64(&poly, (uint64_t)aad_len);
+    poly1305_le64(&poly, (uint64_t)ct_len);
+    rktcrypto_poly1305_final(&poly, tag);
+    ok = rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16);
+    if (!ok) for (i = 0; i < ct_len; i++) pt[i] = 0;
+    return ok;
+  }
+#else
   chacha20poly1305_tag(key, nonce, aad + aad_start, aad_len, cbody, ct_len, tag);
   if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16))
     return 0;
-
   rktcrypto_chacha20_xor(key, nonce, 1, cbody, out + out_start, ct_len);
   return 1;
+#endif
 }
 
 /* ---- XChaCha20-Poly1305 (24-byte nonce) ---- */
