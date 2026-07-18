@@ -53,55 +53,56 @@ void rktcrypto_sha256_core_init(rktcrypto_sha256_ctx_t *ctx, const uint32_t iv[8
 /* Hardware SHA-256 block transform using the ARMv8 SHA-256 extension.
    Produces the same result as the portable path; validated by the
    NIST vectors. */
-static void sha256_transform_hw(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
+/* Multi-block hardware SHA-256. The running state (abef/cdgh) stays in registers
+   across all blocks -- loaded once, stored once -- instead of the previous
+   load-transform-store per block. Per round the message schedule is split
+   (sha256su0 issued before the compression, sha256su1 after) so the independent
+   schedule work fills the sha256h/h2 dependency-chain latency, matching OpenSSL's
+   sha256_block_armv8. Bit-exact with the portable path (NIST vectors). */
+static void sha256_transform_hw(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p, intptr_t nblocks)
 {
-  uint32x4_t state0 = vld1q_u32(&ctx->h[0]);
-  uint32x4_t state1 = vld1q_u32(&ctx->h[4]);
-  uint32x4_t abef = state0, cdgh = state1;
-  uint32x4_t msg0, msg1, msg2, msg3, tmp0, tmp1;
-  int i;
+  uint32x4_t abef = vld1q_u32(&ctx->h[0]);
+  uint32x4_t cdgh = vld1q_u32(&ctx->h[4]);
 
-  /* Load 4 message vectors, big-endian to host order. */
-  msg0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 0)));
-  msg1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 16)));
-  msg2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 32)));
-  msg3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 48)));
-
-# define RND4(m, koff)                                          \
+# define RND(m0, m1, m2, m3, koff)                              \
   do {                                                          \
-    tmp0 = vaddq_u32(m, vld1q_u32(&K256[koff]));                \
-    tmp1 = abef;                                                \
-    abef = vsha256hq_u32(abef, cdgh, tmp0);                     \
-    cdgh = vsha256h2q_u32(cdgh, tmp1, tmp0);                    \
+    uint32x4_t _t0 = vaddq_u32(m0, vld1q_u32(&K256[koff]));     \
+    uint32x4_t _s;                                              \
+    m0 = vsha256su0q_u32(m0, m1);              /* schedule, pre-compress */ \
+    _s = abef;                                                  \
+    abef = vsha256hq_u32(abef, cdgh, _t0);                      \
+    cdgh = vsha256h2q_u32(cdgh, _s, _t0);                       \
+    m0 = vsha256su1q_u32(m0, m2, m3);          /* schedule, post-compress */ \
   } while (0)
-# define SCHED(a, b, c, d) do { a = vsha256su1q_u32(vsha256su0q_u32(a, b), c, d); } while (0)
+# define RNDL(m, koff)                                          \
+  do {                                                          \
+    uint32x4_t _t0 = vaddq_u32(m, vld1q_u32(&K256[koff]));      \
+    uint32x4_t _s = abef;                                       \
+    abef = vsha256hq_u32(abef, cdgh, _t0);                      \
+    cdgh = vsha256h2q_u32(cdgh, _s, _t0);                       \
+  } while (0)
 
-  /* Rounds 0-15 with message scheduling interleaved. */
-  RND4(msg0, 0);   SCHED(msg0, msg1, msg2, msg3);
-  RND4(msg1, 4);   SCHED(msg1, msg2, msg3, msg0);
-  RND4(msg2, 8);   SCHED(msg2, msg3, msg0, msg1);
-  RND4(msg3, 12);  SCHED(msg3, msg0, msg1, msg2);
-  RND4(msg0, 16);  SCHED(msg0, msg1, msg2, msg3);
-  RND4(msg1, 20);  SCHED(msg1, msg2, msg3, msg0);
-  RND4(msg2, 24);  SCHED(msg2, msg3, msg0, msg1);
-  RND4(msg3, 28);  SCHED(msg3, msg0, msg1, msg2);
-  RND4(msg0, 32);  SCHED(msg0, msg1, msg2, msg3);
-  RND4(msg1, 36);  SCHED(msg1, msg2, msg3, msg0);
-  RND4(msg2, 40);  SCHED(msg2, msg3, msg0, msg1);
-  RND4(msg3, 44);  SCHED(msg3, msg0, msg1, msg2);
-  RND4(msg0, 48);
-  RND4(msg1, 52);
-  RND4(msg2, 56);
-  RND4(msg3, 60);
-
-# undef RND4
-# undef SCHED
-  (void)i;
-
-  state0 = vaddq_u32(abef, state0);
-  state1 = vaddq_u32(cdgh, state1);
-  vst1q_u32(&ctx->h[0], state0);
-  vst1q_u32(&ctx->h[4], state1);
+  while (nblocks-- > 0) {
+    uint32x4_t s0 = abef, s1 = cdgh;
+    uint32x4_t msg0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 0)));
+    uint32x4_t msg1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 16)));
+    uint32x4_t msg2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 32)));
+    uint32x4_t msg3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p + 48)));
+    RND(msg0, msg1, msg2, msg3, 0);   RND(msg1, msg2, msg3, msg0, 4);
+    RND(msg2, msg3, msg0, msg1, 8);   RND(msg3, msg0, msg1, msg2, 12);
+    RND(msg0, msg1, msg2, msg3, 16);  RND(msg1, msg2, msg3, msg0, 20);
+    RND(msg2, msg3, msg0, msg1, 24);  RND(msg3, msg0, msg1, msg2, 28);
+    RND(msg0, msg1, msg2, msg3, 32);  RND(msg1, msg2, msg3, msg0, 36);
+    RND(msg2, msg3, msg0, msg1, 40);  RND(msg3, msg0, msg1, msg2, 44);
+    RNDL(msg0, 48); RNDL(msg1, 52); RNDL(msg2, 56); RNDL(msg3, 60);
+    abef = vaddq_u32(abef, s0);
+    cdgh = vaddq_u32(cdgh, s1);
+    p += 64;
+  }
+# undef RND
+# undef RNDL
+  vst1q_u32(&ctx->h[0], abef);
+  vst1q_u32(&ctx->h[4], cdgh);
 }
 #endif
 
@@ -135,37 +136,43 @@ static void sha256_transform_portable(rktcrypto_sha256_ctx_t *ctx, const unsigne
 }
 #endif
 
-static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p)
+static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p, intptr_t nblocks)
 {
 #if defined(__ARM_FEATURE_SHA2) || (defined(__ARM_FEATURE_CRYPTO) && defined(__ARM_NEON))
-  sha256_transform_hw(ctx, p);
+  sha256_transform_hw(ctx, p, nblocks);
 #elif defined(__x86_64__) || defined(__i386__)
   if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SHA)) {
-    rktcrypto_sha256_block_shani(ctx->h, p);
+    while (nblocks-- > 0) { rktcrypto_sha256_block_shani(ctx->h, p); p += 64; }
   } else {
-    sha256_transform_portable(ctx, p);
+    while (nblocks-- > 0) { sha256_transform_portable(ctx, p); p += 64; }
   }
 #else
-  sha256_transform_portable(ctx, p);
+  while (nblocks-- > 0) { sha256_transform_portable(ctx, p); p += 64; }
 #endif
 }
 
 void rktcrypto_sha256_core_update(rktcrypto_sha256_ctx_t *ctx,
                                   const unsigned char *data, intptr_t len)
 {
-  while (len > 0) {
+  intptr_t i;
+  /* complete a pending partial block first */
+  if (ctx->buf_len) {
     intptr_t n = 64 - ctx->buf_len;
-    intptr_t i;
     if (n > len) n = len;
     for (i = 0; i < n; i++) ctx->buf[ctx->buf_len + i] = data[i];
-    ctx->buf_len += n;
-    ctx->len += (uint64_t)n << 3;
-    data += n;
-    len -= n;
-    if (ctx->buf_len == 64) {
-      sha256_transform(ctx, ctx->buf);
-      ctx->buf_len = 0;
-    }
+    ctx->buf_len += n; ctx->len += (uint64_t)n << 3; data += n; len -= n;
+    if (ctx->buf_len == 64) { sha256_transform(ctx, ctx->buf, 1); ctx->buf_len = 0; }
+  }
+  /* process whole blocks straight from the input (no copy, state stays resident) */
+  if (len >= 64) {
+    intptr_t nb = len >> 6, bytes = nb << 6;
+    sha256_transform(ctx, data, nb);
+    ctx->len += (uint64_t)bytes << 3; data += bytes; len -= bytes;
+  }
+  /* buffer the remaining tail */
+  if (len > 0) {
+    for (i = 0; i < len; i++) ctx->buf[i] = data[i];
+    ctx->buf_len = len; ctx->len += (uint64_t)len << 3;
   }
 }
 
@@ -182,7 +189,7 @@ void rktcrypto_sha256_core_final(rktcrypto_sha256_ctx_t *ctx,
 
   for (i = 0; i < 8; i++)
     ctx->buf[56 + i] = (unsigned char)(bit_len >> (56 - 8 * i));
-  sha256_transform(ctx, ctx->buf);
+  sha256_transform(ctx, ctx->buf, 1);
   ctx->buf_len = 0;
 
   for (i = 0; i < out_len; i++)
