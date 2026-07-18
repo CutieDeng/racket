@@ -194,6 +194,94 @@ static void chacha20_8block_xor(const uint32_t s[16], uint32_t ctr,
   cc_store4(a, in, out, 0);
   cc_store4(b, in, out, 256);
 }
+
+/* Fused ChaCha20 (encrypt/decrypt) + Poly1305 absorb, INTERLEAVED: while the
+   SIMD engine runs the 10 double-rounds of one 512-byte (8-block) unit, the
+   scalar Poly1305 absorbs the PREVIOUS unit's 512 bytes of ciphertext. ChaCha
+   runs on the vector port and Poly1305 on the integer-multiply port, so the wide
+   out-of-order core issues them concurrently -- the MAC is nearly free under the
+   keystream. (Two separate passes, or even a per-unit fuse, cannot overlap: the
+   reorder window can't span a whole 512-byte ChaCha *then* its Poly; spreading
+   the 32 Poly blocks across the ChaCha rounds keeps both in the window.)
+
+   Processes only whole 512-byte units; returns bytes consumed. `mac` is the
+   ciphertext the tag covers (== out on encrypt, == in on decrypt). Poly r/h come
+   from pctx (its 16-byte buffer must be empty); h is written back. The Poly block
+   math is a copy of poly1305_blocks (rktcrypto_poly1305.c is canonical); verified
+   bit-exact by the AEAD self-test + OpenSSL differential. */
+static intptr_t chacha20poly1305_fused_units(uint32_t st[16], const unsigned char *in,
+                                             unsigned char *out, const unsigned char *mac,
+                                             intptr_t len, rktcrypto_poly1305_ctx_t *pctx)
+{
+  uint8x16_t idx8 = vld1q_u8(CC_ROT8IDX);
+  const uint32_t r0=pctx->r[0], r1=pctx->r[1], r2=pctx->r[2], r3=pctx->r[3], r4=pctx->r[4];
+  const uint32_t s1=r1*5, s2=r2*5, s3=r3*5, s4=r4*5;
+  uint32_t h0=pctx->h[0], h1=pctx->h[1], h2=pctx->h[2], h3=pctx->h[3], h4=pctx->h[4];
+  intptr_t off = 0;
+  const unsigned char *prev = 0;                 /* previous unit's ciphertext */
+#define POLY_BLK(mp) do {                                                     \
+    uint64_t d0,d1,d2,d3,d4; uint32_t c; const unsigned char *m=(mp);         \
+    h0 += ((uint32_t)m[0]|(uint32_t)m[1]<<8|(uint32_t)m[2]<<16|(uint32_t)m[3]<<24)&0x3ffffff; \
+    h1 += (((uint32_t)m[3]|(uint32_t)m[4]<<8|(uint32_t)m[5]<<16|(uint32_t)m[6]<<24)>>2)&0x3ffffff; \
+    h2 += (((uint32_t)m[6]|(uint32_t)m[7]<<8|(uint32_t)m[8]<<16|(uint32_t)m[9]<<24)>>4)&0x3ffffff; \
+    h3 += (((uint32_t)m[9]|(uint32_t)m[10]<<8|(uint32_t)m[11]<<16|(uint32_t)m[12]<<24)>>6)&0x3ffffff; \
+    h4 += (((uint32_t)m[12]|(uint32_t)m[13]<<8|(uint32_t)m[14]<<16|(uint32_t)m[15]<<24)>>8)|(1u<<24); \
+    d0=(uint64_t)h0*r0+(uint64_t)h1*s4+(uint64_t)h2*s3+(uint64_t)h3*s2+(uint64_t)h4*s1;  \
+    d1=(uint64_t)h0*r1+(uint64_t)h1*r0+(uint64_t)h2*s4+(uint64_t)h3*s3+(uint64_t)h4*s2;  \
+    d2=(uint64_t)h0*r2+(uint64_t)h1*r1+(uint64_t)h2*r0+(uint64_t)h3*s4+(uint64_t)h4*s3;  \
+    d3=(uint64_t)h0*r3+(uint64_t)h1*r2+(uint64_t)h2*r1+(uint64_t)h3*r0+(uint64_t)h4*s4;  \
+    d4=(uint64_t)h0*r4+(uint64_t)h1*r3+(uint64_t)h2*r2+(uint64_t)h3*r1+(uint64_t)h4*r0;  \
+    c=(uint32_t)(d0>>26);h0=(uint32_t)d0&0x3ffffff; d1+=c;c=(uint32_t)(d1>>26);h1=(uint32_t)d1&0x3ffffff; \
+    d2+=c;c=(uint32_t)(d2>>26);h2=(uint32_t)d2&0x3ffffff; d3+=c;c=(uint32_t)(d3>>26);h3=(uint32_t)d3&0x3ffffff; \
+    d4+=c;c=(uint32_t)(d4>>26);h4=(uint32_t)d4&0x3ffffff; h0+=c*5;c=h0>>26;h0&=0x3ffffff;h1+=c; \
+  } while (0)
+  while (off + 512 <= len) {
+    uint32_t ctr = st[12];
+    uint32x4_t a[16], b[16], oa[16], ob[16];
+    uint32x4_t ca = vsetq_lane_u32(ctr,   vdupq_n_u32(0), 0);
+    uint32x4_t cb = vsetq_lane_u32(ctr+4, vdupq_n_u32(0), 0);
+    int i, r, pb = 0;
+    ca=vsetq_lane_u32(ctr+1,ca,1);ca=vsetq_lane_u32(ctr+2,ca,2);ca=vsetq_lane_u32(ctr+3,ca,3);
+    cb=vsetq_lane_u32(ctr+5,cb,1);cb=vsetq_lane_u32(ctr+6,cb,2);cb=vsetq_lane_u32(ctr+7,cb,3);
+    for (i=0;i<16;i++){ a[i]=vdupq_n_u32(st[i]); b[i]=a[i]; }
+    a[12]=ca; b[12]=cb; for (i=0;i<16;i++){ oa[i]=a[i]; ob[i]=b[i]; }
+    for (r = 0; r < 10; r++) {
+      CC_QR4(a[0],a[4],a[8],a[12]);  CC_QR4(b[0],b[4],b[8],b[12]);
+      CC_QR4(a[1],a[5],a[9],a[13]);  CC_QR4(b[1],b[5],b[9],b[13]);
+      CC_QR4(a[2],a[6],a[10],a[14]); CC_QR4(b[2],b[6],b[10],b[14]);
+      CC_QR4(a[3],a[7],a[11],a[15]); CC_QR4(b[3],b[7],b[11],b[15]);
+      CC_QR4(a[0],a[5],a[10],a[15]); CC_QR4(b[0],b[5],b[10],b[15]);
+      CC_QR4(a[1],a[6],a[11],a[12]); CC_QR4(b[1],b[6],b[11],b[12]);
+      CC_QR4(a[2],a[7],a[8],a[13]);  CC_QR4(b[2],b[7],b[8],b[13]);
+      CC_QR4(a[3],a[4],a[9],a[14]);  CC_QR4(b[3],b[4],b[9],b[14]);
+      if (prev) { int target=(r+1)*32/10; while (pb<target){ POLY_BLK(prev+pb*16); pb++; } }
+    }
+    if (prev) while (pb<32){ POLY_BLK(prev+pb*16); pb++; }
+    for (i=0;i<16;i++){ a[i]=vaddq_u32(a[i],oa[i]); b[i]=vaddq_u32(b[i],ob[i]); }
+    cc_store4(a, in+off, out+off, 0);
+    cc_store4(b, in+off, out+off, 256);
+    prev = mac + off;
+    st[12] += 8; off += 512;
+  }
+  if (prev) { int i; for (i=0;i<32;i++) POLY_BLK(prev+i*16); }   /* last unit's MAC */
+#undef POLY_BLK
+  pctx->h[0]=h0; pctx->h[1]=h1; pctx->h[2]=h2; pctx->h[3]=h3; pctx->h[4]=h4;
+  return off;
+}
+
+/* Fused seal/open data pass (aarch64). Encrypts/decrypts `len` bytes from `in`
+   to `out` (counter starts at 1) and folds the ciphertext into `poly`, running
+   ChaCha and Poly1305 concurrently. `encrypt`!=0 selects which buffer is the
+   ciphertext the tag covers. Returns whole-unit bytes done; the caller finishes
+   the sub-512-byte tail with the ordinary two-pass path. */
+intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
+                                          const unsigned char *in, unsigned char *out, intptr_t len,
+                                          int encrypt, rktcrypto_poly1305_ctx_t *poly)
+{
+  uint32_t st[16];
+  chacha20_setup(st, key, nonce, 1);
+  return chacha20poly1305_fused_units(st, in, out, encrypt ? out : in, len, poly);
+}
 #endif
 
 void rktcrypto_chacha20_xor(const unsigned char key[32],

@@ -47,6 +47,17 @@ void rktcrypto_poly1305_update(rktcrypto_poly1305_ctx_t *ctx,
                                const unsigned char *data, intptr_t len);
 void rktcrypto_poly1305_final(rktcrypto_poly1305_ctx_t *ctx, unsigned char tag[16]);
 
+#if defined(__aarch64__)
+/* Fused ChaCha20 (en/decrypt) + Poly1305 absorb over whole 512-byte units,
+   interleaved so the SIMD keystream and the scalar MAC run concurrently. Writes
+   in..in+consumed to out; folds the ciphertext (out if encrypt, else in) into
+   `poly` (its 16-byte buffer must be empty). Returns whole-unit bytes consumed
+   (multiple of 512); the caller finishes the tail with the two-pass path. */
+intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
+                                          const unsigned char *in, unsigned char *out, intptr_t len,
+                                          int encrypt, rktcrypto_poly1305_ctx_t *poly);
+#endif
+
 /* ---- AES-256 (FIPS 197), encryption only, constant-time ---- */
 
 void rktcrypto_aes256_expand_key(const unsigned char key[32], unsigned char rk[240]);

@@ -64,8 +64,32 @@ static int rktcrypto_chacha20poly1305_seal(const unsigned char key[32],
 
   if (pt_len < 0 || aad_len < 0) return 0;
 
+#if defined(__aarch64__)
+  {
+    /* Fused: ChaCha20 keystream and Poly1305 MAC run concurrently (separate
+       execution ports), nearly hiding the MAC under the cipher. */
+    unsigned char otk[64];
+    rktcrypto_poly1305_ctx_t poly;
+    intptr_t done;
+    rktcrypto_chacha20_block(key, nonce, 0, otk);
+    rktcrypto_poly1305_init(&poly, otk);
+    rktcrypto_poly1305_update(&poly, aad + aad_start, aad_len);
+    poly1305_pad16(&poly, aad_len);
+    done = rktcrypto_chacha20poly1305_fused(key, nonce, pt + pt_start, ct, pt_len, 1, &poly);
+    if (done < pt_len) {
+      rktcrypto_chacha20_xor(key, nonce, (uint32_t)(1 + done / 64),
+                             pt + pt_start + done, ct + done, pt_len - done);
+      rktcrypto_poly1305_update(&poly, ct + done, pt_len - done);
+    }
+    poly1305_pad16(&poly, pt_len);
+    poly1305_le64(&poly, (uint64_t)aad_len);
+    poly1305_le64(&poly, (uint64_t)pt_len);
+    rktcrypto_poly1305_final(&poly, ct + pt_len);
+  }
+#else
   rktcrypto_chacha20_xor(key, nonce, 1, pt + pt_start, ct, pt_len);
   chacha20poly1305_tag(key, nonce, aad + aad_start, aad_len, ct, pt_len, ct + pt_len);
+#endif
   return 1;
 }
 
