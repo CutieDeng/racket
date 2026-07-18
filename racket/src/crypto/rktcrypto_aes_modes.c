@@ -79,6 +79,33 @@ void rktcrypto_aes_cmac(const unsigned char*key,intptr_t keylen,const unsigned c
   else { for(int i=0;i<rem;i++) last[i]=msg[o+i]; last[rem]=0x80; for(int i=(int)rem+1;i<16;i++) last[i]=0; for(int i=0;i<16;i++) last[i]^=K2[i]; }
   vst1q_u8(tag, aes_enc1(veorq_u8(X,vld1q_u8(last)),rk,Nr));
 }
+
+/* AES-XTS (IEEE 1619 / NIST SP 800-38E) with ciphertext stealing. key =
+   key1||key2 each `keylen` bytes; iv is the 16-byte tweak. */
+static void xts_gf(unsigned char T[16]){ int cin=0; for(int j=0;j<16;j++){ int cout=T[j]>>7; T[j]=(unsigned char)((T[j]<<1)|cin); cin=cout; } if(cin)T[0]^=0x87; }
+void rktcrypto_aes_xts(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
+                       const unsigned char*in,unsigned char*out,intptr_t len,int encrypt){
+  unsigned char rk1[240],rk2[240],dk1[240]; int Nr=aes_expand(key,(int)keylen,rk1); aes_expand(key+keylen,(int)keylen,rk2);
+  if(!encrypt) aes_expand_dec(key,(int)keylen,dk1);
+  unsigned char T[16]; vst1q_u8(T,aes_enc1(vld1q_u8(iv),rk2,Nr));
+  intptr_t nfull=len/16, rem=len%16, last_full=rem?nfull-1:nfull, o=0;
+  for(intptr_t i=0;i<last_full;i++){ uint8x16_t t=vld1q_u8(T);
+    uint8x16_t p=veorq_u8(vld1q_u8(in+o),t);
+    uint8x16_t c=encrypt?aes_enc1(p,rk1,Nr):aes_dec1(p,dk1,Nr);
+    vst1q_u8(out+o,veorq_u8(c,t)); xts_gf(T); o+=16; }
+  if(rem){ if(encrypt){ uint8x16_t t=vld1q_u8(T);
+      unsigned char cb[16]; vst1q_u8(cb,veorq_u8(aes_enc1(veorq_u8(vld1q_u8(in+o),t),rk1,Nr),t));
+      for(int i=0;i<rem;i++) out[o+16+i]=cb[i];
+      unsigned char pp[16]; for(int i=0;i<rem;i++)pp[i]=in[o+16+i]; for(int i=(int)rem;i<16;i++)pp[i]=cb[i];
+      unsigned char T2[16]; memcpy(T2,T,16); xts_gf(T2); uint8x16_t t2=vld1q_u8(T2);
+      vst1q_u8(out+o, veorq_u8(aes_enc1(veorq_u8(vld1q_u8(pp),t2),rk1,Nr),t2));
+    } else { unsigned char T2[16]; memcpy(T2,T,16); xts_gf(T2); uint8x16_t t2=vld1q_u8(T2);
+      unsigned char pb[16]; vst1q_u8(pb,veorq_u8(aes_dec1(veorq_u8(vld1q_u8(in+o),t2),dk1,Nr),t2));
+      for(int i=0;i<rem;i++) out[o+16+i]=pb[i];
+      unsigned char cc[16]; for(int i=0;i<rem;i++)cc[i]=in[o+16+i]; for(int i=(int)rem;i<16;i++)cc[i]=pb[i];
+      uint8x16_t t=vld1q_u8(T);
+      vst1q_u8(out+o, veorq_u8(aes_dec1(veorq_u8(vld1q_u8(cc),t),dk1,Nr),t)); } }
+}
 #else
 /* Portable fallback would reuse rktcrypto_aes.c's software block; stubbed for the
    non-AES-hardware build (Apple M / ARMv8-crypto is the target). */
@@ -86,4 +113,5 @@ void rktcrypto_aes_ctr(const unsigned char*k,intptr_t kl,const unsigned char iv[
 void rktcrypto_aes_cbc_encrypt(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
 void rktcrypto_aes_cbc_decrypt(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len; }
 void rktcrypto_aes_cmac(const unsigned char*k,intptr_t kl,const unsigned char*m,intptr_t len,unsigned char tag[16]){ (void)k;(void)kl;(void)m;(void)len;(void)tag; }
+void rktcrypto_aes_xts(const unsigned char*k,intptr_t kl,const unsigned char iv[16],const unsigned char*in,unsigned char*out,intptr_t len,int e){ (void)k;(void)kl;(void)iv;(void)in;(void)out;(void)len;(void)e; }
 #endif
