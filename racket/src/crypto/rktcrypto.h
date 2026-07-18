@@ -264,6 +264,20 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_x448_pubkey(unsigned char *out, const unsig
 /* Public key = X448(scalar, 5); out and scalar are 56 bytes. */
 
 /*************************************************/
+/* Ed448 signatures (RFC 8032), pure mode        */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_pubkey(unsigned char *pk, const unsigned char *sk);
+/* 57-byte public key from a 57-byte secret key. Returns 1. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_sign(unsigned char *sig,
+                                                const unsigned char *msg, intptr_t msglen,
+                                                const unsigned char *sk);
+/* Deterministic 114-byte Ed448 signature (pure mode, empty context). Returns 1. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_verify(const unsigned char *sig,
+                                                  const unsigned char *msg, intptr_t msglen,
+                                                  const unsigned char *pk);
+/* Verifies a 114-byte Ed448 signature. Returns 1 if valid, 0 otherwise. */
+
+/*************************************************/
 /* Ed25519 signatures (RFC 8032)                 */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_pubkey(unsigned char *pk, const unsigned char *seed);

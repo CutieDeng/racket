@@ -59,6 +59,7 @@
       "rktcrypto_p256_asm.S"
       "rktcrypto_ecc.c"
       "rktcrypto_x448.c"
+      "rktcrypto_ed448.c"
       "rktcrypto_mlkem.c"
       "rktcrypto_mlkem512.c"
       "rktcrypto_mlkem1024.c"
