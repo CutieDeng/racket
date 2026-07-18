@@ -17,6 +17,7 @@ void bn_shl(BN*,const BN*,int); void bn_mod(BN*,const BN*,const BN*);
 uint64_t bn_mont_n0(const BN*); void bn_mont_rr(BN*,const BN*);
 void bn_mont_setup(uint64_t*,BN*,const BN*);
 void bn_montmul(BN*,const BN*,const BN*,const BN*,uint64_t);
+void bn_montsqr(BN*,const BN*,const BN*,uint64_t);
 void bn_modexp_pre(BN*,const BN*,const BN*,const BN*,uint64_t,const BN*);
 void bn_modexp(BN*,const BN*,const BN*,const BN*);
 #endif

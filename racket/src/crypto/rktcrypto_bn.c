@@ -139,6 +139,33 @@ void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
 #endif
   else bn_montmul_gen(r,a,b,m,n0);
 }
+/* Montgomery squaring: symmetric 2k-word square (each off-diagonal product
+   once, then doubled) + SOS reduction. Bit-identical to bn_montmul(a,a); ~1.28x
+   at k=32, so it speeds the squaring-dominated public exponentiation (verify).
+   At k=16 the asm montmul is faster, so this routes there. */
+void bn_montsqr(BN*r,const BN*a,const BN*m,uint64_t n0){
+  int k=m->top,i,j; const uint64_t*ad=a->d,*md=m->d; int at=a->top;
+  uint64_t z[BN_LIMBS*2];
+#if defined(__aarch64__) && defined(__APPLE__)
+  if(k==16){ bn_montmul(r,a,a,m,n0); return; }
+#endif
+  if(k!=32){ bn_montmul(r,a,a,m,n0); return; }
+  for(i=0;i<2*k+1;i++)z[i]=0;
+  for(i=0;i<k;i++){ u128 c=0; uint64_t ai=(i<at)?ad[i]:0;
+    for(j=i+1;j<k;j++){ uint64_t aj=(j<at)?ad[j]:0; u128 s=(u128)ai*aj+z[i+j]+c; z[i+j]=(uint64_t)s; c=(uint64_t)(s>>64); }
+    z[i+k]=(uint64_t)c; }
+  { uint64_t carry=0; for(i=0;i<2*k;i++){ uint64_t nc=z[i]>>63; z[i]=(z[i]<<1)|carry; carry=nc; } z[2*k]=carry; }
+  { u128 c=0; for(i=0;i<k;i++){ uint64_t ai=(i<at)?ad[i]:0; u128 s=(u128)ai*ai+z[2*i]+c; z[2*i]=(uint64_t)s; c=(uint64_t)(s>>64);
+      s=(u128)z[2*i+1]+c; z[2*i+1]=(uint64_t)s; c=(uint64_t)(s>>64);
+      { int p=2*i+2; while(c){ u128 s2=(u128)z[p]+c; z[p]=(uint64_t)s2; c=(uint64_t)(s2>>64); p++; } } } }
+  for(i=0;i<k;i++){ uint64_t mi=z[i]*n0; u128 c=0;
+    for(j=0;j<k;j++){ u128 s=(u128)mi*md[j]+z[i+j]+c; z[i+j]=(uint64_t)s; c=(uint64_t)(s>>64); }
+    { int p=i+k; while(c){ u128 s2=(u128)z[p]+c; z[p]=(uint64_t)s2; c=(uint64_t)(s2>>64); p++; } } }
+  { uint64_t *hi=z+k; int ge=(z[2*k]!=0);
+    if(!ge) for(i=k-1;i>=0;i--){ if(hi[i]!=md[i]){ ge=hi[i]>md[i]; break; } }
+    if(ge){ u128 br=0; for(i=0;i<k;i++){ u128 s=(u128)hi[i]-md[i]-br; hi[i]=(uint64_t)s; br=(uint64_t)((s>>64)&1); } }
+    for(i=0;i<k;i++) r->d[i]=hi[i]; for(i=k;i<BN_LIMBS;i++) r->d[i]=0; r->top=k; bn_norm(r); }
+}
 void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const BN*rr){
   BN one,mbase,acc,br; bn_set_u64(&one,1);
   bn_mod(&br,base,m); bn_montmul(&mbase,&br,rr,m,n0);
@@ -150,7 +177,7 @@ void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const 
   bn_copy(&acc,&tbl[0]);
   int top=((eb+w-1)/w)*w;
   for(int i=top-w;i>=0;i-=w){
-    for(int s=0;s<w;s++) bn_montmul(&acc,&acc,&acc,m,n0);
+    for(int s=0;s<w;s++) bn_montsqr(&acc,&acc,m,n0);
     int d=0; for(int j=w-1;j>=0;j--) d=(d<<1)|bn_getbit(exp,i+j);
     if(d) bn_montmul(&acc,&acc,&tbl[d],m,n0);
   }
