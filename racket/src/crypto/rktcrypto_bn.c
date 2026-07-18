@@ -187,6 +187,20 @@ void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
 #endif
   else bn_montmul_gen(r,a,b,m,n0);
 }
+#if defined(__aarch64__) && defined(__APPLE__)
+/* 8-way operand-scanning symmetric Montgomery squaring (rktcrypto_bn_sqr.S):
+   off-diagonal products a[i]*a[j] once, doubled via shift-and-add with the
+   diagonal squares folded in, then 512-bit-per-iteration reduction. 339 ns at
+   k=32 -- matches OpenSSL (338 ns) and 1.41x the FIPS-via-montmul path. RSA
+   verify is 16 squarings, so this is its dominant kernel. */
+extern void bn_sqr_mont_8w(uint64_t*r,const uint64_t*a,const uint64_t*n,const uint64_t*n0p,int num);
+static void bn_montsqr_8wasm(BN*r,const BN*a,const BN*m,uint64_t n0,int k){
+  uint64_t ab[32]; int i;
+  for(i=0;i<k;i++) ab[i]=(i<a->top)?a->d[i]:0;
+  bn_sqr_mont_8w(r->d, ab, m->d, &n0, k);
+  for(i=k;i<BN_LIMBS;i++) r->d[i]=0; r->top=k; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+}
+#endif
 /* Montgomery squaring: symmetric 2k-word square (each off-diagonal product
    once, then doubled) + SOS reduction. Bit-identical to bn_montmul(a,a); ~1.28x
    at k=32, so it speeds the squaring-dominated public exponentiation (verify).
@@ -195,9 +209,8 @@ void bn_montsqr(BN*r,const BN*a,const BN*m,uint64_t n0){
   int k=m->top,i,j; const uint64_t*ad=a->d,*md=m->d; int at=a->top;
   uint64_t z[BN_LIMBS*2];
 #if defined(__aarch64__) && defined(__APPLE__)
-  /* On Apple the asm kernels beat the SOS square at both k=16 (register-
-     resident) and k=32 (Comba product-scanning). */
-  if(k==16 || k==32){ bn_montmul(r,a,a,m,n0); return; }
+  /* The 8-way symmetric squaring kernel wins at both k=16 and k=32. */
+  if(k==16 || k==32){ bn_montsqr_8wasm(r,a,m,n0,k); return; }
 #endif
   if(k!=32){ bn_montmul(r,a,a,m,n0); return; }
   for(i=0;i<2*k+1;i++)z[i]=0;
