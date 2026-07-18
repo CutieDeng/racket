@@ -58,6 +58,8 @@
       ;; #if guard on other targets; compiled as a preprocessed .S).
       "rktcrypto_p256_asm.S"
       "rktcrypto_mlkem.c"
+      "rktcrypto_mlkem512.c"
+      "rktcrypto_mlkem1024.c"
       "rktcrypto_mldsa.c"
       "rktcrypto_selftest.c"))
   (define objs

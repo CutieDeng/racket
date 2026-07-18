@@ -307,6 +307,31 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_siphash(const unsigned char *key, intptr_t 
    key length or range. */
 
 /*************************************************/
+/* ML-KEM-512 / 1024 (Kyber), FIPS 203           */
+
+#define RKTCRYPTO_MLKEM512_PUBLICKEYBYTES   800
+#define RKTCRYPTO_MLKEM512_SECRETKEYBYTES  1632
+#define RKTCRYPTO_MLKEM512_CIPHERTEXTBYTES  768
+#define RKTCRYPTO_MLKEM512_BYTES             32
+#define RKTCRYPTO_MLKEM1024_PUBLICKEYBYTES  1568
+#define RKTCRYPTO_MLKEM1024_SECRETKEYBYTES  3168
+#define RKTCRYPTO_MLKEM1024_CIPHERTEXTBYTES 1568
+#define RKTCRYPTO_MLKEM1024_BYTES             32
+
+/* Same API shape as ML-KEM-768 below; derand keygen takes 64 coins (d||z),
+   enc_derand a 32-byte message. Returns 1, or 0 on RNG failure. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem512_keypair(unsigned char *pk, unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem512_encaps(unsigned char *ct, unsigned char *ss, const unsigned char *pk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem512_decaps(unsigned char *ss, const unsigned char *ct, const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem512_keypair_derand(unsigned char *pk, unsigned char *sk, const unsigned char *coins);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem512_enc_derand(unsigned char *ct, unsigned char *ss, const unsigned char *pk, const unsigned char *m);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem1024_keypair(unsigned char *pk, unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem1024_encaps(unsigned char *ct, unsigned char *ss, const unsigned char *pk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem1024_decaps(unsigned char *ss, const unsigned char *ct, const unsigned char *sk);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem1024_keypair_derand(unsigned char *pk, unsigned char *sk, const unsigned char *coins);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_mlkem1024_enc_derand(unsigned char *ct, unsigned char *ss, const unsigned char *pk, const unsigned char *m);
+
+/*************************************************/
 /* ML-KEM-768 (Kyber), FIPS 203                  */
 
 #define RKTCRYPTO_MLKEM768_PUBLICKEYBYTES  1184
