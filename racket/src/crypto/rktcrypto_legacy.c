@@ -33,7 +33,7 @@ void rktcrypto_sha1_core_init(rktcrypto_sha1_ctx_t *ctx)
 #define SHA1_R3(a,b,c,d,e,i) e += SHA1_F3(b,c,d) + 0x8F1BBCDCu + SHA1_BLK(i) + ROTL32(a,5); b = ROTL32(b,30);
 #define SHA1_R4(a,b,c,d,e,i) e += SHA1_F2(b,c,d) + 0xCA62C1D6u + SHA1_BLK(i) + ROTL32(a,5); b = ROTL32(b,30);
 
-static void sha1_block(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p)
+static void __attribute__((unused)) sha1_block(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p)
 {
   uint32_t w[16], a, b, c, d, e;
   int i;
@@ -64,15 +64,64 @@ static void sha1_block(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p)
   ctx->h[0] += a; ctx->h[1] += b; ctx->h[2] += c; ctx->h[3] += d; ctx->h[4] += e;
 }
 
+#if defined(__ARM_FEATURE_SHA2) || defined(__ARM_FEATURE_CRYPTO)
+#include <arm_neon.h>
+/* ARMv8 crypto-extension SHA-1: state stays in NEON registers across the whole
+   run of blocks. 5 groups of 4 rounds per constant, message schedule via
+   sha1su0/su1, round function sha1c (0-19) / sha1p (20-39,60-79) / sha1m (40-59). */
+static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, intptr_t nblk)
+{
+  uint32x4_t ABCD, ABCD0, MSG0, MSG1, MSG2, MSG3, T0, T1;
+  uint32_t E0, E0S, E1;
+  const uint32x4_t C0=vdupq_n_u32(0x5A827999u), C1=vdupq_n_u32(0x6ED9EBA1u),
+                   C2=vdupq_n_u32(0x8F1BBCDCu), C3=vdupq_n_u32(0xCA62C1D6u);
+  ABCD = vld1q_u32(ctx->h); E0 = ctx->h[4];
+  while (nblk-- > 0) {
+    ABCD0 = ABCD; E0S = E0;
+    MSG0 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p)));
+    MSG1 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p+16)));
+    MSG2 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p+32)));
+    MSG3 = vreinterpretq_u32_u8(vrev32q_u8(vld1q_u8(p+48)));
+    T0 = vaddq_u32(MSG0, C0); T1 = vaddq_u32(MSG1, C0);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1cq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG2,C0); MSG0=vsha1su0q_u32(MSG0,MSG1,MSG2);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1cq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG3,C0); MSG0=vsha1su1q_u32(MSG0,MSG3); MSG1=vsha1su0q_u32(MSG1,MSG2,MSG3);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1cq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG0,C0); MSG1=vsha1su1q_u32(MSG1,MSG0); MSG2=vsha1su0q_u32(MSG2,MSG3,MSG0);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1cq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG1,C1); MSG2=vsha1su1q_u32(MSG2,MSG1); MSG3=vsha1su0q_u32(MSG3,MSG0,MSG1);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1cq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG2,C1); MSG3=vsha1su1q_u32(MSG3,MSG2); MSG0=vsha1su0q_u32(MSG0,MSG1,MSG2);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG3,C1); MSG0=vsha1su1q_u32(MSG0,MSG3); MSG1=vsha1su0q_u32(MSG1,MSG2,MSG3);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG0,C1); MSG1=vsha1su1q_u32(MSG1,MSG0); MSG2=vsha1su0q_u32(MSG2,MSG3,MSG0);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG1,C1); MSG2=vsha1su1q_u32(MSG2,MSG1); MSG3=vsha1su0q_u32(MSG3,MSG0,MSG1);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG2,C2); MSG3=vsha1su1q_u32(MSG3,MSG2); MSG0=vsha1su0q_u32(MSG0,MSG1,MSG2);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG3,C2); MSG0=vsha1su1q_u32(MSG0,MSG3); MSG1=vsha1su0q_u32(MSG1,MSG2,MSG3);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1mq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG0,C2); MSG1=vsha1su1q_u32(MSG1,MSG0); MSG2=vsha1su0q_u32(MSG2,MSG3,MSG0);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1mq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG1,C2); MSG2=vsha1su1q_u32(MSG2,MSG1); MSG3=vsha1su0q_u32(MSG3,MSG0,MSG1);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1mq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG2,C2); MSG3=vsha1su1q_u32(MSG3,MSG2); MSG0=vsha1su0q_u32(MSG0,MSG1,MSG2);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1mq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG3,C3); MSG0=vsha1su1q_u32(MSG0,MSG3); MSG1=vsha1su0q_u32(MSG1,MSG2,MSG3);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1mq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG0,C3); MSG1=vsha1su1q_u32(MSG1,MSG0); MSG2=vsha1su0q_u32(MSG2,MSG3,MSG0);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG1,C3); MSG2=vsha1su1q_u32(MSG2,MSG1); MSG3=vsha1su0q_u32(MSG3,MSG0,MSG1);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E0,T0); T0=vaddq_u32(MSG2,C3); MSG3=vsha1su1q_u32(MSG3,MSG2);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1); T1=vaddq_u32(MSG3,C3);
+    E1=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E0,T0);
+    E0=vsha1h_u32(vgetq_lane_u32(ABCD,0)); ABCD=vsha1pq_u32(ABCD,E1,T1);
+    E0 += E0S; ABCD = vaddq_u32(ABCD0, ABCD);
+    p += 64;
+  }
+  vst1q_u32(ctx->h, ABCD); ctx->h[4] = E0;
+}
+#else
+static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, intptr_t nblk)
+{ while (nblk-- > 0) { sha1_block(ctx, p); p += 64; } }
+#endif
+
 void rktcrypto_sha1_core_update(rktcrypto_sha1_ctx_t *ctx,
                                 const unsigned char *data, intptr_t len)
 {
   ctx->len += (uint64_t)len * 8;
   if (ctx->buf_len) {
     while (len && ctx->buf_len < 64) { ctx->buf[ctx->buf_len++] = *data++; len--; }
-    if (ctx->buf_len == 64) { sha1_block(ctx, ctx->buf); ctx->buf_len = 0; }
+    if (ctx->buf_len == 64) { sha1_compress(ctx, ctx->buf, 1); ctx->buf_len = 0; }
   }
-  while (len >= 64) { sha1_block(ctx, data); data += 64; len -= 64; }
+  if (len >= 64) { intptr_t nb = len >> 6; sha1_compress(ctx, data, nb); data += nb<<6; len -= nb<<6; }
   while (len) { ctx->buf[ctx->buf_len++] = *data++; len--; }
 }
 
@@ -92,7 +141,7 @@ void rktcrypto_sha1_core_final(rktcrypto_sha1_ctx_t *ctx,
     unsigned char lb[8];
     for (i = 0; i < 8; i++) lb[i] = (unsigned char)(bits >> (56 - 8*i));
     for (n = 0; n < 8; n++) { ctx->buf[ctx->buf_len++] = lb[n]; }
-    sha1_block(ctx, ctx->buf); ctx->buf_len = 0;
+    sha1_compress(ctx, ctx->buf, 1); ctx->buf_len = 0;
   }
   for (i = 0; i < 5; i++) {
     out[4*i+0] = (unsigned char)(ctx->h[i] >> 24);
