@@ -96,14 +96,34 @@ static void des_block(const uint64_t sk[16], const unsigned char in[8], unsigned
   out[4]=(o>>24)&0xFF;out[5]=(o>>16)&0xFF;out[6]=(o>>8)&0xFF;out[7]=o&0xFF;
 }
 
+/* Fused 3DES block: the intermediate FP (end of stage k) and IP (start of stage
+   k+1) are inverses and cancel, so one IP + 48 rounds (swap between stages) +
+   one FP instead of 3 IP + 3 FP. */
+static void des3_block(const uint64_t s1[16],const uint64_t s2[16],const uint64_t s3[16],
+                       const unsigned char in[8], unsigned char out[8], int encrypt){
+  const uint64_t *S[3]; int fwd[3],st,r; uint64_t b,o,pre; uint32_t L,R,t;
+  if(encrypt){ S[0]=s1;fwd[0]=1; S[1]=s2;fwd[1]=0; S[2]=s3;fwd[2]=1; }
+  else       { S[0]=s3;fwd[0]=0; S[1]=s2;fwd[1]=1; S[2]=s1;fwd[2]=0; }
+  b=DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
+   |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
+  L=(uint32_t)(b>>32); R=(uint32_t)b;
+  for(st=0;st<3;st++){
+    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; uint32_t nR=L^des_feistel(R,S[st][rr]); L=R; R=nR; }
+    t=L; L=R; R=t;                                   /* inter-stage / preoutput swap */
+  }
+  pre=((uint64_t)L<<32)|R;
+  o=DES_FP_T[0][(pre>>56)&0xFF]|DES_FP_T[1][(pre>>48)&0xFF]|DES_FP_T[2][(pre>>40)&0xFF]|DES_FP_T[3][(pre>>32)&0xFF]
+   |DES_FP_T[4][(pre>>24)&0xFF]|DES_FP_T[5][(pre>>16)&0xFF]|DES_FP_T[6][(pre>>8)&0xFF]|DES_FP_T[7][pre&0xFF];
+  out[0]=(o>>56)&0xFF;out[1]=(o>>48)&0xFF;out[2]=(o>>40)&0xFF;out[3]=(o>>32)&0xFF;
+  out[4]=(o>>24)&0xFF;out[5]=(o>>16)&0xFF;out[6]=(o>>8)&0xFF;out[7]=o&0xFF;
+}
+
 /* 3DES-EDE, key = k1||k2||k3 (24 bytes). encrypt!=0 -> EDE, else DED. */
 void rktcrypto_des3_ecb(const unsigned char key[24], const unsigned char *in,
                         unsigned char *out, intptr_t nblk, int encrypt){
   uint64_t s1[16],s2[16],s3[16]; intptr_t i;
   des_schedule(key,s1); des_schedule(key+8,s2); des_schedule(key+16,s3);
-  for(i=0;i<nblk;i++){ unsigned char t[8];
-    if(encrypt){ des_block(s1,in+8*i,t,1); des_block(s2,t,t,0); des_block(s3,t,out+8*i,1); }
-    else       { des_block(s3,in+8*i,t,0); des_block(s2,t,t,1); des_block(s1,t,out+8*i,0); } }
+  for(i=0;i<nblk;i++) des3_block(s1,s2,s3,in+8*i,out+8*i,encrypt);
 }
 
 void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
@@ -114,12 +134,12 @@ void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
   if(encrypt){
     for(i=0;i<nblk;i++){ unsigned char t[8];
       for(j=0;j<8;j++) t[j]=in[8*i+j]^prev[j];
-      des_block(s1,t,t,1); des_block(s2,t,t,0); des_block(s3,t,out+8*i,1);
+      des3_block(s1,s2,s3,t,out+8*i,1);
       memcpy(prev,out+8*i,8); }
   } else {
     for(i=0;i<nblk;i++){ unsigned char t[8],c[8];
       memcpy(c,in+8*i,8);
-      des_block(s3,c,t,0); des_block(s2,t,t,1); des_block(s1,t,t,0);
+      des3_block(s1,s2,s3,c,t,0);
       for(j=0;j<8;j++) out[8*i+j]=t[j]^prev[j];
       memcpy(prev,c,8); }
   }
