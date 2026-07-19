@@ -200,6 +200,7 @@ intptr_t rktcrypto_aead_key_size(int alg)
     case RKTCRYPTO_AEAD_CHACHA20_POLY1305:
     case RKTCRYPTO_AEAD_XCHACHA20_POLY1305:
     case RKTCRYPTO_AEAD_AES256_GCM: return 32;
+    case RKTCRYPTO_AEAD_AES128_GCM: return 16;
     default: return -1;
   }
 }
@@ -209,7 +210,8 @@ intptr_t rktcrypto_aead_nonce_size(int alg)
   switch (alg) {
     case RKTCRYPTO_AEAD_CHACHA20_POLY1305:  return 12;
     case RKTCRYPTO_AEAD_XCHACHA20_POLY1305: return 24;
-    case RKTCRYPTO_AEAD_AES256_GCM:         return 12;
+    case RKTCRYPTO_AEAD_AES256_GCM:
+    case RKTCRYPTO_AEAD_AES128_GCM:         return 12;
     default: return -1;
   }
 }
@@ -219,7 +221,8 @@ intptr_t rktcrypto_aead_tag_size(int alg)
   switch (alg) {
     case RKTCRYPTO_AEAD_CHACHA20_POLY1305:
     case RKTCRYPTO_AEAD_XCHACHA20_POLY1305:
-    case RKTCRYPTO_AEAD_AES256_GCM: return 16;
+    case RKTCRYPTO_AEAD_AES256_GCM:
+    case RKTCRYPTO_AEAD_AES128_GCM: return 16;
     default: return -1;
   }
 }
@@ -240,6 +243,9 @@ int rktcrypto_aead_seal(int alg,
     case RKTCRYPTO_AEAD_XCHACHA20_POLY1305:
       return rktcrypto_xchacha20poly1305_seal(key, nonce, aad, aad_start, aad_end,
                                               pt, pt_start, pt_end, out, out_start);
+    case RKTCRYPTO_AEAD_AES128_GCM:
+      return rktcrypto_aes128gcm_seal(key, nonce, aad, aad_start, aad_end,
+                                      pt, pt_start, pt_end, out, out_start);
     case RKTCRYPTO_AEAD_AES256_GCM:
       return rktcrypto_aes256gcm_seal(key, nonce, aad, aad_start, aad_end,
                                       pt, pt_start, pt_end, out, out_start);
@@ -263,6 +269,9 @@ int rktcrypto_aead_open(int alg,
     case RKTCRYPTO_AEAD_XCHACHA20_POLY1305:
       return rktcrypto_xchacha20poly1305_open(key, nonce, aad, aad_start, aad_end,
                                               ct, ct_start, ct_end, out, out_start);
+    case RKTCRYPTO_AEAD_AES128_GCM:
+      return rktcrypto_aes128gcm_open(key, nonce, aad, aad_start, aad_end,
+                                      ct, ct_start, ct_end, out, out_start);
     case RKTCRYPTO_AEAD_AES256_GCM:
       return rktcrypto_aes256gcm_open(key, nonce, aad, aad_start, aad_end,
                                       ct, ct_start, ct_end, out, out_start);

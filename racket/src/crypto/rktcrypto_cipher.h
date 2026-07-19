@@ -76,6 +76,16 @@ int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char no
                              const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
                              unsigned char *out, intptr_t out_start);
 
+/* ---- AES-128-GCM (SP 800-38D), 12-byte nonce (TLS_AES_128_GCM_SHA256) ---- */
+int rktcrypto_aes128gcm_seal(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start);
+int rktcrypto_aes128gcm_open(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start);
+
 /* ---- AES-CTR / AES-CBC (128/192/256), NIST SP 800-38A ---- */
 void rktcrypto_aes_ctr(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
                        const unsigned char *in, unsigned char *out, intptr_t len);

@@ -199,11 +199,12 @@ static inline uint64x2_t gcm_agg8(uint64x2_t acc, const uint64x2_t c[8], const u
 /* Full seal (encrypt=1) or open (encrypt=0) core: encrypts/decrypts and
    authenticates in a single pass, four blocks at a time. `tag` gets the
    16-byte authenticator (the caller compares it on open). */
-static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
+static inline __attribute__((always_inline))
+void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
                    const unsigned char nonce[12],
                    const unsigned char *aad, intptr_t aad_len,
                    const unsigned char *in, unsigned char *out, intptr_t len,
-                   int encrypt, unsigned char tag[16])
+                   int encrypt, unsigned char tag[16], const int Nr)
 {
   unsigned char hb[16], blk[16], ctr[16], j0[16], ej0[16], s[16];
   uint64x2_t H1, H2, H3, H4, Hp[8], acc;
@@ -253,10 +254,10 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
       int r, b;
       for (b = 0; b < 8; b++)
         st8[b] = vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0 + (uint32_t)b), bv, 3));
-      for (r = 0; r < 13; r++) { k = vld1q_u8(rk+16*r);
+      for (r = 0; r < Nr-1; r++) { k = vld1q_u8(rk+16*r);
         for (b = 0; b < 8; b++) st8[b] = vaesmcq_u8(vaeseq_u8(st8[b], k)); }
-      { uint8x16_t k13=vld1q_u8(rk+16*13), k14=vld1q_u8(rk+16*14);
-        for (b = 0; b < 8; b++) st8[b] = veorq_u8(vaeseq_u8(st8[b], k13), k14); }
+      { uint8x16_t klast1=vld1q_u8(rk+16*(Nr-1)), klast=vld1q_u8(rk+16*Nr);
+        for (b = 0; b < 8; b++) st8[b] = veorq_u8(vaeseq_u8(st8[b], klast1), klast); }
       if (have_prev) acc = gcm_agg8(acc, cg, Hp);   /* fold prev, overlaps AES above */
       for (b = 0; b < 8; b++) {
         iv8[b] = vld1q_u8(in+16*b);
@@ -279,12 +280,12 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
     s1=vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0+1u), bv, 3));
     s2=vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0+2u), bv, 3));
     s3=vreinterpretq_u8_u32(vsetq_lane_u32(__builtin_bswap32(c0+3u), bv, 3));
-    for (r=0;r<13;r++){ k=vld1q_u8(rk+16*r);
+    for (r=0;r<Nr-1;r++){ k=vld1q_u8(rk+16*r);
       s0=vaesmcq_u8(vaeseq_u8(s0,k)); s1=vaesmcq_u8(vaeseq_u8(s1,k));
       s2=vaesmcq_u8(vaeseq_u8(s2,k)); s3=vaesmcq_u8(vaeseq_u8(s3,k)); }
-    { uint8x16_t k13=vld1q_u8(rk+16*13), k14=vld1q_u8(rk+16*14);
-      s0=veorq_u8(vaeseq_u8(s0,k13),k14); s1=veorq_u8(vaeseq_u8(s1,k13),k14);
-      s2=veorq_u8(vaeseq_u8(s2,k13),k14); s3=veorq_u8(vaeseq_u8(s3,k13),k14); }
+    { uint8x16_t klast1=vld1q_u8(rk+16*(Nr-1)), klast=vld1q_u8(rk+16*Nr);
+      s0=veorq_u8(vaeseq_u8(s0,klast1),klast); s1=veorq_u8(vaeseq_u8(s1,klast1),klast);
+      s2=veorq_u8(vaeseq_u8(s2,klast1),klast); s3=veorq_u8(vaeseq_u8(s3,klast1),klast); }
     i0=vld1q_u8(in); i1=vld1q_u8(in+16); i2=vld1q_u8(in+32); i3=vld1q_u8(in+48);
     o0=veorq_u8(i0,s0); o1=veorq_u8(i1,s1); o2=veorq_u8(i2,s2); o3=veorq_u8(i3,s3);
     vst1q_u8(out,o0); vst1q_u8(out+16,o1); vst1q_u8(out+32,o2); vst1q_u8(out+48,o3);
@@ -299,7 +300,7 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
   while (l > 0) {
     intptr_t n = l < 16 ? l : 16;
     unsigned char ks[16], ob[16];
-    rktcrypto_aes256_encrypt_block(rk, ctr, ks);
+    rktcrypto_aes_enc_block(rk, Nr, ctr, ks);
     for (i = 0; i < n; i++) ob[i] = in[i] ^ ks[i];
     for (i = 0; i < n; i++) out[i] = ob[i];
     memset(blk, 0, 16);
@@ -316,7 +317,7 @@ static void gcm_hw(const unsigned char rk[240], const uint64_t h[2],
 
   vst1q_u8(s, vrbitq_u8(vreinterpretq_u8_u64(acc)));
   memcpy(j0, nonce, 12); j0[12]=0;j0[13]=0;j0[14]=0;j0[15]=1;
-  rktcrypto_aes256_encrypt_block(rk, j0, ej0);
+  rktcrypto_aes_enc_block(rk, Nr, j0, ej0);
   for (i=0;i<16;i++) tag[i] = s[i] ^ ej0[i];
 }
 
@@ -449,12 +450,12 @@ static void inc32(unsigned char ctr[16])
    traffic are), so a wider pipeline here did not help in practice. */
 static void __attribute__((unused))
 gctr(const unsigned char rk[240], unsigned char ctr[16],
-                 const unsigned char *in, unsigned char *out, intptr_t len)
+                 const unsigned char *in, unsigned char *out, intptr_t len, int Nr)
 {
   unsigned char ks[16];
   while (len > 0) {
     intptr_t n = (len < 16) ? len : 16, i;
-    rktcrypto_aes256_encrypt_block(rk, ctr, ks);
+    rktcrypto_aes_enc_block(rk, Nr, ctr, ks);
     for (i = 0; i < n; i++) out[i] = in[i] ^ ks[i];
     inc32(ctr);
     in += n; out += n; len -= n;
@@ -467,7 +468,7 @@ static void __attribute__((unused))
 gcm_tag(const unsigned char rk[240], const unsigned char nonce[12],
                     const unsigned char *aad, intptr_t aad_len,
                     const unsigned char *ct, intptr_t ct_len,
-                    const uint64_t h[2], unsigned char tag[16])
+                    const uint64_t h[2], unsigned char tag[16], int Nr)
 {
   unsigned char j0[16], ej0[16], s[16];
   int i;
@@ -499,27 +500,31 @@ gcm_tag(const unsigned char rk[240], const unsigned char nonce[12],
   /* J0 = nonce || 0x00000001 */
   memcpy(j0, nonce, 12);
   j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
-  rktcrypto_aes256_encrypt_block(rk, j0, ej0);
+  rktcrypto_aes_enc_block(rk, Nr, j0, ej0);
 
   for (i = 0; i < 16; i++) tag[i] = s[i] ^ ej0[i];
 }
 
-static void gcm_setup(const unsigned char key[32], unsigned char rk[240], uint64_t h[2])
+static int gcm_setup(const unsigned char *key, intptr_t keylen, unsigned char rk[240], uint64_t h[2])
 {
   unsigned char zero[16], hblock[16];
-  int i;
-  rktcrypto_aes256_expand_key(key, rk);
+  int Nr, i;
+  Nr = rktcrypto_aes_expand_key(key, keylen, rk);
   memset(zero, 0, 16);
-  rktcrypto_aes256_encrypt_block(rk, zero, hblock);
+  rktcrypto_aes_enc_block(rk, Nr, zero, hblock);   /* H = AES_K(0^128) */
   h[0] = 0; h[1] = 0;
   for (i = 0; i < 8; i++) h[0] = (h[0] << 8) | hblock[i];
   for (i = 8; i < 16; i++) h[1] = (h[1] << 8) | hblock[i];
+  return Nr;
 }
 
-int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char nonce[12],
-                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
-                             unsigned char *out, intptr_t out_start)
+/* Shared AES-GCM seal/open cores over a variable key length (16/24/32). Nr is
+   passed as a literal (14 for AES-256, 10 for AES-128) so the always-inlined
+   gcm_hw specializes its round loops per suite -- AES-256 codegen is unchanged. */
+static int gcm_seal_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
+                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                         unsigned char *out, intptr_t out_start, int Nr)
 {
   unsigned char rk[240];
   uint64_t h[2];
@@ -528,24 +533,23 @@ int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char no
 
   if (pt_len < 0 || aad_len < 0) return 0;
 
-  gcm_setup(key, rk, h);
+  gcm_setup(key, keylen, rk, h);
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
-  gcm_hw(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len);
+  gcm_hw(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr);
 #else
   { unsigned char ctr[16];
-    /* CTR starts at J0 + 1 = nonce || 0x00000002 */
     memcpy(ctr, nonce, 12);
     ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
-    gctr(rk, ctr, pt + pt_start, ct, pt_len);
-    gcm_tag(rk, nonce, aad + aad_start, aad_len, ct, pt_len, h, ct + pt_len); }
+    gctr(rk, ctr, pt + pt_start, ct, pt_len, Nr);
+    gcm_tag(rk, nonce, aad + aad_start, aad_len, ct, pt_len, h, ct + pt_len, Nr); }
 #endif
   return 1;
 }
 
-int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char nonce[12],
-                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
-                             unsigned char *out, intptr_t out_start)
+static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
+                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                         unsigned char *out, intptr_t out_start, int Nr)
 {
   unsigned char rk[240], tag[16];
   uint64_t h[2];
@@ -555,24 +559,46 @@ int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char no
   if (total < 16 || aad_len < 0) return 0;
   ct_len = total - 16;
 
-  gcm_setup(key, rk, h);
+  gcm_setup(key, keylen, rk, h);
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
-  /* Single pass: decrypt into out and compute the tag together. If the
-     tag is wrong, zero the plaintext so no unverified data is exposed. */
-  gcm_hw(rk, h, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag);
+  gcm_hw(rk, h, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag, Nr);
   if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16)) {
     memset(out + out_start, 0, (size_t)ct_len);
     return 0;
   }
   return 1;
 #else
-  gcm_tag(rk, nonce, aad + aad_start, aad_len, cbody, ct_len, h, tag);
+  gcm_tag(rk, nonce, aad + aad_start, aad_len, cbody, ct_len, h, tag, Nr);
   if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16))
     return 0;
   { unsigned char ctr[16];
     memcpy(ctr, nonce, 12);
     ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
-    gctr(rk, ctr, cbody, out + out_start, ct_len); }
+    gctr(rk, ctr, cbody, out + out_start, ct_len, Nr); }
   return 1;
 #endif
 }
+
+int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start)
+{ return gcm_seal_core(key, 32, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start, 14); }
+
+int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start)
+{ return gcm_open_core(key, 32, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start, 14); }
+
+int rktcrypto_aes128gcm_seal(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start)
+{ return gcm_seal_core(key, 16, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start, 10); }
+
+int rktcrypto_aes128gcm_open(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start)
+{ return gcm_open_core(key, 16, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start, 10); }

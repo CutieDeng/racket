@@ -137,6 +137,7 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_oneshot(int alg,
 #define RKTCRYPTO_AEAD_CHACHA20_POLY1305   1
 #define RKTCRYPTO_AEAD_XCHACHA20_POLY1305  2
 #define RKTCRYPTO_AEAD_AES256_GCM          3
+#define RKTCRYPTO_AEAD_AES128_GCM          4
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_key_size(int alg);
 /* Key size in bytes, or -1 if `alg` is unknown. */
