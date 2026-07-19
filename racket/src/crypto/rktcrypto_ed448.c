@@ -18,8 +18,6 @@ typedef uint64_t u64;
 /* p = 2^448 - 2^224 - 1 in reduced-radix 8x56 (224 = 4*56 -> limb-aligned fold) */
 static const u64 P448[NL]={0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL,0xfffffffffffffeULL,0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL};
 static const u64 TWOP[NL]={0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffcULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL};
-static const unsigned char P_MINUS2[56]={0xfd,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
-static const unsigned char P_PLUS1_4[56]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0xc0,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x3f};
 
 /* group order L (big-endian, 56 bytes) = 2^446 - 138380...503885 */
 static const unsigned char L_BE[56]={
@@ -86,11 +84,6 @@ static void from_mont(u64 *r,const u64 *a){ fe_copy(r,a); }
 static int fbn_cmp(const u64 *a,const u64 *b){ int i; for(i=7;i>=0;i--){ if(a[i]<b[i])return -1; if(a[i]>b[i])return 1; } return 0; }
 static int fis_zero(const u64 *a){ u64 t[8]; int i; u64 x=0; fe_copy(t,a); fe_canon(t); for(i=0;i<8;i++) x|=t[i]; return x==0; }
 static int fe_eq(const u64 *a,const u64 *b){ u64 x[8],y[8]; fe_copy(x,a); fe_copy(y,b); fe_canon(x); fe_canon(y); return fbn_cmp(x,y)==0; }
-static void fpow(u64 *r,const u64 *a,const unsigned char *e,int nbits){
-  u64 acc[8],base[8]; int i; acc[0]=1; for(i=1;i<8;i++) acc[i]=0; fe_copy(base,a);
-  for(i=0;i<nbits;i++){ if((e[i>>3]>>(i&7))&1) fmul(acc,acc,base); fsqr(base,base); }
-  fe_copy(r,acc);
-}
 static void pow2k(u64 *o,const u64 *in,int k){ u64 t[NL]; int i; fe_copy(t,in); for(i=0;i<k;i++) fsqr(t,t); fe_copy(o,t); }
 /* a^(p-2) via an addition chain (~454 sq + 13 mul vs bit-by-bit's 448 sq + 224
    mul). p-2 = 1 + 2^2*(2^222-1) + 2^225*(2^223-1). */
@@ -110,6 +103,23 @@ static void finv(u64 *r,const u64 *a){
   pow2k(tmp,t222,1);fmul(t223,tmp,t1);
   pow2k(tmp,t222,2);fmul(r,tmp,t1);
   pow2k(tmp,t223,225);fmul(r,r,tmp);
+}
+/* sqrt via a^((p+1)/4); (p+1)/4 = 2^222*(2^224-1) = pow2k(a^(2^224-1), 222). */
+static void fsqrt(u64 *r,const u64 *a){
+  u64 t1[NL],t2[NL],t3[NL],t6[NL],t12[NL],t24[NL],t30[NL],t48[NL],t96[NL],t192[NL],t222[NL],t224[NL],tmp[NL];
+  fe_copy(t1,a);
+  pow2k(tmp,t1,1);  fmul(t2,tmp,t1);
+  pow2k(tmp,t2,1);  fmul(t3,tmp,t1);
+  pow2k(tmp,t3,3);  fmul(t6,tmp,t3);
+  pow2k(tmp,t6,6);  fmul(t12,tmp,t6);
+  pow2k(tmp,t12,12);fmul(t24,tmp,t12);
+  pow2k(tmp,t24,6); fmul(t30,tmp,t6);
+  pow2k(tmp,t24,24);fmul(t48,tmp,t24);
+  pow2k(tmp,t48,48);fmul(t96,tmp,t48);
+  pow2k(tmp,t96,96);fmul(t192,tmp,t96);
+  pow2k(tmp,t192,30);fmul(t222,tmp,t30);
+  pow2k(tmp,t222,2);fmul(t224,tmp,t2);
+  pow2k(r,t224,222);
 }
 static void le56_to_limbs(u64 *a,const unsigned char *s){ int i,j; for(i=0;i<8;i++){ u64 v=0; for(j=0;j<7;j++) v|=(u64)s[7*i+j]<<(8*j); a[i]=v; } }
 static void be56_to_limbs(u64 *a,const unsigned char *s){ unsigned char le[56]; int i; for(i=0;i<56;i++) le[i]=s[55-i]; le56_to_limbs(a,le); }
@@ -260,7 +270,7 @@ static int pt_decode(ept *P,const unsigned char in[57]){
   fsub(num,y2,om);                        /* num = y^2 - 1 */
   fmul(den,g_dmont,y2); fsub(den,den,om); /* den = d*y^2 - 1 */
   finv(dinv,den); fmul(u,num,dinv);       /* u = num/den */
-  fpow(x,u,P_PLUS1_4,448);                /* x = u^((p+1)/4) = sqrt(u) */
+  fsqrt(x,u);                             /* x = sqrt(u) via addition chain */
   fsqr(x2,x);
   if(!fe_eq(x2,u)) return 0;              /* not a square -> invalid */
   { u64 xc[NL]; fe_copy(xc,x); fe_canon(xc); if((int)(xc[0]&1)!=sign){ u64 z[NL]={0,0,0,0,0,0,0,0}; fsub(x,z,x); } }
