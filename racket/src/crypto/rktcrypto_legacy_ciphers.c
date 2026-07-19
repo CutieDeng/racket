@@ -37,8 +37,31 @@ static uint64_t des_perm(uint64_t in, const unsigned char *tab, int n, int inbit
   return o;
 }
 
+/* SP tables fuse each S-box with the P permutation: SP[b][6bit] already holds
+   the P-permuted 32-bit contribution, so the feistel is 8 lookups XORed --
+   no per-bit P loop. Built once from the S/P tables. */
+static uint32_t DES_SP[8][64];
+/* Byte-indexed IP/FP: IP_T[i][v] = IP applied to value v placed at input byte i.
+   IP(x) = OR_i IP_T[i][byte_i(x)] -- no 64-bit permutation loop per block. */
+static uint64_t DES_IP_T[8][256], DES_FP_T[8][256];
+static int des_sp_inited=0;
+static void des_sp_init(void){
+  int b,j,v;
+  for(b=0;b<8;b++) for(j=0;j<64;j++){
+    int row=((j>>5)<<1)|(j&1), col=(j>>1)&0xF;
+    uint32_t sval=DES_S[b][row*16+col];
+    DES_SP[b][j]=(uint32_t)des_perm((uint32_t)sval<<(28-4*b),DES_P,32,32);
+  }
+  for(b=0;b<8;b++) for(v=0;v<256;v++){
+    uint64_t in=(uint64_t)v<<(56-8*b);
+    DES_IP_T[b][v]=des_perm(in,DES_IP,64,64);
+    DES_FP_T[b][v]=des_perm(in,DES_FP,64,64);
+  }
+  des_sp_inited=1;
+}
 static void des_schedule(const unsigned char k[8], uint64_t sk[16]){
   uint64_t key=0, cd; uint32_t C,D; int r;
+  if(!des_sp_inited) des_sp_init();
   { int i; for(i=0;i<8;i++) key=(key<<8)|k[i]; }
   cd=des_perm(key,DES_PC1,56,64); C=(cd>>28)&0xFFFFFFF; D=cd&0xFFFFFFF;
   for(r=0;r<16;r++){ int s=DES_SH[r];
@@ -46,20 +69,31 @@ static void des_schedule(const unsigned char k[8], uint64_t sk[16]){
     sk[r]=des_perm(((uint64_t)C<<28)|D,DES_PC2,48,56); }
 }
 
+/* E-expansion via shifts (no 48-bit permutation loop): the eight overlapping
+   6-bit groups of E(R) are contiguous windows of R (with wraparound at the ends).
+   Each group is XORed with the matching 6 bits of the subkey and indexes SP. */
 static uint32_t des_feistel(uint32_t R, uint64_t k){
-  uint64_t e=des_perm(R,DES_E,48,32)^k; uint32_t out=0; int i;
-  for(i=0;i<8;i++){ int six=(e>>(42-6*i))&0x3F; int row=((six>>5)<<1)|(six&1); int col=(six>>1)&0xF;
-    out=(out<<4)|DES_S[i][row*16+col]; }
-  return (uint32_t)des_perm(out,DES_P,32,32);
+  return DES_SP[0][(((((R&1)<<5)|((R>>27)&0x1F)) ^ (uint32_t)(k>>42)) & 0x3F)]
+        ^DES_SP[1][((((R>>23)&0x3F)) ^ (uint32_t)(k>>36)) & 0x3F]
+        ^DES_SP[2][((((R>>19)&0x3F)) ^ (uint32_t)(k>>30)) & 0x3F]
+        ^DES_SP[3][((((R>>15)&0x3F)) ^ (uint32_t)(k>>24)) & 0x3F]
+        ^DES_SP[4][((((R>>11)&0x3F)) ^ (uint32_t)(k>>18)) & 0x3F]
+        ^DES_SP[5][((((R>>7)&0x3F)) ^ (uint32_t)(k>>12)) & 0x3F]
+        ^DES_SP[6][((((R>>3)&0x3F)) ^ (uint32_t)(k>>6)) & 0x3F]
+        ^DES_SP[7][((((R&0x1F)<<1)|((R>>31)&1)) ^ (uint32_t)k) & 0x3F];
 }
 
 static void des_block(const uint64_t sk[16], const unsigned char in[8], unsigned char out[8], int enc){
-  uint64_t b=0,pre,o; uint32_t L,R; int i,r;
-  for(i=0;i<8;i++) b=(b<<8)|in[i];
-  b=des_perm(b,DES_IP,64,64); L=b>>32; R=b&0xFFFFFFFF;
+  uint64_t b,pre,o; uint32_t L,R; int r;
+  b=DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
+   |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
+  L=b>>32; R=b&0xFFFFFFFF;
   for(r=0;r<16;r++){ int rr=enc?r:15-r; uint32_t nR=L^des_feistel(R,sk[rr]); L=R; R=nR; }
-  pre=((uint64_t)R<<32)|L; o=des_perm(pre,DES_FP,64,64);
-  for(i=0;i<8;i++) out[i]=(o>>(56-8*i))&0xFF;
+  pre=((uint64_t)R<<32)|L;
+  o=DES_FP_T[0][(pre>>56)&0xFF]|DES_FP_T[1][(pre>>48)&0xFF]|DES_FP_T[2][(pre>>40)&0xFF]|DES_FP_T[3][(pre>>32)&0xFF]
+   |DES_FP_T[4][(pre>>24)&0xFF]|DES_FP_T[5][(pre>>16)&0xFF]|DES_FP_T[6][(pre>>8)&0xFF]|DES_FP_T[7][pre&0xFF];
+  out[0]=(o>>56)&0xFF;out[1]=(o>>48)&0xFF;out[2]=(o>>40)&0xFF;out[3]=(o>>32)&0xFF;
+  out[4]=(o>>24)&0xFF;out[5]=(o>>16)&0xFF;out[6]=(o>>8)&0xFF;out[7]=o&0xFF;
 }
 
 /* 3DES-EDE, key = k1||k2||k3 (24 bytes). encrypt!=0 -> EDE, else DED. */
