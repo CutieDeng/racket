@@ -74,7 +74,19 @@ static void fe_mul(fe h, const fe f, const fe g)
   fe_carry(h, r0, r1, r2, r3, r4);
 }
 
-static void fe_sq(fe h, const fe f) { fe_mul(h, f, f); }
+/* Dedicated squaring: 15 muls (vs 25) via doubled cross terms. */
+static void fe_sq(fe h, const fe f) {
+  uint64_t f0=f[0],f1=f[1],f2=f[2],f3=f[3],f4=f[4];
+  uint64_t f0_2=2*f0,f1_2=2*f1;
+  uint64_t f1_38=38*f1,f2_38=38*f2,f3_38=38*f3,f3_19=19*f3,f4_19=19*f4;
+  __uint128_t r0,r1,r2,r3,r4;
+  r0=(__uint128_t)f0*f0 + (__uint128_t)f1_38*f4 + (__uint128_t)f2_38*f3;
+  r1=(__uint128_t)f0_2*f1 + (__uint128_t)f2_38*f4 + (__uint128_t)f3_19*f3;
+  r2=(__uint128_t)f0_2*f2 + (__uint128_t)f1*f1 + (__uint128_t)f3_38*f4;
+  r3=(__uint128_t)f0_2*f3 + (__uint128_t)f1_2*f2 + (__uint128_t)f4_19*f4;
+  r4=(__uint128_t)f0_2*f4 + (__uint128_t)f1_2*f3 + (__uint128_t)f2*f2;
+  fe_carry(h, r0, r1, r2, r3, r4);
+}
 
 /* h = f * 121665 (the (A-2)/4 Montgomery constant). */
 static void fe_mul121665(fe h, const fe f)
