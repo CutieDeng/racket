@@ -154,29 +154,51 @@ static void pt_scalarmul(ept *R,const unsigned char *k_be,int kbytes,const ept *
    ~456 doublings + adds). Same scheme as the P-256/384/521 and Ed25519 combs.
    The edwards448 addition law is complete, so no exceptional cases. */
 #define ED448_NWIN 114
-static ept ed448_comb[ED448_NWIN][16];
+/* cached affine point (X, Y, d*X*Y) for the mixed-add comb; a=1 madd is 8 muls
+   (vs the unified add's 10) and its cmov scan touches 3 field elements not 4. */
+typedef struct { u64 x[NL],y[NL],dt[NL]; } cached;
+static void pt_madd(ept *r,const ept *p,const cached *q){
+  u64 A[NL],B[NL],C[NL],E[NL],F[NL],G[NL],H[NL],t0[NL],t1[NL];
+  fmul(A,p->X,q->x); fmul(B,p->Y,q->y); fmul(C,p->T,q->dt);
+  fadd(t0,p->X,p->Y); fadd(t1,q->x,q->y); fmul(E,t0,t1); fsub(E,E,A); fsub(E,E,B);
+  fsub(F,p->Z,C); fadd(G,p->Z,C); fsub(H,B,A);          /* Z2=1 so D=Z1 */
+  fmul(r->X,E,F); fmul(r->Y,G,H); fmul(r->T,E,H); fmul(r->Z,F,G);
+}
+static void cached_cmov(cached *r,const cached *a,u64 b){ u64 m=0-b; int i;
+  for(i=0;i<NL;i++){ r->x[i]^=m&(r->x[i]^a->x[i]); r->y[i]^=m&(r->y[i]^a->y[i]); r->dt[i]^=m&(r->dt[i]^a->dt[i]); } }
+static cached ed448_comb[ED448_NWIN][16];
 static int ed448_comb_inited=0;
 static void ed448_comb_init(void){
-  ept base; u64 gx[NL],gy[NL],one[NL]={1,0,0,0,0,0,0}; int w,d;
+  ept base,tmp[16]; u64 gx[NL],gy[NL],one[NL]={1,0,0,0,0,0,0};
+  u64 prefix[16][NL],inv[NL],zi[NL],x[NL],y[NL]; int w,d;
   if(ed448_comb_inited) return;
   be56_to_limbs(gx,GX_BE); be56_to_limbs(gy,GY_BE);
-  to_mont(base.X,gx); to_mont(base.Y,gy); to_mont(base.Z,one); fmul(base.T,base.X,base.Y);
+  fe_copy(base.X,gx); fe_copy(base.Y,gy); fe_copy(base.Z,one); fmul(base.T,base.X,base.Y);
   for(w=0;w<ED448_NWIN;w++){
-    pt_identity(&ed448_comb[w][0]); ed448_comb[w][1]=base;
-    for(d=2;d<16;d++) pt_add(&ed448_comb[w][d],&ed448_comb[w][d-1],&base);
+    pt_identity(&tmp[0]); tmp[1]=base;
+    for(d=2;d<16;d++) pt_add(&tmp[d],&tmp[d-1],&base);
+    fe_copy(prefix[0],tmp[0].Z);                         /* batch-normalize to affine */
+    for(d=1;d<16;d++) fmul(prefix[d],prefix[d-1],tmp[d].Z);
+    finv(inv,prefix[15]);
+    for(d=15;d>=0;d--){
+      if(d>0){ fmul(zi,inv,prefix[d-1]); fmul(inv,inv,tmp[d].Z); } else fe_copy(zi,inv);
+      fmul(x,tmp[d].X,zi); fmul(y,tmp[d].Y,zi);
+      fe_copy(ed448_comb[w][d].x,x); fe_copy(ed448_comb[w][d].y,y);
+      fmul(ed448_comb[w][d].dt,x,y); fmul(ed448_comb[w][d].dt,ed448_comb[w][d].dt,g_dmont);
+    }
     if(w+1<ED448_NWIN){ for(d=0;d<4;d++) pt_dbl(&base,&base); }
   }
   ed448_comb_inited=1;
 }
 /* r*B from a big-endian scalar (kbytes bytes); constant-time cmov table scan. */
 static void pt_scalarmul_base(ept *R,const unsigned char *k_be,int kbytes){
-  int w,d,nw=kbytes*2; ept sel,acc; pt_identity(&acc);
+  int w,d,nw=kbytes*2; cached sel; ept acc; pt_identity(&acc);
   ed448_comb_init();
   for(w=0;w<nw && w<ED448_NWIN;w++){
     int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
     sel=ed448_comb[w][0];
-    for(d=1;d<16;d++) pt_cmov(&sel,&ed448_comb[w][d],(u64)(d==nib));
-    pt_add(&acc,&acc,&sel);
+    for(d=1;d<16;d++) cached_cmov(&sel,&ed448_comb[w][d],(u64)(d==nib));
+    pt_madd(&acc,&acc,&sel);
   }
   *R=acc;
 }
