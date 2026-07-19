@@ -183,81 +183,94 @@ static void fp_inv(u64 *r,const u64 *a,const curve *cv){
   bn_cpy(r,acc);
 }
 
-/* ---- projective points (X:Y:Z), RCB complete formulas (a = -3) ---- */
+/* ---- Jacobian points (X:Y:Z), affine = (X/Z^2, Y/Z^3); identity is Z=0. Same
+   non-complete formulas as the P-256 path: jac_double ~4M+4S, mixed_add ~8M+3S
+   -- much cheaper than the RCB complete formulas. The addition has the standard
+   P=Q / P=-Q / identity special cases (data-dependent branch: the accepted CT
+   caveat, identical to the P-256 implementation). */
 typedef struct { u64 X[MAXL],Y[MAXL],Z[MAXL]; } jpt;
-/* Renes-Costello-Batina 2016, Algorithm 4: complete addition specialized for
-   a = -3 (uses the plain b). 12M + 2 mul-by-b = 14 muls vs Algorithm 1's 17. */
-static void pt_add(jpt *R,const jpt *P,const jpt *Q,const curve *cv){
-  u64 t0[MAXL],t1[MAXL],t2[MAXL],t3[MAXL],t4[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL];
-  const u64 *b=cv->bmont;
-  const u64 *X1=P->X,*Y1=P->Y,*Z1=P->Z,*X2=Q->X,*Y2=Q->Y,*Z2=Q->Z;
-  fp_mul(t0,X1,X2,cv); fp_mul(t1,Y1,Y2,cv); fp_mul(t2,Z1,Z2,cv);
-  fp_add(t3,X1,Y1,cv); fp_add(t4,X2,Y2,cv); fp_mul(t3,t3,t4,cv);
-  fp_add(t4,t0,t1,cv); fp_sub(t3,t3,t4,cv); fp_add(t4,Y1,Z1,cv);
-  fp_add(X3,Y2,Z2,cv); fp_mul(t4,t4,X3,cv); fp_add(X3,t1,t2,cv);
-  fp_sub(t4,t4,X3,cv); fp_add(X3,X1,Z1,cv); fp_add(Y3,X2,Z2,cv);
-  fp_mul(X3,X3,Y3,cv); fp_add(Y3,t0,t2,cv); fp_sub(Y3,X3,Y3,cv);
-  fp_mul(Z3,b,t2,cv);  fp_sub(X3,Y3,Z3,cv); fp_add(Z3,X3,X3,cv);
-  fp_add(X3,X3,Z3,cv); fp_sub(Z3,t1,X3,cv); fp_add(X3,t1,X3,cv);
-  fp_mul(Y3,b,Y3,cv);  fp_add(t1,t2,t2,cv); fp_add(t2,t1,t2,cv);
-  fp_sub(Y3,Y3,t2,cv); fp_sub(Y3,Y3,t0,cv); fp_add(t1,Y3,Y3,cv);
-  fp_add(Y3,t1,Y3,cv); fp_add(t1,t0,t0,cv); fp_add(t0,t1,t0,cv);
-  fp_sub(t0,t0,t2,cv); fp_mul(t1,t4,Y3,cv); fp_mul(t2,t0,Y3,cv);
-  fp_mul(Y3,X3,Z3,cv); fp_add(Y3,Y3,t2,cv); fp_mul(X3,t3,X3,cv);
-  fp_sub(X3,X3,t1,cv); fp_mul(Z3,t4,Z3,cv); fp_mul(t1,t3,t0,cv);
-  fp_add(Z3,Z3,t1,cv);
-  bn_cpy(R->X,X3); bn_cpy(R->Y,Y3); bn_cpy(R->Z,Z3);
+static void pt_set_id(jpt *R){ bn_zero(R->X); bn_zero(R->Y); bn_zero(R->Z); R->X[0]=1; R->Y[0]=1; }
+static void jac_double(jpt *r,const jpt *p,const curve *cv){   /* dbl-2001-b, a=-3 */
+  u64 YY[MAXL],ZZ[MAXL],S[MAXL],M[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL],t[MAXL],Y4[MAXL],xm[MAXL],xp[MAXL],prod[MAXL];
+  if(bn_iszero(p->Z,cv->nl)){ *r=*p; return; }
+  fp_mul(YY,p->Y,p->Y,cv); fp_mul(ZZ,p->Z,p->Z,cv); fp_mul(Z3,p->Y,p->Z,cv);
+  fp_sub(xm,p->X,ZZ,cv); fp_add(xp,p->X,ZZ,cv);
+  fp_mul(S,p->X,YY,cv); fp_mul(Y4,YY,YY,cv); fp_mul(prod,xm,xp,cv);
+  fp_add(S,S,S,cv); fp_add(S,S,S,cv);                        /* S = 4XY^2 */
+  fp_add(M,prod,prod,cv); fp_add(M,M,prod,cv);               /* M = 3(X-ZZ)(X+ZZ) */
+  fp_add(Y4,Y4,Y4,cv); fp_add(Y4,Y4,Y4,cv); fp_add(Y4,Y4,Y4,cv); /* 8Y^4 */
+  fp_mul(X3,M,M,cv); fp_sub(X3,X3,S,cv); fp_sub(X3,X3,S,cv);  /* X3 = M^2 - 2S */
+  fp_sub(t,S,X3,cv); fp_mul(t,M,t,cv); fp_sub(Y3,t,Y4,cv);    /* Y3 = M(S-X3) - 8Y^4 */
+  fp_add(Z3,Z3,Z3,cv);                                        /* Z3 = 2YZ */
+  bn_cpy(r->X,X3); bn_cpy(r->Y,Y3); bn_cpy(r->Z,Z3);
 }
-/* Renes-Costello-Batina 2016, Algorithm 6: exception-free doubling for a = -3
-   (uses the plain b, not b3). 13 field muls vs the complete addition's 17. */
-static void pt_dbl(jpt *R,const jpt *P,const curve *cv){
-  u64 t0[MAXL],t1[MAXL],t2[MAXL],t3[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL];
-  const u64 *b=cv->bmont;
-  fp_mul(t0,P->X,P->X,cv); fp_mul(t1,P->Y,P->Y,cv); fp_mul(t2,P->Z,P->Z,cv);
-  fp_mul(t3,P->X,P->Y,cv); fp_add(t3,t3,t3,cv);
-  fp_mul(Z3,P->X,P->Z,cv); fp_add(Z3,Z3,Z3,cv);
-  fp_mul(Y3,b,t2,cv); fp_sub(Y3,Y3,Z3,cv);
-  fp_add(X3,Y3,Y3,cv); fp_add(Y3,X3,Y3,cv);
-  fp_sub(X3,t1,Y3,cv); fp_add(Y3,t1,Y3,cv);
-  fp_mul(Y3,X3,Y3,cv); fp_mul(X3,X3,t3,cv);
-  fp_add(t3,t2,t2,cv); fp_add(t2,t2,t3,cv);
-  fp_mul(Z3,b,Z3,cv); fp_sub(Z3,Z3,t2,cv); fp_sub(Z3,Z3,t0,cv);
-  fp_add(t3,Z3,Z3,cv); fp_add(Z3,Z3,t3,cv);
-  fp_add(t3,t0,t0,cv); fp_add(t0,t3,t0,cv); fp_sub(t0,t0,t2,cv);
-  fp_mul(t0,t0,Z3,cv); fp_add(Y3,Y3,t0,cv);
-  fp_mul(t0,P->Y,P->Z,cv); fp_add(t0,t0,t0,cv);
-  fp_mul(Z3,t0,Z3,cv); fp_sub(X3,X3,Z3,cv);
-  fp_mul(Z3,t0,t1,cv); fp_add(Z3,Z3,Z3,cv); fp_add(Z3,Z3,Z3,cv);
-  bn_cpy(R->X,X3); bn_cpy(R->Y,Y3); bn_cpy(R->Z,Z3);
+static void jac_add(jpt *r,const jpt *p,const jpt *q,const curve *cv){   /* add-2007-bl */
+  u64 Z1Z1[MAXL],Z2Z2[MAXL],U1[MAXL],U2[MAXL],S1[MAXL],S2[MAXL],H[MAXL],Rr[MAXL],HH[MAXL],HHH[MAXL],t[MAXL],t2[MAXL],tt[MAXL],X3[MAXL],ZZ[MAXL];
+  if(bn_iszero(p->Z,cv->nl)){ *r=*q; return; }
+  if(bn_iszero(q->Z,cv->nl)){ *r=*p; return; }
+  fp_mul(Z1Z1,p->Z,p->Z,cv); fp_mul(Z2Z2,q->Z,q->Z,cv);
+  fp_mul(U1,p->X,Z2Z2,cv); fp_mul(U2,q->X,Z1Z1,cv);
+  fp_mul(S1,p->Y,q->Z,cv); fp_mul(S2,q->Y,p->Z,cv);
+  fp_mul(S1,S1,Z2Z2,cv); fp_mul(S2,S2,Z1Z1,cv);
+  fp_sub(H,U2,U1,cv); fp_sub(Rr,S2,S1,cv);
+  if(bn_iszero(H,cv->nl)){ if(bn_iszero(Rr,cv->nl)){ jac_double(r,p,cv); return; } pt_set_id(r); return; }
+  fp_mul(HH,H,H,cv); fp_mul(X3,Rr,Rr,cv);
+  fp_mul(HHH,HH,H,cv); fp_mul(t,U1,HH,cv);
+  fp_sub(X3,X3,HHH,cv); fp_sub(X3,X3,t,cv); fp_sub(X3,X3,t,cv);
+  fp_mul(ZZ,p->Z,q->Z,cv); fp_mul(tt,S1,HHH,cv);
+  fp_sub(t2,t,X3,cv); fp_mul(t2,Rr,t2,cv); fp_sub(r->Y,t2,tt,cv);
+  fp_mul(r->Z,ZZ,H,cv); bn_cpy(r->X,X3);
+}
+static void mixed_add(jpt *r,const jpt *p,const jpt *q,const curve *cv){ /* q affine (Z2=1) */
+  u64 Z1Z1[MAXL],U2[MAXL],S2[MAXL],H[MAXL],Rr[MAXL],HH[MAXL],HHH[MAXL],t[MAXL],t2[MAXL],tt[MAXL],X3[MAXL],Z3[MAXL];
+  if(bn_iszero(p->Z,cv->nl)){ *r=*q; return; }
+  fp_mul(Z1Z1,p->Z,p->Z,cv); fp_mul(S2,q->Y,p->Z,cv);
+  fp_mul(U2,q->X,Z1Z1,cv); fp_mul(S2,S2,Z1Z1,cv);
+  fp_sub(H,U2,p->X,cv); fp_sub(Rr,S2,p->Y,cv);
+  if(bn_iszero(H,cv->nl)){ if(bn_iszero(Rr,cv->nl)){ jac_double(r,p,cv); return; } pt_set_id(r); return; }
+  fp_mul(HH,H,H,cv); fp_mul(X3,Rr,Rr,cv);
+  fp_mul(HHH,HH,H,cv); fp_mul(t,p->X,HH,cv);
+  fp_sub(X3,X3,HHH,cv); fp_sub(X3,X3,t,cv); fp_sub(X3,X3,t,cv);
+  fp_mul(tt,p->Y,HHH,cv); fp_mul(Z3,p->Z,H,cv);
+  fp_sub(t2,t,X3,cv); fp_mul(t2,Rr,t2,cv); fp_sub(t2,t2,tt,cv);
+  bn_cpy(r->X,X3); bn_cpy(r->Y,t2); bn_cpy(r->Z,Z3);
 }
 static void pt_cmov(jpt *R,const jpt *A,u64 b,int nl){
   u64 mask=0-b; int i;
   for(i=0;i<nl;i++){ R->X[i]^=mask&(R->X[i]^A->X[i]); R->Y[i]^=mask&(R->Y[i]^A->Y[i]); R->Z[i]^=mask&(R->Z[i]^A->Z[i]); }
 }
-/* Constant-time width-4 fixed window. Precompute T[i] = i*P (i=0..15), then per
-   4-bit window (MSB first): 4 complete doublings + one complete add of the
-   window multiple, selected by scanning the whole table with cmov so the memory
-   access pattern is independent of the (secret) scalar. Cuts the point-adds from
-   ~2 per bit to ~1.25 per bit vs the bit-at-a-time ladder. */
-static void pt_select(jpt *R,const jpt T[16],int idx,int nl){
-  int i; *R=T[0];
-  for(i=1;i<16;i++){ u64 m=(u64)((i^idx)==0); pt_cmov(R,&T[i],m,nl); }
+/* Batch Jacobian->affine (Z=1) via Montgomery's trick: one inversion for n. */
+static void batch_affine(jpt *pts,int n,const curve *cv){
+  u64 prefix[16][MAXL],inv[MAXL],zi[MAXL],zi2[MAXL],zi3[MAXL],one[MAXL]; int i;
+  bn_zero(one); one[0]=1;
+  bn_cpy(prefix[0],pts[0].Z);
+  for(i=1;i<n;i++) fp_mul(prefix[i],prefix[i-1],pts[i].Z,cv);
+  fp_inv(inv,prefix[n-1],cv);
+  for(i=n-1;i>=0;i--){
+    if(i>0){ fp_mul(zi,inv,prefix[i-1],cv); fp_mul(inv,inv,pts[i].Z,cv); } else bn_cpy(zi,inv);
+    fp_mul(zi2,zi,zi,cv); fp_mul(zi3,zi2,zi,cv);
+    fp_mul(pts[i].X,pts[i].X,zi2,cv); fp_mul(pts[i].Y,pts[i].Y,zi3,cv);
+    fp_to_mont(pts[i].Z,one,cv);
+  }
 }
+/* Variable-base k*P: width-4 window. Precompute i*P (i=1..15), batch-normalize
+   to affine, then per window 4 doublings + one cmov-selected mixed_add. */
 static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
-  jpt T[16],acc,sel; int i,j,nb=cv->nbits,top; u64 one[MAXL],zero[MAXL];
-  bn_zero(one); one[0]=1; bn_zero(zero);
-  fp_to_mont(T[0].X,zero,cv); fp_to_mont(T[0].Y,one,cv); bn_cpy(T[0].Z,T[0].X);  /* O */
-  T[1]=*P;
-  for(i=2;i<16;i++) pt_add(&T[i],&T[i-1],P,cv);
-  acc=T[0];
+  jpt T[16],acc,sel; int i,j,d,nb=cv->nbits,top;
+  pt_set_id(&T[0]); T[1]=*P;
+  for(i=2;i<16;i++) jac_add(&T[i],&T[i-1],P,cv);
+  batch_affine(&T[1],15,cv);                        /* T[1..15] -> affine */
+  pt_set_id(&acc);
   top=((nb+3)/4)*4;
   for(i=top-4;i>=0;i-=4){
-    int nib=0;
-    pt_dbl(&acc,&acc,cv); pt_dbl(&acc,&acc,cv);
-    pt_dbl(&acc,&acc,cv); pt_dbl(&acc,&acc,cv);
+    int nib=0; jpt tmp; u64 m;
+    jac_double(&acc,&acc,cv); jac_double(&acc,&acc,cv);
+    jac_double(&acc,&acc,cv); jac_double(&acc,&acc,cv);
     for(j=3;j>=0;j--){ int bit=(i+j<nb)?(int)((k[(i+j)/64]>>((i+j)%64))&1):0; nib=(nib<<1)|bit; }
-    pt_select(&sel,T,nib,cv->nl);
-    pt_add(&acc,&acc,&sel,cv);
+    sel=T[1];
+    for(d=2;d<16;d++){ m=(u64)((d^nib)==0); pt_cmov(&sel,&T[d],m,cv->nl); }
+    mixed_add(&tmp,&acc,&sel,cv);
+    m=(u64)(nib!=0); pt_cmov(&acc,&tmp,m,cv->nl);   /* skip add when nibble is 0 */
   }
   *R=acc;
 }
@@ -268,22 +281,23 @@ static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
 static jpt COMB384[96][16], COMB521[131][16];
 static void scalar_mul_base(jpt *R,const u64 *k,const curve *cv){
   jpt (*comb)[16]=(cv->fast==521)?COMB521:COMB384;
-  int nwin=(cv->nbits+3)/4, i,j,d; jpt acc,sel; u64 one[MAXL],zero[MAXL];
-  bn_zero(one); one[0]=1; bn_zero(zero);
-  fp_to_mont(acc.X,zero,cv); fp_to_mont(acc.Y,one,cv); bn_cpy(acc.Z,acc.X);  /* O */
+  int nwin=(cv->nbits+3)/4, i,j,d; jpt acc,sel,tmp; u64 m;
+  pt_set_id(&acc);
   for(i=0;i<nwin;i++){
     int nib=0;
     for(j=3;j>=0;j--){ int b=(4*i+j<cv->nbits)?(int)((k[(4*i+j)/64]>>((4*i+j)%64))&1):0; nib=(nib<<1)|b; }
-    sel=comb[i][0];
-    for(d=1;d<16;d++){ u64 m=(u64)((d^nib)==0); pt_cmov(&sel,&comb[i][d],m,cv->nl); }
-    pt_add(&acc,&acc,&sel,cv);
+    sel=comb[i][1];
+    for(d=2;d<16;d++){ m=(u64)((d^nib)==0); pt_cmov(&sel,&comb[i][d],m,cv->nl); }
+    mixed_add(&tmp,&acc,&sel,cv);                   /* comb entries are affine */
+    m=(u64)(nib!=0); pt_cmov(&acc,&tmp,m,cv->nl);   /* skip add when nibble is 0 */
   }
   *R=acc;
 }
 static void pt_to_affine(u64 *x,u64 *y,const jpt *P,const curve *cv){
-  u64 zi[MAXL],xm[MAXL],ym[MAXL];
+  u64 zi[MAXL],zi2[MAXL],zi3[MAXL],xm[MAXL],ym[MAXL];
   fp_inv(zi,P->Z,cv);
-  fp_mul(xm,P->X,zi,cv); fp_mul(ym,P->Y,zi,cv);
+  fp_mul(zi2,zi,zi,cv); fp_mul(zi3,zi2,zi,cv);      /* x = X/Z^2, y = Y/Z^3 */
+  fp_mul(xm,P->X,zi2,cv); fp_mul(ym,P->Y,zi3,cv);
   fp_from_mont(x,xm,cv); fp_from_mont(y,ym,cv);
 }
 static void set_generator(jpt *G,const curve *cv){
@@ -294,15 +308,14 @@ static void set_generator(jpt *G,const curve *cv){
 }
 static void build_comb(const curve *cv){
   jpt (*comb)[16]=(cv->fast==521)?COMB521:COMB384;
-  int nwin=(cv->nbits+3)/4, i,d; jpt base,O; u64 one[MAXL],zero[MAXL];
-  bn_zero(one); one[0]=1; bn_zero(zero);
-  fp_to_mont(O.X,zero,cv); fp_to_mont(O.Y,one,cv); bn_cpy(O.Z,O.X);
+  int nwin=(cv->nbits+3)/4, i,d; jpt base;
   set_generator(&base,cv);
   for(i=0;i<nwin;i++){
-    comb[i][0]=O; comb[i][1]=base;
-    for(d=2;d<16;d++) pt_add(&comb[i][d],&comb[i][d-1],&base,cv);
-    if(i+1<nwin){ pt_dbl(&base,&base,cv); pt_dbl(&base,&base,cv);
-                  pt_dbl(&base,&base,cv); pt_dbl(&base,&base,cv); }  /* base *= 2^4 */
+    pt_set_id(&comb[i][0]); comb[i][1]=base;
+    for(d=2;d<16;d++) jac_add(&comb[i][d],&comb[i][d-1],&base,cv);
+    batch_affine(&comb[i][1],15,cv);                /* normalize window to affine */
+    if(i+1<nwin){ jac_double(&base,&base,cv); jac_double(&base,&base,cv);
+                  jac_double(&base,&base,cv); jac_double(&base,&base,cv); }  /* base *= 2^4 */
   }
 }
 
@@ -440,7 +453,7 @@ static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned ch
   bn_zero(one); one[0]=1;
   fp_to_mont(Q.X,qx,cv); fp_to_mont(Q.Y,qy,cv); fp_to_mont(Q.Z,one,cv);
   scalar_mul_base(&R1,u1,cv); scalar_mul(&R2,u2,&Q,cv);
-  pt_add(&R,&R1,&R2,cv);
+  jac_add(&R,&R1,&R2,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
   pt_to_affine(x,y,&R,cv);
   bn_cpy(v,x); if(bn_cmp(v,cv->n,cv->nl)>=0) bn_sub(v,v,cv->n,cv->nl);
