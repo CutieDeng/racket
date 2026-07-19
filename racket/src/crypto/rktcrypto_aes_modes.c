@@ -44,10 +44,36 @@ static inline uint8x16_t aes_enc1(uint8x16_t s,const unsigned char*rk,int Nr){
 /* General AES key schedule / single-block encrypt, exported for GMAC (gcm.c). */
 int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return aes_expand(key,(int)keylen,rk); }
 void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ vst1q_u8(out,aes_enc1(vld1q_u8(in),rk,Nr)); }
+/* CBC-encrypt is serial (each block depends on the previous ciphertext), so the
+   only lever is keeping the whole round-key schedule in NEON registers -- the AES
+   dependency chain then runs without per-block key loads. Unrolled per key size. */
+#define AESE_MC(s,k) s=vaesmcq_u8(vaeseq_u8(s,k))
 void rktcrypto_aes_cbc_encrypt(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                                const unsigned char*in,unsigned char*out,intptr_t len){
-  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); uint8x16_t prev=vld1q_u8(iv);
-  for(intptr_t o=0;o+16<=len;o+=16){ uint8x16_t b=aes_enc1(veorq_u8(vld1q_u8(in+o),prev),rk,Nr); vst1q_u8(out+o,b); prev=b; } }
+  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); uint8x16_t prev=vld1q_u8(iv); intptr_t o=0;
+  uint8x16_t k0=vld1q_u8(rk),k1=vld1q_u8(rk+16),k2=vld1q_u8(rk+32),k3=vld1q_u8(rk+48),
+             k4=vld1q_u8(rk+64),k5=vld1q_u8(rk+80),k6=vld1q_u8(rk+96),k7=vld1q_u8(rk+112),
+             k8=vld1q_u8(rk+128),k9=vld1q_u8(rk+144),k10=vld1q_u8(rk+160);
+  if(Nr==10){
+    for(;o+16<=len;o+=16){ uint8x16_t s=veorq_u8(vld1q_u8(in+o),prev);
+      AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
+      AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
+      s=veorq_u8(vaeseq_u8(s,k9),k10); vst1q_u8(out+o,s); prev=s; }
+  } else {
+    uint8x16_t k11=vld1q_u8(rk+176),k12=vld1q_u8(rk+192),k13=vld1q_u8(rk+208),k14=vld1q_u8(rk+224);
+    if(Nr==12){
+      for(;o+16<=len;o+=16){ uint8x16_t s=veorq_u8(vld1q_u8(in+o),prev);
+        AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);
+        AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);
+        s=veorq_u8(vaeseq_u8(s,k11),k12); vst1q_u8(out+o,s); prev=s; }
+    } else {
+      for(;o+16<=len;o+=16){ uint8x16_t s=veorq_u8(vld1q_u8(in+o),prev);
+        AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);AESE_MC(s,k6);
+        AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);AESE_MC(s,k11);AESE_MC(s,k12);
+        s=veorq_u8(vaeseq_u8(s,k13),k14); vst1q_u8(out+o,s); prev=s; }
+    }
+  }
+}
 static int aes_expand_dec(const unsigned char*key,int keylen,unsigned char*dk){
   unsigned char ek[240]; int Nr=aes_expand(key,keylen,ek); vst1q_u8(dk,vld1q_u8(ek+16*Nr));
   for(int i=1;i<Nr;i++) vst1q_u8(dk+16*i,vaesimcq_u8(vld1q_u8(ek+16*(Nr-i)))); vst1q_u8(dk+16*Nr,vld1q_u8(ek)); return Nr; }
