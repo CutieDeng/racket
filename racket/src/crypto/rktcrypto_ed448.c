@@ -80,7 +80,6 @@ static void fe_canon(u64 *h){
   if(!bb) for(i=0;i<8;i++) h[i]=t[i];
 }
 static void to_mont(u64 *r,const u64 *a){ fe_copy(r,a); }
-static void from_mont(u64 *r,const u64 *a){ fe_copy(r,a); }
 static int fbn_cmp(const u64 *a,const u64 *b){ int i; for(i=7;i>=0;i--){ if(a[i]<b[i])return -1; if(a[i]>b[i])return 1; } return 0; }
 static int fis_zero(const u64 *a){ u64 t[8]; int i; u64 x=0; fe_copy(t,a); fe_canon(t); for(i=0;i<8;i++) x|=t[i]; return x==0; }
 static int fe_eq(const u64 *a,const u64 *b){ u64 x[8],y[8]; fe_copy(x,a); fe_copy(y,b); fe_canon(x); fe_canon(y); return fbn_cmp(x,y)==0; }
@@ -172,22 +171,7 @@ static void pt_scalarmul_win(ept *R,const unsigned char *k_be,int kbytes,const e
   *R=acc;
 }
 
-static void pt_cmov(ept *R,const ept *A,u64 b){ u64 mask=0-b; int i;
-  for(i=0;i<NL;i++){ R->X[i]^=mask&(R->X[i]^A->X[i]); R->Y[i]^=mask&(R->Y[i]^A->Y[i]);
-    R->Z[i]^=mask&(R->Z[i]^A->Z[i]); R->T[i]^=mask&(R->T[i]^A->T[i]); } }
 
-/* R = k*P where k is a big-endian byte scalar of kbytes length; MSB-first
-   double-and-add, constant-time (always add, cmov the result). */
-static void pt_scalarmul(ept *R,const unsigned char *k_be,int kbytes,const ept *P){
-  ept acc,T2; int i; pt_identity(&acc);
-  for(i=kbytes*8-1;i>=0;i--){
-    int bit=(k_be[kbytes-1-(i/8)]>>(i%8))&1;
-    pt_dbl(&acc,&acc);
-    pt_add(&T2,&acc,P);
-    pt_cmov(&acc,&T2,(u64)bit);
-  }
-  *R=acc;
-}
 
 /* Fixed-base comb for s*B with zero online doublings: ed448_comb[w][d] =
    d*16^w*B, precomputed once. r*B becomes 114 constant-time table-adds (was
