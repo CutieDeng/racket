@@ -16,6 +16,7 @@ typedef unsigned __int128 u128;
 typedef struct {
   int nl, nbytes, pbits, nbits;
   int hash_alg;               /* digest for ECDSA (SHA-384 / SHA-512) */
+  int fast;                   /* 521 or 384 = special-prime reduction; 0 = Montgomery */
   u64 p[MAXL], n[MAXL], b[MAXL], gx[MAXL], gy[MAXL];
   u64 rr_p[MAXL], rr_n[MAXL], amont[MAXL], b3mont[MAXL], n0_p, n0_n;
 } curve;
@@ -66,15 +67,53 @@ static void compute_rr(u64 *rr,const u64 *m,int nl){
 static void to_mont(u64 *r,const u64 *a,const u64 *m,const u64 *rr,u64 n0,int nl){ montmul(r,a,rr,m,n0,nl); }
 static void from_mont(u64 *r,const u64 *a,const u64 *m,u64 n0,int nl){ u64 one[MAXL]; bn_zero(one); one[0]=1; montmul(r,a,one,m,n0,nl); }
 
+/* Schoolbook wide multiply: prod[0..2nl-1] = a*b (nl limbs each). */
+static void mul_wide(u64 *prod,const u64 *a,const u64 *b,int nl){
+  int i,j; for(i=0;i<2*nl;i++) prod[i]=0;
+  for(i=0;i<nl;i++){ u64 c=0; for(j=0;j<nl;j++){ u128 p=(u128)a[i]*b[j]+prod[i+j]+c; prod[i+j]=(u64)p; c=(u64)(p>>64); } prod[i+nl]=c; }
+}
+/* P-521 reduction mod 2^521-1 (Mersenne). prod has 18 significant limbs.
+   prod = A*2^521 + B, and 2^521 == 1, so result = A + B (mod p). */
+static const u64 P521_PL[9]={~0ULL,~0ULL,~0ULL,~0ULL,~0ULL,~0ULL,~0ULL,~0ULL,0x1ffULL};
+static void reduce_p521(u64 *r,const u64 *prod){
+  u64 t[9],hi[9],extra,cc; int i;
+  for(i=0;i<8;i++) t[i]=prod[i];
+  t[8]=prod[8]&0x1ffULL;                        /* B = low 521 bits */
+  for(i=0;i<9;i++){                             /* A = prod >> 521 (=>> (512+9)) */
+    u64 lo=prod[8+i]>>9;
+    u64 up=(9+i<18)?(prod[9+i]<<55):0ULL;
+    hi[i]=lo|up;
+  }
+  { u64 c=bn_add(t,t,hi,9);                      /* t = A + B (< 2^522) */
+    extra=(t[8]>>9)|(c<<55); t[8]&=0x1ffULL; }   /* fold bits >= 521 back (2^521==1) */
+  { u128 s=(u128)t[0]+extra; t[0]=(u64)s; cc=(u64)(s>>64);
+    for(i=1;i<9&&cc;i++){ u128 s2=(u128)t[i]+cc; t[i]=(u64)s2; cc=(u64)(s2>>64); } }
+  if(bn_cmp(t,P521_PL,9)>=0) bn_sub(t,t,P521_PL,9);
+  for(i=0;i<9;i++) r[i]=t[i];
+}
+static void fp_reduce(u64 *r,const u64 *prod,const curve *cv){
+  if(cv->fast==521) reduce_p521(r,prod);
+}
+
 /* field ops mod p (Montgomery domain for mul; plain reps for add/sub) */
 static void fp_add(u64 *r,const u64 *a,const u64 *b,const curve *cv){ u64 c=bn_add(r,a,b,cv->nl); if(c||bn_cmp(r,cv->p,cv->nl)>=0) bn_sub(r,r,cv->p,cv->nl); }
 static void fp_sub(u64 *r,const u64 *a,const u64 *b,const curve *cv){ u64 br=bn_sub(r,a,b,cv->nl); if(br) bn_add(r,r,cv->p,cv->nl); }
-static void fp_mul(u64 *r,const u64 *a,const u64 *b,const curve *cv){ montmul(r,a,b,cv->p,cv->n0_p,cv->nl); }
+static void fp_mul(u64 *r,const u64 *a,const u64 *b,const curve *cv){
+  if(cv->fast){ u64 prod[2*MAXL]; mul_wide(prod,a,b,cv->nl); fp_reduce(r,prod,cv); }
+  else montmul(r,a,b,cv->p,cv->n0_p,cv->nl);
+}
+/* p-domain conversions: identity for fast (plain) curves, Montgomery otherwise. */
+static void fp_to_mont(u64 *r,const u64 *a,const curve *cv){
+  if(cv->fast) bn_cpy(r,a); else to_mont(r,a,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+}
+static void fp_from_mont(u64 *r,const u64 *a,const curve *cv){
+  if(cv->fast) bn_cpy(r,a); else from_mont(r,a,cv->p,cv->n0_p,cv->nl);
+}
 /* Fermat inverse in Montgomery domain: a^(p-2). */
 static void fp_inv(u64 *r,const u64 *a,const curve *cv){
   u64 e[MAXL],acc[MAXL],base[MAXL],one[MAXL]; int i,bit; bn_zero(one); one[0]=1;
   { u64 two[MAXL]; bn_zero(two); two[0]=2; bn_sub(e,cv->p,two,cv->nl); }
-  to_mont(acc,one,cv->p,cv->rr_p,cv->n0_p,cv->nl); bn_cpy(base,a);
+  fp_to_mont(acc,one,cv); bn_cpy(base,a);
   for(i=0;i<cv->pbits;i++){
     bit=(int)((e[i/64]>>(i%64))&1);
     if(bit) fp_mul(acc,acc,base,cv);
@@ -115,8 +154,8 @@ static void pt_cmov(jpt *R,const jpt *A,u64 b,int nl){
 static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
   jpt acc,T; int i; u64 one[MAXL],zero[MAXL];
   bn_zero(one); one[0]=1; bn_zero(zero);
-  to_mont(acc.X,zero,cv->p,cv->rr_p,cv->n0_p,cv->nl);   /* O = (0:1:0) */
-  to_mont(acc.Y,one,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+  fp_to_mont(acc.X,zero,cv);   /* O = (0:1:0) */
+  fp_to_mont(acc.Y,one,cv);
   bn_cpy(acc.Z,acc.X);
   for(i=cv->nbits-1;i>=0;i--){
     u64 bit=(k[i/64]>>(i%64))&1;
@@ -130,13 +169,13 @@ static void pt_to_affine(u64 *x,u64 *y,const jpt *P,const curve *cv){
   u64 zi[MAXL],xm[MAXL],ym[MAXL];
   fp_inv(zi,P->Z,cv);
   fp_mul(xm,P->X,zi,cv); fp_mul(ym,P->Y,zi,cv);
-  from_mont(x,xm,cv->p,cv->n0_p,cv->nl); from_mont(y,ym,cv->p,cv->n0_p,cv->nl);
+  fp_from_mont(x,xm,cv); fp_from_mont(y,ym,cv);
 }
 static void set_generator(jpt *G,const curve *cv){
   u64 one[MAXL]; bn_zero(one); one[0]=1;
-  to_mont(G->X,cv->gx,cv->p,cv->rr_p,cv->n0_p,cv->nl);
-  to_mont(G->Y,cv->gy,cv->p,cv->rr_p,cv->n0_p,cv->nl);
-  to_mont(G->Z,one,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+  fp_to_mont(G->X,cv->gx,cv);
+  fp_to_mont(G->Y,cv->gy,cv);
+  fp_to_mont(G->Z,one,cv);
 }
 
 /* ---- scalar field mod n ---- */
@@ -175,9 +214,9 @@ static const unsigned char P521_GX[66]={0x00,0xc6,0x85,0x8e,0x06,0xb7,0x04,0x04,
 static const unsigned char P521_GY[66]={0x01,0x18,0x39,0x29,0x6a,0x78,0x9a,0x3b,0xc0,0x04,0x5c,0x8a,0x5f,0xb4,0x2c,0x7d,0x1b,0xd9,0x98,0xf5,0x44,0x49,0x57,0x9b,0x44,0x68,0x17,0xaf,0xbd,0x17,0x27,0x3e,0x66,0x2c,0x97,0xee,0x72,0x99,0x5e,0xf4,0x26,0x40,0xc5,0x50,0xb9,0x01,0x3f,0xad,0x07,0x61,0x35,0x3c,0x70,0x86,0xa2,0x72,0xc2,0x40,0x88,0xbe,0x94,0x76,0x9f,0xd1,0x66,0x50};
 
 static curve C384, C521; static int inited=0;
-static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,
+static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,int fast,
   const unsigned char*p,const unsigned char*n,const unsigned char*b,const unsigned char*gx,const unsigned char*gy){
-  cv->nbytes=nbytes; cv->pbits=pbits; cv->nbits=nbits; cv->hash_alg=halg;
+  cv->nbytes=nbytes; cv->pbits=pbits; cv->nbits=nbits; cv->hash_alg=halg; cv->fast=fast;
   cv->nl=(nbytes+7)/8;
   bytes_to_limbs(cv->p,p,nbytes,cv->nl); bytes_to_limbs(cv->n,n,nbytes,cv->nl);
   bytes_to_limbs(cv->b,b,nbytes,cv->nl); bytes_to_limbs(cv->gx,gx,nbytes,cv->nl); bytes_to_limbs(cv->gy,gy,nbytes,cv->nl);
@@ -185,16 +224,16 @@ static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,
   compute_rr(cv->rr_p,cv->p,cv->nl); compute_rr(cv->rr_n,cv->n,cv->nl);
   { u64 am[MAXL],three[MAXL],b3[MAXL];
     bn_zero(three); three[0]=3; bn_sub(am,cv->p,three,cv->nl);       /* a = -3 mod p */
-    to_mont(cv->amont,am,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+    fp_to_mont(cv->amont,am,cv);
     { u64 t[MAXL],c; c=bn_add(t,cv->b,cv->b,cv->nl); if(c||bn_cmp(t,cv->p,cv->nl)>=0) bn_sub(t,t,cv->p,cv->nl);
       c=bn_add(b3,t,cv->b,cv->nl); if(c||bn_cmp(b3,cv->p,cv->nl)>=0) bn_sub(b3,b3,cv->p,cv->nl); }
-    to_mont(cv->b3mont,b3,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+    fp_to_mont(cv->b3mont,b3,cv);
   }
 }
 static void ecc_init(void){
   if(inited) return;
-  init_curve(&C384,48,384,384,RKTCRYPTO_SHA384,P384_P,P384_N,P384_B,P384_GX,P384_GY);
-  init_curve(&C521,66,521,521,RKTCRYPTO_SHA512,P521_P,P521_N,P521_B,P521_GX,P521_GY);
+  init_curve(&C384,48,384,384,RKTCRYPTO_SHA384,0,P384_P,P384_N,P384_B,P384_GX,P384_GY);
+  init_curve(&C521,66,521,521,RKTCRYPTO_SHA512,521,P521_P,P521_N,P521_B,P521_GX,P521_GY);
   inited=1;
 }
 
@@ -216,8 +255,8 @@ static int ecc_ecdh(const curve *cv,unsigned char *out,const unsigned char *scal
   bytes_to_limbs(x,point+1,cv->nbytes,cv->nl); bytes_to_limbs(y,point+1+cv->nbytes,cv->nbytes,cv->nl);
   if(bn_cmp(x,cv->p,cv->nl)>=0||bn_cmp(y,cv->p,cv->nl)>=0) return 0;
   bn_zero(one); one[0]=1;
-  to_mont(P.X,x,cv->p,cv->rr_p,cv->n0_p,cv->nl); to_mont(P.Y,y,cv->p,cv->rr_p,cv->n0_p,cv->nl);
-  to_mont(P.Z,one,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+  fp_to_mont(P.X,x,cv); fp_to_mont(P.Y,y,cv);
+  fp_to_mont(P.Z,one,cv);
   scalar_mul(&R,d,&P,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
   pt_to_affine(x,y,&R,cv); limbs_to_bytes(out,x,cv->nbytes); return 1;
@@ -264,7 +303,7 @@ static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned ch
   bytes_to_limbs(qx,pub+1,cv->nbytes,cv->nl); bytes_to_limbs(qy,pub+1+cv->nbytes,cv->nbytes,cv->nl);
   bn_zero(one); one[0]=1;
   set_generator(&G,cv);
-  to_mont(Q.X,qx,cv->p,cv->rr_p,cv->n0_p,cv->nl); to_mont(Q.Y,qy,cv->p,cv->rr_p,cv->n0_p,cv->nl); to_mont(Q.Z,one,cv->p,cv->rr_p,cv->n0_p,cv->nl);
+  fp_to_mont(Q.X,qx,cv); fp_to_mont(Q.Y,qy,cv); fp_to_mont(Q.Z,one,cv);
   scalar_mul(&R1,u1,&G,cv); scalar_mul(&R2,u2,&Q,cv);
   pt_add(&R,&R1,&R2,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
