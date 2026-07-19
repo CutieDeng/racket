@@ -149,11 +149,12 @@ void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
 
 void rktcrypto_rc4(const unsigned char *key, intptr_t keylen,
                    const unsigned char *in, unsigned char *out, intptr_t len){
-  unsigned char s[256]; int i,j=0,a=0,b=0; intptr_t n;
+  unsigned char s[256]; int i,j=0; unsigned char a=0,b=0; intptr_t n;
   for(i=0;i<256;i++) s[i]=(unsigned char)i;
   for(i=0;i<256;i++){ j=(j+s[i]+key[i%keylen])&0xFF; { unsigned char t=s[i]; s[i]=s[j]; s[j]=t; } }
-  for(n=0;n<len;n++){ a=(a+1)&0xFF; b=(b+s[a])&0xFF; { unsigned char t=s[a]; s[a]=s[b]; s[b]=t; }
-    out[n]=in[n]^s[(s[a]+s[b])&0xFF]; }
+  /* uint8_t indices wrap for free -- no &0xFF on the hot keystream path. */
+  for(n=0;n<len;n++){ unsigned char sa,sb; a=(unsigned char)(a+1); sa=s[a]; b=(unsigned char)(b+sa);
+    sb=s[b]; s[a]=sb; s[b]=sa; out[n]=in[n]^s[(unsigned char)(sa+sb)]; }
 }
 
 /* ============================ Camellia (RFC 3713) ============================
