@@ -123,6 +123,38 @@ static void pt_scalarmul(ept *R,const unsigned char *k_be,int kbytes,const ept *
   *R=acc;
 }
 
+/* Fixed-base comb for s*B with zero online doublings: ed448_comb[w][d] =
+   d*16^w*B, precomputed once. r*B becomes 114 constant-time table-adds (was
+   ~456 doublings + adds). Same scheme as the P-256/384/521 and Ed25519 combs.
+   The edwards448 addition law is complete, so no exceptional cases. */
+#define ED448_NWIN 114
+static ept ed448_comb[ED448_NWIN][16];
+static int ed448_comb_inited=0;
+static void ed448_comb_init(void){
+  ept base; u64 gx[NL],gy[NL],one[NL]={1,0,0,0,0,0,0}; int w,d;
+  if(ed448_comb_inited) return;
+  be56_to_limbs(gx,GX_BE); be56_to_limbs(gy,GY_BE);
+  to_mont(base.X,gx); to_mont(base.Y,gy); to_mont(base.Z,one); fmul(base.T,base.X,base.Y);
+  for(w=0;w<ED448_NWIN;w++){
+    pt_identity(&ed448_comb[w][0]); ed448_comb[w][1]=base;
+    for(d=2;d<16;d++) pt_add(&ed448_comb[w][d],&ed448_comb[w][d-1],&base);
+    if(w+1<ED448_NWIN){ for(d=0;d<4;d++) pt_dbl(&base,&base); }
+  }
+  ed448_comb_inited=1;
+}
+/* r*B from a big-endian scalar (kbytes bytes); constant-time cmov table scan. */
+static void pt_scalarmul_base(ept *R,const unsigned char *k_be,int kbytes){
+  int w,d,nw=kbytes*2; ept sel,acc; pt_identity(&acc);
+  ed448_comb_init();
+  for(w=0;w<nw && w<ED448_NWIN;w++){
+    int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
+    sel=ed448_comb[w][0];
+    for(d=1;d<16;d++) pt_cmov(&sel,&ed448_comb[w][d],(u64)(d==nib));
+    pt_add(&acc,&acc,&sel);
+  }
+  *R=acc;
+}
+
 /* encode point to 57 bytes: y little-endian (56) + sign(x) in bit 7 of byte 56. */
 static void pt_encode(unsigned char out[57],const ept *P){
   u64 zi[NL],x[NL],y[NL],xr[NL],yr[NL];
@@ -189,7 +221,7 @@ static void ed448_genA(unsigned char A[57],const unsigned char *sk){
   h[0]&=0xfc; h[55]|=0x80; h[56]=0;   /* clamp; low 448 bits = secret scalar s (little-endian) */
   be56_to_limbs(gx,GX_BE); be56_to_limbs(gy,GY_BE);
   to_mont(G.X,gx); to_mont(G.Y,gy); { u64 one[NL]={1,0,0,0,0,0,0}; to_mont(G.Z,one); } fmul(G.T,G.X,G.Y);
-  { unsigned char sbe[57]; int i; for(i=0;i<57;i++) sbe[i]=h[56-i]; pt_scalarmul(&R,sbe,57,&G); }
+  { unsigned char sbe[57]; int i; for(i=0;i<57;i++) sbe[i]=h[56-i]; pt_scalarmul_base(&R,sbe,57); }
   pt_encode(A,&R);
 }
 
@@ -208,7 +240,7 @@ int rktcrypto_ed448_sign(unsigned char *sig,const unsigned char *msg,intptr_t ml
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,h+57,57);
     rktcrypto_keccak_core_update(&c,msg,mlen); rktcrypto_keccak_core_final(&c,rbuf,114); }
   sc_reduce_le(r57,rbuf,114);
-  for(i=0;i<57;i++) sbe[i]=r57[56-i]; pt_scalarmul(&Rp,sbe,57,&G); pt_encode(R,&Rp);
+  for(i=0;i<57;i++) sbe[i]=r57[56-i]; pt_scalarmul_base(&Rp,sbe,57); pt_encode(R,&Rp);
   /* k = SHAKE256(dom4 || R || A || M) mod L */
   { rktcrypto_keccak_ctx_t c; rktcrypto_keccak_core_init(&c,136,0x1f);
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,R,57);
@@ -233,7 +265,7 @@ int rktcrypto_ed448_verify(const unsigned char *sig,const unsigned char *msg,int
     rktcrypto_keccak_core_update(&c,pk,57); rktcrypto_keccak_core_update(&c,msg,mlen);
     rktcrypto_keccak_core_final(&c,kbuf,114); }
   sc_reduce_le(k57,kbuf,114);
-  for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul(&SB,sbe,57,&G);        /* S*B */
+  for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul_base(&SB,sbe,57);        /* S*B */
   for(i=0;i<57;i++) kbe[i]=k57[56-i]; pt_scalarmul(&kA,kbe,57,&A);      /* k*A */
   if(!pt_decode(&Rp,R)) return 0;
   pt_add(&rhs,&Rp,&kA);                                                  /* R + k*A */
