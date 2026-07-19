@@ -157,25 +157,27 @@ static void fp_inv(u64 *r,const u64 *a,const curve *cv){
 
 /* ---- projective points (X:Y:Z), RCB complete formulas (a = -3) ---- */
 typedef struct { u64 X[MAXL],Y[MAXL],Z[MAXL]; } jpt;
-/* Renes-Costello-Batina 2016, Algorithm 1: complete addition for any short
-   Weierstrass curve, using constants a and b3 = 3b. No exceptional cases. */
+/* Renes-Costello-Batina 2016, Algorithm 4: complete addition specialized for
+   a = -3 (uses the plain b). 12M + 2 mul-by-b = 14 muls vs Algorithm 1's 17. */
 static void pt_add(jpt *R,const jpt *P,const jpt *Q,const curve *cv){
-  u64 t0[MAXL],t1[MAXL],t2[MAXL],t3[MAXL],t4[MAXL],t5[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL];
-  const u64 *a=cv->amont,*b3=cv->b3mont;
-  fp_mul(t0,P->X,Q->X,cv); fp_mul(t1,P->Y,Q->Y,cv); fp_mul(t2,P->Z,Q->Z,cv);
-  fp_add(t3,P->X,P->Y,cv); fp_add(t4,Q->X,Q->Y,cv); fp_mul(t3,t3,t4,cv);
-  fp_add(t4,t0,t1,cv); fp_sub(t3,t3,t4,cv); fp_add(t4,P->X,P->Z,cv);
-  fp_add(t5,Q->X,Q->Z,cv); fp_mul(t4,t4,t5,cv); fp_add(t5,t0,t2,cv);
-  fp_sub(t4,t4,t5,cv); fp_add(t5,P->Y,P->Z,cv); fp_add(X3,Q->Y,Q->Z,cv);
-  fp_mul(t5,t5,X3,cv); fp_add(X3,t1,t2,cv); fp_sub(t5,t5,X3,cv);
-  fp_mul(Z3,a,t4,cv); fp_mul(X3,b3,t2,cv); fp_add(Z3,X3,Z3,cv);
-  fp_sub(X3,t1,Z3,cv); fp_add(Z3,t1,Z3,cv); fp_mul(Y3,X3,Z3,cv);
-  fp_add(t1,t0,t0,cv); fp_add(t1,t1,t0,cv); fp_mul(t2,a,t2,cv);
-  fp_mul(t4,b3,t4,cv); fp_add(t1,t1,t2,cv); fp_sub(t2,t0,t2,cv);
-  fp_mul(t2,a,t2,cv); fp_add(t4,t4,t2,cv); fp_mul(t0,t1,t4,cv);
-  fp_add(Y3,Y3,t0,cv); fp_mul(t0,t5,t4,cv); fp_mul(X3,t3,X3,cv);
-  fp_sub(X3,X3,t0,cv); fp_mul(t0,t3,t1,cv); fp_mul(Z3,t5,Z3,cv);
-  fp_add(Z3,Z3,t0,cv);
+  u64 t0[MAXL],t1[MAXL],t2[MAXL],t3[MAXL],t4[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL];
+  const u64 *b=cv->bmont;
+  const u64 *X1=P->X,*Y1=P->Y,*Z1=P->Z,*X2=Q->X,*Y2=Q->Y,*Z2=Q->Z;
+  fp_mul(t0,X1,X2,cv); fp_mul(t1,Y1,Y2,cv); fp_mul(t2,Z1,Z2,cv);
+  fp_add(t3,X1,Y1,cv); fp_add(t4,X2,Y2,cv); fp_mul(t3,t3,t4,cv);
+  fp_add(t4,t0,t1,cv); fp_sub(t3,t3,t4,cv); fp_add(t4,Y1,Z1,cv);
+  fp_add(X3,Y2,Z2,cv); fp_mul(t4,t4,X3,cv); fp_add(X3,t1,t2,cv);
+  fp_sub(t4,t4,X3,cv); fp_add(X3,X1,Z1,cv); fp_add(Y3,X2,Z2,cv);
+  fp_mul(X3,X3,Y3,cv); fp_add(Y3,t0,t2,cv); fp_sub(Y3,X3,Y3,cv);
+  fp_mul(Z3,b,t2,cv);  fp_sub(X3,Y3,Z3,cv); fp_add(Z3,X3,X3,cv);
+  fp_add(X3,X3,Z3,cv); fp_sub(Z3,t1,X3,cv); fp_add(X3,t1,X3,cv);
+  fp_mul(Y3,b,Y3,cv);  fp_add(t1,t2,t2,cv); fp_add(t2,t1,t2,cv);
+  fp_sub(Y3,Y3,t2,cv); fp_sub(Y3,Y3,t0,cv); fp_add(t1,Y3,Y3,cv);
+  fp_add(Y3,t1,Y3,cv); fp_add(t1,t0,t0,cv); fp_add(t0,t1,t0,cv);
+  fp_sub(t0,t0,t2,cv); fp_mul(t1,t4,Y3,cv); fp_mul(t2,t0,Y3,cv);
+  fp_mul(Y3,X3,Z3,cv); fp_add(Y3,Y3,t2,cv); fp_mul(X3,t3,X3,cv);
+  fp_sub(X3,X3,t1,cv); fp_mul(Z3,t4,Z3,cv); fp_mul(t1,t3,t0,cv);
+  fp_add(Z3,Z3,t1,cv);
   bn_cpy(R->X,X3); bn_cpy(R->Y,Y3); bn_cpy(R->Z,Z3);
 }
 /* Renes-Costello-Batina 2016, Algorithm 6: exception-free doubling for a = -3
