@@ -95,27 +95,30 @@ static void reduce_p521(u64 *r,const u64 *prod){
    lo, but since c is a sum of powers of two, H*c = H + H<<128 + H<<96 - H<<32 is
    MULTIPLY-FREE (shift-and-add). Iterate until hi vanishes, then subtract p. */
 static const u64 P384_PL[6]={0x00000000ffffffffULL,0xffffffff00000000ULL,0xfffffffffffffffeULL,~0ULL,~0ULL,~0ULL};
-static void shl9(u64 out[9],const u64 *H,int hn,int bits){
-  int wsh=bits/64,bsh=bits%64,i; for(i=0;i<9;i++) out[i]=0;
-  for(i=0;i<hn;i++){ if(i+wsh<9) out[i+wsh]|=H[i]<<bsh; if(bsh&&i+wsh+1<9) out[i+wsh+1]|=H[i]>>(64-bsh); }
-}
+/* Single-pass fold v = lo + hi*c (hi = prod[6..11]) with a signed 128-bit
+   accumulator: each output limb sums the *1 / *2^128 / *2^96 / -*2^32
+   contributions of hi at once, then one carry. A couple of tiny folds clear the
+   ~130-bit remainder, then subtract p. */
 static void reduce_p384(u64 *r,const u64 *prod){
-  u64 v[9],H[9],Hc[9],tmp[9]; int i,iter;
-  for(i=0;i<6;i++) H[i]=prod[6+i]; H[6]=H[7]=H[8]=0;      /* fold 1: hi = prod[6..11] */
-  for(i=0;i<9;i++) Hc[i]=0; for(i=0;i<6;i++) Hc[i]=H[i];
-  shl9(tmp,H,6,128); bn_add(Hc,Hc,tmp,9);
-  shl9(tmp,H,6,96);  bn_add(Hc,Hc,tmp,9);
-  shl9(tmp,H,6,32);  bn_sub(Hc,Hc,tmp,9);
-  for(i=0;i<6;i++) v[i]=prod[i]; v[6]=v[7]=v[8]=0;
-  bn_add(v,v,Hc,9);
-  for(iter=0;iter<3;iter++){                              /* remaining hi is <=3 limbs */
+  const u64 *hi=prod+6; u64 v[9]; __int128 acc=0; int i,iter;
+  for(i=0;i<9;i++){
+    if(i<6)           acc += (__int128)prod[i] + (__int128)hi[i] - (__int128)(hi[i]<<32);
+    if(i>=2&&i-2<6)   acc += (__int128)hi[i-2] + (__int128)(hi[i-2]>>32);
+    if(i>=1&&i-1<6)   acc += (__int128)(hi[i-1]<<32) - (__int128)(hi[i-1]>>32);
+    v[i]=(u64)acc; acc>>=64;
+  }
+  for(iter=0;iter<3;iter++){
+    u64 H[3]; __int128 a2=0; u64 w[9];
     if(!(v[6]|v[7]|v[8])) break;
-    for(i=0;i<3;i++) H[i]=v[6+i]; H[3]=H[4]=H[5]=H[6]=H[7]=H[8]=0;
-    for(i=0;i<9;i++) Hc[i]=0; for(i=0;i<3;i++) Hc[i]=H[i];
-    shl9(tmp,H,3,128); bn_add(Hc,Hc,tmp,9);
-    shl9(tmp,H,3,96);  bn_add(Hc,Hc,tmp,9);
-    shl9(tmp,H,3,32);  bn_sub(Hc,Hc,tmp,9);
-    v[6]=v[7]=v[8]=0; bn_add(v,v,Hc,9);
+    for(i=0;i<3;i++) H[i]=v[6+i];
+    for(i=0;i<9;i++){
+      if(i<6)         a2 += (__int128)v[i];
+      if(i<3)         a2 += (__int128)H[i] - (__int128)(H[i]<<32);
+      if(i>=2&&i-2<3) a2 += (__int128)H[i-2] + (__int128)(H[i-2]>>32);
+      if(i>=1&&i-1<3) a2 += (__int128)(H[i-1]<<32) - (__int128)(H[i-1]>>32);
+      w[i]=(u64)a2; a2>>=64;
+    }
+    for(i=0;i<9;i++) v[i]=w[i];
   }
   for(i=0;i<6;i++){ if(bn_cmp(v,P384_PL,6)>=0) bn_sub(v,v,P384_PL,6); }
   for(i=0;i<6;i++) r[i]=v[i];
