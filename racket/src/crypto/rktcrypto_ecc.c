@@ -149,19 +149,30 @@ static void pt_cmov(jpt *R,const jpt *A,u64 b,int nl){
   u64 mask=0-b; int i;
   for(i=0;i<nl;i++){ R->X[i]^=mask&(R->X[i]^A->X[i]); R->Y[i]^=mask&(R->Y[i]^A->Y[i]); R->Z[i]^=mask&(R->Z[i]^A->Z[i]); }
 }
-/* R = k*P, k big-endian scalar bytes (length cv->nbytes); constant number of
-   complete adds per bit. */
+/* Constant-time width-4 fixed window. Precompute T[i] = i*P (i=0..15), then per
+   4-bit window (MSB first): 4 complete doublings + one complete add of the
+   window multiple, selected by scanning the whole table with cmov so the memory
+   access pattern is independent of the (secret) scalar. Cuts the point-adds from
+   ~2 per bit to ~1.25 per bit vs the bit-at-a-time ladder. */
+static void pt_select(jpt *R,const jpt T[16],int idx,int nl){
+  int i; *R=T[0];
+  for(i=1;i<16;i++){ u64 m=(u64)((i^idx)==0); pt_cmov(R,&T[i],m,nl); }
+}
 static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
-  jpt acc,T; int i; u64 one[MAXL],zero[MAXL];
+  jpt T[16],acc,sel; int i,j,nb=cv->nbits,top; u64 one[MAXL],zero[MAXL];
   bn_zero(one); one[0]=1; bn_zero(zero);
-  fp_to_mont(acc.X,zero,cv);   /* O = (0:1:0) */
-  fp_to_mont(acc.Y,one,cv);
-  bn_cpy(acc.Z,acc.X);
-  for(i=cv->nbits-1;i>=0;i--){
-    u64 bit=(k[i/64]>>(i%64))&1;
-    pt_add(&acc,&acc,&acc,cv);       /* double (complete) */
-    pt_add(&T,&acc,P,cv);            /* acc + P */
-    pt_cmov(&acc,&T,bit,cv->nl);
+  fp_to_mont(T[0].X,zero,cv); fp_to_mont(T[0].Y,one,cv); bn_cpy(T[0].Z,T[0].X);  /* O */
+  T[1]=*P;
+  for(i=2;i<16;i++) pt_add(&T[i],&T[i-1],P,cv);
+  acc=T[0];
+  top=((nb+3)/4)*4;
+  for(i=top-4;i>=0;i-=4){
+    int nib=0;
+    pt_add(&acc,&acc,&acc,cv); pt_add(&acc,&acc,&acc,cv);
+    pt_add(&acc,&acc,&acc,cv); pt_add(&acc,&acc,&acc,cv);
+    for(j=3;j>=0;j--){ int bit=(i+j<nb)?(int)((k[(i+j)/64]>>((i+j)%64))&1):0; nib=(nib<<1)|bit; }
+    pt_select(&sel,T,nib,cv->nl);
+    pt_add(&acc,&acc,&sel,cv);
   }
   *R=acc;
 }
