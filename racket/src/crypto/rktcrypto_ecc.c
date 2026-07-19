@@ -18,7 +18,7 @@ typedef struct {
   int hash_alg;               /* digest for ECDSA (SHA-384 / SHA-512) */
   int fast;                   /* 521 or 384 = special-prime reduction; 0 = Montgomery */
   u64 p[MAXL], n[MAXL], b[MAXL], gx[MAXL], gy[MAXL];
-  u64 rr_p[MAXL], rr_n[MAXL], amont[MAXL], b3mont[MAXL], n0_p, n0_n;
+  u64 rr_p[MAXL], rr_n[MAXL], amont[MAXL], b3mont[MAXL], bmont[MAXL], n0_p, n0_n;
 } curve;
 
 /* ---- generic fixed-MAXL bignum (only low nl limbs are significant) ---- */
@@ -166,6 +166,28 @@ static void pt_add(jpt *R,const jpt *P,const jpt *Q,const curve *cv){
   fp_add(Z3,Z3,t0,cv);
   bn_cpy(R->X,X3); bn_cpy(R->Y,Y3); bn_cpy(R->Z,Z3);
 }
+/* Renes-Costello-Batina 2016, Algorithm 6: exception-free doubling for a = -3
+   (uses the plain b, not b3). 13 field muls vs the complete addition's 17. */
+static void pt_dbl(jpt *R,const jpt *P,const curve *cv){
+  u64 t0[MAXL],t1[MAXL],t2[MAXL],t3[MAXL],X3[MAXL],Y3[MAXL],Z3[MAXL];
+  const u64 *b=cv->bmont;
+  fp_mul(t0,P->X,P->X,cv); fp_mul(t1,P->Y,P->Y,cv); fp_mul(t2,P->Z,P->Z,cv);
+  fp_mul(t3,P->X,P->Y,cv); fp_add(t3,t3,t3,cv);
+  fp_mul(Z3,P->X,P->Z,cv); fp_add(Z3,Z3,Z3,cv);
+  fp_mul(Y3,b,t2,cv); fp_sub(Y3,Y3,Z3,cv);
+  fp_add(X3,Y3,Y3,cv); fp_add(Y3,X3,Y3,cv);
+  fp_sub(X3,t1,Y3,cv); fp_add(Y3,t1,Y3,cv);
+  fp_mul(Y3,X3,Y3,cv); fp_mul(X3,X3,t3,cv);
+  fp_add(t3,t2,t2,cv); fp_add(t2,t2,t3,cv);
+  fp_mul(Z3,b,Z3,cv); fp_sub(Z3,Z3,t2,cv); fp_sub(Z3,Z3,t0,cv);
+  fp_add(t3,Z3,Z3,cv); fp_add(Z3,Z3,t3,cv);
+  fp_add(t3,t0,t0,cv); fp_add(t0,t3,t0,cv); fp_sub(t0,t0,t2,cv);
+  fp_mul(t0,t0,Z3,cv); fp_add(Y3,Y3,t0,cv);
+  fp_mul(t0,P->Y,P->Z,cv); fp_add(t0,t0,t0,cv);
+  fp_mul(Z3,t0,Z3,cv); fp_sub(X3,X3,Z3,cv);
+  fp_mul(Z3,t0,t1,cv); fp_add(Z3,Z3,Z3,cv); fp_add(Z3,Z3,Z3,cv);
+  bn_cpy(R->X,X3); bn_cpy(R->Y,Y3); bn_cpy(R->Z,Z3);
+}
 static void pt_cmov(jpt *R,const jpt *A,u64 b,int nl){
   u64 mask=0-b; int i;
   for(i=0;i<nl;i++){ R->X[i]^=mask&(R->X[i]^A->X[i]); R->Y[i]^=mask&(R->Y[i]^A->Y[i]); R->Z[i]^=mask&(R->Z[i]^A->Z[i]); }
@@ -189,8 +211,8 @@ static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
   top=((nb+3)/4)*4;
   for(i=top-4;i>=0;i-=4){
     int nib=0;
-    pt_add(&acc,&acc,&acc,cv); pt_add(&acc,&acc,&acc,cv);
-    pt_add(&acc,&acc,&acc,cv); pt_add(&acc,&acc,&acc,cv);
+    pt_dbl(&acc,&acc,cv); pt_dbl(&acc,&acc,cv);
+    pt_dbl(&acc,&acc,cv); pt_dbl(&acc,&acc,cv);
     for(j=3;j>=0;j--){ int bit=(i+j<nb)?(int)((k[(i+j)/64]>>((i+j)%64))&1):0; nib=(nib<<1)|bit; }
     pt_select(&sel,T,nib,cv->nl);
     pt_add(&acc,&acc,&sel,cv);
@@ -237,8 +259,8 @@ static void build_comb(const curve *cv){
   for(i=0;i<nwin;i++){
     comb[i][0]=O; comb[i][1]=base;
     for(d=2;d<16;d++) pt_add(&comb[i][d],&comb[i][d-1],&base,cv);
-    if(i+1<nwin){ pt_add(&base,&base,&base,cv); pt_add(&base,&base,&base,cv);
-                  pt_add(&base,&base,&base,cv); pt_add(&base,&base,&base,cv); }  /* base *= 2^4 */
+    if(i+1<nwin){ pt_dbl(&base,&base,cv); pt_dbl(&base,&base,cv);
+                  pt_dbl(&base,&base,cv); pt_dbl(&base,&base,cv); }  /* base *= 2^4 */
   }
 }
 
@@ -293,6 +315,7 @@ static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,int fas
       c=bn_add(b3,t,cv->b,cv->nl); if(c||bn_cmp(b3,cv->p,cv->nl)>=0) bn_sub(b3,b3,cv->p,cv->nl); }
     fp_to_mont(cv->b3mont,b3,cv);
   }
+  fp_to_mont(cv->bmont,cv->b,cv);
   build_comb(cv);
 }
 static void ecc_init(void){
