@@ -228,6 +228,15 @@ static void ge_scalarmult_base(ge *r,const unsigned char s[32],const fe d2){
    for i=0..15 and runs 64 nibbles of 4 doublings + 1 add. The complete
    addition law means the projective table needs no affine normalization.
    Bit-exact with ge_scalarmult. */
+/* Dedicated doubling (dbl-2008-hwcd, a=-1): 4 sqr + 4 mul, cheaper than the
+   9-mul unified add used for doubling. */
+static void ge_dbl(ge *r,const ge *p){
+  fe A,B,C,E,F,G,H,t;
+  fe_sq(A,p->X); fe_sq(B,p->Y); fe_sq(C,p->Z); fe_add(C,C,C);
+  fe_add(t,p->X,p->Y); fe_sq(E,t); fe_sub(E,E,A); fe_sub(E,E,B);
+  fe_sub(G,B,A); fe_sub(F,G,C); fe_neg(H,A); fe_sub(H,H,B);
+  fe_mul(r->X,E,F); fe_mul(r->Y,G,H); fe_mul(r->T,E,H); fe_mul(r->Z,F,G);
+}
 static void ge_scalarmult_win(ge *r,const unsigned char s[32],const ge *p,const fe d2){
   ge T[16]; int i,w;
   ge_identity(&T[0]); T[1]=*p;
@@ -235,7 +244,7 @@ static void ge_scalarmult_win(ge *r,const unsigned char s[32],const ge *p,const 
   ge_identity(r);
   for(w=63;w>=0;w--){
     unsigned digit=(s[w>>1]>>((w&1)*4))&0xF;
-    ge_add(r,r,r,d2); ge_add(r,r,r,d2); ge_add(r,r,r,d2); ge_add(r,r,r,d2);
+    ge_dbl(r,r); ge_dbl(r,r); ge_dbl(r,r); ge_dbl(r,r);
     ge_add(r,r,&T[digit],d2);
   }
 }
