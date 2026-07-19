@@ -91,7 +91,26 @@ static void fpow(u64 *r,const u64 *a,const unsigned char *e,int nbits){
   for(i=0;i<nbits;i++){ if((e[i>>3]>>(i&7))&1) fmul(acc,acc,base); fsqr(base,base); }
   fe_copy(r,acc);
 }
-static void finv(u64 *r,const u64 *a){ fpow(r,a,P_MINUS2,448); }
+static void pow2k(u64 *o,const u64 *in,int k){ u64 t[NL]; int i; fe_copy(t,in); for(i=0;i<k;i++) fsqr(t,t); fe_copy(o,t); }
+/* a^(p-2) via an addition chain (~454 sq + 13 mul vs bit-by-bit's 448 sq + 224
+   mul). p-2 = 1 + 2^2*(2^222-1) + 2^225*(2^223-1). */
+static void finv(u64 *r,const u64 *a){
+  u64 t1[NL],t2[NL],t3[NL],t6[NL],t12[NL],t24[NL],t30[NL],t48[NL],t96[NL],t192[NL],t222[NL],t223[NL],tmp[NL];
+  fe_copy(t1,a);
+  pow2k(tmp,t1,1);  fmul(t2,tmp,t1);
+  pow2k(tmp,t2,1);  fmul(t3,tmp,t1);
+  pow2k(tmp,t3,3);  fmul(t6,tmp,t3);
+  pow2k(tmp,t6,6);  fmul(t12,tmp,t6);
+  pow2k(tmp,t12,12);fmul(t24,tmp,t12);
+  pow2k(tmp,t24,6); fmul(t30,tmp,t6);
+  pow2k(tmp,t24,24);fmul(t48,tmp,t24);
+  pow2k(tmp,t48,48);fmul(t96,tmp,t48);
+  pow2k(tmp,t96,96);fmul(t192,tmp,t96);
+  pow2k(tmp,t192,30);fmul(t222,tmp,t30);
+  pow2k(tmp,t222,1);fmul(t223,tmp,t1);
+  pow2k(tmp,t222,2);fmul(r,tmp,t1);
+  pow2k(tmp,t223,225);fmul(r,r,tmp);
+}
 static void le56_to_limbs(u64 *a,const unsigned char *s){ int i,j; for(i=0;i<8;i++){ u64 v=0; for(j=0;j<7;j++) v|=(u64)s[7*i+j]<<(8*j); a[i]=v; } }
 static void be56_to_limbs(u64 *a,const unsigned char *s){ unsigned char le[56]; int i; for(i=0;i<56;i++) le[i]=s[55-i]; le56_to_limbs(a,le); }
 static void limbs_to_le56(unsigned char *s,const u64 *a){ u64 h[8]; int i,j; fe_copy(h,a); fe_canon(h); for(i=0;i<8;i++) for(j=0;j<7;j++) s[7*i+j]=(unsigned char)(h[i]>>(8*j)); }
