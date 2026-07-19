@@ -118,16 +118,34 @@ static void shake128_abs_sq(unsigned char *out,size_t outlen,const unsigned char
   rktcrypto_keccak_core_update(&c,in,(intptr_t)inlen); rktcrypto_keccak_core_final(&c,out,(intptr_t)outlen);
 }
 
-static void poly_parse(poly *r,const unsigned char *rho,unsigned char i,unsigned char j){
-  unsigned char seed[34]; unsigned char buf[672]; unsigned int ctr=0,pos=0; uint16_t d1,d2;
-  memcpy(seed,rho,32); seed[32]=i; seed[33]=j;
-  shake128_abs_sq(buf,sizeof(buf),seed,34);
-  while(ctr<KYBER_N && pos+3<=sizeof(buf)){
+/* rejection-sample 12-bit values < q from buf into r[] starting at ctr */
+extern void rktcrypto_keccak_f1600_x2(uint64_t *sA,uint64_t *sB);
+static unsigned rej_uniform(int16_t *r,unsigned ctr,const unsigned char *buf,int buflen){
+  int pos=0; uint16_t d1,d2;
+  while(ctr<KYBER_N && pos+3<=buflen){
     d1=(uint16_t)(((buf[pos]>>0)|((uint16_t)buf[pos+1]<<8))&0xFFF);
     d2=(uint16_t)(((buf[pos+1]>>4)|((uint16_t)buf[pos+2]<<4))&0xFFF);
     pos+=3;
-    if(d1<KYBER_Q) r->coeffs[ctr++]=(int16_t)d1;
-    if(ctr<KYBER_N && d2<KYBER_Q) r->coeffs[ctr++]=(int16_t)d2;
+    if(d1<KYBER_Q) r[ctr++]=(int16_t)d1;
+    if(ctr<KYBER_N && d2<KYBER_Q) r[ctr++]=(int16_t)d2;
+  }
+  return ctr;
+}
+/* Two independent SHAKE128 rej-sampling XOFs run together via the 2-way Keccak.
+   Absorb seed = rho||i||j (34 bytes) into both states, then squeeze+sample. */
+static void poly_parse_2x(poly *r0,poly *r1,const unsigned char *rho,
+                          unsigned char i0,unsigned char j0,unsigned char i1,unsigned char j1){
+  uint64_t A[25],B[25]; unsigned char ba[168],bb[168]; unsigned c0=0,c1=0; int k;
+  for(k=0;k<25;k++){ A[k]=0; B[k]=0; }
+  for(k=0;k<32;k++){ A[k/8]^=(uint64_t)rho[k]<<(8*(k%8)); B[k/8]^=(uint64_t)rho[k]<<(8*(k%8)); }
+  A[4]^=(uint64_t)i0<<0; A[4]^=(uint64_t)j0<<8; B[4]^=(uint64_t)i1<<0; B[4]^=(uint64_t)j1<<8;
+  A[4]^=(uint64_t)0x1f<<16; B[4]^=(uint64_t)0x1f<<16;     /* byte32=i, byte33=j, byte34=domain 0x1f */
+  A[20]^=0x8000000000000000ULL; B[20]^=0x8000000000000000ULL;   /* 0x80 at byte 167 (rate-1) */
+  while(c0<KYBER_N || c1<KYBER_N){
+    rktcrypto_keccak_f1600_x2(A,B);
+    for(k=0;k<168;k++){ ba[k]=(unsigned char)(A[k/8]>>(8*(k%8))); bb[k]=(unsigned char)(B[k/8]>>(8*(k%8))); }
+    c0=rej_uniform(r0->coeffs,c0,ba,168);
+    c1=rej_uniform(r1->coeffs,c1,bb,168);
   }
 }
 static void cbd2(poly *r,const unsigned char buf[128]){
@@ -280,10 +298,16 @@ static void polyvec_basemul_acc(poly *r,const polyvec *a,const polyvec *b){
   poly_reduce(r);
 }
 static void gen_matrix(polyvec a[KYBER_K],const unsigned char rho[32],int transposed){
-  int i,j; for(i=0;i<KYBER_K;i++) for(j=0;j<KYBER_K;j++){
-    if(transposed) poly_parse(&a[i].vec[j],rho,(unsigned char)i,(unsigned char)j);
-    else poly_parse(&a[i].vec[j],rho,(unsigned char)j,(unsigned char)i);
+  poly *dst[KYBER_K*KYBER_K]; unsigned char si[KYBER_K*KYBER_K],sj[KYBER_K*KYBER_K];
+  int i,j,n=0;
+  for(i=0;i<KYBER_K;i++) for(j=0;j<KYBER_K;j++){
+    dst[n]=&a[i].vec[j];
+    if(transposed){ si[n]=(unsigned char)i; sj[n]=(unsigned char)j; }
+    else { si[n]=(unsigned char)j; sj[n]=(unsigned char)i; }
+    n++;
   }
+  for(i=0;i+1<n;i+=2) poly_parse_2x(dst[i],dst[i+1],rho,si[i],sj[i],si[i+1],sj[i+1]);
+  if(n&1){ poly tmp; poly_parse_2x(dst[n-1],&tmp,rho,si[n-1],sj[n-1],si[n-1],sj[n-1]); }
 }
 static void indcpa_keypair(unsigned char *pk,unsigned char *sk,const unsigned char coins[32]){
   unsigned char buf[64]; const unsigned char *rho,*sigma; unsigned char nonce=0;

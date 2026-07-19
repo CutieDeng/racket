@@ -132,6 +132,42 @@ static void keccak_f(uint64_t s[25])
 #endif
 }
 
+/* Two independent Keccak-f[1600] states permuted together in the two lanes of
+   each SHA3 vector op (same cost as one). Used to run pairs of independent XOFs
+   -- e.g. ML-KEM matrix expansion / noise sampling. */
+void rktcrypto_keccak_f1600_x2(uint64_t sA[25], uint64_t sB[25])
+{
+#if defined(__ARM_FEATURE_SHA3)
+  uint64x2_t a[25], C[5], D[5], b[25];
+  int i, round;
+  for (i = 0; i < 25; i++) a[i] = vsetq_lane_u64(sB[i], vdupq_n_u64(sA[i]), 1);
+  for (round = 0; round < 24; round++) {
+    for (i = 0; i < 5; i++)
+      C[i] = veor3q_u64(veor3q_u64(a[i], a[i+5], a[i+10]), a[i+15], a[i+20]);
+    for (i = 0; i < 5; i++)
+      D[i] = vrax1q_u64(C[(i+4)%5], C[(i+1)%5]);
+    b[0] = veorq_u64(a[0], D[0]);
+    b[10]=vxarq_u64(a[ 1],D[1],63); b[ 7]=vxarq_u64(a[10],D[0],61); b[11]=vxarq_u64(a[ 7],D[2],58);
+    b[17]=vxarq_u64(a[11],D[1],54); b[18]=vxarq_u64(a[17],D[2],49); b[ 3]=vxarq_u64(a[18],D[3],43);
+    b[ 5]=vxarq_u64(a[ 3],D[3],36); b[16]=vxarq_u64(a[ 5],D[0],28); b[ 8]=vxarq_u64(a[16],D[1],19);
+    b[21]=vxarq_u64(a[ 8],D[3],9);  b[24]=vxarq_u64(a[21],D[1],62); b[ 4]=vxarq_u64(a[24],D[4],50);
+    b[15]=vxarq_u64(a[ 4],D[4],37); b[23]=vxarq_u64(a[15],D[0],23); b[19]=vxarq_u64(a[23],D[3],8);
+    b[13]=vxarq_u64(a[19],D[4],56); b[12]=vxarq_u64(a[13],D[3],39); b[ 2]=vxarq_u64(a[12],D[2],21);
+    b[20]=vxarq_u64(a[ 2],D[2],2);  b[14]=vxarq_u64(a[20],D[0],46); b[22]=vxarq_u64(a[14],D[4],25);
+    b[ 9]=vxarq_u64(a[22],D[2],3);  b[ 6]=vxarq_u64(a[ 9],D[4],44); b[ 1]=vxarq_u64(a[ 6],D[1],20);
+    for (i = 0; i < 25; i += 5) {
+      a[i+0]=vbcaxq_u64(b[i+0],b[i+2],b[i+1]); a[i+1]=vbcaxq_u64(b[i+1],b[i+3],b[i+2]);
+      a[i+2]=vbcaxq_u64(b[i+2],b[i+4],b[i+3]); a[i+3]=vbcaxq_u64(b[i+3],b[i+0],b[i+4]);
+      a[i+4]=vbcaxq_u64(b[i+4],b[i+1],b[i+0]);
+    }
+    a[0] = veorq_u64(a[0], vdupq_n_u64(RC[round]));
+  }
+  for (i = 0; i < 25; i++) { sA[i]=vgetq_lane_u64(a[i],0); sB[i]=vgetq_lane_u64(a[i],1); }
+#else
+  keccak_f(sA); keccak_f(sB);
+#endif
+}
+
 static void absorb_byte(rktcrypto_keccak_ctx_t *ctx, unsigned char b)
 {
   ctx->state[ctx->pos >> 3] ^= (uint64_t)b << (8 * (ctx->pos & 7));
