@@ -38,10 +38,22 @@ static void fe_carry_fold(fe h,u128 acc[8]){
   c0=h[0]>>56; h[0]&=M56; h[1]+=c0;
   c4=h[4]>>56; h[4]&=M56; h[5]+=c4;
 }
+static void mul4(u128 o[7],const u64 a[4],const u64 b[4]){
+  int i,j; for(i=0;i<7;i++) o[i]=0;
+  for(i=0;i<4;i++) for(j=0;j<4;j++) o[i+j]+=(u128)a[i]*b[j];
+}
+/* One-level Karatsuba over the 4+4 split (224 = 4*56 is limb-aligned): 3 half-
+   products (48 muls) instead of 64. a*b = (A0B0+A1B1) + (M+A1B1)*2^224 where
+   M = (A0+A1)(B0+B1) - A0B0 - A1B1 = A0B1+A1B0 >= 0 per limb; the 2^448 term
+   folds to 2^224+1. */
 static void fe_mul(fe h,const fe f,const fe g){
-  u128 acc[15]; int i,j; for(i=0;i<15;i++) acc[i]=0;
-  for(i=0;i<8;i++) for(j=0;j<8;j++) acc[i+j]+=(u128)f[i]*g[j];
-  for(i=14;i>=8;i--){ acc[i-8]+=acc[i]; acc[i-4]+=acc[i]; }
+  u128 P00[7],P11[7],Ps[7],acc[15]; u64 s0[4],s1[4]; int k;
+  mul4(P00,f,g); mul4(P11,f+4,g+4);
+  for(k=0;k<4;k++){ s0[k]=f[k]+f[k+4]; s1[k]=g[k]+g[k+4]; }
+  mul4(Ps,s0,s1);
+  for(k=0;k<15;k++) acc[k]=0;
+  for(k=0;k<7;k++){ acc[k]+=P00[k]+P11[k]; acc[k+4]+=(Ps[k]-P00[k]-P11[k])+P11[k]; }
+  for(k=14;k>=8;k--){ acc[k-8]+=acc[k]; acc[k-4]+=acc[k]; }
   fe_carry_fold(h,acc);
 }
 static void fe_sq(fe h,const fe f){        /* 36 products via doubled cross terms */
