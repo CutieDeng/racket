@@ -50,7 +50,20 @@ static void fe_mul(fe h,const fe f,const fe g){
   r4=(__uint128_t)f0*g4+(__uint128_t)f1*g3+(__uint128_t)f2*g2+(__uint128_t)f3*g1+(__uint128_t)f4*g0;
   fe_carry(h,r0,r1,r2,r3,r4);
 }
-static void fe_sq(fe h,const fe f){fe_mul(h,f,f);}
+/* Dedicated squaring: 15 multiplies (vs the mul's 25) by folding the symmetric
+   cross terms into doubled inputs. h = f^2 mod 2^255-19. */
+static void fe_sq(fe h,const fe f){
+  uint64_t f0=f[0],f1=f[1],f2=f[2],f3=f[3],f4=f[4];
+  uint64_t f0_2=2*f0,f1_2=2*f1;
+  uint64_t f1_38=38*f1,f2_38=38*f2,f3_38=38*f3,f3_19=19*f3,f4_19=19*f4;
+  __uint128_t r0,r1,r2,r3,r4;
+  r0=(__uint128_t)f0*f0 + (__uint128_t)f1_38*f4 + (__uint128_t)f2_38*f3;
+  r1=(__uint128_t)f0_2*f1 + (__uint128_t)f2_38*f4 + (__uint128_t)f3_19*f3;
+  r2=(__uint128_t)f0_2*f2 + (__uint128_t)f1*f1 + (__uint128_t)f3_38*f4;
+  r3=(__uint128_t)f0_2*f3 + (__uint128_t)f1_2*f2 + (__uint128_t)f4_19*f4;
+  r4=(__uint128_t)f0_2*f4 + (__uint128_t)f1_2*f3 + (__uint128_t)f2*f2;
+  fe_carry(h,r0,r1,r2,r3,r4);
+}
 static void fe_neg(fe h,const fe f){fe z;fe_0(z);fe_sub(h,z,f);}
 static void fe_cmov(fe f,const fe g,uint64_t b){uint64_t m=0-b;int i;for(i=0;i<5;i++)f[i]^=m&(f[i]^g[i]);}
 
