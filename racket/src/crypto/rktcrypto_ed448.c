@@ -47,11 +47,13 @@ static void fe_copy(u64 *r,const u64 *a){ int i; for(i=0;i<8;i++) r[i]=a[i]; }
 static void fadd(u64 *r,const u64 *a,const u64 *b){ int i; for(i=0;i<8;i++) r[i]=a[i]+b[i]; }
 static void fsub(u64 *r,const u64 *a,const u64 *b){ int i; for(i=0;i<8;i++) r[i]=a[i]+TWOP[i]-b[i]; }
 static void fe_carry_fold(u64 *h,u128 acc[8]){
-  u64 c=0; int i;
+  u64 c=0,c0,c4; int i;
   for(i=0;i<8;i++){ u128 v=acc[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
   h[0]+=c; h[4]+=c;
-  c=0; for(i=0;i<8;i++){ u128 v=(u128)h[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
-  h[0]+=c; h[4]+=c;
+  /* lazy: propagate the fold carries (only in limbs 0,4) into 1,5; limbs stay
+     < 2^57, a valid input for the next multiply. */
+  c0=h[0]>>56; h[0]&=M56; h[1]+=c0;
+  c4=h[4]>>56; h[4]&=M56; h[5]+=c4;
 }
 static void fmul(u64 *h,const u64 *f,const u64 *g){
   u128 acc[15]; int i,j; for(i=0;i<15;i++) acc[i]=0;

@@ -30,11 +30,13 @@ static void fe_add(fe h,const fe f,const fe g){ int i; for(i=0;i<8;i++) h[i]=f[i
 static void fe_sub(fe h,const fe f,const fe g){ int i; for(i=0;i<8;i++) h[i]=f[i]+TWOP[i]-g[i]; }
 static void fe_frombytes(fe h,const unsigned char*s){ int i,j; for(i=0;i<8;i++){ u64 v=0; for(j=0;j<7;j++) v|=(u64)s[7*i+j]<<(8*j); h[i]=v; } }
 static void fe_carry_fold(fe h,u128 acc[8]){
-  u64 c=0; int i;
+  u64 c=0,c0,c4; int i;
   for(i=0;i<8;i++){ u128 v=acc[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
   h[0]+=c; h[4]+=c;
-  c=0; for(i=0;i<8;i++){ u128 v=(u128)h[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
-  h[0]+=c; h[4]+=c;
+  /* the fold lands the final carry only in limbs 0 and 4; propagate those two
+     into 1 and 5 (lazy: limbs stay < 2^57, valid input for the next multiply). */
+  c0=h[0]>>56; h[0]&=M56; h[1]+=c0;
+  c4=h[4]>>56; h[4]&=M56; h[5]+=c4;
 }
 static void fe_mul(fe h,const fe f,const fe g){
   u128 acc[15]; int i,j; for(i=0;i<15;i++) acc[i]=0;
