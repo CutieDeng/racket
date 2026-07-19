@@ -1,7 +1,7 @@
 /* Ed448 signatures (RFC 8032), pure mode with empty context. Edwards curve
    edwards448 (a=1, d=-39081) over p = 2^448-2^224-1, SHAKE256 hashing, and
    scalar arithmetic mod the group order L via the in-tree bignum. Field
-   elements are 7-limb Montgomery; point arithmetic uses extended
+   elements use a reduced-radix 8x56 Goldilocks field; point arithmetic uses extended
    coordinates with the complete a=1 Edwards addition. From scratch, no
    external code. */
 
@@ -12,11 +12,14 @@
 #include <stdint.h>
 
 typedef uint64_t u64;
-#define NL 7
+#define NL 8
+#define M56 0xffffffffffffffULL
 
-static const u64 P448[NL]={
-  0xffffffffffffffffULL,0xffffffffffffffffULL,0xffffffffffffffffULL,0xfffffffeffffffffULL,
-  0xffffffffffffffffULL,0xffffffffffffffffULL,0xffffffffffffffffULL};
+/* p = 2^448 - 2^224 - 1 in reduced-radix 8x56 (224 = 4*56 -> limb-aligned fold) */
+static const u64 P448[NL]={0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL,0xfffffffffffffeULL,0xffffffffffffffULL,0xffffffffffffffULL,0xffffffffffffffULL};
+static const u64 TWOP[NL]={0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffcULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL,0x1fffffffffffffeULL};
+static const unsigned char P_MINUS2[56]={0xfd,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xfe,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff};
+static const unsigned char P_PLUS1_4[56]={0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0xc0,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x3f};
 
 /* group order L (big-endian, 56 bytes) = 2^446 - 138380...503885 */
 static const unsigned char L_BE[56]={
@@ -37,49 +40,50 @@ static const unsigned char GY_BE[56]={
   0x3a,0xd3,0xff,0x1c,0xe6,0x7c,0x39,0xc4,0xfd,0xbd,0x13,0x2c,0x4e,0xd7,0xc8,0xad,
   0x98,0x08,0x79,0x5b,0xf2,0x30,0xfa,0x14};
 
-static u64 g_n0; static u64 g_rr[NL], g_dmont[NL]; static int inited=0;
-static u64 g_e_sqrt[NL];   /* (p+1)/4 as limbs, for sqrt */
+static u64 g_dmont[NL]; static int inited=0;
 
-/* ---- field ---- */
-static int fbn_cmp(const u64 *a,const u64 *b){ int i; for(i=NL-1;i>=0;i--){ if(a[i]<b[i])return -1; if(a[i]>b[i])return 1; } return 0; }
-static u64 fbn_add(u64 *r,const u64 *a,const u64 *b){ int i; u64 c=0; for(i=0;i<NL;i++){ u128 s=(u128)a[i]+b[i]+c; r[i]=(u64)s; c=(u64)(s>>64);} return c; }
-static u64 fbn_sub(u64 *r,const u64 *a,const u64 *b){ int i; u64 br=0; for(i=0;i<NL;i++){ u128 d=(u128)a[i]-b[i]-br; r[i]=(u64)d; br=(u64)((d>>64)&1);} return br; }
-static void montmul(u64 *r,const u64 *a,const u64 *b){
-  u64 t[NL+2]; int i,j; for(i=0;i<NL+2;i++) t[i]=0;
-  for(i=0;i<NL;i++){
-    u64 c=0; u128 p;
-    for(j=0;j<NL;j++){ p=(u128)a[j]*b[i]+t[j]+c; t[j]=(u64)p; c=(u64)(p>>64); }
-    { u128 s=(u128)t[NL]+c; t[NL]=(u64)s; t[NL+1]=(u64)(s>>64); }
-    { u64 mm=(u64)((u128)t[0]*g_n0); u64 cc; p=(u128)mm*P448[0]+t[0]; cc=(u64)(p>>64);
-      for(j=1;j<NL;j++){ p=(u128)mm*P448[j]+t[j]+cc; t[j-1]=(u64)p; cc=(u64)(p>>64); }
-      { u128 s=(u128)t[NL]+cc; t[NL-1]=(u64)s; t[NL]=t[NL+1]+(u64)(s>>64); } }
-  }
-  { u64 tmp[NL],borrow; int k; borrow=0;
-    for(k=0;k<NL;k++){ u128 d=(u128)t[k]-P448[k]-borrow; tmp[k]=(u64)d; borrow=(u64)((d>>64)&1); }
-    borrow=(t[NL]!=0)?0:borrow;
-    if(borrow==0){ for(k=0;k<NL;k++) r[k]=tmp[k]; } else { for(k=0;k<NL;k++) r[k]=t[k]; } }
+/* ---- reduced-radix 8x56 field (2^448=2^224+1 fold: digit@8+k -> limb k & k+4) ---- */
+static void fe_copy(u64 *r,const u64 *a){ int i; for(i=0;i<8;i++) r[i]=a[i]; }
+static void fadd(u64 *r,const u64 *a,const u64 *b){ int i; for(i=0;i<8;i++) r[i]=a[i]+b[i]; }
+static void fsub(u64 *r,const u64 *a,const u64 *b){ int i; for(i=0;i<8;i++) r[i]=a[i]+TWOP[i]-b[i]; }
+static void fe_carry_fold(u64 *h,u128 acc[8]){
+  u64 c=0; int i;
+  for(i=0;i<8;i++){ u128 v=acc[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
+  h[0]+=c; h[4]+=c;
+  c=0; for(i=0;i<8;i++){ u128 v=(u128)h[i]+c; h[i]=(u64)v&M56; c=(u64)(v>>56); }
+  h[0]+=c; h[4]+=c;
 }
-static void fadd(u64 *r,const u64 *a,const u64 *b){ u64 c=fbn_add(r,a,b); if(c||fbn_cmp(r,P448)>=0) fbn_sub(r,r,P448); }
-static void fsub(u64 *r,const u64 *a,const u64 *b){ u64 br=fbn_sub(r,a,b); if(br) fbn_add(r,r,P448); }
-static void fmul(u64 *r,const u64 *a,const u64 *b){ montmul(r,a,b); }
-static void fsqr(u64 *r,const u64 *a){ montmul(r,a,a); }
-static u64 mont_n0(u64 m0){ u64 x=1; int i; for(i=0;i<6;i++) x*=2-m0*x; return (u64)(0-x); }
-static void to_mont(u64 *r,const u64 *a){ montmul(r,a,g_rr); }
-static void from_mont(u64 *r,const u64 *a){ u64 one[NL]={1,0,0,0,0,0,0}; montmul(r,a,one); }
-static int fis_zero(const u64 *a){ int i; u64 x=0; for(i=0;i<NL;i++) x|=a[i]; return x==0; }
-static void fpow(u64 *r,const u64 *a,const u64 *e,int ebits){
-  u64 acc[NL],base[NL]; int i; u64 one[NL]={1,0,0,0,0,0,0};
-  to_mont(acc,one); for(i=0;i<NL;i++) base[i]=a[i];
-  for(i=0;i<ebits;i++){ if((e[i/64]>>(i%64))&1) fmul(acc,acc,base); fsqr(base,base); }
-  for(i=0;i<NL;i++) r[i]=acc[i];
+static void fmul(u64 *h,const u64 *f,const u64 *g){
+  u128 acc[15]; int i,j; for(i=0;i<15;i++) acc[i]=0;
+  for(i=0;i<8;i++) for(j=0;j<8;j++) acc[i+j]+=(u128)f[i]*g[j];
+  for(i=14;i>=8;i--){ acc[i-8]+=acc[i]; acc[i-4]+=acc[i]; }
+  fe_carry_fold(h,acc);
 }
-static void finv(u64 *r,const u64 *a){ u64 e[NL]; u64 two[NL]={2,0,0,0,0,0,0}; fbn_sub(e,P448,two); fpow(r,a,e,448); }
-
-static void be56_to_limbs(u64 *a,const unsigned char *s){ int i; for(i=0;i<NL;i++) a[i]=0;
-  for(i=0;i<56;i++){ int bit=(56-1-i)*8; a[bit/64]|=(u64)s[i]<<(bit%64); } }
-static void le56_to_limbs(u64 *a,const unsigned char *s){ int i; for(i=0;i<NL;i++) a[i]=0;
-  for(i=0;i<56;i++) a[i/8]|=(u64)s[i]<<(8*(i%8)); }
-static void limbs_to_le56(unsigned char *s,const u64 *a){ int i; for(i=0;i<56;i++) s[i]=(unsigned char)(a[i/8]>>(8*(i%8))); }
+static void fsqr(u64 *h,const u64 *f){
+  u128 acc[15]; int i,j; for(i=0;i<15;i++) acc[i]=0;
+  for(i=0;i<8;i++){ acc[2*i]+=(u128)f[i]*f[i]; for(j=i+1;j<8;j++) acc[i+j]+=(u128)(2*(u128)f[i]*f[j]); }
+  for(i=14;i>=8;i--){ acc[i-8]+=acc[i]; acc[i-4]+=acc[i]; }
+  fe_carry_fold(h,acc);
+}
+static void fe_canon(u64 *h){
+  u128 acc[8]; int i; u64 t[8],bb; for(i=0;i<8;i++) acc[i]=h[i]; fe_carry_fold(h,acc);
+  bb=0; for(i=0;i<8;i++){ u128 d=(u128)h[i]-P448[i]-bb; t[i]=(u64)d&M56; bb=(u64)((d>>64)&1); }
+  if(!bb) for(i=0;i<8;i++) h[i]=t[i];
+}
+static void to_mont(u64 *r,const u64 *a){ fe_copy(r,a); }
+static void from_mont(u64 *r,const u64 *a){ fe_copy(r,a); }
+static int fbn_cmp(const u64 *a,const u64 *b){ int i; for(i=7;i>=0;i--){ if(a[i]<b[i])return -1; if(a[i]>b[i])return 1; } return 0; }
+static int fis_zero(const u64 *a){ u64 t[8]; int i; u64 x=0; fe_copy(t,a); fe_canon(t); for(i=0;i<8;i++) x|=t[i]; return x==0; }
+static int fe_eq(const u64 *a,const u64 *b){ u64 x[8],y[8]; fe_copy(x,a); fe_copy(y,b); fe_canon(x); fe_canon(y); return fbn_cmp(x,y)==0; }
+static void fpow(u64 *r,const u64 *a,const unsigned char *e,int nbits){
+  u64 acc[8],base[8]; int i; acc[0]=1; for(i=1;i<8;i++) acc[i]=0; fe_copy(base,a);
+  for(i=0;i<nbits;i++){ if((e[i>>3]>>(i&7))&1) fmul(acc,acc,base); fsqr(base,base); }
+  fe_copy(r,acc);
+}
+static void finv(u64 *r,const u64 *a){ fpow(r,a,P_MINUS2,448); }
+static void le56_to_limbs(u64 *a,const unsigned char *s){ int i,j; for(i=0;i<8;i++){ u64 v=0; for(j=0;j<7;j++) v|=(u64)s[7*i+j]<<(8*j); a[i]=v; } }
+static void be56_to_limbs(u64 *a,const unsigned char *s){ unsigned char le[56]; int i; for(i=0;i<56;i++) le[i]=s[55-i]; le56_to_limbs(a,le); }
+static void limbs_to_le56(unsigned char *s,const u64 *a){ u64 h[8]; int i,j; fe_copy(h,a); fe_canon(h); for(i=0;i<8;i++) for(j=0;j<7;j++) s[7*i+j]=(unsigned char)(h[i]>>(8*j)); }
 
 /* ---- SHAKE256 ---- */
 static void shake256(unsigned char *out,size_t outlen,const unsigned char *in,size_t inlen){
@@ -157,10 +161,10 @@ static void pt_scalarmul_base(ept *R,const unsigned char *k_be,int kbytes){
 
 /* encode point to 57 bytes: y little-endian (56) + sign(x) in bit 7 of byte 56. */
 static void pt_encode(unsigned char out[57],const ept *P){
-  u64 zi[NL],x[NL],y[NL],xr[NL],yr[NL];
+  u64 zi[NL],x[NL],y[NL],xc[NL];
   finv(zi,P->Z); fmul(x,P->X,zi); fmul(y,P->Y,zi);
-  from_mont(xr,x); from_mont(yr,y);
-  limbs_to_le56(out,yr); out[56]=(unsigned char)((xr[0]&1)<<7);
+  limbs_to_le56(out,y);                                    /* canonical y */
+  fe_copy(xc,x); fe_canon(xc); out[56]=(unsigned char)((xc[0]&1)<<7);
 }
 /* decode 57-byte encoding to a point; returns 1 on success. */
 static int pt_decode(ept *P,const unsigned char in[57]){
@@ -173,10 +177,10 @@ static int pt_decode(ept *P,const unsigned char in[57]){
   fsub(num,y2,om);                        /* num = y^2 - 1 */
   fmul(den,g_dmont,y2); fsub(den,den,om); /* den = d*y^2 - 1 */
   finv(dinv,den); fmul(u,num,dinv);       /* u = num/den */
-  fpow(x,u,g_e_sqrt,448);                 /* x = u^((p+1)/4) = sqrt(u) */
+  fpow(x,u,P_PLUS1_4,448);                /* x = u^((p+1)/4) = sqrt(u) */
   fsqr(x2,x);
-  if(fbn_cmp(x2,u)!=0) return 0;          /* not a square -> invalid */
-  { u64 xr[NL]; from_mont(xr,x); if((int)(xr[0]&1)!=sign){ u64 z[NL]={0,0,0,0,0,0,0}; fsub(x,z,x); } }
+  if(!fe_eq(x2,u)) return 0;              /* not a square -> invalid */
+  { u64 xc[NL]; fe_copy(xc,x); fe_canon(xc); if((int)(xc[0]&1)!=sign){ u64 z[NL]={0,0,0,0,0,0,0,0}; fsub(x,z,x); } }
   if(fis_zero(x) && sign) return 0;
   for(j=0;j<NL;j++){ P->X[j]=x[j]; P->Y[j]=y[j]; P->Z[j]=om[j]; }
   fmul(P->T,x,y);
@@ -202,15 +206,10 @@ static void sc_muladd_le(unsigned char out57[57],const unsigned char *a_le,const
 }
 
 static void ed448_init(void){
-  u64 t[NL]; int i;
+  u64 z[NL],dd[NL]; int i;
   if(inited) return;
-  g_n0=mont_n0(P448[0]);
-  for(i=0;i<NL;i++) t[i]=0; t[0]=1;
-  for(i=0;i<2*64*NL;i++){ u64 c=fbn_add(t,t,t); if(c||fbn_cmp(t,P448)>=0) fbn_sub(t,t,P448); }
-  for(i=0;i<NL;i++) g_rr[i]=t[i];
-  { u64 dd[NL]={39081,0,0,0,0,0,0},pmd[NL]; fbn_sub(pmd,P448,dd); to_mont(g_dmont,pmd); }  /* d=-39081 */
-  { u64 one[NL]={1,0,0,0,0,0,0},e[NL]; fbn_add(e,P448,one);   /* e=(p+1)/4 */
-    for(i=0;i<NL-1;i++) e[i]=(e[i]>>2)|(e[i+1]<<62); e[NL-1]>>=2; for(i=0;i<NL;i++) g_e_sqrt[i]=e[i]; }
+  for(i=0;i<8;i++){ z[i]=0; dd[i]=0; } dd[0]=39081;
+  fsub(g_dmont,z,dd); fe_canon(g_dmont);   /* d = -39081 mod p */
   inited=1;
 }
 
