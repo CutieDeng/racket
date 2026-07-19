@@ -165,14 +165,38 @@ static const uint64_t CAM_SIG[6]={0xA09E667F3BCC908BULL,0xB67AE8584CAA73B2ULL,0x
 static uint64_t cam_load64(const unsigned char *p){ uint64_t v=0; int i; for(i=0;i<8;i++) v=(v<<8)|p[i]; return v; }
 static void cam_store64(unsigned char *p,uint64_t v){ int i; for(i=0;i<8;i++) p[i]=(unsigned char)(v>>(56-8*i)); }
 
+/* SP tables fuse each byte's S-box variant with the linear P-layer, so cam_F is
+   8 XORed 64-bit lookups. Generated once by evaluating the exact z-formulas with
+   a single active y (guaranteed bit-identical to the byte-wise version). */
+static uint64_t CAM_SP[8][256];
+static int cam_sp_inited=0;
+static void cam_sp_init(void){
+  int j,b,i;
+  for(j=0;j<8;j++) for(b=0;b<256;b++){
+    unsigned char y[8]={0,0,0,0,0,0,0,0}, z[8]; uint64_t r=0;
+    switch(j){
+      case 0: y[0]=CAM_SBOX1[b]; break;
+      case 1: y[1]=cam_rol8(CAM_SBOX1[b],1); break;
+      case 2: y[2]=cam_rol8(CAM_SBOX1[b],7); break;
+      case 3: y[3]=CAM_SBOX1[cam_rol8((unsigned char)b,1)]; break;
+      case 4: y[4]=cam_rol8(CAM_SBOX1[b],1); break;
+      case 5: y[5]=cam_rol8(CAM_SBOX1[b],7); break;
+      case 6: y[6]=CAM_SBOX1[cam_rol8((unsigned char)b,1)]; break;
+      case 7: y[7]=CAM_SBOX1[b]; break;
+    }
+    z[0]=y[0]^y[2]^y[3]^y[5]^y[6]^y[7]; z[1]=y[0]^y[1]^y[3]^y[4]^y[6]^y[7];
+    z[2]=y[0]^y[1]^y[2]^y[4]^y[5]^y[7]; z[3]=y[1]^y[2]^y[3]^y[4]^y[5]^y[6];
+    z[4]=y[0]^y[1]^y[5]^y[6]^y[7]; z[5]=y[1]^y[2]^y[4]^y[6]^y[7];
+    z[6]=y[2]^y[3]^y[4]^y[5]^y[7]; z[7]=y[0]^y[3]^y[4]^y[5]^y[6];
+    for(i=0;i<8;i++) r=(r<<8)|z[i];
+    CAM_SP[j][b]=r;
+  }
+  cam_sp_inited=1;
+}
 static uint64_t cam_F(uint64_t X,uint64_t k){
-  unsigned char t[8],z[8],y1,y2,y3,y4,y5,y6,y7,y8; uint64_t r=0; int i;
-  X^=k; for(i=0;i<8;i++) t[i]=(unsigned char)(X>>(56-8*i));
-  y1=CAM_SBOX1[t[0]]; y2=cam_rol8(CAM_SBOX1[t[1]],1); y3=cam_rol8(CAM_SBOX1[t[2]],7); y4=CAM_SBOX1[cam_rol8(t[3],1)];
-  y5=cam_rol8(CAM_SBOX1[t[4]],1); y6=cam_rol8(CAM_SBOX1[t[5]],7); y7=CAM_SBOX1[cam_rol8(t[6],1)]; y8=CAM_SBOX1[t[7]];
-  z[0]=y1^y3^y4^y6^y7^y8; z[1]=y1^y2^y4^y5^y7^y8; z[2]=y1^y2^y3^y5^y6^y8; z[3]=y2^y3^y4^y5^y6^y7;
-  z[4]=y1^y2^y6^y7^y8; z[5]=y2^y3^y5^y7^y8; z[6]=y3^y4^y5^y6^y8; z[7]=y1^y4^y5^y6^y7;
-  for(i=0;i<8;i++) r=(r<<8)|z[i]; return r;
+  uint64_t u=X^k;
+  return CAM_SP[0][(u>>56)&0xff]^CAM_SP[1][(u>>48)&0xff]^CAM_SP[2][(u>>40)&0xff]^CAM_SP[3][(u>>32)&0xff]
+        ^CAM_SP[4][(u>>24)&0xff]^CAM_SP[5][(u>>16)&0xff]^CAM_SP[6][(u>>8)&0xff]^CAM_SP[7][u&0xff];
 }
 static uint64_t cam_rol32(uint64_t x,int n){ uint32_t v=(uint32_t)x; return (uint64_t)((v<<n)|(v>>(32-n))); }
 static uint64_t cam_FL(uint64_t X,uint64_t ke){ uint32_t x1=(uint32_t)(X>>32),x2=(uint32_t)X,k1=(uint32_t)(ke>>32),k2=(uint32_t)ke;
@@ -186,6 +210,7 @@ static uint64_t CAM_LO(cam_u128 x){ return (uint64_t)x; }
 typedef struct { uint64_t kw[4],k[24],ke[6]; int nr; } cam_key;
 static void cam_schedule(const unsigned char *key,int keylen,cam_key *ck){
   cam_u128 KL,KR=0,KA,KB=0; uint64_t D1,D2;
+  if(!cam_sp_inited) cam_sp_init();
   KL=((cam_u128)cam_load64(key)<<64)|cam_load64(key+8);
   if(keylen==24){ uint64_t hi=cam_load64(key+16); KR=((cam_u128)hi<<64)|(uint64_t)(~hi); }
   else if(keylen==32){ KR=((cam_u128)cam_load64(key+16)<<64)|cam_load64(key+24); }
