@@ -197,6 +197,25 @@ static void scalar_mul(jpt *R,const u64 *k,const jpt *P,const curve *cv){
   }
   *R=acc;
 }
+/* Fixed-base comb for k*G: COMB[i][d] = d * 2^(4i) * G, so k*G = sum over
+   4-bit windows of COMB[i][nibble_i(k)] with ZERO online doublings. The table
+   is precomputed once per curve at init. Used for the generator-based scalar
+   mults (pubkey, sign, and verify's u1*G); variable-base stays on scalar_mul. */
+static jpt COMB384[96][16], COMB521[131][16];
+static void scalar_mul_base(jpt *R,const u64 *k,const curve *cv){
+  jpt (*comb)[16]=(cv->fast==521)?COMB521:COMB384;
+  int nwin=(cv->nbits+3)/4, i,j,d; jpt acc,sel; u64 one[MAXL],zero[MAXL];
+  bn_zero(one); one[0]=1; bn_zero(zero);
+  fp_to_mont(acc.X,zero,cv); fp_to_mont(acc.Y,one,cv); bn_cpy(acc.Z,acc.X);  /* O */
+  for(i=0;i<nwin;i++){
+    int nib=0;
+    for(j=3;j>=0;j--){ int b=(4*i+j<cv->nbits)?(int)((k[(4*i+j)/64]>>((4*i+j)%64))&1):0; nib=(nib<<1)|b; }
+    sel=comb[i][0];
+    for(d=1;d<16;d++){ u64 m=(u64)((d^nib)==0); pt_cmov(&sel,&comb[i][d],m,cv->nl); }
+    pt_add(&acc,&acc,&sel,cv);
+  }
+  *R=acc;
+}
 static void pt_to_affine(u64 *x,u64 *y,const jpt *P,const curve *cv){
   u64 zi[MAXL],xm[MAXL],ym[MAXL];
   fp_inv(zi,P->Z,cv);
@@ -208,6 +227,19 @@ static void set_generator(jpt *G,const curve *cv){
   fp_to_mont(G->X,cv->gx,cv);
   fp_to_mont(G->Y,cv->gy,cv);
   fp_to_mont(G->Z,one,cv);
+}
+static void build_comb(const curve *cv){
+  jpt (*comb)[16]=(cv->fast==521)?COMB521:COMB384;
+  int nwin=(cv->nbits+3)/4, i,d; jpt base,O; u64 one[MAXL],zero[MAXL];
+  bn_zero(one); one[0]=1; bn_zero(zero);
+  fp_to_mont(O.X,zero,cv); fp_to_mont(O.Y,one,cv); bn_cpy(O.Z,O.X);
+  set_generator(&base,cv);
+  for(i=0;i<nwin;i++){
+    comb[i][0]=O; comb[i][1]=base;
+    for(d=2;d<16;d++) pt_add(&comb[i][d],&comb[i][d-1],&base,cv);
+    if(i+1<nwin){ pt_add(&base,&base,&base,cv); pt_add(&base,&base,&base,cv);
+                  pt_add(&base,&base,&base,cv); pt_add(&base,&base,&base,cv); }  /* base *= 2^4 */
+  }
 }
 
 /* ---- scalar field mod n ---- */
@@ -261,6 +293,7 @@ static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,int fas
       c=bn_add(b3,t,cv->b,cv->nl); if(c||bn_cmp(b3,cv->p,cv->nl)>=0) bn_sub(b3,b3,cv->p,cv->nl); }
     fp_to_mont(cv->b3mont,b3,cv);
   }
+  build_comb(cv);
 }
 static void ecc_init(void){
   if(inited) return;
@@ -271,10 +304,10 @@ static void ecc_init(void){
 
 /* ---- public per-curve entry points ---- */
 static int ecc_pubkey(const curve *cv,unsigned char *out,const unsigned char *priv){
-  u64 d[MAXL],x[MAXL],y[MAXL]; jpt G,R;
+  u64 d[MAXL],x[MAXL],y[MAXL]; jpt R;
   bytes_to_limbs(d,priv,cv->nbytes,cv->nl);
   if(bn_iszero(d,cv->nl)||bn_cmp(d,cv->n,cv->nl)>=0) return 0;
-  set_generator(&G,cv); scalar_mul(&R,d,&G,cv);
+  scalar_mul_base(&R,d,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
   pt_to_affine(x,y,&R,cv);
   out[0]=4; limbs_to_bytes(out+1,x,cv->nbytes); limbs_to_bytes(out+1+cv->nbytes,y,cv->nbytes); return 1;
@@ -295,19 +328,18 @@ static int ecc_ecdh(const curve *cv,unsigned char *out,const unsigned char *scal
 }
 static int ecc_sign(const curve *cv,unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *priv){
   unsigned char h[64]; int hlen=(int)rktcrypto_digest_size(cv->hash_alg);
-  u64 d[MAXL],z[MAXL],k[MAXL],x[MAXL],y[MAXL],r[MAXL],s[MAXL],kinv[MAXL],tmp[MAXL]; jpt G,R;
+  u64 d[MAXL],z[MAXL],k[MAXL],x[MAXL],y[MAXL],r[MAXL],s[MAXL],kinv[MAXL],tmp[MAXL]; jpt R;
   int tries;
   rktcrypto_digest_oneshot(cv->hash_alg,msg,0,mlen,h,0,hlen);
   hash_to_scalar(z,h,hlen,cv);
   bytes_to_limbs(d,priv,cv->nbytes,cv->nl);
-  set_generator(&G,cv);
   for(tries=0;tries<64;tries++){
     unsigned char kb[66];
     if(!rktcrypto_random_bytes(kb,0,cv->nbytes)) return 0;
     bytes_to_limbs(k,kb,cv->nbytes,cv->nl);
     if(cv->nbits%8){ int excess=8-(cv->nbits%8); k[cv->nl-1]&=(~(u64)0)>>(64-((cv->nbits-1)%64+1)); (void)excess; }
     if(bn_iszero(k,cv->nl)||bn_cmp(k,cv->n,cv->nl)>=0) continue;
-    scalar_mul(&R,k,&G,cv); if(bn_iszero(R.Z,cv->nl)) continue;
+    scalar_mul_base(&R,k,cv); if(bn_iszero(R.Z,cv->nl)) continue;
     pt_to_affine(x,y,&R,cv);
     bn_cpy(r,x); if(bn_cmp(r,cv->n,cv->nl)>=0) bn_sub(r,r,cv->n,cv->nl);
     if(bn_iszero(r,cv->nl)) continue;
@@ -324,7 +356,7 @@ static int ecc_sign(const curve *cv,unsigned char *sig,const unsigned char *msg,
 static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *pub){
   unsigned char h[64]; int hlen=(int)rktcrypto_digest_size(cv->hash_alg);
   u64 r[MAXL],s[MAXL],z[MAXL],w[MAXL],u1[MAXL],u2[MAXL],qx[MAXL],qy[MAXL],x[MAXL],y[MAXL],one[MAXL],v[MAXL];
-  jpt G,Q,R1,R2,R;
+  jpt Q,R1,R2,R;
   if(pub[0]!=4) return 0;
   bytes_to_limbs(r,sig,cv->nbytes,cv->nl); bytes_to_limbs(s,sig+cv->nbytes,cv->nbytes,cv->nl);
   if(bn_iszero(r,cv->nl)||bn_cmp(r,cv->n,cv->nl)>=0||bn_iszero(s,cv->nl)||bn_cmp(s,cv->n,cv->nl)>=0) return 0;
@@ -334,9 +366,8 @@ static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned ch
   { u64 rm[MAXL],wm[MAXL],pm[MAXL]; to_mont(rm,r,cv->n,cv->rr_n,cv->n0_n,cv->nl); to_mont(wm,w,cv->n,cv->rr_n,cv->n0_n,cv->nl); fn_mul(pm,rm,wm,cv); from_mont(u2,pm,cv->n,cv->n0_n,cv->nl); }
   bytes_to_limbs(qx,pub+1,cv->nbytes,cv->nl); bytes_to_limbs(qy,pub+1+cv->nbytes,cv->nbytes,cv->nl);
   bn_zero(one); one[0]=1;
-  set_generator(&G,cv);
   fp_to_mont(Q.X,qx,cv); fp_to_mont(Q.Y,qy,cv); fp_to_mont(Q.Z,one,cv);
-  scalar_mul(&R1,u1,&G,cv); scalar_mul(&R2,u2,&Q,cv);
+  scalar_mul_base(&R1,u1,cv); scalar_mul(&R2,u2,&Q,cv);
   pt_add(&R,&R1,&R2,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
   pt_to_affine(x,y,&R,cv);
