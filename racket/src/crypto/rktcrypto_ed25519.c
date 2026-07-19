@@ -147,6 +147,23 @@ static void ge_add(ge *r,const ge *p,const ge *q,const fe d2){
   fe_mul(r->X,e,f); fe_mul(r->Y,g,h); fe_mul(r->T,e,h); fe_mul(r->Z,f,g);
 }
 
+/* Cached affine point for the fixed-base comb: (Y+X, Y-X, 2d*X*Y). Mixed
+   addition ge + cached is 7 muls (vs the unified add's 9) and its cmov scan
+   touches 3 field elements instead of 4. */
+typedef struct { fe yplusx,yminusx,xy2d; } gec;
+static void ge_madd(ge *r,const ge *p,const gec *q){
+  fe a,b,c,dd,e,f,g,h,t0;
+  fe_sub(t0,p->Y,p->X); fe_mul(a,t0,q->yminusx);
+  fe_add(t0,p->Y,p->X); fe_mul(b,t0,q->yplusx);
+  fe_mul(c,p->T,q->xy2d);
+  fe_add(dd,p->Z,p->Z);                                  /* 2*Z1 (Z2 = 1) */
+  fe_sub(e,b,a); fe_sub(f,dd,c); fe_add(g,dd,c); fe_add(h,b,a);
+  fe_mul(r->X,e,f); fe_mul(r->Y,g,h); fe_mul(r->T,e,h); fe_mul(r->Z,f,g);
+}
+static void gec_cmov(gec *r,const gec *a,uint64_t b){
+  fe_cmov(r->yplusx,a->yplusx,b); fe_cmov(r->yminusx,a->yminusx,b); fe_cmov(r->xy2d,a->xy2d,b);
+}
+
 #ifdef ED25519_SELFTEST
 /* Reference bit-by-bit double-and-add. Superseded in production by the
    fixed-base comb and the variable-base window; kept as the oracle the
@@ -172,30 +189,37 @@ static void ge_scalarmult(ge *r,const unsigned char s[32],const ge *p,const fe d
    so there are no exceptional cases; entries are chosen with a full cmov scan
    (no secret-dependent memory access) and d=0 selects the identity. */
 static void ge_base(ge *B);
-static ge ed_comb[64][16];
+static gec ed_comb[64][16];        /* cached-affine entries for mixed addition */
 static int ed_comb_inited=0;
-static void ge_cmov(ge *r,const ge *a,uint64_t b){
-  fe_cmov(r->X,a->X,b);fe_cmov(r->Y,a->Y,b);fe_cmov(r->Z,a->Z,b);fe_cmov(r->T,a->T,b);
-}
 static void ed_comb_init(const fe d2){
-  ge base; int w,d;
+  ge base,tmp[16]; fe prefix[16],inv,zi,x,y; int w,d;
   ge_base(&base);
   for(w=0;w<64;w++){
-    ge_identity(&ed_comb[w][0]); ed_comb[w][1]=base;
-    for(d=2;d<16;d++) ge_add(&ed_comb[w][d],&ed_comb[w][d-1],&base,d2);
+    ge_identity(&tmp[0]); tmp[1]=base;
+    for(d=2;d<16;d++) ge_add(&tmp[d],&tmp[d-1],&base,d2);
+    /* batch-normalize the 16 entries to affine, then cache (Y+X,Y-X,2d*X*Y) */
+    fe_copy(prefix[0],tmp[0].Z);
+    for(d=1;d<16;d++) fe_mul(prefix[d],prefix[d-1],tmp[d].Z);
+    fe_invert(inv,prefix[15]);
+    for(d=15;d>=0;d--){
+      if(d>0){ fe_mul(zi,inv,prefix[d-1]); fe_mul(inv,inv,tmp[d].Z); } else fe_copy(zi,inv);
+      fe_mul(x,tmp[d].X,zi); fe_mul(y,tmp[d].Y,zi);
+      fe_add(ed_comb[w][d].yplusx,y,x); fe_sub(ed_comb[w][d].yminusx,y,x);
+      fe_mul(ed_comb[w][d].xy2d,x,y); fe_mul(ed_comb[w][d].xy2d,ed_comb[w][d].xy2d,d2);
+    }
     if(w+1<64){ for(d=0;d<4;d++) ge_add(&base,&base,&base,d2); }   /* base *= 16 */
   }
   ed_comb_inited=1;
 }
 static void ge_scalarmult_base(ge *r,const unsigned char s[32],const fe d2){
-  int w,d; ge sel;
+  int w,d; gec sel;
   if(!ed_comb_inited) ed_comb_init(d2);
   ge_identity(r);
   for(w=0;w<64;w++){
     unsigned nib=(s[w>>1]>>((w&1)*4))&0xF;
     sel=ed_comb[w][0];
-    for(d=1;d<16;d++) ge_cmov(&sel,&ed_comb[w][d],(uint64_t)(d==(int)nib));
-    ge_add(r,r,&sel,d2);
+    for(d=1;d<16;d++) gec_cmov(&sel,&ed_comb[w][d],(uint64_t)(d==(int)nib));
+    ge_madd(r,r,&sel);
   }
 }
 
