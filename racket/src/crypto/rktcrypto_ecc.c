@@ -67,10 +67,22 @@ static void compute_rr(u64 *rr,const u64 *m,int nl){
 static void to_mont(u64 *r,const u64 *a,const u64 *m,const u64 *rr,u64 n0,int nl){ montmul(r,a,rr,m,n0,nl); }
 static void from_mont(u64 *r,const u64 *a,const u64 *m,u64 n0,int nl){ u64 one[MAXL]; bn_zero(one); one[0]=1; montmul(r,a,one,m,n0,nl); }
 
-/* Schoolbook wide multiply: prod[0..2nl-1] = a*b (nl limbs each). */
+/* Product-scanning (Comba) wide multiply: prod[0..2nl-1] = a*b. Each column is
+   an independent set of products accumulated into a 3-word register carry
+   (c0,c1,c2), which exposes more instruction-level parallelism than the
+   row-schoolbook carry chain. */
 static void mul_wide(u64 *prod,const u64 *a,const u64 *b,int nl){
-  int i,j; for(i=0;i<2*nl;i++) prod[i]=0;
-  for(i=0;i<nl;i++){ u64 c=0; for(j=0;j<nl;j++){ u128 p=(u128)a[i]*b[j]+prod[i+j]+c; prod[i+j]=(u64)p; c=(u64)(p>>64); } prod[i+nl]=c; }
+  u64 c0=0,c1=0,c2=0; int k,i;
+  for(k=0;k<2*nl-1;k++){
+    int lo=(k<nl)?0:k-nl+1, hi=(k<nl)?k:nl-1;
+    for(i=lo;i<=hi;i++){
+      u128 m=(u128)a[i]*b[k-i]; u64 ml=(u64)m,mh=(u64)(m>>64);
+      u128 s=(u128)c0+ml; c0=(u64)s; { u64 cc=(u64)(s>>64);
+        s=(u128)c1+mh+cc; c1=(u64)s; c2+=(u64)(s>>64); }
+    }
+    prod[k]=c0; c0=c1; c1=c2; c2=0;
+  }
+  prod[2*nl-1]=c0;
 }
 /* P-521 reduction mod 2^521-1 (Mersenne). prod has 18 significant limbs.
    prod = A*2^521 + B, and 2^521 == 1, so result = A + B (mod p). */
