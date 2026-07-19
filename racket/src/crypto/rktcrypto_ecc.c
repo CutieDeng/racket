@@ -136,15 +136,21 @@ static void fp_to_mont(u64 *r,const u64 *a,const curve *cv){
 static void fp_from_mont(u64 *r,const u64 *a,const curve *cv){
   if(cv->fast) bn_cpy(r,a); else from_mont(r,a,cv->p,cv->n0_p,cv->nl);
 }
-/* Fermat inverse in Montgomery domain: a^(p-2). */
+/* Fermat inverse a^(p-2) by 4-bit fixed-window exponentiation. The exponent p-2
+   is public, so the per-window table entry is indexed directly (no cmov). ~4
+   squarings + 1 mul per nibble instead of a mul on every set bit. */
 static void fp_inv(u64 *r,const u64 *a,const curve *cv){
-  u64 e[MAXL],acc[MAXL],base[MAXL],one[MAXL]; int i,bit; bn_zero(one); one[0]=1;
+  u64 e[MAXL],tbl[16][MAXL],acc[MAXL],one[MAXL]; int i,ni,nib,topnib;
+  bn_zero(one); one[0]=1;
   { u64 two[MAXL]; bn_zero(two); two[0]=2; bn_sub(e,cv->p,two,cv->nl); }
-  fp_to_mont(acc,one,cv); bn_cpy(base,a);
-  for(i=0;i<cv->pbits;i++){
-    bit=(int)((e[i/64]>>(i%64))&1);
-    if(bit) fp_mul(acc,acc,base,cv);
-    fp_mul(base,base,base,cv);
+  fp_to_mont(tbl[0],one,cv); bn_cpy(tbl[1],a);
+  for(i=2;i<16;i++) fp_mul(tbl[i],tbl[i-1],a,cv);
+  bn_cpy(acc,tbl[0]);
+  topnib=(cv->pbits+3)/4;
+  for(ni=topnib-1;ni>=0;ni--){
+    fp_mul(acc,acc,acc,cv); fp_mul(acc,acc,acc,cv); fp_mul(acc,acc,acc,cv); fp_mul(acc,acc,acc,cv);
+    nib=(int)((e[(4*ni)/64]>>((4*ni)%64))&0xf);
+    fp_mul(acc,acc,tbl[nib],cv);
   }
   bn_cpy(r,acc);
 }
@@ -273,12 +279,19 @@ static void build_comb(const curve *cv){
 /* ---- scalar field mod n ---- */
 static void fn_mul(u64 *r,const u64 *a,const u64 *b,const curve *cv){ montmul(r,a,b,cv->n,cv->n0_n,cv->nl); }
 static void fn_add(u64 *r,const u64 *a,const u64 *b,const curve *cv){ u64 c=bn_add(r,a,b,cv->nl); if(c||bn_cmp(r,cv->n,cv->nl)>=0) bn_sub(r,r,cv->n,cv->nl); }
-static void fn_inv(u64 *r,const u64 *a,const curve *cv){   /* a^(n-2) mod n, plain domain in/out */
-  u64 e[MAXL],acc[MAXL],one[MAXL],am[MAXL]; int i;
+static void fn_inv(u64 *r,const u64 *a,const curve *cv){   /* a^(n-2) mod n, 4-bit window */
+  u64 e[MAXL],tbl[16][MAXL],acc[MAXL],one[MAXL],am[MAXL]; int i,ni,nib,topnib;
   bn_zero(one); one[0]=1; { u64 two[MAXL]; bn_zero(two); two[0]=2; bn_sub(e,cv->n,two,cv->nl); }
   to_mont(am,a,cv->n,cv->rr_n,cv->n0_n,cv->nl);
-  to_mont(acc,one,cv->n,cv->rr_n,cv->n0_n,cv->nl);
-  for(i=0;i<cv->nbits;i++){ if((e[i/64]>>(i%64))&1) fn_mul(acc,acc,am,cv); fn_mul(am,am,am,cv); }
+  to_mont(tbl[0],one,cv->n,cv->rr_n,cv->n0_n,cv->nl); bn_cpy(tbl[1],am);
+  for(i=2;i<16;i++) fn_mul(tbl[i],tbl[i-1],am,cv);
+  bn_cpy(acc,tbl[0]);
+  topnib=(cv->nbits+3)/4;
+  for(ni=topnib-1;ni>=0;ni--){
+    fn_mul(acc,acc,acc,cv); fn_mul(acc,acc,acc,cv); fn_mul(acc,acc,acc,cv); fn_mul(acc,acc,acc,cv);
+    nib=(int)((e[(4*ni)/64]>>((4*ni)%64))&0xf);
+    fn_mul(acc,acc,tbl[nib],cv);
+  }
   from_mont(r,acc,cv->n,cv->n0_n,cv->nl);
 }
 /* z = leftmost nbits of hash, reduced mod n. */
