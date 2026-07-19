@@ -91,8 +91,29 @@ static void reduce_p521(u64 *r,const u64 *prod){
   if(bn_cmp(t,P521_PL,9)>=0) bn_sub(t,t,P521_PL,9);
   for(i=0;i<9;i++) r[i]=t[i];
 }
+/* P-384 reduction: p = 2^384 - c, c = 2^128 + 2^96 - 2^32 + 1. So a 768-bit
+   product folds as lo + hi*c, iterated until hi vanishes, then subtract p. */
+static const u64 P384_C[3]={0xffffffff00000001ULL,0x00000000ffffffffULL,1ULL};
+static const u64 P384_PL[6]={0x00000000ffffffffULL,0xffffffff00000000ULL,0xfffffffffffffffeULL,~0ULL,~0ULL,~0ULL};
+static void reduce_p384(u64 *r,const u64 *prod){
+  u64 v[13]; int i,iter;
+  for(i=0;i<12;i++) v[i]=prod[i]; v[12]=0;
+  for(iter=0;iter<5;iter++){
+    u64 hz=0; for(i=6;i<13;i++) hz|=v[i]; if(!hz) break;
+    u64 H[13],hc[13];
+    for(i=0;i<13;i++){ H[i]=(6+i<13)?v[6+i]:0; hc[i]=0; }
+    for(i=0;i<7;i++){ u64 carry=0; int b,k;
+      for(b=0;b<3;b++){ if(i+b<13){ u128 p=(u128)H[i]*P384_C[b]+hc[i+b]+carry; hc[i+b]=(u64)p; carry=(u64)(p>>64); } }
+      k=i+3; while(carry&&k<13){ u128 p=(u128)hc[k]+carry; hc[k]=(u64)p; carry=(u64)(p>>64); k++; } }
+    for(i=6;i<13;i++) v[i]=0;
+    bn_add(v,v,hc,13);
+  }
+  for(i=0;i<6;i++){ if(bn_cmp(v,P384_PL,6)>=0) bn_sub(v,v,P384_PL,6); }
+  for(i=0;i<6;i++) r[i]=v[i];
+}
 static void fp_reduce(u64 *r,const u64 *prod,const curve *cv){
   if(cv->fast==521) reduce_p521(r,prod);
+  else reduce_p384(r,prod);
 }
 
 /* field ops mod p (Montgomery domain for mul; plain reps for add/sub) */
@@ -243,7 +264,7 @@ static void init_curve(curve *cv,int nbytes,int pbits,int nbits,int halg,int fas
 }
 static void ecc_init(void){
   if(inited) return;
-  init_curve(&C384,48,384,384,RKTCRYPTO_SHA384,0,P384_P,P384_N,P384_B,P384_GX,P384_GY);
+  init_curve(&C384,48,384,384,RKTCRYPTO_SHA384,384,P384_P,P384_N,P384_B,P384_GX,P384_GY);
   init_curve(&C521,66,521,521,RKTCRYPTO_SHA512,521,P521_P,P521_N,P521_B,P521_GX,P521_GY);
   inited=1;
 }
