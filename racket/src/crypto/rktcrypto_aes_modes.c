@@ -86,16 +86,39 @@ void rktcrypto_aes_cmac(const unsigned char*key,intptr_t keylen,const unsigned c
 /* AES-XTS (IEEE 1619 / NIST SP 800-38E) with ciphertext stealing. key =
    key1||key2 each `keylen` bytes; iv is the 16-byte tweak. */
 static void xts_gf(unsigned char T[16]){ int cin=0; for(int j=0;j<16;j++){ int cout=T[j]>>7; T[j]=(unsigned char)((T[j]<<1)|cin); cin=cout; } if(cin)T[0]^=0x87; }
+/* GF(2^128) mul-by-alpha on the little-endian tweak, via 64-bit words. */
+static inline uint8x16_t xts_dbl(uint8x16_t tv){
+  uint64x2_t v=vreinterpretq_u64_u8(tv);
+  uint64_t lo=vgetq_lane_u64(v,0), hi=vgetq_lane_u64(v,1), carry=hi>>63;
+  hi=(hi<<1)|(lo>>63); lo=(lo<<1)^(carry*0x87ULL);
+  return vreinterpretq_u8_u64(vsetq_lane_u64(hi,vsetq_lane_u64(lo,v,0),1));
+}
 void rktcrypto_aes_xts(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                        const unsigned char*in,unsigned char*out,intptr_t len,int encrypt){
   unsigned char rk1[240],rk2[240],dk1[240]; int Nr=aes_expand(key,(int)keylen,rk1); aes_expand(key+keylen,(int)keylen,rk2);
   if(!encrypt) aes_expand_dec(key,(int)keylen,dk1);
-  unsigned char T[16]; vst1q_u8(T,aes_enc1(vld1q_u8(iv),rk2,Nr));
-  intptr_t nfull=len/16, rem=len%16, last_full=rem?nfull-1:nfull, o=0;
-  for(intptr_t i=0;i<last_full;i++){ uint8x16_t t=vld1q_u8(T);
+  unsigned char T[16]; uint8x16_t Tv=aes_enc1(vld1q_u8(iv),rk2,Nr);
+  intptr_t nfull=len/16, rem=len%16, last_full=rem?nfull-1:nfull, o=0, i=0;
+  /* 8-way pipelined body: tweaks are independent, so keep the AES units busy. */
+  for(; i+8<=last_full; i+=8){
+    uint8x16_t tw[8],st[8]; int b,r;
+    for(b=0;b<8;b++){ tw[b]=Tv; Tv=xts_dbl(Tv); }
+    for(b=0;b<8;b++) st[b]=veorq_u8(vld1q_u8(in+o+16*b),tw[b]);
+    if(encrypt){
+      for(r=0;r<Nr-1;r++){ uint8x16_t k=vld1q_u8(rk1+16*r); for(b=0;b<8;b++) st[b]=vaesmcq_u8(vaeseq_u8(st[b],k)); }
+      { uint8x16_t kl=vld1q_u8(rk1+16*(Nr-1)),kf=vld1q_u8(rk1+16*Nr); for(b=0;b<8;b++) st[b]=veorq_u8(vaeseq_u8(st[b],kl),kf); }
+    } else {
+      for(r=0;r<Nr-1;r++){ uint8x16_t k=vld1q_u8(dk1+16*r); for(b=0;b<8;b++) st[b]=vaesimcq_u8(vaesdq_u8(st[b],k)); }
+      { uint8x16_t kl=vld1q_u8(dk1+16*(Nr-1)),kf=vld1q_u8(dk1+16*Nr); for(b=0;b<8;b++) st[b]=veorq_u8(vaesdq_u8(st[b],kl),kf); }
+    }
+    for(b=0;b<8;b++) vst1q_u8(out+o+16*b,veorq_u8(st[b],tw[b]));
+    o+=128;
+  }
+  for(; i<last_full; i++){ uint8x16_t t=Tv;
     uint8x16_t p=veorq_u8(vld1q_u8(in+o),t);
     uint8x16_t c=encrypt?aes_enc1(p,rk1,Nr):aes_dec1(p,dk1,Nr);
-    vst1q_u8(out+o,veorq_u8(c,t)); xts_gf(T); o+=16; }
+    vst1q_u8(out+o,veorq_u8(c,t)); Tv=xts_dbl(Tv); o+=16; }
+  vst1q_u8(T,Tv);
   if(rem){ if(encrypt){ uint8x16_t t=vld1q_u8(T);
       unsigned char cb[16]; vst1q_u8(cb,veorq_u8(aes_enc1(veorq_u8(vld1q_u8(in+o),t),rk1,Nr),t));
       for(int i=0;i<rem;i++) out[o+16+i]=cb[i];
