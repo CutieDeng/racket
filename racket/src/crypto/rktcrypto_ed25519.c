@@ -165,41 +165,37 @@ static void ge_scalarmult(ge *r,const unsigned char s[32],const ge *p,const fe d
 }
 #endif
 
-/* Fixed-base comb for s*B (width 4): ed_comb[I] = sum over set bits i of I
-   of 2^(64i)*B, built once from the base point. Cuts a base-point scalar
-   mult from 256 doublings + 256 adds to 64 doublings + 64 table-adds.
-   Because the twisted-Edwards (a=-1) addition law here is complete there
-   are no exceptional cases; the table entry is chosen with a full cmov scan
-   (no secret-dependent memory access) and I=0 selects the identity. */
+/* Fixed-base comb for s*B, width-4 with ZERO online doublings (as in the EC
+   combs): ed_comb[w][d] = d * 16^w * B for window w (0..63) and digit d (1..15),
+   precomputed once. s*B is then just 64 constant-time table-adds -- no doublings
+   at all (was 64 doublings + 64 adds). The twisted-Edwards (a=-1) law is complete
+   so there are no exceptional cases; entries are chosen with a full cmov scan
+   (no secret-dependent memory access) and d=0 selects the identity. */
 static void ge_base(ge *B);
-static ge ed_comb[16];
+static ge ed_comb[64][16];
 static int ed_comb_inited=0;
 static void ge_cmov(ge *r,const ge *a,uint64_t b){
   fe_cmov(r->X,a->X,b);fe_cmov(r->Y,a->Y,b);fe_cmov(r->Z,a->Z,b);fe_cmov(r->T,a->T,b);
 }
 static void ed_comb_init(const fe d2){
-  ge Pw[4],acc; int I,i,j,first;
-  ge_base(&Pw[0]);
-  for(i=1;i<4;i++){ Pw[i]=Pw[i-1]; for(j=0;j<64;j++) ge_add(&Pw[i],&Pw[i],&Pw[i],d2); }
-  ge_identity(&ed_comb[0]);
-  for(I=1;I<16;I++){
-    first=1;
-    for(i=0;i<4;i++) if(I&(1<<i)){ if(first){acc=Pw[i];first=0;} else ge_add(&acc,&acc,&Pw[i],d2); }
-    ed_comb[I]=acc;
+  ge base; int w,d;
+  ge_base(&base);
+  for(w=0;w<64;w++){
+    ge_identity(&ed_comb[w][0]); ed_comb[w][1]=base;
+    for(d=2;d<16;d++) ge_add(&ed_comb[w][d],&ed_comb[w][d-1],&base,d2);
+    if(w+1<64){ for(d=0;d<4;d++) ge_add(&base,&base,&base,d2); }   /* base *= 16 */
   }
   ed_comb_inited=1;
 }
 static void ge_scalarmult_base(ge *r,const unsigned char s[32],const fe d2){
-  uint64_t k[4]; int j,idx; ge sel;
+  int w,d; ge sel;
   if(!ed_comb_inited) ed_comb_init(d2);
-  k[0]=load64_le(s); k[1]=load64_le(s+8); k[2]=load64_le(s+16); k[3]=load64_le(s+24);
   ge_identity(r);
-  for(j=63;j>=0;j--){
-    uint64_t I=((k[0]>>j)&1)|(((k[1]>>j)&1)<<1)|(((k[2]>>j)&1)<<2)|(((k[3]>>j)&1)<<3);
-    ge_add(r,r,r,d2);                                 /* double */
-    sel=ed_comb[0];
-    for(idx=1;idx<16;idx++) ge_cmov(&sel,&ed_comb[idx],(uint64_t)(idx==(int)I));
-    ge_add(r,r,&sel,d2);                              /* + selected multiple */
+  for(w=0;w<64;w++){
+    unsigned nib=(s[w>>1]>>((w&1)*4))&0xF;
+    sel=ed_comb[w][0];
+    for(d=1;d<16;d++) ge_cmov(&sel,&ed_comb[w][d],(uint64_t)(d==(int)nib));
+    ge_add(r,r,&sel,d2);
   }
 }
 
