@@ -182,8 +182,8 @@ typedef unsigned __int128 cam_u128;
 static unsigned char cam_rol8(unsigned char x,int n){ return (unsigned char)((x<<n)|(x>>(8-n))); }
 static const uint64_t CAM_SIG[6]={0xA09E667F3BCC908BULL,0xB67AE8584CAA73B2ULL,0xC6EF372FE94F82BEULL,
                                   0x54FF53A5F1D36F1CULL,0x10E527FADE682D1DULL,0xB05688C2B3E6C1FDULL};
-static uint64_t cam_load64(const unsigned char *p){ uint64_t v=0; int i; for(i=0;i<8;i++) v=(v<<8)|p[i]; return v; }
-static void cam_store64(unsigned char *p,uint64_t v){ int i; for(i=0;i<8;i++) p[i]=(unsigned char)(v>>(56-8*i)); }
+static uint64_t cam_load64(const unsigned char *p){ uint64_t v; memcpy(&v,p,8); return __builtin_bswap64(v); }
+static void cam_store64(unsigned char *p,uint64_t v){ v=__builtin_bswap64(v); memcpy(p,&v,8); }
 
 /* SP tables fuse each byte's S-box variant with the linear P-layer, so cam_F is
    8 XORed 64-bit lookups. Generated once by evaluating the exact z-formulas with
