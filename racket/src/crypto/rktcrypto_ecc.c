@@ -91,22 +91,28 @@ static void reduce_p521(u64 *r,const u64 *prod){
   if(bn_cmp(t,P521_PL,9)>=0) bn_sub(t,t,P521_PL,9);
   for(i=0;i<9;i++) r[i]=t[i];
 }
-/* P-384 reduction: p = 2^384 - c, c = 2^128 + 2^96 - 2^32 + 1. So a 768-bit
-   product folds as lo + hi*c, iterated until hi vanishes, then subtract p. */
-static const u64 P384_C[3]={0xffffffff00000001ULL,0x00000000ffffffffULL,1ULL};
+/* P-384 reduction: p = 2^384 - c, c = 2^128 + 2^96 - 2^32 + 1. Fold hi*c into
+   lo, but since c is a sum of powers of two, H*c = H + H<<128 + H<<96 - H<<32 is
+   MULTIPLY-FREE (shift-and-add). Iterate until hi vanishes, then subtract p. */
 static const u64 P384_PL[6]={0x00000000ffffffffULL,0xffffffff00000000ULL,0xfffffffffffffffeULL,~0ULL,~0ULL,~0ULL};
+static void shl13(u64 out[13],const u64 *H,int hn,int bits){
+  int wsh=bits/64,bsh=bits%64,i; for(i=0;i<13;i++) out[i]=0;
+  for(i=0;i<hn;i++){ if(i+wsh<13) out[i+wsh]|=H[i]<<bsh; if(bsh&&i+wsh+1<13) out[i+wsh+1]|=H[i]>>(64-bsh); }
+}
 static void reduce_p384(u64 *r,const u64 *prod){
   u64 v[13]; int i,iter;
   for(i=0;i<12;i++) v[i]=prod[i]; v[12]=0;
   for(iter=0;iter<5;iter++){
     u64 hz=0; for(i=6;i<13;i++) hz|=v[i]; if(!hz) break;
-    u64 H[13],hc[13];
-    for(i=0;i<13;i++){ H[i]=(6+i<13)?v[6+i]:0; hc[i]=0; }
-    for(i=0;i<7;i++){ u64 carry=0; int b,k;
-      for(b=0;b<3;b++){ if(i+b<13){ u128 p=(u128)H[i]*P384_C[b]+hc[i+b]+carry; hc[i+b]=(u64)p; carry=(u64)(p>>64); } }
-      k=i+3; while(carry&&k<13){ u128 p=(u128)hc[k]+carry; hc[k]=(u64)p; carry=(u64)(p>>64); k++; } }
+    u64 H[7],Hc[13],tmp[13];
+    for(i=0;i<7;i++) H[i]=v[6+i];
+    for(i=0;i<13;i++) Hc[i]=0;
+    for(i=0;i<7;i++) Hc[i]=H[i];               /* + H            */
+    shl13(tmp,H,7,128); bn_add(Hc,Hc,tmp,13);  /* + H<<128       */
+    shl13(tmp,H,7,96);  bn_add(Hc,Hc,tmp,13);  /* + H<<96        */
+    shl13(tmp,H,7,32);  bn_sub(Hc,Hc,tmp,13);  /* - H<<32        */
     for(i=6;i<13;i++) v[i]=0;
-    bn_add(v,v,hc,13);
+    bn_add(v,v,Hc,13);
   }
   for(i=0;i<6;i++){ if(bn_cmp(v,P384_PL,6)>=0) bn_sub(v,v,P384_PL,6); }
   for(i=0;i<6;i++) r[i]=v[i];
