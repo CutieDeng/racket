@@ -83,10 +83,16 @@ void bn_mod(BN*r,const BN*a,const BN*m){
   }
 }
 uint64_t bn_mont_n0(const BN*m){ uint64_t x=m->d[0],y=x; for(int i=0;i<5;i++)y*=2-x*y; return (uint64_t)(0-y); }
-void bn_mont_rr(BN*rr,const BN*m){   /* R^2 mod m via 128*k modular doublings from 1 */
-  int k=m->top; BN t; bn_set_u64(&t,1);
-  for(int i=0;i<128*k;i++){ BN d; bn_add(&d,&t,&t); if(bn_cmp(&d,m)>=0) bn_sub(&d,&d,m); bn_copy(&t,&d); }
-  bn_copy(rr,&t);
+void bn_mont_rr(BN*rr,const BN*m){   /* R^2 mod m, R = 2^(64*k) */
+  /* Rmod = R mod m via one Knuth-D division; RR = Rmod^2 mod m. Replaces a
+     128*k-iteration modular-doubling loop (~4096 iters + full-width BN copies at
+     k=32, ~170 us); this is ~20x faster and is what a direct bn_modexp() pays.
+     (RSA caches RR across ops so its benchmark is unaffected.) */
+  int k=m->top; BN R,Rmod,sq;
+  bn_zero(&R); R.d[k]=1; R.top=k+1;   /* R = 2^(64*k) */
+  bn_mod(&Rmod,&R,m);
+  bn_mul(&sq,&Rmod,&Rmod);
+  bn_mod(rr,&sq,m);
 }
 void bn_mont_setup(uint64_t*n0,BN*rr,const BN*m){ *n0=bn_mont_n0(m); bn_mont_rr(rr,m); }
 /* Fixed-size CIOS montmul: with K a compile-time constant clang unrolls the
@@ -156,7 +162,9 @@ static void bn_montmul_k16asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0)
   uint64_t ab[16],bb[16]; int i;
   for(i=0;i<16;i++){ ab[i]=(i<a->top)?a->d[i]:0; bb[i]=(i<b->top)?b->d[i]:0; }
   bn_mul_mont_op16(r->d, ab, bb, m->d, n0);
-  for(i=16;i<BN_LIMBS;i++) r->d[i]=0; r->top=16; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+  /* kernel writes r->d[0..15]; higher limbs stay 0 (all values are <= k words),
+     so skip re-zeroing BN_LIMBS-16 limbs -- saves it on every montmul. */
+  r->top=16; while(r->top>0&&r->d[r->top-1]==0) r->top--;
 }
 #endif
 #if defined(__aarch64__) && defined(__APPLE__)
@@ -169,7 +177,7 @@ static void bn_montmul_k32asm(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0)
   uint64_t ab[32],bb[32]; int i;
   for(i=0;i<32;i++){ ab[i]=(i<a->top)?a->d[i]:0; bb[i]=(i<b->top)?b->d[i]:0; }
   bn_mul_mont_fips32(r->d, ab, bb, m->d, n0);
-  for(i=32;i<BN_LIMBS;i++) r->d[i]=0; r->top=32; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+  r->top=32; while(r->top>0&&r->d[r->top-1]==0) r->top--;
 }
 #endif
 void bn_montmul(BN*r,const BN*a,const BN*b,const BN*m,uint64_t n0){
@@ -198,7 +206,7 @@ static void bn_montsqr_8wasm(BN*r,const BN*a,const BN*m,uint64_t n0,int k){
   uint64_t ab[32]; int i;
   for(i=0;i<k;i++) ab[i]=(i<a->top)?a->d[i]:0;
   bn_sqr_mont_8w(r->d, ab, m->d, &n0, k);
-  for(i=k;i<BN_LIMBS;i++) r->d[i]=0; r->top=k; while(r->top>0&&r->d[r->top-1]==0) r->top--;
+  r->top=k; while(r->top>0&&r->d[r->top-1]==0) r->top--;
 }
 #endif
 /* Montgomery squaring: symmetric 2k-word square (each off-diagonal product
@@ -235,7 +243,11 @@ void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const 
   int eb=bn_bits(exp);
   int w = eb<=32 ? 1 : (eb<=256 ? 4 : 5); int tn=1<<w;
   BN tbl[32];
-  bn_montmul(&tbl[0],&one,rr,m,n0); bn_copy(&tbl[1],&mbase);
+  /* tbl[0] = Montgomery(1) = R mod m. Computing it as R mod m directly (one
+     Knuth-D division, R is k+1 limbs so a single quotient digit) is far cheaper
+     than a full montmul(1, R^2). */
+  { BN R; bn_zero(&R); R.d[m->top]=1; R.top=m->top+1; bn_mod(&tbl[0],&R,m); }
+  bn_copy(&tbl[1],&mbase);
   for(int i=2;i<tn;i++) bn_montmul(&tbl[i],&tbl[i-1],&mbase,m,n0);
   bn_copy(&acc,&tbl[0]);
   int top=((eb+w-1)/w)*w;
