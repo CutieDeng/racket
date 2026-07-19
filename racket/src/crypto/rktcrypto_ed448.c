@@ -108,7 +108,29 @@ static void pt_add(ept *R,const ept *P,const ept *Q){
   fsub(F,D,C); fadd(G,D,C); fsub(H,B,A);
   fmul(R->X,E,F); fmul(R->Y,G,H); fmul(R->T,E,H); fmul(R->Z,F,G);
 }
-static void pt_dbl(ept *R,const ept *P){ pt_add(R,P,P); }
+/* dbl-2008-hwcd for a=1: 4 squarings + 3 muls (cheaper than the 9-mul add) */
+static void pt_dbl(ept *R,const ept *P){
+  u64 A[NL],B[NL],C[NL],E[NL],F[NL],G[NL],H[NL],t[NL];
+  fsqr(A,P->X); fsqr(B,P->Y); fsqr(C,P->Z); fadd(C,C,C);
+  fadd(t,P->X,P->Y); fsqr(E,t); fsub(E,E,A); fsub(E,E,B);   /* E = (X+Y)^2 - A - B */
+  fadd(G,A,B);                                              /* G = A + B (a=1: D=A) */
+  fsub(F,G,C); fsub(H,A,B);
+  fmul(R->X,E,F); fmul(R->Y,G,H); fmul(R->T,E,H); fmul(R->Z,F,G);
+}
+/* Variable-base k*P via a width-4 window (verify only; k is public -> direct
+   table index). The complete a=1 addition needs no special cases. */
+static void pt_scalarmul_win(ept *R,const unsigned char *k_be,int kbytes,const ept *P){
+  ept T[16],acc; int i,w,nw=kbytes*2;
+  pt_identity(&T[0]); T[1]=*P;
+  for(i=2;i<16;i++) pt_add(&T[i],&T[i-1],P);
+  pt_identity(&acc);
+  for(w=nw-1;w>=0;w--){
+    int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
+    pt_dbl(&acc,&acc); pt_dbl(&acc,&acc); pt_dbl(&acc,&acc); pt_dbl(&acc,&acc);
+    if(nib) pt_add(&acc,&acc,&T[nib]);
+  }
+  *R=acc;
+}
 
 static void pt_cmov(ept *R,const ept *A,u64 b){ u64 mask=0-b; int i;
   for(i=0;i<NL;i++){ R->X[i]^=mask&(R->X[i]^A->X[i]); R->Y[i]^=mask&(R->Y[i]^A->Y[i]);
@@ -265,7 +287,7 @@ int rktcrypto_ed448_verify(const unsigned char *sig,const unsigned char *msg,int
     rktcrypto_keccak_core_final(&c,kbuf,114); }
   sc_reduce_le(k57,kbuf,114);
   for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul_base(&SB,sbe,57);        /* S*B */
-  for(i=0;i<57;i++) kbe[i]=k57[56-i]; pt_scalarmul(&kA,kbe,57,&A);      /* k*A */
+  for(i=0;i<57;i++) kbe[i]=k57[56-i]; pt_scalarmul_win(&kA,kbe,57,&A);  /* k*A */
   if(!pt_decode(&Rp,R)) return 0;
   pt_add(&rhs,&Rp,&kA);                                                  /* R + k*A */
   { unsigned char e1[57],e2[57]; pt_encode(e1,&SB); pt_encode(e2,&rhs); return memcmp(e1,e2,57)==0; }
