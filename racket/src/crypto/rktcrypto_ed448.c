@@ -221,6 +221,15 @@ static void pt_encode(unsigned char out[57],const ept *P){
   limbs_to_le56(out,y);                                    /* canonical y */
   fe_copy(xc,x); fe_canon(xc); out[56]=(unsigned char)((xc[0]&1)<<7);
 }
+/* encode two points with a single inversion (Montgomery's trick): inv = 1/(ZA*ZR). */
+static void pt_encode2(unsigned char oA[57],unsigned char oR[57],const ept *A,const ept *R){
+  u64 prod[NL],inv[NL],zi[NL],x[NL],y[NL],xc[NL];
+  fmul(prod,A->Z,R->Z); finv(inv,prod);
+  fmul(zi,inv,R->Z);   /* 1/ZA */
+  fmul(x,A->X,zi); fmul(y,A->Y,zi); limbs_to_le56(oA,y); fe_copy(xc,x); fe_canon(xc); oA[56]=(unsigned char)((xc[0]&1)<<7);
+  fmul(zi,inv,A->Z);   /* 1/ZR */
+  fmul(x,R->X,zi); fmul(y,R->Y,zi); limbs_to_le56(oR,y); fe_copy(xc,x); fe_canon(xc); oR[56]=(unsigned char)((xc[0]&1)<<7);
+}
 /* decode 57-byte encoding to a point; returns 1 on success. */
 static int pt_decode(ept *P,const unsigned char in[57]){
   u64 y[NL],y2[NL],num[NL],den[NL],x[NL],x2[NL],dinv[NL],u[NL],om[NL],one[NL]={1,0,0,0,0,0,0};
@@ -283,18 +292,18 @@ int rktcrypto_ed448_pubkey(unsigned char *pk,const unsigned char *sk){
   ed448_init(); ed448_genA(pk,sk); return 1;
 }
 int rktcrypto_ed448_sign(unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *sk){
-  unsigned char h[114],A[57],rbuf[114],r57[57],R[57],kbuf[114],k57[57],S57[57],sbe[57]; ept G,Rp; u64 gx[NL],gy[NL]; int i;
+  unsigned char h[114],A[57],rbuf[114],r57[57],R[57],kbuf[114],k57[57],S57[57],sbe[57]; ept Ap,Rp; int i;
   ed448_init();
   shake256(h,114,sk,57); h[0]&=0xfc; h[55]|=0x80; h[56]=0;
-  be56_to_limbs(gx,GX_BE); be56_to_limbs(gy,GY_BE);
-  to_mont(G.X,gx); to_mont(G.Y,gy); { u64 one[NL]={1,0,0,0,0,0,0}; to_mont(G.Z,one); } fmul(G.T,G.X,G.Y);
-  ed448_genA(A,sk);
+  /* A = s*G as a point (reuse h; genA would redundantly re-hash sk) */
+  for(i=0;i<57;i++) sbe[i]=h[56-i]; pt_scalarmul_base(&Ap,sbe,57);
   /* r = SHAKE256(dom4 || prefix || M) mod L ; prefix = h[57..113] */
   { rktcrypto_keccak_ctx_t c; rktcrypto_keccak_core_init(&c,136,0x1f);
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,h+57,57);
     rktcrypto_keccak_core_update(&c,msg,mlen); rktcrypto_keccak_core_final(&c,rbuf,114); }
   sc_reduce_le(r57,rbuf,114);
-  for(i=0;i<57;i++) sbe[i]=r57[56-i]; pt_scalarmul_base(&Rp,sbe,57); pt_encode(R,&Rp);
+  for(i=0;i<57;i++) sbe[i]=r57[56-i]; pt_scalarmul_base(&Rp,sbe,57);
+  pt_encode2(A,R,&Ap,&Rp);                                  /* one inversion for both */
   /* k = SHAKE256(dom4 || R || A || M) mod L */
   { rktcrypto_keccak_ctx_t c; rktcrypto_keccak_core_init(&c,136,0x1f);
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,R,57);
