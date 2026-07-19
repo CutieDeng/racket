@@ -387,11 +387,19 @@ static void ecc_init(void){
   inited=1;
 }
 
+/* Reduced-radix 9x58-bit P-521 fast path (rktcrypto_p521rr.c). Canonical inputs/
+   outputs are 9x64-bit little-endian limbs -- exactly what bytes_to_limbs makes. */
+extern int p521rr_base_affine(u64 *x,u64 *y,const u64 *k);
+extern int p521rr_var_affine(u64 *x,u64 *y,const u64 *k,const u64 *px,const u64 *py);
+extern int p521rr_double_affine(u64 *x,u64 *y,const u64 *u1,const u64 *u2,const u64 *qx,const u64 *qy);
+
 /* ---- public per-curve entry points ---- */
 static int ecc_pubkey(const curve *cv,unsigned char *out,const unsigned char *priv){
   u64 d[MAXL],x[MAXL],y[MAXL]; jpt R;
   bytes_to_limbs(d,priv,cv->nbytes,cv->nl);
   if(bn_iszero(d,cv->nl)||bn_cmp(d,cv->n,cv->nl)>=0) return 0;
+  if(cv->fast==521){ if(!p521rr_base_affine(x,y,d)) return 0;
+    out[0]=4; limbs_to_bytes(out+1,x,cv->nbytes); limbs_to_bytes(out+1+cv->nbytes,y,cv->nbytes); return 1; }
   scalar_mul_base(&R,d,cv);
   if(bn_iszero(R.Z,cv->nl)) return 0;
   pt_to_affine(x,y,&R,cv);
@@ -404,6 +412,8 @@ static int ecc_ecdh(const curve *cv,unsigned char *out,const unsigned char *scal
   if(bn_iszero(d,cv->nl)||bn_cmp(d,cv->n,cv->nl)>=0) return 0;
   bytes_to_limbs(x,point+1,cv->nbytes,cv->nl); bytes_to_limbs(y,point+1+cv->nbytes,cv->nbytes,cv->nl);
   if(bn_cmp(x,cv->p,cv->nl)>=0||bn_cmp(y,cv->p,cv->nl)>=0) return 0;
+  if(cv->fast==521){ u64 rx[MAXL],ry[MAXL]; if(!p521rr_var_affine(rx,ry,d,x,y)) return 0;
+    limbs_to_bytes(out,rx,cv->nbytes); return 1; }
   bn_zero(one); one[0]=1;
   fp_to_mont(P.X,x,cv); fp_to_mont(P.Y,y,cv);
   fp_to_mont(P.Z,one,cv);
@@ -424,8 +434,8 @@ static int ecc_sign(const curve *cv,unsigned char *sig,const unsigned char *msg,
     bytes_to_limbs(k,kb,cv->nbytes,cv->nl);
     if(cv->nbits%8){ int excess=8-(cv->nbits%8); k[cv->nl-1]&=(~(u64)0)>>(64-((cv->nbits-1)%64+1)); (void)excess; }
     if(bn_iszero(k,cv->nl)||bn_cmp(k,cv->n,cv->nl)>=0) continue;
-    scalar_mul_base(&R,k,cv); if(bn_iszero(R.Z,cv->nl)) continue;
-    pt_to_affine(x,y,&R,cv);
+    if(cv->fast==521){ if(!p521rr_base_affine(x,y,k)) continue; }
+    else { scalar_mul_base(&R,k,cv); if(bn_iszero(R.Z,cv->nl)) continue; pt_to_affine(x,y,&R,cv); }
     bn_cpy(r,x); if(bn_cmp(r,cv->n,cv->nl)>=0) bn_sub(r,r,cv->n,cv->nl);
     if(bn_iszero(r,cv->nl)) continue;
     fn_inv(kinv,k,cv);
@@ -451,11 +461,14 @@ static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned ch
   { u64 rm[MAXL],wm[MAXL],pm[MAXL]; to_mont(rm,r,cv->n,cv->rr_n,cv->n0_n,cv->nl); to_mont(wm,w,cv->n,cv->rr_n,cv->n0_n,cv->nl); fn_mul(pm,rm,wm,cv); from_mont(u2,pm,cv->n,cv->n0_n,cv->nl); }
   bytes_to_limbs(qx,pub+1,cv->nbytes,cv->nl); bytes_to_limbs(qy,pub+1+cv->nbytes,cv->nbytes,cv->nl);
   bn_zero(one); one[0]=1;
-  fp_to_mont(Q.X,qx,cv); fp_to_mont(Q.Y,qy,cv); fp_to_mont(Q.Z,one,cv);
-  scalar_mul_base(&R1,u1,cv); scalar_mul(&R2,u2,&Q,cv);
-  jac_add(&R,&R1,&R2,cv);
-  if(bn_iszero(R.Z,cv->nl)) return 0;
-  pt_to_affine(x,y,&R,cv);
+  if(cv->fast==521){ if(!p521rr_double_affine(x,y,u1,u2,qx,qy)) return 0; }
+  else {
+    fp_to_mont(Q.X,qx,cv); fp_to_mont(Q.Y,qy,cv); fp_to_mont(Q.Z,one,cv);
+    scalar_mul_base(&R1,u1,cv); scalar_mul(&R2,u2,&Q,cv);
+    jac_add(&R,&R1,&R2,cv);
+    if(bn_iszero(R.Z,cv->nl)) return 0;
+    pt_to_affine(x,y,&R,cv);
+  }
   bn_cpy(v,x); if(bn_cmp(v,cv->n,cv->nl)>=0) bn_sub(v,v,cv->n,cv->nl);
   return bn_cmp(v,r,cv->nl)==0;
 }
