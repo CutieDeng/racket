@@ -158,6 +158,15 @@ static void pt_dbl(ept *R,const ept *P){
 }
 /* Variable-base k*P via a width-4 window (verify only; k is public -> direct
    table index). The complete a=1 addition needs no special cases. */
+/* Doubling that skips the extended T output (a multiply): valid when the next
+   op is another doubling, which reads only X,Y,Z. */
+static void pt_dbl_noT(ept *R,const ept *P){
+  u64 A[NL],B[NL],C[NL],E[NL],F[NL],G[NL],H[NL],t[NL];
+  fsqr(A,P->X); fsqr(B,P->Y); fsqr(C,P->Z); fadd(C,C,C);
+  fadd(t,P->X,P->Y); fsqr(E,t); fsub(E,E,A); fsub(E,E,B);
+  fadd(G,A,B); fsub(F,G,C); fsub(H,A,B);
+  fmul(R->X,E,F); fmul(R->Y,G,H); fmul(R->Z,F,G);
+}
 static void pt_scalarmul_win(ept *R,const unsigned char *k_be,int kbytes,const ept *P){
   ept T[16],acc; int i,w,nw=kbytes*2;
   pt_identity(&T[0]); T[1]=*P;
@@ -165,7 +174,7 @@ static void pt_scalarmul_win(ept *R,const unsigned char *k_be,int kbytes,const e
   pt_identity(&acc);
   for(w=nw-1;w>=0;w--){
     int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
-    pt_dbl(&acc,&acc); pt_dbl(&acc,&acc); pt_dbl(&acc,&acc); pt_dbl(&acc,&acc);
+    pt_dbl_noT(&acc,&acc); pt_dbl_noT(&acc,&acc); pt_dbl_noT(&acc,&acc); pt_dbl(&acc,&acc);
     if(nib) pt_add(&acc,&acc,&T[nib]);
   }
   *R=acc;
