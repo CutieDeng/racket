@@ -1,0 +1,239 @@
+/* TLS 1.3 (RFC 8446) protocol core: key schedule, traffic-key derivation,
+   Finished, and the AEAD record layer. Built entirely on the in-tree HKDF /
+   HMAC / SHA-256 / AEAD primitives (no external code). The key schedule is
+   verified byte-for-byte against the RFC 8448 "Simple 1-RTT Handshake" test
+   vectors in rktcrypto_tls13_selftest(). */
+#include "rktcrypto.h"
+#include <string.h>
+
+/* Transcript-Hash(messages) = Hash(concatenated handshake messages). */
+int rktcrypto_tls13_transcript_hash(int alg, const unsigned char *msgs, intptr_t start, intptr_t end,
+                                    unsigned char *out)
+{
+  return rktcrypto_digest_oneshot(alg, msgs, start, end, out, 0, rktcrypto_digest_size(alg));
+}
+
+/* HKDF-Extract with the TLS argument order (salt = previous secret, IKM =
+   PSK or (EC)DHE). Thin wrapper for readability at call sites. */
+void rktcrypto_tls13_extract(int alg, const unsigned char *salt, intptr_t saltlen,
+                             const unsigned char *ikm, intptr_t ikmlen, unsigned char *prk)
+{
+  unsigned char zeros[64]; const unsigned char *s = salt, *k = ikm;
+  intptr_t sl = saltlen, kl = ikmlen, hl = rktcrypto_digest_size(alg);
+  /* RFC 8446: a NULL salt/IKM means a string of Hash.length zero bytes. */
+  memset(zeros, 0, sizeof zeros);
+  if (!s) { s = zeros; sl = hl; }
+  if (!k) { k = zeros; kl = hl; }
+  rktcrypto_hkdf_extract(alg, k, kl, s, sl, prk);
+}
+
+/* Derive-Secret(Secret, Label, Messages)
+     = HKDF-Expand-Label(Secret, Label, Transcript-Hash(Messages), Hash.length)
+   `thash` is the (already computed) Transcript-Hash of the context messages,
+   Hash.length bytes; for the empty context pass Hash(""). */
+int rktcrypto_tls13_derive_secret(int alg, const unsigned char *secret,
+                                  const unsigned char *label, intptr_t llen,
+                                  const unsigned char *thash, unsigned char *out)
+{
+  intptr_t hl = rktcrypto_digest_size(alg);
+  return rktcrypto_tls13_expand_label(alg, secret, hl, label, llen, thash, hl, out, hl);
+}
+
+/* Traffic keys from a traffic secret:
+     key = HKDF-Expand-Label(secret, "key", "", key_len)
+     iv  = HKDF-Expand-Label(secret, "iv",  "", iv_len) */
+int rktcrypto_tls13_traffic_keys(int alg, const unsigned char *secret,
+                                 unsigned char *key, intptr_t key_len,
+                                 unsigned char *iv,  intptr_t iv_len)
+{
+  intptr_t hl = rktcrypto_digest_size(alg);
+  if (!rktcrypto_tls13_expand_label(alg, secret, hl, (const unsigned char*)"key", 3, 0, 0, key, key_len)) return 0;
+  if (!rktcrypto_tls13_expand_label(alg, secret, hl, (const unsigned char*)"iv",  2, 0, 0, iv,  iv_len))  return 0;
+  return 1;
+}
+
+/* finished_key = HKDF-Expand-Label(base_key, "finished", "", Hash.length) */
+int rktcrypto_tls13_finished_key(int alg, const unsigned char *base_key, unsigned char *out)
+{
+  intptr_t hl = rktcrypto_digest_size(alg);
+  return rktcrypto_tls13_expand_label(alg, base_key, hl, (const unsigned char*)"finished", 8, 0, 0, out, hl);
+}
+
+/* Finished verify_data = HMAC(finished_key, Transcript-Hash(handshake up to
+   but excluding this Finished)). */
+void rktcrypto_tls13_verify_data(int alg, const unsigned char *finished_key,
+                                 const unsigned char *thash, unsigned char *out)
+{
+  rktcrypto_hmac(alg, finished_key, rktcrypto_digest_size(alg), thash, rktcrypto_digest_size(alg), out);
+}
+
+/* Per-record nonce (RFC 8446 sec 5.3): the 64-bit sequence number is left-
+   padded to iv_len and XORed into the static write IV. */
+void rktcrypto_tls13_record_nonce(const unsigned char *iv, intptr_t iv_len,
+                                  uint64_t seq, unsigned char *nonce)
+{
+  intptr_t i;
+  memcpy(nonce, iv, iv_len);
+  for (i = 0; i < 8; i++)
+    nonce[iv_len - 1 - i] ^= (unsigned char)(seq >> (8 * i));
+}
+
+/* AEAD-protect one TLSInnerPlaintext. `inner` already carries the trailing
+   content-type byte (and any padding). The AAD is the TLSCiphertext record
+   header type||legacy_version||length, where length = inner_len + tag_size.
+   Writes the record header (5 bytes) + ciphertext + tag to `out`; returns the
+   total record length, or 0 on failure. */
+intptr_t rktcrypto_tls13_record_seal(int aead, const unsigned char *key, intptr_t key_len,
+                                     const unsigned char *iv, intptr_t iv_len, uint64_t seq,
+                                     const unsigned char *inner, intptr_t inner_len,
+                                     unsigned char *out)
+{
+  unsigned char nonce[16], hdr[5];
+  intptr_t tag = rktcrypto_aead_tag_size(aead), clen = inner_len + tag;
+  if (tag < 0 || iv_len > 16) return 0;
+  hdr[0] = 23;                       /* application_data */
+  hdr[1] = 3; hdr[2] = 3;            /* legacy_record_version */
+  hdr[3] = (unsigned char)(clen >> 8); hdr[4] = (unsigned char)clen;
+  rktcrypto_tls13_record_nonce(iv, iv_len, seq, nonce);
+  memcpy(out, hdr, 5);
+  if (!rktcrypto_aead_seal(aead, key, key_len, nonce, iv_len,
+                           hdr, 0, 5, inner, 0, inner_len, out, 5)) return 0;
+  return 5 + clen;
+}
+
+/* Inverse of record_seal. `rec` is the full record (5-byte header + ciphertext
+   + tag), rec_len its length. Writes the recovered TLSInnerPlaintext to `out`
+   (caller strips the trailing content-type/padding) and returns its length, or
+   -1 on authentication failure / bad input. */
+intptr_t rktcrypto_tls13_record_open(int aead, const unsigned char *key, intptr_t key_len,
+                                     const unsigned char *iv, intptr_t iv_len, uint64_t seq,
+                                     const unsigned char *rec, intptr_t rec_len,
+                                     unsigned char *out)
+{
+  unsigned char nonce[16];
+  intptr_t tag = rktcrypto_aead_tag_size(aead), inner_len;
+  if (tag < 0 || rec_len < 5 + tag || iv_len > 16) return -1;
+  inner_len = rec_len - 5 - tag;
+  rktcrypto_tls13_record_nonce(iv, iv_len, seq, nonce);
+  if (!rktcrypto_aead_open(aead, key, key_len, nonce, iv_len,
+                           rec, 0, 5, rec, 5, rec_len, out, 0)) return -1;
+  return inner_len;
+}
+
+/* ---- RFC 8448 "Simple 1-RTT Handshake" self-test ---- */
+#define H 32   /* SHA-256 */
+static int eqmem(const unsigned char *a, const unsigned char *b, intptr_t n){ return memcmp(a,b,(size_t)n)==0; }
+
+int rktcrypto_tls13_selftest(void)
+{
+  const int alg = RKTCRYPTO_SHA256;
+  /* Handshake messages (RFC 8448 sec 3): ClientHello and ServerHello payloads
+     (the 4-byte handshake header is included). */
+  static const unsigned char ch[] = {
+    0x01,0x00,0x00,0xc0,0x03,0x03,0xcb,0x34,0xec,0xb1,0xe7,0x81,0x63,0xba,0x1c,0x38,
+    0xc6,0xda,0xcb,0x19,0x6a,0x6d,0xff,0xa2,0x1a,0x8d,0x99,0x12,0xec,0x18,0xa2,0xef,
+    0x62,0x83,0x02,0x4d,0xec,0xe7,0x00,0x00,0x06,0x13,0x01,0x13,0x03,0x13,0x02,0x01,
+    0x00,0x00,0x91,0x00,0x00,0x00,0x0b,0x00,0x09,0x00,0x00,0x06,0x73,0x65,0x72,0x76,
+    0x65,0x72,0xff,0x01,0x00,0x01,0x00,0x00,0x0a,0x00,0x14,0x00,0x12,0x00,0x1d,0x00,
+    0x17,0x00,0x18,0x00,0x19,0x01,0x00,0x01,0x01,0x01,0x02,0x01,0x03,0x01,0x04,0x00,
+    0x23,0x00,0x00,0x00,0x33,0x00,0x26,0x00,0x24,0x00,0x1d,0x00,0x20,0x99,0x38,0x1d,
+    0xe5,0x60,0xe4,0xbd,0x43,0xd2,0x3d,0x8e,0x43,0x5a,0x7d,0xba,0xfe,0xb3,0xc0,0x6e,
+    0x51,0xc1,0x3c,0xae,0x4d,0x54,0x13,0x69,0x1e,0x52,0x9a,0xaf,0x2c,0x00,0x2b,0x00,
+    0x03,0x02,0x03,0x04,0x00,0x0d,0x00,0x20,0x00,0x1e,0x04,0x03,0x05,0x03,0x06,0x03,
+    0x02,0x03,0x08,0x04,0x08,0x05,0x08,0x06,0x04,0x01,0x05,0x01,0x06,0x01,0x02,0x01,
+    0x04,0x02,0x05,0x02,0x06,0x02,0x02,0x02,0x00,0x2d,0x00,0x02,0x01,0x01,0x00,0x1c,
+    0x00,0x02,0x40,0x01 };
+  static const unsigned char sh[] = {
+    0x02,0x00,0x00,0x56,0x03,0x03,0xa6,0xaf,0x06,0xa4,0x12,0x18,0x60,0xdc,0x5e,0x6e,
+    0x60,0x24,0x9c,0xd3,0x4c,0x95,0x93,0x0c,0x8a,0xc5,0xcb,0x14,0x34,0xda,0xc1,0x55,
+    0x77,0x2e,0xd3,0xe2,0x69,0x28,0x00,0x13,0x01,0x00,0x00,0x2e,0x00,0x33,0x00,0x24,
+    0x00,0x1d,0x00,0x20,0xc9,0x82,0x88,0x76,0x11,0x20,0x95,0xfe,0x66,0x76,0x2b,0xdb,
+    0xf7,0xc6,0x72,0xe1,0x56,0xd6,0xcc,0x25,0x3b,0x83,0x3d,0xf1,0xdd,0x69,0xb1,0xb0,
+    0x4e,0x75,0x1f,0x0f,0x00,0x2b,0x00,0x02,0x03,0x04 };
+  static const unsigned char ecdhe[H] = {
+    0x8b,0xd4,0x05,0x4f,0xb5,0x5b,0x9d,0x63,0xfd,0xfb,0xac,0xf9,0xf0,0x4b,0x9f,0x0d,
+    0x35,0xe6,0xd6,0x3f,0x53,0x75,0x63,0xef,0xd4,0x62,0x72,0x90,0x0f,0x89,0x49,0x2d };
+  static const unsigned char want_early[H] = {
+    0x33,0xad,0x0a,0x1c,0x60,0x7e,0xc0,0x3b,0x09,0xe6,0xcd,0x98,0x93,0x68,0x0c,0xe2,
+    0x10,0xad,0xf3,0x00,0xaa,0x1f,0x26,0x60,0xe1,0xb2,0x2e,0x10,0xf1,0x70,0xf9,0x2a };
+  static const unsigned char want_derived[H] = {
+    0x6f,0x26,0x15,0xa1,0x08,0xc7,0x02,0xc5,0x67,0x8f,0x54,0xfc,0x9d,0xba,0xb6,0x97,
+    0x16,0xc0,0x76,0x18,0x9c,0x48,0x25,0x0c,0xeb,0xea,0xc3,0x57,0x6c,0x36,0x11,0xba };
+  static const unsigned char want_hs[H] = {
+    0x1d,0xc8,0x26,0xe9,0x36,0x06,0xaa,0x6f,0xdc,0x0a,0xad,0xc1,0x2f,0x74,0x1b,0x01,
+    0x04,0x6a,0xa6,0xb9,0x9f,0x69,0x1e,0xd2,0x21,0xa9,0xf0,0xca,0x04,0x3f,0xbe,0xac };
+  static const unsigned char want_chs[H] = {
+    0xb3,0xed,0xdb,0x12,0x6e,0x06,0x7f,0x35,0xa7,0x80,0xb3,0xab,0xf4,0x5e,0x2d,0x8f,
+    0x3b,0x1a,0x95,0x07,0x38,0xf5,0x2e,0x96,0x00,0x74,0x6a,0x0e,0x27,0xa5,0x5a,0x21 };
+  static const unsigned char want_shs[H] = {
+    0xb6,0x7b,0x7d,0x69,0x0c,0xc1,0x6c,0x4e,0x75,0xe5,0x42,0x13,0xcb,0x2d,0x37,0xb4,
+    0xe9,0xc9,0x12,0xbc,0xde,0xd9,0x10,0x5d,0x42,0xbe,0xfd,0x59,0xd3,0x91,0xad,0x38 };
+  static const unsigned char want_master[H] = {
+    0x18,0xdf,0x06,0x84,0x3d,0x13,0xa0,0x8b,0xf2,0xa4,0x49,0x84,0x4c,0x5f,0x8a,0x47,
+    0x80,0x01,0xbc,0x4d,0x4c,0x62,0x79,0x84,0xd5,0xa4,0x1d,0xa8,0xd0,0x40,0x29,0x19 };
+  static const unsigned char want_skey[16] = {
+    0x3f,0xce,0x51,0x60,0x09,0xc2,0x17,0x27,0xd0,0xf2,0xe4,0xe8,0x6e,0xe4,0x03,0xbc };
+  static const unsigned char want_siv[12] = {
+    0x5d,0x31,0x3e,0xb2,0x67,0x12,0x76,0xee,0x13,0x00,0x0b,0x30 };
+  static const unsigned char want_sfin[H] = {
+    0x00,0x8d,0x3b,0x66,0xf8,0x16,0xea,0x55,0x9f,0x96,0xb5,0x37,0xe8,0x85,0xc3,0x1f,
+    0xc0,0x68,0xbf,0x49,0x2c,0x65,0x2f,0x01,0xf2,0x88,0xa1,0xd8,0xcd,0xc1,0x9f,0xc8 };
+
+  unsigned char early[H], derived[H], hs[H], chs[H], shs[H], derived2[H], master[H];
+  unsigned char empty_hash[H], th_chsh[H], skey[16], siv[12], sfin[H];
+  unsigned char trans[sizeof ch + sizeof sh];
+
+  /* Transcript hashes. */
+  rktcrypto_tls13_transcript_hash(alg, (const unsigned char*)"", 0, 0, empty_hash);
+  memcpy(trans, ch, sizeof ch); memcpy(trans + sizeof ch, sh, sizeof sh);
+  rktcrypto_tls13_transcript_hash(alg, trans, 0, (intptr_t)sizeof trans, th_chsh);
+
+  /* Early Secret = HKDF-Extract(0, 0). */
+  rktcrypto_tls13_extract(alg, 0, 0, 0, 0, early);
+  if (!eqmem(early, want_early, H)) return 1;
+  /* Derived = Derive-Secret(Early, "derived", ""). */
+  rktcrypto_tls13_derive_secret(alg, early, (const unsigned char*)"derived", 7, empty_hash, derived);
+  if (!eqmem(derived, want_derived, H)) return 2;
+  /* Handshake Secret = HKDF-Extract(Derived, ECDHE). */
+  rktcrypto_tls13_extract(alg, derived, H, ecdhe, H, hs);
+  if (!eqmem(hs, want_hs, H)) return 3;
+  /* c/s hs traffic = Derive-Secret(Handshake, "c/s hs traffic", CH||SH). */
+  rktcrypto_tls13_derive_secret(alg, hs, (const unsigned char*)"c hs traffic", 12, th_chsh, chs);
+  if (!eqmem(chs, want_chs, H)) return 4;
+  rktcrypto_tls13_derive_secret(alg, hs, (const unsigned char*)"s hs traffic", 12, th_chsh, shs);
+  if (!eqmem(shs, want_shs, H)) return 5;
+  /* Master Secret = HKDF-Extract(Derive-Secret(Handshake,"derived",""), 0). */
+  rktcrypto_tls13_derive_secret(alg, hs, (const unsigned char*)"derived", 7, empty_hash, derived2);
+  rktcrypto_tls13_extract(alg, derived2, H, 0, 0, master);
+  if (!eqmem(master, want_master, H)) return 6;
+  /* Server handshake write key/iv from s hs traffic. */
+  rktcrypto_tls13_traffic_keys(alg, shs, skey, 16, siv, 12);
+  if (!eqmem(skey, want_skey, 16)) return 7;
+  if (!eqmem(siv, want_siv, 12)) return 8;
+  /* Server finished_key from s hs traffic. */
+  rktcrypto_tls13_finished_key(alg, shs, sfin);
+  if (!eqmem(sfin, want_sfin, H)) return 9;
+
+  /* Record layer self-consistency: seal an inner plaintext with the server
+     handshake key/iv and recover it (AEAD abstraction; ChaCha20-Poly1305). */
+  {
+    unsigned char inner[64], rec[128], rt[64];
+    intptr_t i, reclen, innlen;
+    unsigned char ckey[32], civ[12];
+    for (i = 0; i < 40; i++) inner[i] = (unsigned char)(i * 7 + 1);
+    inner[40] = 22;  /* content_type = handshake */
+    /* Derive a ChaCha20-Poly1305 traffic key/iv from s hs traffic. */
+    rktcrypto_tls13_traffic_keys(alg, shs, ckey, 32, civ, 12);
+    reclen = rktcrypto_tls13_record_seal(RKTCRYPTO_AEAD_CHACHA20_POLY1305, ckey, 32, civ, 12, 3,
+                                         inner, 41, rec);
+    if (reclen <= 0) return 10;
+    innlen = rktcrypto_tls13_record_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, ckey, 32, civ, 12, 3,
+                                         rec, reclen, rt);
+    if (innlen != 41 || !eqmem(rt, inner, 41)) return 11;
+    /* Tamper detection. */
+    rec[7] ^= 0x01;
+    if (rktcrypto_tls13_record_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, ckey, 32, civ, 12, 3,
+                                    rec, reclen, rt) != -1) return 12;
+  }
+  return 0;
+}

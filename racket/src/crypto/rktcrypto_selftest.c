@@ -318,5 +318,6 @@ int rktcrypto_selftest_core(void)
   if (!test_p256()) return 0;
   if (!test_mlkem768()) return 0;
   if (!test_mldsa65()) return 0;
+  if (rktcrypto_tls13_selftest() != 0) return 0;   /* RFC 8448 key schedule */
   return 1;
 }

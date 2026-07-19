@@ -74,6 +74,7 @@
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"
       "rktcrypto_x509.c"
+      "rktcrypto_tls13.c"
       "rktcrypto_selftest.c"))
   (define objs
     (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))

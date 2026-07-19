@@ -242,6 +242,58 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_x963kdf(int alg, const unsigned char *z, in
 /* ANSI X9.63 KDF (hash). */
 
 /*************************************************/
+/* TLS 1.3 protocol core (RFC 8446)              */
+/* Key schedule, traffic-key derivation, Finished, and the AEAD record layer,
+   built on the HKDF/HMAC/digest/AEAD primitives above. `alg` is the handshake
+   hash (RKTCRYPTO_SHA256 / _SHA384). Verified byte-for-byte against the RFC
+   8448 test vectors by rktcrypto_tls13_selftest(). */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_transcript_hash(int alg, const unsigned char *msgs,
+                                                           intptr_t start, intptr_t end, unsigned char *out);
+/* Transcript-Hash(messages) = Hash(msgs[start..end)). */
+
+RKTCRYPTO_EXTERN_NOERR void rktcrypto_tls13_extract(int alg, const unsigned char *salt, intptr_t saltlen,
+                                                    const unsigned char *ikm, intptr_t ikmlen, unsigned char *prk);
+/* HKDF-Extract in TLS order (salt = prior secret, ikm = PSK/(EC)DHE); a NULL
+   salt or ikm means Hash.length zero bytes. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_derive_secret(int alg, const unsigned char *secret,
+                                                         const unsigned char *label, intptr_t llen,
+                                                         const unsigned char *thash, unsigned char *out);
+/* Derive-Secret(Secret, Label, Messages); thash = Transcript-Hash(Messages). */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_traffic_keys(int alg, const unsigned char *secret,
+                                                        unsigned char *key, intptr_t key_len,
+                                                        unsigned char *iv, intptr_t iv_len);
+/* key = Expand-Label(secret,"key",...); iv = Expand-Label(secret,"iv",...). */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_finished_key(int alg, const unsigned char *base_key, unsigned char *out);
+RKTCRYPTO_EXTERN_NOERR void rktcrypto_tls13_verify_data(int alg, const unsigned char *finished_key,
+                                                        const unsigned char *thash, unsigned char *out);
+/* finished_key = Expand-Label(base_key,"finished",...); verify_data =
+   HMAC(finished_key, Transcript-Hash(handshake up to this Finished)). */
+
+RKTCRYPTO_EXTERN_NOERR void rktcrypto_tls13_record_nonce(const unsigned char *iv, intptr_t iv_len,
+                                                         uint64_t seq, unsigned char *nonce);
+/* Per-record nonce = static IV XOR left-padded 64-bit sequence number. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_tls13_record_seal(int aead, const unsigned char *key, intptr_t key_len,
+                                                            const unsigned char *iv, intptr_t iv_len, uint64_t seq,
+                                                            const unsigned char *inner, intptr_t inner_len,
+                                                            unsigned char *out);
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_tls13_record_open(int aead, const unsigned char *key, intptr_t key_len,
+                                                            const unsigned char *iv, intptr_t iv_len, uint64_t seq,
+                                                            const unsigned char *rec, intptr_t rec_len,
+                                                            unsigned char *out);
+/* AEAD-protect / recover one TLSCiphertext record (5-byte header AAD, trailing
+   content-type in the inner plaintext). seal returns record length or 0; open
+   returns inner-plaintext length or -1 on auth failure. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_selftest(void);
+/* Returns 0 if the RFC 8448 key-schedule vectors and a record round-trip all
+   pass, else a nonzero step index. */
+
+/*************************************************/
 /* X25519 key exchange (RFC 7748)                */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
