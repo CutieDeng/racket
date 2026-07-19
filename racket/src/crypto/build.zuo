@@ -59,6 +59,7 @@
       ;; #if guard on other targets; compiled as a preprocessed .S).
       "rktcrypto_p256_asm.S"
       "rktcrypto_ecc.c"
+      "rktcrypto_ecc_asm.S"
       "rktcrypto_x448.c"
       "rktcrypto_ed448.c"
       "rktcrypto_mlkem.c"

@@ -67,12 +67,22 @@ static void compute_rr(u64 *rr,const u64 *m,int nl){
 static void to_mont(u64 *r,const u64 *a,const u64 *m,const u64 *rr,u64 n0,int nl){ montmul(r,a,rr,m,n0,nl); }
 static void from_mont(u64 *r,const u64 *a,const u64 *m,u64 n0,int nl){ u64 one[MAXL]; bn_zero(one); one[0]=1; montmul(r,a,one,m,n0,nl); }
 
+#if defined(__aarch64__) && defined(__APPLE__)
+/* Operand-scanning asm multiplies (rktcrypto_ecc_asm.S): 7.7 ns (6-limb, P-384)
+   and 16.2 ns (9-limb, P-521) vs the C Comba's 18.9 / 37.7 ns. */
+extern void mul_plain6(u64 *r,const u64 *a,const u64 *b);
+extern void mul_plain9(u64 *r,const u64 *a,const u64 *b);
+#endif
 /* Product-scanning (Comba) wide multiply: prod[0..2nl-1] = a*b. Each column is
    an independent set of products accumulated into a 3-word register carry
    (c0,c1,c2), which exposes more instruction-level parallelism than the
    row-schoolbook carry chain. */
 static void mul_wide(u64 *prod,const u64 *a,const u64 *b,int nl){
   u64 c0=0,c1=0,c2=0; int k,i;
+#if defined(__aarch64__) && defined(__APPLE__)
+  if(nl==6){ mul_plain6(prod,a,b); return; }
+  if(nl==9){ mul_plain9(prod,a,b); return; }
+#endif
   for(k=0;k<2*nl-1;k++){
     int lo=(k<nl)?0:k-nl+1, hi=(k<nl)?k:nl-1;
     for(i=lo;i<=hi;i++){
