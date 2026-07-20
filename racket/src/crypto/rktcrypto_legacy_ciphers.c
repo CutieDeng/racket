@@ -144,9 +144,17 @@ void rktcrypto_rc4(const unsigned char *key, intptr_t keylen,
   unsigned char s[256]; int i,j=0; unsigned char a=0,b=0; intptr_t n;
   for(i=0;i<256;i++) s[i]=(unsigned char)i;
   for(i=0;i<256;i++){ j=(j+s[i]+key[i%keylen])&0xFF; { unsigned char t=s[i]; s[i]=s[j]; s[j]=t; } }
-  /* uint8_t indices wrap for free -- no &0xFF on the hot keystream path. */
-  for(n=0;n<len;n++){ unsigned char sa,sb; a=(unsigned char)(a+1); sa=s[a]; b=(unsigned char)(b+sa);
-    sb=s[b]; s[a]=sb; s[b]=sa; out[n]=in[n]^s[(unsigned char)(sa+sb)]; }
+  /* uint8_t indices wrap for free -- no &0xFF on the hot keystream path.
+     8x unrolled to amortize loop overhead over the serial state machine
+     (matches OpenSSL's rc4_enc.c 8-way LOOP unroll). */
+  n=0;
+#define RC4_STEP(o) do{ unsigned char sa,sb; a=(unsigned char)(a+1); sa=s[a]; \
+    b=(unsigned char)(b+sa); sb=s[b]; s[a]=sb; s[b]=sa; \
+    out[n+(o)]=in[n+(o)]^s[(unsigned char)(sa+sb)]; }while(0)
+  for(; n+8<=len; n+=8){ RC4_STEP(0);RC4_STEP(1);RC4_STEP(2);RC4_STEP(3);
+    RC4_STEP(4);RC4_STEP(5);RC4_STEP(6);RC4_STEP(7); }
+  for(; n<len; n++) RC4_STEP(0);
+#undef RC4_STEP
 }
 
 /* ============================ Camellia (RFC 3713) ============================
