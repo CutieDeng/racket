@@ -122,6 +122,25 @@ static uint64_t des3_core(const des_ks *S[3],const int fwd[3],uint64_t b){
   }
   return ((uint64_t)L<<32)|R;
 }
+/* EDE-encrypt core, fully unrolled with the subkey order baked in (s1 forward,
+   s2 backward, s3 forward): no fwd[] select or S[st] indirection, so the compiler
+   sees one clean 48-round serial chain -- the direction of the CBC-encrypt hot
+   loop, whose critical path is this chain. */
+static uint64_t des3_enc_core(const des_ks *s1,const des_ks *s2,const des_ks *s3,uint64_t b){
+  uint32_t L=(uint32_t)(b>>32),R=(uint32_t)b,t,nR;
+  #define FR(kk) do{ nR=L^des_feistel(R,(kk)); L=R; R=nR; }while(0)
+  FR(s1->g[0]);FR(s1->g[1]);FR(s1->g[2]);FR(s1->g[3]);FR(s1->g[4]);FR(s1->g[5]);FR(s1->g[6]);FR(s1->g[7]);
+  FR(s1->g[8]);FR(s1->g[9]);FR(s1->g[10]);FR(s1->g[11]);FR(s1->g[12]);FR(s1->g[13]);FR(s1->g[14]);FR(s1->g[15]);
+  t=L;L=R;R=t;
+  FR(s2->g[15]);FR(s2->g[14]);FR(s2->g[13]);FR(s2->g[12]);FR(s2->g[11]);FR(s2->g[10]);FR(s2->g[9]);FR(s2->g[8]);
+  FR(s2->g[7]);FR(s2->g[6]);FR(s2->g[5]);FR(s2->g[4]);FR(s2->g[3]);FR(s2->g[2]);FR(s2->g[1]);FR(s2->g[0]);
+  t=L;L=R;R=t;
+  FR(s3->g[0]);FR(s3->g[1]);FR(s3->g[2]);FR(s3->g[3]);FR(s3->g[4]);FR(s3->g[5]);FR(s3->g[6]);FR(s3->g[7]);
+  FR(s3->g[8]);FR(s3->g[9]);FR(s3->g[10]);FR(s3->g[11]);FR(s3->g[12]);FR(s3->g[13]);FR(s3->g[14]);FR(s3->g[15]);
+  t=L;L=R;R=t;
+  #undef FR
+  return ((uint64_t)L<<32)|R;
+}
 /* 4-way interleaved core: four independent blocks share each round's subkey, so
    the four des_feistel SP-table load chains overlap -- hides the ~48-round Feistel
    latency (throughput- not latency-bound), the win OpenSSL's single-block C can't
@@ -164,7 +183,7 @@ void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
        pre_{i-1} (the previous pre-output state): the chaining stays a single word
        XOR -- no byte fold, no memcpy, no re-IP. */
     uint64_t prevpre=des_ip(iv);
-    for(i=0;i<nblk;i++){ uint64_t pre=des3_core(S,fwd,des_ip(in+8*i)^prevpre);
+    for(i=0;i<nblk;i++){ uint64_t pre=des3_enc_core(&s1,&s2,&s3,des_ip(in+8*i)^prevpre);
       des_fp_store(pre,out+8*i); prevpre=pre; }
   } else {
     /* decrypt: blocks are independent given the ciphertext -> 4-way interleave,
