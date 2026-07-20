@@ -149,6 +149,12 @@
 (define (ssl-server-context-enable-dhe! c [p 'auto]) (void))
 (define (ssl-server-context-enable-ecdhe! c [n 'auto]) (void))
 
+;; Turn a keylogger (a logger) into a line emitter for the engine, or #f.
+;; Lines are the NSS Key Log format; a receiver on the logger (or an
+;; SSLKEYLOGFILE bridge) can write them for Wireshark.
+(define (keylog-emitter lg)
+  (and lg (lambda (line) (log-message lg 'info 'ssl-keylog line #f))))
+
 (define (->context c/l)
   (cond [(ssl-context? c/l) c/l]
         [(ssl-listener? c/l) (ssl-listener-ctx c/l)]
@@ -218,6 +224,7 @@
                             'verify? (cx-ref context 'verify?)
                             'verify-hostname? (cx-ref context 'verify-hostname?)
                             'trust-anchors anchors
+                            'keylog (keylog-emitter (cx-ref context 'keylogger))
                             'tls12-only? (memq proto '(tls12 tls11 tls))))]
       [else
        (define key (cx-ref context 'private-key))
@@ -232,6 +239,7 @@
                      (hash 'cert-ders (cx-ref context 'cert-ders)
                            'key key
                            'sni-select sni-select
+                           'keylog (keylog-emitter (cx-ref context 'keylogger))
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
                                    (if (pair? sa) sa alpn))))]))
   (define name (object-name i))

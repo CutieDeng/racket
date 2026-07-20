@@ -129,6 +129,17 @@
 (define (rl-set-read-key! r aead key iv) (set-rl-raead! r aead) (set-rl-rkey! r key) (set-rl-riv! r iv) (set-rl-rseq! r 0))
 (define (rl-set-write-key! r aead key iv) (set-rl-waead! r aead) (set-rl-wkey! r key) (set-rl-wiv! r iv) (set-rl-wseq! r 0))
 
+;; ---- key logging (SSLKEYLOGFILE) ----
+;; A procedure (line-string -> void) installed for the current handshake;
+;; secret-derivation points emit NSS Key Log lines through it.
+(define keylog-proc (make-parameter #f))
+(define keylog-cr (make-parameter #""))   ; client_random for the current handshake
+(define (hex bs) (apply string-append (for/list ([b (in-bytes bs)])
+                                        (let ([s (number->string b 16)]) (if (= 1 (string-length s)) (string-append "0" s) s)))))
+(define (klog! label client-random secret)
+  (define f (keylog-proc))
+  (when f (f (string-append label " " (hex client-random) " " (hex secret)))))
+
 ;; ---- errors ----
 (struct exn:tls exn:fail (alert) #:transparent)
 (define (tls-error msg) (exn:tls msg (current-continuation-marks) #f))
@@ -405,6 +416,7 @@
     (bytes-append (u8 1) (u24 (bytes-length body)) body))
 
   (define ch1 (build-client-hello (map gen-share share-groups)))
+  (parameterize ([keylog-proc (hash-ref opts 'keylog #f)] [keylog-cr client-random])
   (tr-add! tr ch1)
   (rl-write-record r 22 ch1)
 
@@ -459,7 +471,7 @@
         ;; Server negotiated TLS 1.2. Hand off to the 1.2 continuation with
         ;; the raw transcript (ClientHello || ServerHello) so far.
         (tls12-client-finish (rl-in r) (rl-out r) hs (bytes-append ch1 sh) sh client-random
-                             (hash 'host host 'verify? verify? 'trust-anchors anchors))])]))
+                             (hash 'host host 'verify? verify? 'trust-anchors anchors))])])))
 
 ;; After a (possibly retried) ServerHello whose suite/exts we've parsed.
 (define (finish-client-handshake r hs tr sh want-group privs verify? host anchors alpn)
@@ -483,6 +495,8 @@
   (ks-derive-handshake! k ecdhe)
   (define th-chsh (tr-hash tr))
   (ks-hs-traffic! k th-chsh)
+  (klog! "CLIENT_HANDSHAKE_TRAFFIC_SECRET" (keylog-cr) (ks-c-hs k))
+  (klog! "SERVER_HANDSHAKE_TRAFFIC_SECRET" (keylog-cr) (ks-s-hs k))
   ;; install handshake keys
   (define-values (skey siv) (traffic->keys k (ks-s-hs k)))
   (define-values (ckey civ) (traffic->keys k (ks-c-hs k)))
@@ -519,6 +533,9 @@
   (define th-sfin (tr-hash tr))
   (ks-ap-traffic! k th-sfin)
   (define exporter-master (derive-secret alg (ks-master k) #"exp master" th-sfin))
+  (klog! "CLIENT_TRAFFIC_SECRET_0" (keylog-cr) (ks-c-ap k))
+  (klog! "SERVER_TRAFFIC_SECRET_0" (keylog-cr) (ks-s-ap k))
+  (klog! "EXPORTER_SECRET" (keylog-cr) exporter-master)
   ;; send client Finished under handshake write keys
   (rl-set-write-key! r aead ckey civ)
   ;; middlebox-compat CCS (plaintext) is optional; skip.
@@ -613,6 +630,7 @@
     [else #f]))
 
 (define (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite)
+  (parameterize ([keylog-proc (hash-ref opts 'keylog #f)] [keylog-cr ch-random])
   (define our-alpn (hash-ref opts 'alpn '()))
   (define-values (alg aead klen ilen dname) (suite-params suite))
   (define tr (make-transcript alg))
@@ -655,6 +673,8 @@
   (define k (ks alg aead klen ilen #f #f #f #f #f #f))
   (ks-derive-handshake! k ecdhe)
   (ks-hs-traffic! k (tr-hash tr))
+  (klog! "CLIENT_HANDSHAKE_TRAFFIC_SECRET" ch-random (ks-c-hs k))
+  (klog! "SERVER_HANDSHAKE_TRAFFIC_SECRET" ch-random (ks-s-hs k))
   (define-values (skey siv) (traffic->keys k (ks-s-hs k)))
   (define-values (ckey civ) (traffic->keys k (ks-c-hs k)))
   (rl-set-write-key! r aead skey siv)   ; server writes with s hs traffic
@@ -698,6 +718,9 @@
   (define th-sfin (tr-hash tr))
   (ks-ap-traffic! k th-sfin)
   (define exporter-master (derive-secret alg (ks-master k) #"exp master" th-sfin))
+  (klog! "CLIENT_TRAFFIC_SECRET_0" ch-random (ks-c-ap k))
+  (klog! "SERVER_TRAFFIC_SECRET_0" ch-random (ks-s-ap k))
+  (klog! "EXPORTER_SECRET" ch-random exporter-master)
 
   ;; read client Finished under client handshake keys
   (rl-set-read-key! r aead ckey civ)
@@ -716,7 +739,7 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-write-key! r aead sapk sapiv)
   (rl-set-read-key! r aead capk capiv)
-  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master)))
+  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master))))
 
 ;; ---- server helpers ----
 (define (gen-server-share group)
