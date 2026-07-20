@@ -273,8 +273,11 @@ static void cam_schedule(const unsigned char *key,int keylen,cam_key *ck){
     ck->kw[2]=CAM_HI(cam_rol128(KB,111)); ck->kw[3]=CAM_LO(cam_rol128(KB,111));
   }
 }
-static void cam_crypt_block(const cam_key *ck,const unsigned char in[16],unsigned char out[16]){
-  uint64_t D1=cam_load64(in),D2=cam_load64(in+8); int stage,fl=0,ns=ck->nr/6;
+/* Core on register words: takes the two big-endian block words, returns the two
+   output words (already in output order). Lets CBC keep the chaining value in
+   registers -- no per-block byte-wise fold or memcpy on the critical path. */
+static void cam_crypt_words(const cam_key *ck,uint64_t *w0,uint64_t *w1){
+  uint64_t D1=*w0,D2=*w1; int stage,fl=0,ns=ck->nr/6;
   const uint64_t *k=ck->k;
   D1^=ck->kw[0]; D2^=ck->kw[1];
   for(stage=0;stage<ns;stage++){
@@ -285,7 +288,12 @@ static void cam_crypt_block(const cam_key *ck,const unsigned char in[16],unsigne
     if(stage<ns-1){ D1=cam_FL(D1,ck->ke[fl*2]); D2=cam_FLINV(D2,ck->ke[fl*2+1]); fl++; }
   }
   D2^=ck->kw[2]; D1^=ck->kw[3];
-  cam_store64(out,D2); cam_store64(out+8,D1);
+  *w0=D2; *w1=D1;
+}
+static void cam_crypt_block(const cam_key *ck,const unsigned char in[16],unsigned char out[16]){
+  uint64_t w0=cam_load64(in),w1=cam_load64(in+8);
+  cam_crypt_words(ck,&w0,&w1);
+  cam_store64(out,w0); cam_store64(out+8,w1);
 }
 static void cam_reverse_key(const cam_key *ck,cam_key *d){
   int i,ne=ck->nr/6-1; *d=*ck;
@@ -305,7 +313,10 @@ void rktcrypto_camellia_cbc(const unsigned char *key,intptr_t keylen,const unsig
   cam_key ck,d; unsigned char prev[16],tmp[16]; intptr_t i; int j;
   cam_schedule(key,(int)keylen,&ck); memcpy(prev,iv,16);
   if(encrypt){
-    for(i=0;i<nblk;i++){ for(j=0;j<16;j++) tmp[j]=in[16*i+j]^prev[j]; cam_crypt_block(&ck,tmp,out+16*i); memcpy(prev,out+16*i,16); }
+    uint64_t p0=cam_load64(prev),p1=cam_load64(prev+8);   /* chaining value stays in registers */
+    for(i=0;i<nblk;i++){ uint64_t w0=cam_load64(in+16*i)^p0, w1=cam_load64(in+16*i+8)^p1;
+      cam_crypt_words(&ck,&w0,&w1); cam_store64(out+16*i,w0); cam_store64(out+16*i+8,w1); p0=w0; p1=w1; }
+    (void)tmp;(void)j;
   } else {
     cam_reverse_key(&ck,&d); ck=d;
     for(i=0;i<nblk;i++){ unsigned char c[16]; memcpy(c,in+16*i,16); cam_crypt_block(&ck,c,tmp);
