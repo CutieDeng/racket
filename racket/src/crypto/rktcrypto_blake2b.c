@@ -44,7 +44,7 @@ static const unsigned char SIGMA[12][16] = {
 static void blake2b_compress(rktcrypto_blake2b_ctx_t *ctx, const unsigned char *block, int last)
 {
   uint64_t m[16], v[16];
-  int i, r;
+  int i;
 
   for (i = 0; i < 16; i++) {
     const unsigned char *p = block + 8 * i;
@@ -57,16 +57,23 @@ static void blake2b_compress(rktcrypto_blake2b_ctx_t *ctx, const unsigned char *
   v[13] ^= ctx->t[1];
   if (last) v[14] = ~v[14];
 
-  for (r = 0; r < 12; r++) {
-    G(r, 0, v[0], v[4], v[ 8], v[12]);
-    G(r, 1, v[1], v[5], v[ 9], v[13]);
-    G(r, 2, v[2], v[6], v[10], v[14]);
-    G(r, 3, v[3], v[7], v[11], v[15]);
-    G(r, 4, v[0], v[5], v[10], v[15]);
-    G(r, 5, v[1], v[6], v[11], v[12]);
-    G(r, 6, v[2], v[7], v[ 8], v[13]);
+  /* Fully unrolled: with a literal round index every SIGMA[r][*] folds to a
+     compile-time constant, so m[] reads become direct immediate-offset loads
+     (no SIGMA table lookup, no indexed addressing) -- matches OpenSSL's
+     unrolled ROUND structure. */
+#define ROUND(r)                             \
+    G(r, 0, v[0], v[4], v[ 8], v[12]);       \
+    G(r, 1, v[1], v[5], v[ 9], v[13]);       \
+    G(r, 2, v[2], v[6], v[10], v[14]);       \
+    G(r, 3, v[3], v[7], v[11], v[15]);       \
+    G(r, 4, v[0], v[5], v[10], v[15]);       \
+    G(r, 5, v[1], v[6], v[11], v[12]);       \
+    G(r, 6, v[2], v[7], v[ 8], v[13]);       \
     G(r, 7, v[3], v[4], v[ 9], v[14]);
-  }
+  ROUND(0)  ROUND(1)  ROUND(2)  ROUND(3)
+  ROUND(4)  ROUND(5)  ROUND(6)  ROUND(7)
+  ROUND(8)  ROUND(9)  ROUND(10) ROUND(11)
+#undef ROUND
 
   for (i = 0; i < 8; i++) ctx->h[i] ^= v[i] ^ v[i+8];
 }
