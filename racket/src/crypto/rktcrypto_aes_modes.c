@@ -59,36 +59,56 @@ void rktcrypto_aes_cbc_encrypt(const unsigned char*key,intptr_t keylen,const uns
              k8=vld1q_u8(rk+128),k9=vld1q_u8(rk+144),k10=vld1q_u8(rk+160);
   if(len<16) return;
   if(Nr==10){
-    uint8x16_t s=veorq_u8(vld1q_u8(in),prev); intptr_t last=len-16;
-    /* hot loop is branchless: every block folds the next plaintext in; the final
-       block (which has no successor to load) is done once after the loop. */
-    for(;o<last;o+=16){
-      AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
-      AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
-      s=vaeseq_u8(s,k9); vst1q_u8(out+o,veorq_u8(s,k10));
-      s=veorq_u8(s,veorq_u8(vld1q_u8(in+o+16),k10));
-    }
+    /* Zero veors on the serial critical path: since aese(x,rk)=SB(SR(x^rk)), both
+       the final k10 add AND the next block's CBC fold collapse into the round key
+       of the next block's first aese. Carry u = aese(s,k9) (pre-k10) across blocks;
+       merged = p_next ^ k10 ^ k0 and the ciphertext store (u^k10) are both off the
+       critical path, which is then pure aese/aesmc. */
+    intptr_t nblk=len/16, bi;
+    uint8x16_t s=veorq_u8(vld1q_u8(in),prev);
     AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
     AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
-    s=vaeseq_u8(s,k9); vst1q_u8(out+o,veorq_u8(s,k10));
+    uint8x16_t u=vaeseq_u8(s,k9);
+    for(bi=1;bi<nblk;bi++){
+      vst1q_u8(out+(bi-1)*16,veorq_u8(u,k10));                     /* store ct_{bi-1} (off path) */
+      uint8x16_t merged=veorq_u8(veorq_u8(vld1q_u8(in+bi*16),k10),k0); /* p_bi ^ k10 ^ k0 (off path) */
+      s=vaesmcq_u8(vaeseq_u8(u,merged));                          /* round 0 with folded key */
+      AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
+      AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
+      u=vaeseq_u8(s,k9);
+    }
+    vst1q_u8(out+(nblk-1)*16,veorq_u8(u,k10));
   } else {
     uint8x16_t k11=vld1q_u8(rk+176),k12=vld1q_u8(rk+192),k13=vld1q_u8(rk+208),k14=vld1q_u8(rk+224);
-    if(Nr==12){
+    intptr_t nblk=len/16, bi;
+    if(Nr==12){                                         /* zero-veor chain (see Nr==10) */
       uint8x16_t s=veorq_u8(vld1q_u8(in),prev);
-      for(;o+16<=len;o+=16){
-        AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);
+      AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);
+      AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);
+      uint8x16_t u=vaeseq_u8(s,k11);
+      for(bi=1;bi<nblk;bi++){
+        vst1q_u8(out+(bi-1)*16,veorq_u8(u,k12));
+        uint8x16_t merged=veorq_u8(veorq_u8(vld1q_u8(in+bi*16),k12),k0);
+        s=vaesmcq_u8(vaeseq_u8(u,merged));
+        AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);
         AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);
-        s=vaeseq_u8(s,k11); vst1q_u8(out+o,veorq_u8(s,k12));
-        if(o+32<=len) s=veorq_u8(s,veorq_u8(vld1q_u8(in+o+16),k12));
+        u=vaeseq_u8(s,k11);
       }
+      vst1q_u8(out+(nblk-1)*16,veorq_u8(u,k12));
     } else {
       uint8x16_t s=veorq_u8(vld1q_u8(in),prev);
-      for(;o+16<=len;o+=16){
-        AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);AESE_MC(s,k6);
+      AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);AESE_MC(s,k6);
+      AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);AESE_MC(s,k11);AESE_MC(s,k12);
+      uint8x16_t u=vaeseq_u8(s,k13);
+      for(bi=1;bi<nblk;bi++){
+        vst1q_u8(out+(bi-1)*16,veorq_u8(u,k14));
+        uint8x16_t merged=veorq_u8(veorq_u8(vld1q_u8(in+bi*16),k14),k0);
+        s=vaesmcq_u8(vaeseq_u8(u,merged));
+        AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);AESE_MC(s,k5);AESE_MC(s,k6);
         AESE_MC(s,k7);AESE_MC(s,k8);AESE_MC(s,k9);AESE_MC(s,k10);AESE_MC(s,k11);AESE_MC(s,k12);
-        s=vaeseq_u8(s,k13); vst1q_u8(out+o,veorq_u8(s,k14));
-        if(o+32<=len) s=veorq_u8(s,veorq_u8(vld1q_u8(in+o+16),k14));
+        u=vaeseq_u8(s,k13);
       }
+      vst1q_u8(out+(nblk-1)*16,veorq_u8(u,k14));
     }
   }
 }
