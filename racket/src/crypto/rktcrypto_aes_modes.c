@@ -160,16 +160,28 @@ static inline uint8x16_t xts_dbl(uint8x16_t tv){
   hi=(hi<<1)|(lo>>63); lo=(lo<<1)^(carry*0x87ULL);
   return vreinterpretq_u8_u64(vsetq_lane_u64(hi,vsetq_lane_u64(lo,v,0),1));
 }
+/* The tweak chain is a serial dbl per block and (with a fast 8-way AES) it, not
+   the AES, caps XTS throughput. Keep the running tweak as two GP words so the
+   chain is a pure-GP doubling (~2 cyc, no NEON<->GP round trip per the old
+   vget/vset dbl); build the NEON tweak per block off the chain. */
+#define XTS_DBL2(lo,hi) do{ uint64_t _c=(hi)>>63; (hi)=((hi)<<1)|((lo)>>63); (lo)=((lo)<<1)^(_c*0x87ULL); }while(0)
+static inline uint8x16_t xts_tw(uint64_t lo,uint64_t hi){
+  return vreinterpretq_u8_u64(vsetq_lane_u64(hi,vsetq_lane_u64(lo,vdupq_n_u64(0),0),1));
+}
 void rktcrypto_aes_xts(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                        const unsigned char*in,unsigned char*out,intptr_t len,int encrypt){
   unsigned char rk1[240],rk2[240],dk1[240]; int Nr=aes_expand(key,(int)keylen,rk1); aes_expand(key+keylen,(int)keylen,rk2);
   if(!encrypt) aes_expand_dec(key,(int)keylen,dk1);
-  unsigned char T[16]; uint8x16_t Tv=aes_enc1(vld1q_u8(iv),rk2,Nr);
+  unsigned char T[16]; uint8x16_t Tv0=aes_enc1(vld1q_u8(iv),rk2,Nr);
+  uint64_t tlo=vgetq_lane_u64(vreinterpretq_u64_u8(Tv0),0), thi=vgetq_lane_u64(vreinterpretq_u64_u8(Tv0),1);
   intptr_t nfull=len/16, rem=len%16, last_full=rem?nfull-1:nfull, o=0, i=0;
-  /* 8-way pipelined body: tweaks are independent, so keep the AES units busy. */
+  /* 8-way pipelined body: tweaks are independent, so keep the AES units busy.
+     (Holding all round keys in registers instead of loading per round was tried
+     and measured *slower* -- 8 state + 8 tweak + 11 keys spills; the per-round
+     key load pipelines fine.) */
   for(; i+8<=last_full; i+=8){
     uint8x16_t tw[8],st[8]; int b,r;
-    for(b=0;b<8;b++){ tw[b]=Tv; Tv=xts_dbl(Tv); }
+    for(b=0;b<8;b++){ tw[b]=xts_tw(tlo,thi); XTS_DBL2(tlo,thi); }
     for(b=0;b<8;b++) st[b]=veorq_u8(vld1q_u8(in+o+16*b),tw[b]);
     if(encrypt){
       for(r=0;r<Nr-1;r++){ uint8x16_t k=vld1q_u8(rk1+16*r); for(b=0;b<8;b++) st[b]=vaesmcq_u8(vaeseq_u8(st[b],k)); }
@@ -181,11 +193,11 @@ void rktcrypto_aes_xts(const unsigned char*key,intptr_t keylen,const unsigned ch
     for(b=0;b<8;b++) vst1q_u8(out+o+16*b,veorq_u8(st[b],tw[b]));
     o+=128;
   }
-  for(; i<last_full; i++){ uint8x16_t t=Tv;
+  for(; i<last_full; i++){ uint8x16_t t=xts_tw(tlo,thi);
     uint8x16_t p=veorq_u8(vld1q_u8(in+o),t);
     uint8x16_t c=encrypt?aes_enc1(p,rk1,Nr):aes_dec1(p,dk1,Nr);
-    vst1q_u8(out+o,veorq_u8(c,t)); Tv=xts_dbl(Tv); o+=16; }
-  vst1q_u8(T,Tv);
+    vst1q_u8(out+o,veorq_u8(c,t)); XTS_DBL2(tlo,thi); o+=16; }
+  vst1q_u8(T,xts_tw(tlo,thi));
   if(rem){ if(encrypt){ uint8x16_t t=vld1q_u8(T);
       unsigned char cb[16]; vst1q_u8(cb,veorq_u8(aes_enc1(veorq_u8(vld1q_u8(in+o),t),rk1,Nr),t));
       for(int i=0;i<rem;i++) out[o+16+i]=cb[i];
