@@ -130,7 +130,10 @@ void rktcrypto_aes_cmac(const unsigned char*key,intptr_t keylen,const unsigned c
 /* AES-XTS (IEEE 1619 / NIST SP 800-38E) with ciphertext stealing. key =
    key1||key2 each `keylen` bytes; iv is the 16-byte tweak. */
 static void xts_gf(unsigned char T[16]){ int cin=0; for(int j=0;j<16;j++){ int cout=T[j]>>7; T[j]=(unsigned char)((T[j]<<1)|cin); cin=cout; } if(cin)T[0]^=0x87; }
-/* GF(2^128) mul-by-alpha on the little-endian tweak, via 64-bit words. */
+/* GF(2^128) mul-by-alpha on the little-endian tweak, via 64-bit words. The
+   vget/vset lane round-trip is deliberate: it runs the tweak chain on the scalar
+   /GP units, leaving the NEON ports free for the 8-way AES (a pure-NEON dbl
+   competes with aese for the same ports and measured ~1.8x slower here). */
 static inline uint8x16_t xts_dbl(uint8x16_t tv){
   uint64x2_t v=vreinterpretq_u64_u8(tv);
   uint64_t lo=vgetq_lane_u64(v,0), hi=vgetq_lane_u64(v,1), carry=hi>>63;
