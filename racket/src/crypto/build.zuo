@@ -42,6 +42,8 @@
       "rktcrypto_rmd160.c"
       "rktcrypto_sm3.c"
       "rktcrypto_whirlpool.c"
+      "rktcrypto_sm4.c"
+      "rktcrypto_aria.c"
       "rktcrypto_blake2b.c"
       "rktcrypto_blake3.c"
       "rktcrypto_digest.c"

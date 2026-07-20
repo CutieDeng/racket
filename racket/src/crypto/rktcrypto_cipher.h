@@ -123,4 +123,21 @@ void rktcrypto_camellia_ecb(const unsigned char *key, intptr_t keylen, const uns
 void rktcrypto_camellia_cbc(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
                             const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
 
+/* ---- Regional-standard block ciphers ---- */
+/* SM4 (GB/T 32907-2016), 128-bit blocks, 128-bit key. */
+void rktcrypto_sm4_ecb(const unsigned char key[16], const unsigned char *in,
+                       unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_sm4_cbc(const unsigned char key[16], const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+/* CTR with full 128-bit big-endian counter; in/out may alias exactly. */
+void rktcrypto_sm4_ctr(const unsigned char key[16], const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t len);
+/* ARIA (RFC 5794 / KS X 1213-1), 128-bit blocks, key 16/24/32 bytes. */
+void rktcrypto_aria_ecb(const unsigned char *key, intptr_t keylen, const unsigned char *in,
+                        unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_aria_cbc(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                        const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_aria_ctr(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                        const unsigned char *in, unsigned char *out, intptr_t len);
+
 #endif
