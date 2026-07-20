@@ -1033,10 +1033,7 @@
   (include "rumble/vector.ss")
   (include "rumble/pvector.ss")
   (include "rumble/intmap-ordered.ss")
-<<<<<<< HEAD
   (include "rumble/swisstable.ss")
-=======
->>>>>>> feat/crypto
   (include "rumble/box.ss")
   (include "rumble/immutable.ss")
   (include "rumble/keyword.ss")
