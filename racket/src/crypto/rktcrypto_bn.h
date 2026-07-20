@@ -20,4 +20,8 @@ void bn_montmul(BN*,const BN*,const BN*,const BN*,uint64_t);
 void bn_montsqr(BN*,const BN*,const BN*,uint64_t);
 void bn_modexp_pre(BN*,const BN*,const BN*,const BN*,uint64_t,const BN*);
 void bn_modexp(BN*,const BN*,const BN*,const BN*);
+/* r = a^ea * b^eb mod m: simultaneous sliding-window exponentiation over a
+   shared squaring chain. VARIABLE-TIME -- public inputs only (signature
+   verification), never for private exponents. */
+void bn_modexp2_pre(BN*,const BN*,const BN*,const BN*,const BN*,const BN*,uint64_t,const BN*);
 #endif

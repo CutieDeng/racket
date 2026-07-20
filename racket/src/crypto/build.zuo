@@ -24,7 +24,8 @@
     (list (at-source "rktcrypto.h")
           (at-source "rktcrypto_private.h")
           (at-source "rktcrypto_digest.h")
-          (at-source "rktcrypto_cipher.h")))
+          (at-source "rktcrypto_cipher.h")
+          (at-source "rktcrypto_ffc.h")))
   (define rktcrypto.h (car headers))
 
   (define src-names
@@ -86,6 +87,8 @@
       "rktcrypto_md5_asm.S"
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"
+      "rktcrypto_dsa.c"
+      "rktcrypto_dh.c"
       "rktcrypto_x509.c"
       "rktcrypto_tls13.c"
       "rktcrypto_selftest.c"))

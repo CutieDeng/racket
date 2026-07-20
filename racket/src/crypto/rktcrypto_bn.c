@@ -261,3 +261,50 @@ void bn_modexp_pre(BN*r,const BN*base,const BN*exp,const BN*m,uint64_t n0,const 
 void bn_modexp(BN*r,const BN*base,const BN*exp,const BN*m){
   uint64_t n0; BN rr; bn_mont_setup(&n0,&rr,m); bn_modexp_pre(r,base,exp,m,n0,&rr);
 }
+
+/* Simultaneous double exponentiation r = a^ea * b^eb mod m over one shared
+   squaring chain, per-base 5-bit sliding windows (odd powers). Cuts a DSA
+   verify from two full exponentiations (~2*eb squarings) to ~eb squarings
+   plus ~2*eb/6 multiplies. VARIABLE-TIME window scheduling: use only where
+   base and exponent are public (signature verification). */
+#define BN_EXP2_W 5
+static void bn_exp2_schedule(unsigned char *ev,const BN*e){
+  int i=bn_bits(e)-1,l,j;
+  while(i>=0){
+    if(!bn_getbit(e,i)){ i--; continue; }
+    l=i-BN_EXP2_W+1; if(l<0) l=0;
+    while(!bn_getbit(e,l)) l++;
+    { int val=0; for(j=i;j>=l;j--) val=(val<<1)|bn_getbit(e,j);
+      ev[l]=(unsigned char)((val>>1)+1); }              /* odd; stored as index+1 */
+    i=l-1;
+  }
+}
+void bn_modexp2_pre(BN*r,const BN*a,const BN*ea,const BN*b,const BN*eb,
+                    const BN*m,uint64_t n0,const BN*rr){
+  BN one,ma,mb,t,sq,acc;
+  BN ta[1<<(BN_EXP2_W-1)],tb[1<<(BN_EXP2_W-1)];
+  unsigned char eva[BN_LIMBS*64],evb[BN_LIMBS*64];
+  int i,top,started=0;
+  int na=bn_bits(ea),nb=bn_bits(eb);
+  bn_set_u64(&one,1);
+  bn_mod(&t,a,m); bn_montmul(&ma,&t,rr,m,n0);
+  bn_mod(&t,b,m); bn_montmul(&mb,&t,rr,m,n0);
+  bn_copy(&ta[0],&ma); bn_montsqr(&sq,&ma,m,n0);
+  for(i=1;i<(1<<(BN_EXP2_W-1));i++) bn_montmul(&ta[i],&ta[i-1],&sq,m,n0);
+  bn_copy(&tb[0],&mb); bn_montsqr(&sq,&mb,m,n0);
+  for(i=1;i<(1<<(BN_EXP2_W-1));i++) bn_montmul(&tb[i],&tb[i-1],&sq,m,n0);
+  top=(na>nb?na:nb);
+  for(i=0;i<top;i++){ eva[i]=0; evb[i]=0; }
+  bn_exp2_schedule(eva,ea);
+  bn_exp2_schedule(evb,eb);
+  bn_zero(&acc);
+  for(i=top-1;i>=0;i--){
+    if(started) bn_montsqr(&acc,&acc,m,n0);
+    if(eva[i]){ if(started) bn_montmul(&acc,&acc,&ta[eva[i]-1],m,n0);
+                else { bn_copy(&acc,&ta[eva[i]-1]); started=1; } }
+    if(evb[i]){ if(started) bn_montmul(&acc,&acc,&tb[evb[i]-1],m,n0);
+                else { bn_copy(&acc,&tb[evb[i]-1]); started=1; } }
+  }
+  if(!started){ bn_set_u64(r,1); return; }   /* both exponents zero */
+  bn_montmul(r,&acc,&one,m,n0);
+}
