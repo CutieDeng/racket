@@ -65,6 +65,60 @@ static void PRF(const unsigned char *pkseed,const unsigned char *skseed,const AD
   shk s; shk_init(&s); shk_up(&s,pkseed,N); shk_up(&s,adrs,32); shk_up(&s,skseed,N); shk_out(&s,out,N);
 }
 
+/* ---- 2-way batched SHAKE256 (asm/gen_keccak_f2.py) ----
+   SLH-DSA's WOTS+ hash chains are independent, so pairs run through one 2-way
+   Keccak-f (both NEON lanes) at ~2x throughput. Th/PRF inputs are exactly one
+   rate block (PKseed 16 + ADRS 32 + M 16 = 64 <= 135) with an N=16 squeeze, so a
+   single 2-way permutation suffices -- no streaming. */
+#if defined(__aarch64__) && defined(__APPLE__)
+#define SLH_HAVE_2WAY 1
+void keccak_f2_asm(uint64_t st[50], const uint64_t rc[24]);
+static const uint64_t SLH_RC[24]={
+0x0000000000000001ULL,0x0000000000008082ULL,0x800000000000808aULL,0x8000000080008000ULL,
+0x000000000000808bULL,0x0000000080000001ULL,0x8000000080008081ULL,0x8000000000008009ULL,
+0x000000000000008aULL,0x0000000000000088ULL,0x0000000080008009ULL,0x000000008000000aULL,
+0x000000008000808bULL,0x800000000000008bULL,0x8000000000008089ULL,0x8000000000008003ULL,
+0x8000000000008002ULL,0x8000000000000080ULL,0x000000000000800aULL,0x800000008000000aULL,
+0x8000000080008081ULL,0x8000000000008080ULL,0x0000000080000001ULL,0x8000000080008008ULL};
+/* two 1-block SHAKE256 in parallel: in{0,1} are inlen(<=135) bytes, out{0,1} are N bytes. */
+static void shake256_2x(const unsigned char *in0,const unsigned char *in1,size_t inlen,
+                        unsigned char out0[N],unsigned char out1[N]){
+  unsigned char b0[136],b1[136]; uint64_t st[50]; int i;
+  memset(b0,0,136); memset(b1,0,136); memcpy(b0,in0,inlen); memcpy(b1,in1,inlen);
+  b0[inlen]^=0x1f; b0[135]^=0x80; b1[inlen]^=0x1f; b1[135]^=0x80;
+  for(i=0;i<17;i++){ uint64_t w0,w1; memcpy(&w0,b0+8*i,8); memcpy(&w1,b1+8*i,8); st[2*i]=w0; st[2*i+1]=w1; }
+  for(i=17;i<25;i++){ st[2*i]=0; st[2*i+1]=0; }
+  keccak_f2_asm(st,SLH_RC);
+  memcpy(out0,&st[0],8); memcpy(out0+8,&st[2],8);   /* lane 0 = state0's first 16 B */
+  memcpy(out1,&st[1],8); memcpy(out1+8,&st[3],8);   /* lane 1 = state1 */
+}
+static void Th2(const unsigned char *pkseed,const ADRS a0,const unsigned char *m0,
+                const ADRS a1,const unsigned char *m1,unsigned char o0[N],unsigned char o1[N]){
+  unsigned char in0[64],in1[64];
+  memcpy(in0,pkseed,N); memcpy(in0+N,a0,32); memcpy(in0+N+32,m0,N);
+  memcpy(in1,pkseed,N); memcpy(in1+N,a1,32); memcpy(in1+N+32,m1,N);
+  shake256_2x(in0,in1,64,o0,o1);
+}
+static void PRF2(const unsigned char *pkseed,const unsigned char *skseed,const ADRS a0,const ADRS a1,
+                 unsigned char o0[N],unsigned char o1[N]){
+  unsigned char in0[64],in1[64];
+  memcpy(in0,pkseed,N); memcpy(in0+N,a0,32); memcpy(in0+N+32,skseed,N);
+  memcpy(in1,pkseed,N); memcpy(in1+N,a1,32); memcpy(in1+N+32,skseed,N);
+  shake256_2x(in0,in1,64,o0,o1);
+}
+/* two WOTS+ chains in lockstep: chain b runs step index j from ib for sb steps.
+   Batched 2-way while both have steps left, single tail for the longer one. */
+static void chain2(unsigned char *o0,const unsigned char *X0,ADRS a0,uint32_t i0,uint32_t s0,
+                   unsigned char *o1,const unsigned char *X1,ADRS a1,uint32_t i1,uint32_t s1,
+                   const unsigned char *pkseed){
+  uint32_t j0=i0,e0=i0+s0,j1=i1,e1=i1+s1;
+  memcpy(o0,X0,N); memcpy(o1,X1,N);
+  while(j0<e0 && j1<e1){ adrs_hash(a0,j0); adrs_hash(a1,j1); Th2(pkseed,a0,o0,a1,o1,o0,o1); j0++; j1++; }
+  for(;j0<e0;j0++){ adrs_hash(a0,j0); Th(pkseed,a0,o0,N,o0); }
+  for(;j1<e1;j1++){ adrs_hash(a1,j1); Th(pkseed,a1,o1,N,o1); }
+}
+#endif
+
 /* ---- WOTS+ ---- */
 static void chain(unsigned char *out,const unsigned char *X,uint32_t i,uint32_t s,const unsigned char *pkseed,ADRS adrs){
   uint32_t j; memcpy(out,X,N);
@@ -73,8 +127,20 @@ static void chain(unsigned char *out,const unsigned char *X,uint32_t i,uint32_t 
 static void wots_pkgen(unsigned char pk[N],const unsigned char *skseed,const unsigned char *pkseed,ADRS adrs){
   ADRS skadrs,wpk; unsigned char tmp[LEN*N],sk[N]; uint32_t i;
   memcpy(skadrs,adrs,32); adrs_type(skadrs,WOTS_PRF); adrs_kp(skadrs,adrs_get_kp(adrs));
+#ifdef SLH_HAVE_2WAY
+  for(i=0;i+2<=LEN;i+=2){ ADRS s0a,s1a,a0,a1; unsigned char sk0[N],sk1[N];
+    memcpy(s0a,skadrs,32); adrs_chain(s0a,i);   adrs_hash(s0a,0);
+    memcpy(s1a,skadrs,32); adrs_chain(s1a,i+1); adrs_hash(s1a,0);
+    PRF2(pkseed,skseed,s0a,s1a,sk0,sk1);
+    memcpy(a0,adrs,32); adrs_chain(a0,i);
+    memcpy(a1,adrs,32); adrs_chain(a1,i+1);
+    chain2(tmp+i*N,sk0,a0,0,W-1, tmp+(i+1)*N,sk1,a1,0,W-1, pkseed); }
+  if(i<LEN){ adrs_chain(skadrs,i); adrs_hash(skadrs,0); PRF(pkseed,skseed,skadrs,sk);
+    adrs_chain(adrs,i); chain(tmp+i*N,sk,0,W-1,pkseed,adrs); }
+#else
   for(i=0;i<LEN;i++){ adrs_chain(skadrs,i); adrs_hash(skadrs,0); PRF(pkseed,skseed,skadrs,sk);
     adrs_chain(adrs,i); chain(tmp+i*N,sk,0,W-1,pkseed,adrs); }
+#endif
   memcpy(wpk,adrs,32); adrs_type(wpk,WOTS_PK); adrs_kp(wpk,adrs_get_kp(adrs));
   Th(pkseed,wpk,tmp,LEN*N,pk);
 }
@@ -91,13 +157,33 @@ static void wots_sign(unsigned char *sig,const unsigned char msg[N],const unsign
   unsigned int d[LEN],i; ADRS skadrs; unsigned char sk[N];
   wots_msg_digits(msg,d);
   memcpy(skadrs,adrs,32); adrs_type(skadrs,WOTS_PRF); adrs_kp(skadrs,adrs_get_kp(adrs));
+#ifdef SLH_HAVE_2WAY
+  for(i=0;i+2<=LEN;i+=2){ ADRS s0a,s1a,a0,a1; unsigned char sk0[N],sk1[N];
+    memcpy(s0a,skadrs,32); adrs_chain(s0a,i);   adrs_hash(s0a,0);
+    memcpy(s1a,skadrs,32); adrs_chain(s1a,i+1); adrs_hash(s1a,0);
+    PRF2(pkseed,skseed,s0a,s1a,sk0,sk1);
+    memcpy(a0,adrs,32); adrs_chain(a0,i);
+    memcpy(a1,adrs,32); adrs_chain(a1,i+1);
+    chain2(sig+i*N,sk0,a0,0,d[i], sig+(i+1)*N,sk1,a1,0,d[i+1], pkseed); }
+  if(i<LEN){ adrs_chain(skadrs,i); adrs_hash(skadrs,0); PRF(pkseed,skseed,skadrs,sk);
+    adrs_chain(adrs,i); chain(sig+i*N,sk,0,d[i],pkseed,adrs); }
+#else
   for(i=0;i<LEN;i++){ adrs_chain(skadrs,i); adrs_hash(skadrs,0); PRF(pkseed,skseed,skadrs,sk);
     adrs_chain(adrs,i); chain(sig+i*N,sk,0,d[i],pkseed,adrs); }
+#endif
 }
 static void wots_pkfromsig(unsigned char pk[N],const unsigned char *sig,const unsigned char msg[N],const unsigned char *pkseed,ADRS adrs){
   unsigned int d[LEN],i; unsigned char tmp[LEN*N]; ADRS wpk;
   wots_msg_digits(msg,d);
+#ifdef SLH_HAVE_2WAY
+  for(i=0;i+2<=LEN;i+=2){ ADRS a0,a1;
+    memcpy(a0,adrs,32); adrs_chain(a0,i);
+    memcpy(a1,adrs,32); adrs_chain(a1,i+1);
+    chain2(tmp+i*N,sig+i*N,a0,d[i],(W-1)-d[i], tmp+(i+1)*N,sig+(i+1)*N,a1,d[i+1],(W-1)-d[i+1], pkseed); }
+  if(i<LEN){ adrs_chain(adrs,i); chain(tmp+i*N,sig+i*N,d[i],(W-1)-d[i],pkseed,adrs); }
+#else
   for(i=0;i<LEN;i++){ adrs_chain(adrs,i); chain(tmp+i*N,sig+i*N,d[i],(W-1)-d[i],pkseed,adrs); }
+#endif
   memcpy(wpk,adrs,32); adrs_type(wpk,WOTS_PK); adrs_kp(wpk,adrs_get_kp(adrs));
   Th(pkseed,wpk,tmp,LEN*N,pk);
 }

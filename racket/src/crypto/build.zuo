@@ -75,6 +75,7 @@
       "rktcrypto_bn_op.S"
       "rktcrypto_bn_sqr.S"
       "rktcrypto_keccak_asm.S"
+      "rktcrypto_keccak_f2_asm.S"
       "rktcrypto_sha1_asm.S"
       "rktcrypto_md5_asm.S"
       "rktcrypto_rsa.c"
