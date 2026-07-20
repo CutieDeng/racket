@@ -6,15 +6,44 @@
 ;;   racket/bin/racket racket/src/crypto/benchmarks/crypto-benchmark.rkt
 ;;
 ;; Reports MB/s for the streaming primitives (digests, AEAD, MAC) and
-;; ops/s for the public-key and post-quantum primitives. This is the
-;; performance-acceptance instrument for the crypto milestones: it is not
-;; a pass/fail test, but a regression tripwire and a sanity check that
-;; the from-scratch code is in the right ballpark (roughly OpenSSL-class
-;; for the software paths, faster where the ARMv8 crypto extensions kick
-;; in for SHA-256 and AES).
+;; ops/s for the public-key and post-quantum primitives. Roughly
+;; OpenSSL-class for the software paths, faster where the ARMv8 crypto
+;; extensions kick in (SHA-256, AES).
+;;
+;; Performance-regression mode (the tripwire that guards the OpenSSL
+;; removal from silent throughput loss):
+;;   ... crypto-benchmark.rkt --update-baseline   ; record current numbers
+;;   ... crypto-benchmark.rkt --check             ; fail if any metric
+;;                                                ; regressed > tolerance
+;; The baseline lives next to this script as crypto-benchmark-baseline.rktd
+;; and is machine-local (absolute MB/s vary by host); --check compares a
+;; fresh run to it, so run --update-baseline once per machine/build.
 
 (require racket/crypto
-         racket/format)
+         racket/format
+         racket/runtime-path
+         racket/list)
+
+(define-runtime-path baseline-path "crypto-benchmark-baseline.rktd")
+
+;; Regression tolerance: --check fails a metric that is more than this
+;; fraction slower than baseline (0.20 = 20% slower). Loose enough to
+;; ride out normal run-to-run noise, tight enough to catch a real drop.
+(define TOLERANCE 0.20)
+
+;; CLI mode
+(define mode
+  (let ([args (current-command-line-arguments)])
+    (cond
+      [(and (positive? (vector-length args)) (equal? (vector-ref args 0) "--check")) 'check]
+      [(and (positive? (vector-length args)) (equal? (vector-ref args 0) "--update-baseline")) 'update]
+      [else 'report])))
+
+;; Every bench records (label . value); value is "higher is better" for
+;; throughput/ops, and we store the metric kind so --check knows the
+;; direction. Latency rows (ms) are lower-is-better.
+(define results '())   ; list of (vector label kind value) newest-first
+(define (record! label kind value) (set! results (cons (vector label kind value) results)))
 
 (define (now) (current-inexact-monotonic-milliseconds))
 
@@ -32,16 +61,24 @@
 (define (mb/s bytes-per-op s/op)
   (/ (/ bytes-per-op 1048576.0) s/op))
 
-(define (row label rhs) (printf "  ~a~a\n" (~a label #:min-width 34) rhs))
+(define (row label rhs) (when (eq? mode 'report) (printf "  ~a~a\n" (~a label #:min-width 34) rhs)))
 
 (define (bench-throughput label size thunk)
   (define s/op (time-per-op thunk))
+  (record! label 'higher (mb/s size s/op))
   (row label (~a (~r (mb/s size s/op) #:precision 0) " MB/s")))
 
 (define (bench-ops label thunk)
   (define s/op (time-per-op thunk))
+  (record! label 'higher (/ 1.0 s/op))
   (row label (~a (~r (/ 1.0 s/op) #:precision 0) " ops/s"
                  "  (" (~r (* s/op 1e6) #:precision 1) " us/op)")))
+
+;; latency metric (ms), lower is better
+(define (bench-latency label thunk #:min-ms [min-ms 400])
+  (define s/op (time-per-op thunk #:min-ms min-ms))
+  (record! label 'lower (* s/op 1000.0))
+  (row label (~a (~r (* s/op 1000.0) #:precision 2) " ms")))
 
 (define SIZE (* 1 1024 1024))
 (define data (make-bytes SIZE 97))
@@ -51,7 +88,8 @@
         (quotient SIZE 1048576))
 
 (printf "\n[digests]\n")
-(for ([alg '(sha1 md5 sha256 sha512 sha3-256 sha3-512 blake2b blake3)])
+(for ([alg '(sha1 md5 md4 sha256 sha512 sha3-256 sha3-512 blake2b blake3
+             ripemd160 sm3 whirlpool)])
   (bench-throughput (~a alg) SIZE (lambda () (digest-bytes alg data))))
 
 (printf "\n[MAC]\n")
@@ -69,12 +107,11 @@
                     SIZE (lambda () (aead-encrypt 'aes-256-gcm k32 (make-bytes 12 0) data))))
 
 (printf "\n[KDF]\n")
-(let ([s/op (time-per-op (lambda () (pbkdf2 'sha256 #"password" #"salt" #:iterations 10000 #:length 32)))])
-  (row "pbkdf2-hmac-sha256 (10k iters)" (~a (~r (* s/op 1000.0) #:precision 2) " ms")))
-(let ([s/op (time-per-op #:min-ms 800
-                         (lambda () (argon2id #"password" #"saltsalt" #:iterations 3
-                                              #:memory 65536 #:parallelism 1 #:length 32)))])
-  (row "argon2id (t=3, m=64MiB)" (~a (~r (* s/op 1000.0) #:precision 1) " ms")))
+(bench-latency "pbkdf2-hmac-sha256 (10k iters)"
+               (lambda () (pbkdf2 'sha256 #"password" #"salt" #:iterations 10000 #:length 32)))
+(bench-latency "argon2id (t=3, m=64MiB)" #:min-ms 800
+               (lambda () (argon2id #"password" #"saltsalt" #:iterations 3
+                                    #:memory 65536 #:parallelism 1 #:length 32)))
 
 (printf "\n[classic public key]\n")
 (let* ([a (x25519-generate-private-key)] [A (x25519-public-key a)]
@@ -108,4 +145,48 @@
   (bench-ops "x25519mlkem768 encaps" (lambda () (x25519mlkem768-encaps ek)))
   (bench-ops "x25519mlkem768 decaps" (lambda () (x25519mlkem768-decaps ct dk))))
 
-(printf "\ndone.\n")
+;; ---- regression driver ------------------------------------------------
+
+(define (results->hash) (for/hash ([r (in-list results)]) (values (vector-ref r 0) (vector-ref r 2))))
+
+(define (write-baseline!)
+  (call-with-output-file baseline-path #:exists 'replace
+    (lambda (o)
+      (write (for/list ([r (in-list (reverse results))])
+               (list (vector-ref r 0) (vector-ref r 1) (vector-ref r 2)))
+             o)
+      (newline o)))
+  (printf "\nwrote baseline: ~a metrics -> ~a\n" (length results) baseline-path))
+
+(define (check-baseline!)
+  (unless (file-exists? baseline-path)
+    (eprintf "no baseline at ~a; run --update-baseline first\n" baseline-path)
+    (exit 2))
+  (define base (with-input-from-file baseline-path read))   ; list of (label kind value)
+  (define cur (results->hash))
+  (define regressions '())
+  (printf "\n=== performance regression check (tolerance ~a%) ===\n" (inexact->exact (round (* 100 TOLERANCE))))
+  (for ([b (in-list base)])
+    (define label (car b))
+    (define kind (cadr b))
+    (define want (caddr b))
+    (define got (hash-ref cur label #f))
+    (when got
+      ;; ratio > 1 means current is better; regressed if worse than tolerance
+      (define ratio (if (eq? kind 'lower) (/ want got) (/ got want)))
+      (define regressed? (< ratio (- 1.0 TOLERANCE)))
+      (when regressed?
+        (set! regressions (cons (list label want got ratio) regressions))
+        (printf "  REGRESS ~a: baseline ~a, now ~a (~a% of baseline)\n"
+                (~a label #:min-width 30) (~r want #:precision 1) (~r got #:precision 1)
+                (~r (* 100 ratio) #:precision 0)))))
+  (cond
+    [(null? regressions) (printf "  OK: no metric regressed beyond ~a%\n" (inexact->exact (round (* 100 TOLERANCE))))]
+    [else
+     (printf "  ~a metric(s) regressed\n" (length regressions))
+     (exit 1)]))
+
+(case mode
+  [(update) (write-baseline!)]
+  [(check)  (check-baseline!)]
+  [else     (printf "\ndone.\n")])
