@@ -106,6 +106,14 @@
                               #:client-ctx (ssl-make-client-context 'tls13)
                               #:payload-size (* 1024 1024))))
 
+     ;; 3b. tls-exporter channel binding is available and 32 bytes.
+     (check! "tls-exporter channel binding"
+             (let ([ci (loopback #:server-ctx (server-ctx-with-test-cert)
+                                 #:client-ctx (ssl-make-client-context 'tls13))])
+               (and (port? ci)
+                    (let ([cb (ssl-channel-binding ci 'tls-exporter)])
+                      (and (bytes? cb) (= 32 (bytes-length cb)))))))
+
      ;; 4. Verified loopback: client trusts the test cert as a root and
      ;;    checks the hostname (test.pem CN=lambda).
      (let ([cc (ssl-make-client-context 'tls13)])

@@ -27,7 +27,8 @@
          (struct-out tls-conn)
          tls-conn-read-bytes
          tls-conn-write-bytes
-         tls-conn-close-notify)
+         tls-conn-close-notify
+         tls-conn-channel-binding)
 
 ;; ---- byte building ----
 (define (u8 n) (bytes n))
@@ -248,10 +249,11 @@
 ;;   shut : (-> void)                 write close_notify
 (struct tls-conn (recv send shut
                   rbuf closed
-                  alpn peer-certs protocol) #:mutable)
+                  alpn peer-certs protocol
+                  binding) #:mutable)   ; binding: hash for channel binding, or #f
 
 ;; Build the 1.3 tls-conn from an installed record layer.
-(define (tls13-make-conn r alpn peer-certs)
+(define (tls13-make-conn r alpn peer-certs [binding #f])
   (define (recv)
     (let loop ()
       (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
@@ -269,7 +271,7 @@
         (rl-write-record r 23 (subbytes bs off (+ off chunk)))
         (loop (+ off chunk)))))
   (define (shut) (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 1 0))))
-  (tls-conn recv send shut #"" #f alpn peer-certs 'tls1.3))
+  (tls-conn recv send shut #"" #f alpn peer-certs 'tls1.3 binding))
 
 ;; Reads up to `n` application bytes; returns bytes or eof.
 (define (tls-conn-read-bytes c n)
@@ -294,9 +296,35 @@
   (unless (tls-conn-closed c)
     ((tls-conn-shut c))
     (set-tls-conn-closed! c #t)))
+
+;; Channel binding (RFC 9266 tls-exporter, plus tls-server-end-point).
+;; Returns bytes, or raises if unavailable for this connection/kind.
+(define (tls-conn-channel-binding c kind)
+  (define b (tls-conn-binding c))
+  (case kind
+    [(tls-exporter)
+     (unless (and b (hash-ref b 'exporter-master #f))
+       (raise (tls-error "tls-exporter channel binding unavailable")))
+     (tls13-exporter (hash-ref b 'alg) (hash-ref b 'exporter-master)
+                     #"EXPORTER-Channel-Binding" #"" 32)]
+    [(tls-server-end-point)
+     (define certs (tls-conn-peer-certs c))
+     (unless (pair? certs) (raise (tls-error "no peer certificate for tls-server-end-point")))
+     ;; hash of the DER leaf (SHA-256; sufficient for RFC 5929 in practice)
+     (digest SHA256 (car certs))]
+    [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
-(define (make-tls-conn recv send shut peer-ders protocol)
-  (tls-conn recv send shut #"" #f #f peer-ders protocol))
+(define (make-tls-conn recv send shut peer-ders protocol [binding #f])
+  (tls-conn recv send shut #"" #f #f peer-ders protocol binding))
+
+;; TLS 1.3 exporter (RFC 8446 sec 7.5) for channel binding (RFC 9266).
+;;   exporter_secret = Derive-Secret(exporter_master, label, "")
+;;   output = HKDF-Expand-Label(exporter_secret, "exporter", Hash(context), len)
+(define (tls13-exporter alg exporter-master label context len)
+  (define hl (digest-size alg))
+  (define es (derive-secret alg exporter-master label (digest alg #"")))
+  (expand-label alg es #"exporter" (digest alg context) len))
+(provide tls13-exporter)
 
 (provide tls13-make-conn make-tls-conn
          (struct-out rl) make-rl rl-read-record rl-write-record
@@ -488,7 +516,9 @@
     (verify-chain-and-host (unbox peer-certs) host anchors))
   ;; compute application secrets (transcript up to server Finished)
   (ks-master! k)
-  (ks-ap-traffic! k (tr-hash tr))
+  (define th-sfin (tr-hash tr))
+  (ks-ap-traffic! k th-sfin)
+  (define exporter-master (derive-secret alg (ks-master k) #"exp master" th-sfin))
   ;; send client Finished under handshake write keys
   (rl-set-write-key! r aead ckey civ)
   ;; middlebox-compat CCS (plaintext) is optional; skip.
@@ -500,7 +530,8 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-read-key! r aead sapk sapiv)
   (rl-set-write-key! r aead capk capiv)
-  (tls13-make-conn r (unbox selected-alpn) (unbox peer-certs)))
+  (tls13-make-conn r (unbox selected-alpn) (unbox peer-certs)
+                   (hash 'alg alg 'exporter-master exporter-master)))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -582,8 +613,6 @@
     [else #f]))
 
 (define (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite)
-  (define cert-ders (hash-ref opts 'cert-ders))
-  (define key (hash-ref opts 'key))
   (define our-alpn (hash-ref opts 'alpn '()))
   (define-values (alg aead klen ilen dname) (suite-params suite))
   (define tr (make-transcript alg))
@@ -595,6 +624,11 @@
   (define peer-pub (cdr (assoc chosen offered)))
   ;; SNI + ALPN from client
   (define sni (let ([e (assoc #x0000 ch-exts)]) (and e (parse-sni (cdr e)))))
+  ;; Server Name Indication callback: pick the cert/key for the requested
+  ;; host. Falls back to the context's default cert when it returns #f.
+  (define sel (let ([f (hash-ref opts 'sni-select #f)]) (and f sni (f sni))))
+  (define cert-ders (if sel (car sel) (hash-ref opts 'cert-ders)))
+  (define key (if sel (cdr sel) (hash-ref opts 'key)))
   (define client-alpn (let ([e (assoc #x0010 ch-exts)]) (and e (parse-alpn-list (cdr e)))))
   (define neg-alpn (and client-alpn (for/or ([p (in-list our-alpn)]
                                              #:when (member p client-alpn)) p)))
@@ -661,7 +695,9 @@
 
   ;; application secrets (transcript through server Finished)
   (ks-master! k)
-  (ks-ap-traffic! k (tr-hash tr))
+  (define th-sfin (tr-hash tr))
+  (ks-ap-traffic! k th-sfin)
+  (define exporter-master (derive-secret alg (ks-master k) #"exp master" th-sfin))
 
   ;; read client Finished under client handshake keys
   (rl-set-read-key! r aead ckey civ)
@@ -680,7 +716,7 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-write-key! r aead sapk sapiv)
   (rl-set-read-key! r aead capk capiv)
-  (tls13-make-conn r neg-alpn '()))
+  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master)))
 
 ;; ---- server helpers ----
 (define (gen-server-share group)

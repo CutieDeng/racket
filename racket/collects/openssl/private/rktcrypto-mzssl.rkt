@@ -222,9 +222,16 @@
       [else
        (define key (cx-ref context 'private-key))
        (unless key (error/ssl "ssl-accept: server context has no private key"))
+       (define sni-cb (cx-ref context 'sni-callback))
+       (define (sni-select name)
+         (and sni-cb
+              (let ([c2 (sni-cb name)])
+                (and c2 (cx-ref c2 'private-key)
+                     (cons (cx-ref c2 'cert-ders) (cx-ref c2 'private-key))))))
        (tls13-accept i o
                      (hash 'cert-ders (cx-ref context 'cert-ders)
                            'key key
+                           'sni-select sni-select
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
                                    (if (pair? sa) sa alpn))))]))
   (define name (object-name i))
@@ -306,7 +313,9 @@
   (and leaf (string->bytes/utf-8 (name->string (certificate-issuer leaf)))))
 
 (define (ssl-channel-binding p kind)
-  (error 'ssl-channel-binding "not yet supported by the rktcrypto backend"))
+  (define obj (port-obj p))
+  (unless obj (error 'ssl-channel-binding "not an SSL port"))
+  (tls-conn-channel-binding (ssl-port-obj-conn obj) kind))
 (define (ssl-default-channel-binding p) (list 'tls-exporter (ssl-channel-binding p 'tls-exporter)))
 
 ;; ---- misc provides expected by consumers ----
