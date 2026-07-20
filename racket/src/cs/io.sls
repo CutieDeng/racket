@@ -46,7 +46,7 @@
 
   ;; ----------------------------------------
 
-  (module (|#%rktio-instance| ptr->address address->ptr)
+  (module (|#%rktio-instance| |#%rktcrypto-instance| ptr->address address->ptr)
     (meta define (convert-type t)
           (syntax-case t (ref *ref rktio_bool_t rktio_const_string_t)
             [(ref . _) #'uptr]
@@ -230,6 +230,14 @@
                                 (source-directories))])
            (#%datum->syntax #'inc `(include ,(or new-path #'path))))]))
     (include-rel "../rktio/rktio.rktl")
+
+    (define loaded-librktcrypto
+      (or (foreign-entry? "rktcrypto_system_random")
+          (load-shared-object (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                              (#%current-directory))
+                                          (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix)))))))
+
+    (include-rel "../crypto/rktcrypto.rktl")
 
     (define (rktio_filesize_ref fs)
       (ftype-ref rktio_filesize_t () (make-ftype-pointer rktio_filesize_t (ptr->address fs))))
@@ -502,7 +510,41 @@
                                  'rktio_do_install_os_signal_handler rktio_do_install_os_signal_handler
                                  'rktio_get_ctl_c_handler rktio_get_ctl_c_handler]
                                 form ...)]))
-        (include-rel "../rktio/rktio.rktl"))))
+        (include-rel "../rktio/rktio.rktl")))
+
+    (define |#%rktcrypto-instance|
+      (let ()
+        (define-syntax extract-functions
+          (syntax-rules (define-constant
+                          define-type
+                          define-struct-type
+                          define-function
+                          define-function/errno
+                          define-function/errno+step
+                          define-function/result_t
+                          define-function/alloc_result_t)
+            [(_ accum) (hasheq . accum)]
+            [(_ accum (define-constant . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-struct-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-function _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno+step _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/alloc_result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]))
+        (define-syntax begin
+          (syntax-rules ()
+            [(begin form ...)
+             (extract-functions [] form ...)]))
+        (include-rel "../crypto/rktcrypto.rktl"))))
 
   (define (immobile-cell->address p)
     (address->ptr (rumble:immobile-cell->address p)))
@@ -609,6 +651,7 @@
       [(|#%pthread|) (hasheq)]
       [(|#%thread|) |#%thread-instance|]
       [(|#%rktio|) |#%rktio-instance|]
+      [(|#%rktcrypto|) |#%rktcrypto-instance|]
       [else #f]))
 
   (include "include.ss")

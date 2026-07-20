@@ -29,6 +29,40 @@
                 (1/close-output-port close-output-port)
                 (1/complete-path? complete-path?)
                 (1/copy-file copy-file)
+                (1/crypto-aead-key-size crypto-aead-key-size)
+                (1/crypto-aead-nonce-size crypto-aead-nonce-size)
+                (1/crypto-aead-open! crypto-aead-open!)
+                (1/crypto-aead-seal! crypto-aead-seal!)
+                (1/crypto-aead-tag-size crypto-aead-tag-size)
+                (1/crypto-argon2id crypto-argon2id)
+                (1/crypto-bytes-clear! crypto-bytes-clear!)
+                (1/crypto-bytes=? crypto-bytes=?)
+                (1/crypto-digest-block-size crypto-digest-block-size)
+                (1/crypto-digest-ctx-size crypto-digest-ctx-size)
+                (1/crypto-digest-final! crypto-digest-final!)
+                (1/crypto-digest-init! crypto-digest-init!)
+                (1/crypto-digest-oneshot! crypto-digest-oneshot!)
+                (1/crypto-digest-size crypto-digest-size)
+                (1/crypto-digest-update! crypto-digest-update!)
+                (1/crypto-digest-xof? crypto-digest-xof?)
+                (1/crypto-ed25519-public-key crypto-ed25519-public-key)
+                (1/crypto-ed25519-sign crypto-ed25519-sign)
+                (1/crypto-ed25519-verify crypto-ed25519-verify)
+                (1/crypto-mldsa65-keypair crypto-mldsa65-keypair)
+                (1/crypto-mldsa65-sign crypto-mldsa65-sign)
+                (1/crypto-mldsa65-verify crypto-mldsa65-verify)
+                (1/crypto-mlkem768-decaps crypto-mlkem768-decaps)
+                (1/crypto-mlkem768-encaps crypto-mlkem768-encaps)
+                (1/crypto-mlkem768-keypair crypto-mlkem768-keypair)
+                (1/crypto-p256-ecdh crypto-p256-ecdh)
+                (1/crypto-p256-ecdsa-sign crypto-p256-ecdsa-sign)
+                (1/crypto-p256-ecdsa-verify crypto-p256-ecdsa-verify)
+                (1/crypto-p256-public-key crypto-p256-public-key)
+                (1/crypto-random-bytes! crypto-random-bytes!)
+                (1/crypto-siphash-1-3 crypto-siphash-1-3)
+                (1/crypto-siphash-2-4 crypto-siphash-2-4)
+                (1/crypto-subsystem-self-test? crypto-subsystem-self-test?)
+                (1/crypto-x25519 crypto-x25519)
                 (1/current-command-line-arguments
                  current-command-line-arguments)
                 (1/current-directory current-directory)
@@ -413,6 +447,46 @@
    'temp-dir
    '9))
 (define hash2610 (hasheq))
+(define hash2865
+  (hasheq
+   'blake2b
+   '12
+   'blake3
+   '13
+   'md4
+   '18
+   'md5
+   '15
+   'ripemd160
+   '16
+   'sha1
+   '14
+   'sha224
+   '1
+   'sha256
+   '2
+   'sha3-224
+   '6
+   'sha3-256
+   '7
+   'sha3-384
+   '8
+   'sha3-512
+   '9
+   'sha384
+   '3
+   'sha512
+   '4
+   'sha512/256
+   '5
+   'shake128
+   '10
+   'shake256
+   '11
+   'sm3
+   '17
+   'whirlpool
+   '19))
 (define hash3229
   (hasheq
    'SW_HIDE
@@ -1945,8 +2019,10 @@
       (let ((app_0 (|#%app| range-ref v_0 1)))
         (let ((app_1 (|#%app| range-ref v_0 0)))
           (values values #f app_0 app_1 (|#%app| range-ref v_0 2) #f #f))))))))
-(define check-range
-  (lambda (a_0 b_0 step_0) (check-range-generic 'in-range a_0 b_0 step_0)))
+(define check-range$1
+  (|#%name|
+   check-range
+   (lambda (a_0 b_0 step_0) (check-range-generic 'in-range a_0 b_0 step_0))))
 (define check-range-generic
   (lambda (who_0 a_0 b_0 step_0)
     (begin
@@ -2789,7 +2865,7 @@
 (define rktio-table
   (let ((or-part_0 (primitive-table '|#%rktio|)))
     (if or-part_0 or-part_0 (error '|#%rktio| "rktio not supported by host"))))
-(define lookup (lambda (n_0) (hash-ref rktio-table n_0)))
+(define lookup$1 (|#%name| lookup (lambda (n_0) (hash-ref rktio-table n_0))))
 (define << arithmetic-shift)
 (define RKTIO_OPEN_READ 1)
 (define RKTIO_OPEN_WRITE 2)
@@ -3813,34 +3889,32 @@
              (exts1.1 app_0 (if old-exts_0 (exts-fd-adders old-exts_0) #f))))
          (lambda (exts_0) (exts-timeout-at exts_0))))))
     (void)))
-(define check-range$1
-  (|#%name|
-   check-range
-   (lambda (who_0 start-pos_0 end-pos_0 max-end_0 in-value_0)
-     (begin
-       (if (> start-pos_0 max-end_0)
-         (raise-range-error
-          who_0
-          "byte string"
-          "starting "
-          start-pos_0
-          in-value_0
-          0
-          max-end_0
-          #f)
-         (void))
-       (if (let ((or-part_0 (< end-pos_0 start-pos_0)))
-             (if or-part_0 or-part_0 (> end-pos_0 max-end_0)))
-         (raise-range-error
-          who_0
-          "byte string"
-          "ending "
-          end-pos_0
-          in-value_0
-          start-pos_0
-          max-end_0
-          0)
-         (void))))))
+(define check-range
+  (lambda (who_0 start-pos_0 end-pos_0 max-end_0 in-value_0)
+    (begin
+      (if (> start-pos_0 max-end_0)
+        (raise-range-error
+         who_0
+         "byte string"
+         "starting "
+         start-pos_0
+         in-value_0
+         0
+         max-end_0
+         #f)
+        (void))
+      (if (let ((or-part_0 (< end-pos_0 start-pos_0)))
+            (if or-part_0 or-part_0 (> end-pos_0 max-end_0)))
+        (raise-range-error
+         who_0
+         "byte string"
+         "ending "
+         end-pos_0
+         in-value_0
+         start-pos_0
+         max-end_0
+         0)
+        (void)))))
 (define check-immutable-field
   (lambda (who_0 v_0 sti_0)
     (if (exact-integer? v_0)
@@ -5542,7 +5616,7 @@
                          "exact-nonnegative-integer?"
                          end_0))
                       (begin
-                        (check-range$1
+                        (check-range
                          'bytes->string/latin-1
                          start2_0
                          end_0
@@ -5598,7 +5672,7 @@
        (if (exact-nonnegative-integer? end11_0)
          (void)
          (raise-argument-error who7_0 "exact-nonnegative-integer?" end11_0))
-       (check-range$1
+       (check-range
         who7_0
         start10_0
         end11_0
@@ -5720,7 +5794,7 @@
                   "exact-nonnegative-integer?"
                   end28_0))
                (begin
-                 (check-range$1
+                 (check-range
                   who23_0
                   start27_0
                   end28_0
@@ -5881,7 +5955,7 @@
                          "exact-nonnegative-integer?"
                          end_0))
                       (begin
-                        (check-range$1
+                        (check-range
                          'string->bytes/latin-1
                          start41_0
                          end_0
@@ -5960,7 +6034,7 @@
                 "exact-nonnegative-integer?"
                 end50_0))
              (begin
-               (check-range$1
+               (check-range
                 who46_0
                 start49_0
                 end50_0
@@ -12802,7 +12876,7 @@
                      'read-bytes!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'read-bytes!
                    start-pos5_0
                    end-pos_0
@@ -12854,7 +12928,7 @@
           who12_0
           "exact-nonnegative-integer?"
           end-pos16_0))
-       (check-range$1
+       (check-range
         who12_0
         start-pos15_0
         end-pos16_0
@@ -13136,7 +13210,7 @@
                      'peek-bytes!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'peek-bytes!
                    start-pos36_0
                    end-pos_0
@@ -13209,7 +13283,7 @@
        (if progress-evt47_0
          (check-progress-evt who44_0 progress-evt47_0 in48_0)
          (void))
-       (check-range$1
+       (check-range
         who44_0
         start-pos49_0
         end-pos50_0
@@ -13875,7 +13949,7 @@
                      'read-string!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'read-string!
                    start-pos45_0
                    end-pos_0
@@ -14046,7 +14120,7 @@
                      'peek-string!
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'peek-string!
                    start-pos69_0
                    end-pos_0
@@ -14692,7 +14766,7 @@
               'write-bytes
               "exact-nonnegative-integer?"
               end-pos_0))
-           (check-range$1
+           (check-range
             'write-bytes
             start-pos_0
             end-pos_0
@@ -14736,7 +14810,7 @@
           who7_0
           "exact-nonnegative-integer?"
           end-pos11_0))
-       (check-range$1
+       (check-range
         who7_0
         start-pos10_0
         end-pos11_0
@@ -14899,7 +14973,7 @@
                      'write-bytes-avail-evt
                      "exact-nonnegative-integer?"
                      end-pos_0))
-                  (check-range$1
+                  (check-range
                    'write-bytes-avail-evt
                    start-pos26_0
                    end-pos_0
@@ -15053,7 +15127,7 @@
                          'write-string
                          "exact-nonnegative-integer?"
                          end_0))
-                      (check-range$1
+                      (check-range
                        'write-string
                        start4_0
                        end_0
@@ -16878,7 +16952,7 @@
                      'bytes-convert
                      "(or/c #f exact-nonnegative-integer?)"
                      dest-end-pos_0))
-                  (check-range$1
+                  (check-range
                    'bytes-convert
                    src-start-pos2_0
                    src-end-pos_0
@@ -17057,7 +17131,7 @@
   (lambda (who_0 dest-bstr_0 dest-start-pos_0 dest-end-pos_0)
     (if dest-bstr_0
       (let ((len_0 (unsafe-bytes-length dest-bstr_0)))
-        (check-range$1
+        (check-range
          who_0
          dest-start-pos_0
          (if dest-end-pos_0 dest-end-pos_0 len_0)
@@ -17509,7 +17583,7 @@
                    'string->bytes/locale
                    "exact-nonnegative-integer?"
                    end_0))
-                (check-range$1
+                (check-range
                  'string->bytes/locale
                  start2_0
                  end_0
@@ -17616,7 +17690,7 @@
                    'bytes->string/locale
                    "exact-nonnegative-integer?"
                    end_0))
-                (check-range$1
+                (check-range
                  'bytes->string/locale
                  start6_0
                  end_0
@@ -35247,6 +35321,1112 @@
                        (loop_0 start_0)))))
                 (let ((bstr_0 (make-bytes sz_0)))
                   (begin (|#%app| final_0 p_0 bstr_0) bstr_0))))))))))
+(define rktcrypto-table
+  (let ((or-part_0 (primitive-table '|#%rktcrypto|)))
+    (if or-part_0
+      or-part_0
+      (error '|#%rktcrypto| "rktcrypto not supported by host"))))
+(define lookup (lambda (n_0) (hash-ref rktcrypto-table n_0)))
+(define RKTCRYPTO_SHA_1878 1)
+(define RKTCRYPTO_SHA_2901 2)
+(define RKTCRYPTO_SHA_2914 3)
+(define RKTCRYPTO_SHA_2265 4)
+(define RKTCRYPTO_SHA512__2376 5)
+(define RKTCRYPTO_SHA3__2713 6)
+(define RKTCRYPTO_SHA3__2258 7)
+(define RKTCRYPTO_SHA3__3133 8)
+(define RKTCRYPTO_SHA3__2332 9)
+(define RKTCRYPTO_SHAKE_2592 10)
+(define RKTCRYPTO_SHAKE_2204 11)
+(define RKTCRYPTO_BLAKE2B 12)
+(define RKTCRYPTO_BLAKE_2626 13)
+(define RKTCRYPTO_SHA_2988 14)
+(define RKTCRYPTO_MD_2131 15)
+(define RKTCRYPTO_RIPEMD_2148 16)
+(define RKTCRYPTO_SM_1952 17)
+(define RKTCRYPTO_MD_2026 18)
+(define RKTCRYPTO_WHIRLPOOL 19)
+(define RKTCRYPTO_AEAD_CHACHA20_POLY_1878 1)
+(define RKTCRYPTO_AEAD_XCHACHA20_POLY_2901 2)
+(define RKTCRYPTO_AEAD_AES256_GCM 3)
+(define rktcrypto_system_random
+  (hash-ref rktcrypto-table 'rktcrypto_system_random))
+(define rktcrypto_random_bytes
+  (hash-ref rktcrypto-table 'rktcrypto_random_bytes))
+(define rktcrypto_ct_bytes_equal
+  (hash-ref rktcrypto-table 'rktcrypto_ct_bytes_equal))
+(define rktcrypto_secure_clear
+  (hash-ref rktcrypto-table 'rktcrypto_secure_clear))
+(define rktcrypto_digest_ctx_size
+  (hash-ref rktcrypto-table 'rktcrypto_digest_ctx_size))
+(define rktcrypto_digest_size
+  (hash-ref rktcrypto-table 'rktcrypto_digest_size))
+(define rktcrypto_digest_block_size
+  (hash-ref rktcrypto-table 'rktcrypto_digest_block_size))
+(define rktcrypto_digest_is_xof
+  (hash-ref rktcrypto-table 'rktcrypto_digest_is_xof))
+(define rktcrypto_digest_init
+  (hash-ref rktcrypto-table 'rktcrypto_digest_init))
+(define rktcrypto_digest_update
+  (hash-ref rktcrypto-table 'rktcrypto_digest_update))
+(define rktcrypto_digest_final
+  (hash-ref rktcrypto-table 'rktcrypto_digest_final))
+(define rktcrypto_digest_oneshot
+  (hash-ref rktcrypto-table 'rktcrypto_digest_oneshot))
+(define rktcrypto_aead_key_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_key_size))
+(define rktcrypto_aead_nonce_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_nonce_size))
+(define rktcrypto_aead_tag_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_tag_size))
+(define rktcrypto_aead_seal (hash-ref rktcrypto-table 'rktcrypto_aead_seal))
+(define rktcrypto_aead_open (hash-ref rktcrypto-table 'rktcrypto_aead_open))
+(define rktcrypto_argon2id (hash-ref rktcrypto-table 'rktcrypto_argon2id))
+(define rktcrypto_x25519 (hash-ref rktcrypto-table 'rktcrypto_x25519))
+(define rktcrypto_ed25519_pubkey
+  (hash-ref rktcrypto-table 'rktcrypto_ed25519_pubkey))
+(define rktcrypto_ed25519_sign
+  (hash-ref rktcrypto-table 'rktcrypto_ed25519_sign))
+(define rktcrypto_ed25519_verify
+  (hash-ref rktcrypto-table 'rktcrypto_ed25519_verify))
+(define rktcrypto_p256_pubkey
+  (hash-ref rktcrypto-table 'rktcrypto_p256_pubkey))
+(define rktcrypto_p256_ecdh (hash-ref rktcrypto-table 'rktcrypto_p256_ecdh))
+(define rktcrypto_p256_ecdsa_sign
+  (hash-ref rktcrypto-table 'rktcrypto_p256_ecdsa_sign))
+(define rktcrypto_p256_ecdsa_verify
+  (hash-ref rktcrypto-table 'rktcrypto_p256_ecdsa_verify))
+(define rktcrypto_siphash (hash-ref rktcrypto-table 'rktcrypto_siphash))
+(define rktcrypto_mlkem768_keypair
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_keypair))
+(define rktcrypto_mlkem768_encaps
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_encaps))
+(define rktcrypto_mlkem768_decaps
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_decaps))
+(define rktcrypto_mlkem768_keypair_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_keypair_derand))
+(define rktcrypto_mlkem768_enc_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mlkem768_enc_derand))
+(define rktcrypto_mldsa65_keypair
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_keypair))
+(define rktcrypto_mldsa65_sign
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_sign))
+(define rktcrypto_mldsa65_verify
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_verify))
+(define rktcrypto_mldsa65_keypair_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_keypair_derand))
+(define rktcrypto_mldsa65_sign_derand
+  (hash-ref rktcrypto-table 'rktcrypto_mldsa65_sign_derand))
+(define rktcrypto_selftest_core
+  (hash-ref rktcrypto-table 'rktcrypto_selftest_core))
+(define mutable-bytes-contract "(and/c bytes? (not/c immutable?))")
+(define check-mutable-bytes
+  (lambda (who_0 bstr_0)
+    (if (if (bytes? bstr_0) (not (immutable? bstr_0)) #f)
+      (void)
+      (raise-argument-error who_0 mutable-bytes-contract bstr_0))))
+(define check-start/end
+  (lambda (who_0 bstr_0 start_0 end_0)
+    (begin
+      (if (exact-nonnegative-integer? start_0)
+        (void)
+        (raise-argument-error who_0 "exact-nonnegative-integer?" start_0))
+      (if (exact-nonnegative-integer? end_0)
+        (void)
+        (raise-argument-error who_0 "exact-nonnegative-integer?" end_0))
+      (check-range who_0 start_0 end_0 (unsafe-bytes-length bstr_0) bstr_0))))
+(define 1/crypto-random-bytes!
+  (let ((crypto-random-bytes!_0
+         (|#%name|
+          crypto-random-bytes!
+          (lambda (bstr3_0 start1_0 end2_0)
+            (let ((end_0
+                   (if (eq? end2_0 unsafe-undefined)
+                     (if (bytes? bstr3_0) (unsafe-bytes-length bstr3_0) #f)
+                     end2_0)))
+              (begin
+                (check-mutable-bytes 'crypto-random-bytes! bstr3_0)
+                (check-start/end 'crypto-random-bytes! bstr3_0 start1_0 end_0)
+                (if (eqv?
+                     1
+                     (|#%app| rktcrypto_random_bytes bstr3_0 start1_0 end_0))
+                  (void)
+                  (raise
+                   (let ((app_0
+                          (string-append
+                           (symbol->string 'crypto-random-bytes!)
+                           ": system entropy source is unavailable")))
+                     (|#%app| exn:fail app_0 (current-continuation-marks)))))
+                (void)))))))
+    (|#%name|
+     crypto-random-bytes!
+     (case-lambda
+      ((bstr_0) (crypto-random-bytes!_0 bstr_0 0 unsafe-undefined))
+      ((bstr_0 start_0 end2_0) (crypto-random-bytes!_0 bstr_0 start_0 end2_0))
+      ((bstr_0 start1_0)
+       (crypto-random-bytes!_0 bstr_0 start1_0 unsafe-undefined))))))
+(define 1/crypto-bytes=?
+  (|#%name|
+   crypto-bytes=?
+   (lambda (a_0 b_0)
+     (begin
+       (if (bytes? a_0)
+         (void)
+         (raise-argument-error 'crypto-bytes=? "bytes?" a_0))
+       (if (bytes? b_0)
+         (void)
+         (raise-argument-error 'crypto-bytes=? "bytes?" b_0))
+       (if (eqv? (unsafe-bytes-length a_0) (unsafe-bytes-length b_0))
+         (eqv?
+          1
+          (|#%app|
+           rktcrypto_ct_bytes_equal
+           a_0
+           0
+           b_0
+           0
+           (unsafe-bytes-length a_0)))
+         #f)))))
+(define 1/crypto-bytes-clear!
+  (let ((crypto-bytes-clear!_0
+         (|#%name|
+          crypto-bytes-clear!
+          (lambda (bstr6_0 start4_0 end5_0)
+            (let ((end_0
+                   (if (eq? end5_0 unsafe-undefined)
+                     (if (bytes? bstr6_0) (unsafe-bytes-length bstr6_0) #f)
+                     end5_0)))
+              (begin
+                (check-mutable-bytes 'crypto-bytes-clear! bstr6_0)
+                (check-start/end 'crypto-bytes-clear! bstr6_0 start4_0 end_0)
+                (|#%app| rktcrypto_secure_clear bstr6_0 start4_0 end_0)))))))
+    (|#%name|
+     crypto-bytes-clear!
+     (case-lambda
+      ((bstr_0) (crypto-bytes-clear!_0 bstr_0 0 unsafe-undefined))
+      ((bstr_0 start_0 end5_0) (crypto-bytes-clear!_0 bstr_0 start_0 end5_0))
+      ((bstr_0 start4_0)
+       (crypto-bytes-clear!_0 bstr_0 start4_0 unsafe-undefined))))))
+(define 1/crypto-subsystem-self-test?
+  (|#%name|
+   crypto-subsystem-self-test?
+   (lambda () (eqv? 1 (|#%app| rktcrypto_selftest_core)))))
+(define alg->id
+  (lambda (who_0 alg_0)
+    (let ((index_0
+           (if (symbol? alg_0) (hash-ref hash2865 alg_0 (lambda () 0)) 0)))
+      (if (unsafe-fx< index_0 9)
+        (if (unsafe-fx< index_0 4)
+          (if (unsafe-fx< index_0 1)
+            (raise-argument-error who_0 "crypto-digest-algorithm/c" alg_0)
+            (if (unsafe-fx< index_0 2) 1 (if (unsafe-fx< index_0 3) 2 3)))
+          (if (unsafe-fx< index_0 6)
+            (if (unsafe-fx< index_0 5) 4 5)
+            (if (unsafe-fx< index_0 7) 6 (if (unsafe-fx< index_0 8) 7 8))))
+        (if (unsafe-fx< index_0 14)
+          (if (unsafe-fx< index_0 11)
+            (if (unsafe-fx< index_0 10) 9 10)
+            (if (unsafe-fx< index_0 12) 11 (if (unsafe-fx< index_0 13) 12 13)))
+          (if (unsafe-fx< index_0 16)
+            (if (unsafe-fx< index_0 15) 14 15)
+            (if (unsafe-fx< index_0 17)
+              16
+              (if (unsafe-fx< index_0 18)
+                17
+                (if (unsafe-fx< index_0 19) 18 19)))))))))
+(define 1/crypto-digest-ctx-size
+  (|#%name|
+   crypto-digest-ctx-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_digest_ctx_size
+      (alg->id 'crypto-digest-ctx-size alg_0)))))
+(define 1/crypto-digest-size
+  (|#%name|
+   crypto-digest-size
+   (lambda (alg_0)
+     (|#%app| rktcrypto_digest_size (alg->id 'crypto-digest-size alg_0)))))
+(define 1/crypto-digest-block-size
+  (|#%name|
+   crypto-digest-block-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_digest_block_size
+      (alg->id 'crypto-digest-block-size alg_0)))))
+(define 1/crypto-digest-xof?
+  (|#%name|
+   crypto-digest-xof?
+   (lambda (alg_0)
+     (eqv?
+      1
+      (|#%app| rktcrypto_digest_is_xof (alg->id 'crypto-digest-xof? alg_0))))))
+(define check-ctx
+  (lambda (who_0 ctx_0 alg-id_0)
+    (begin
+      (check-mutable-bytes who_0 ctx_0)
+      (let ((need_0 (|#%app| rktcrypto_digest_ctx_size alg-id_0)))
+        (if (>= (unsafe-bytes-length ctx_0) need_0)
+          (void)
+          (raise-arguments-error
+           who_0
+           "digest context byte string is too small"
+           "given"
+           (unsafe-bytes-length ctx_0)
+           "required"
+           need_0))))))
+(define fail-digest
+  (lambda (who_0)
+    (raise
+     (let ((app_0
+            (string-append
+             (symbol->string who_0)
+             ": digest operation failed")))
+       (|#%app| exn:fail app_0 (current-continuation-marks))))))
+(define 1/crypto-digest-init!
+  (let ((crypto-digest-init!_0
+         (|#%name|
+          crypto-digest-init!
+          (lambda (alg8_0 ctx9_0 outlen7_0)
+            (let ((id_0 (alg->id 'crypto-digest-init! alg8_0)))
+              (begin
+                (check-ctx 'crypto-digest-init! ctx9_0 id_0)
+                (if (exact-nonnegative-integer? outlen7_0)
+                  (void)
+                  (raise-argument-error
+                   'crypto-digest-init!
+                   "exact-nonnegative-integer?"
+                   outlen7_0))
+                (if (eqv?
+                     1
+                     (|#%app|
+                      rktcrypto_digest_init
+                      id_0
+                      ctx9_0
+                      (unsafe-bytes-length ctx9_0)
+                      outlen7_0))
+                  (void)
+                  (fail-digest 'crypto-digest-init!))
+                (void)))))))
+    (|#%name|
+     crypto-digest-init!
+     (case-lambda
+      ((alg_0 ctx_0) (crypto-digest-init!_0 alg_0 ctx_0 0))
+      ((alg_0 ctx_0 outlen7_0)
+       (crypto-digest-init!_0 alg_0 ctx_0 outlen7_0))))))
+(define 1/crypto-digest-update!
+  (let ((crypto-digest-update!_0
+         (|#%name|
+          crypto-digest-update!
+          (lambda (alg12_0 ctx13_0 data14_0 start10_0 end11_0)
+            (let ((end_0
+                   (if (eq? end11_0 unsafe-undefined)
+                     (if (bytes? data14_0) (unsafe-bytes-length data14_0) #f)
+                     end11_0)))
+              (let ((id_0 (alg->id 'crypto-digest-update! alg12_0)))
+                (begin
+                  (check-ctx 'crypto-digest-update! ctx13_0 id_0)
+                  (if (bytes? data14_0)
+                    (void)
+                    (raise-argument-error
+                     'crypto-digest-update!
+                     "bytes?"
+                     data14_0))
+                  (check-start/end
+                   'crypto-digest-update!
+                   data14_0
+                   start10_0
+                   end_0)
+                  (if (eqv?
+                       1
+                       (|#%app|
+                        rktcrypto_digest_update
+                        id_0
+                        ctx13_0
+                        (unsafe-bytes-length ctx13_0)
+                        data14_0
+                        start10_0
+                        end_0))
+                    (void)
+                    (fail-digest 'crypto-digest-update!))
+                  (void))))))))
+    (|#%name|
+     crypto-digest-update!
+     (case-lambda
+      ((alg_0 ctx_0 data_0)
+       (crypto-digest-update!_0 alg_0 ctx_0 data_0 0 unsafe-undefined))
+      ((alg_0 ctx_0 data_0 start_0 end11_0)
+       (crypto-digest-update!_0 alg_0 ctx_0 data_0 start_0 end11_0))
+      ((alg_0 ctx_0 data_0 start10_0)
+       (crypto-digest-update!_0
+        alg_0
+        ctx_0
+        data_0
+        start10_0
+        unsafe-undefined))))))
+(define 1/crypto-digest-final!
+  (let ((crypto-digest-final!_0
+         (|#%name|
+          crypto-digest-final!
+          (lambda (alg17_0 ctx18_0 out19_0 out-start15_0 out-len16_0)
+            (let ((out-len_0
+                   (if (eq? out-len16_0 unsafe-undefined)
+                     (if (bytes? out19_0)
+                       (- (unsafe-bytes-length out19_0) out-start15_0)
+                       #f)
+                     out-len16_0)))
+              (let ((id_0 (alg->id 'crypto-digest-final! alg17_0)))
+                (begin
+                  (check-ctx 'crypto-digest-final! ctx18_0 id_0)
+                  (check-mutable-bytes 'crypto-digest-final! out19_0)
+                  (if (exact-nonnegative-integer? out-start15_0)
+                    (void)
+                    (raise-argument-error
+                     'crypto-digest-final!
+                     "exact-nonnegative-integer?"
+                     out-start15_0))
+                  (if (exact-nonnegative-integer? out-len_0)
+                    (void)
+                    (raise-argument-error
+                     'crypto-digest-final!
+                     "exact-nonnegative-integer?"
+                     out-len_0))
+                  (let ((app_0 (+ out-start15_0 out-len_0)))
+                    (check-range
+                     'crypto-digest-final!
+                     out-start15_0
+                     app_0
+                     (unsafe-bytes-length out19_0)
+                     out19_0))
+                  (if (eqv?
+                       1
+                       (|#%app|
+                        rktcrypto_digest_final
+                        id_0
+                        ctx18_0
+                        (unsafe-bytes-length ctx18_0)
+                        out19_0
+                        out-start15_0
+                        out-len_0))
+                    (void)
+                    (fail-digest 'crypto-digest-final!))
+                  (void))))))))
+    (|#%name|
+     crypto-digest-final!
+     (case-lambda
+      ((alg_0 ctx_0 out_0)
+       (crypto-digest-final!_0 alg_0 ctx_0 out_0 0 unsafe-undefined))
+      ((alg_0 ctx_0 out_0 out-start_0 out-len16_0)
+       (crypto-digest-final!_0 alg_0 ctx_0 out_0 out-start_0 out-len16_0))
+      ((alg_0 ctx_0 out_0 out-start15_0)
+       (crypto-digest-final!_0
+        alg_0
+        ctx_0
+        out_0
+        out-start15_0
+        unsafe-undefined))))))
+(define 1/crypto-digest-oneshot!
+  (|#%name|
+   crypto-digest-oneshot!
+   (lambda (alg_0 data_0 data-start_0 data-end_0 out_0 out-start_0 out-len_0)
+     (let ((id_0 (alg->id 'crypto-digest-oneshot! alg_0)))
+       (begin
+         (if (bytes? data_0)
+           (void)
+           (raise-argument-error 'crypto-digest-oneshot! "bytes?" data_0))
+         (check-start/end
+          'crypto-digest-oneshot!
+          data_0
+          data-start_0
+          data-end_0)
+         (check-mutable-bytes 'crypto-digest-oneshot! out_0)
+         (if (exact-nonnegative-integer? out-start_0)
+           (void)
+           (raise-argument-error
+            'crypto-digest-oneshot!
+            "exact-nonnegative-integer?"
+            out-start_0))
+         (if (exact-nonnegative-integer? out-len_0)
+           (void)
+           (raise-argument-error
+            'crypto-digest-oneshot!
+            "exact-nonnegative-integer?"
+            out-len_0))
+         (let ((app_0 (+ out-start_0 out-len_0)))
+           (check-range
+            'crypto-digest-oneshot!
+            out-start_0
+            app_0
+            (unsafe-bytes-length out_0)
+            out_0))
+         (if (eqv?
+              1
+              (|#%app|
+               rktcrypto_digest_oneshot
+               id_0
+               data_0
+               data-start_0
+               data-end_0
+               out_0
+               out-start_0
+               out-len_0))
+           (void)
+           (fail-digest 'crypto-digest-oneshot!))
+         (void))))))
+(define aead-alg->id
+  (lambda (who_0 alg_0)
+    (if (eq? alg_0 'chacha20-poly1305)
+      1
+      (if (eq? alg_0 'xchacha20-poly1305)
+        2
+        (if (eq? alg_0 'aes-256-gcm)
+          3
+          (raise-argument-error who_0 "crypto-aead-algorithm/c" alg_0))))))
+(define 1/crypto-aead-key-size
+  (|#%name|
+   crypto-aead-key-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_aead_key_size
+      (aead-alg->id 'crypto-aead-key-size alg_0)))))
+(define 1/crypto-aead-nonce-size
+  (|#%name|
+   crypto-aead-nonce-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_aead_nonce_size
+      (aead-alg->id 'crypto-aead-nonce-size alg_0)))))
+(define 1/crypto-aead-tag-size
+  (|#%name|
+   crypto-aead-tag-size
+   (lambda (alg_0)
+     (|#%app|
+      rktcrypto_aead_tag_size
+      (aead-alg->id 'crypto-aead-tag-size alg_0)))))
+(define check-aead-key/nonce
+  (lambda (who_0 id_0 key_0 nonce_0)
+    (begin
+      (if (bytes? key_0) (void) (raise-argument-error who_0 "bytes?" key_0))
+      (if (bytes? nonce_0)
+        (void)
+        (raise-argument-error who_0 "bytes?" nonce_0))
+      (if (eqv?
+           (unsafe-bytes-length key_0)
+           (|#%app| rktcrypto_aead_key_size id_0))
+        (void)
+        (raise-arguments-error
+         who_0
+         "wrong key size"
+         "given"
+         (unsafe-bytes-length key_0)
+         "required"
+         (|#%app| rktcrypto_aead_key_size id_0)))
+      (if (eqv?
+           (unsafe-bytes-length nonce_0)
+           (|#%app| rktcrypto_aead_nonce_size id_0))
+        (void)
+        (raise-arguments-error
+         who_0
+         "wrong nonce size"
+         "given"
+         (unsafe-bytes-length nonce_0)
+         "required"
+         (|#%app| rktcrypto_aead_nonce_size id_0))))))
+(define 1/crypto-aead-seal!
+  (|#%name|
+   crypto-aead-seal!
+   (lambda (alg_0 key_0 nonce_0 aad_0 pt_0 out_0)
+     (let ((id_0 (aead-alg->id 'crypto-aead-seal! alg_0)))
+       (begin
+         (check-aead-key/nonce 'crypto-aead-seal! id_0 key_0 nonce_0)
+         (begin
+           (if (bytes? aad_0)
+             (void)
+             (raise-argument-error 'crypto-aead-seal! "bytes?" aad_0))
+           (begin
+             (if (bytes? pt_0)
+               (void)
+               (raise-argument-error 'crypto-aead-seal! "bytes?" pt_0))
+             (begin
+               (check-mutable-bytes 'crypto-aead-seal! out_0)
+               (let ((need_0
+                      (+
+                       (unsafe-bytes-length pt_0)
+                       (|#%app| rktcrypto_aead_tag_size id_0))))
+                 (begin
+                   (if (>= (unsafe-bytes-length out_0) need_0)
+                     (void)
+                     (raise-arguments-error
+                      'crypto-aead-seal!
+                      "output byte string is too small"
+                      "given"
+                      (unsafe-bytes-length out_0)
+                      "required"
+                      need_0))
+                   (if (eqv?
+                        1
+                        (|#%app|
+                         rktcrypto_aead_seal
+                         id_0
+                         key_0
+                         (unsafe-bytes-length key_0)
+                         nonce_0
+                         (unsafe-bytes-length nonce_0)
+                         aad_0
+                         0
+                         (unsafe-bytes-length aad_0)
+                         pt_0
+                         0
+                         (unsafe-bytes-length pt_0)
+                         out_0
+                         0))
+                     (void)
+                     (fail-digest 'crypto-aead-seal!))
+                   (void)))))))))))
+(define 1/crypto-aead-open!
+  (|#%name|
+   crypto-aead-open!
+   (lambda (alg_0 key_0 nonce_0 aad_0 ct_0 out_0)
+     (let ((id_0 (aead-alg->id 'crypto-aead-open! alg_0)))
+       (begin
+         (check-aead-key/nonce 'crypto-aead-open! id_0 key_0 nonce_0)
+         (begin
+           (if (bytes? aad_0)
+             (void)
+             (raise-argument-error 'crypto-aead-open! "bytes?" aad_0))
+           (begin
+             (if (bytes? ct_0)
+               (void)
+               (raise-argument-error 'crypto-aead-open! "bytes?" ct_0))
+             (begin
+               (check-mutable-bytes 'crypto-aead-open! out_0)
+               (let ((tagsz_0 (|#%app| rktcrypto_aead_tag_size id_0)))
+                 (if (< (unsafe-bytes-length ct_0) tagsz_0)
+                   #f
+                   (let ((need_0 (- (unsafe-bytes-length ct_0) tagsz_0)))
+                     (begin
+                       (if (>= (unsafe-bytes-length out_0) need_0)
+                         (void)
+                         (raise-arguments-error
+                          'crypto-aead-open!
+                          "output byte string is too small"
+                          "given"
+                          (unsafe-bytes-length out_0)
+                          "required"
+                          need_0))
+                       (eqv?
+                        1
+                        (|#%app|
+                         rktcrypto_aead_open
+                         id_0
+                         key_0
+                         (unsafe-bytes-length key_0)
+                         nonce_0
+                         (unsafe-bytes-length nonce_0)
+                         aad_0
+                         0
+                         (unsafe-bytes-length aad_0)
+                         ct_0
+                         0
+                         (unsafe-bytes-length ct_0)
+                         out_0
+                         0))))))))))))))
+(define siphash
+  (lambda (who_0 key_0 data_0 start_0 end_0 crounds_0 drounds_0)
+    (begin
+      (if (bytes? key_0) (void) (raise-argument-error who_0 "bytes?" key_0))
+      (begin
+        (if (eqv? (unsafe-bytes-length key_0) 16)
+          (void)
+          (raise-arguments-error
+           who_0
+           "key must be 16 bytes"
+           "given"
+           (unsafe-bytes-length key_0)))
+        (begin
+          (if (bytes? data_0)
+            (void)
+            (raise-argument-error who_0 "bytes?" data_0))
+          (begin
+            (check-start/end who_0 data_0 start_0 end_0)
+            (let ((out_0 (make-bytes 8)))
+              (begin
+                (|#%app|
+                 rktcrypto_siphash
+                 key_0
+                 16
+                 crounds_0
+                 drounds_0
+                 data_0
+                 start_0
+                 end_0
+                 out_0
+                 0)
+                out_0))))))))
+(define 1/crypto-siphash-2-4
+  (let ((crypto-siphash-2-4_0
+         (|#%name|
+          crypto-siphash-2-4
+          (lambda (key22_0 data23_0 start20_0 end21_0)
+            (let ((end_0
+                   (if (eq? end21_0 unsafe-undefined)
+                     (if (bytes? data23_0) (unsafe-bytes-length data23_0) #f)
+                     end21_0)))
+              (siphash
+               'crypto-siphash-2-4
+               key22_0
+               data23_0
+               start20_0
+               end_0
+               2
+               4))))))
+    (|#%name|
+     crypto-siphash-2-4
+     (case-lambda
+      ((key_0 data_0) (crypto-siphash-2-4_0 key_0 data_0 0 unsafe-undefined))
+      ((key_0 data_0 start_0 end21_0)
+       (crypto-siphash-2-4_0 key_0 data_0 start_0 end21_0))
+      ((key_0 data_0 start20_0)
+       (crypto-siphash-2-4_0 key_0 data_0 start20_0 unsafe-undefined))))))
+(define 1/crypto-siphash-1-3
+  (let ((crypto-siphash-1-3_0
+         (|#%name|
+          crypto-siphash-1-3
+          (lambda (key26_0 data27_0 start24_0 end25_0)
+            (let ((end_0
+                   (if (eq? end25_0 unsafe-undefined)
+                     (if (bytes? data27_0) (unsafe-bytes-length data27_0) #f)
+                     end25_0)))
+              (siphash
+               'crypto-siphash-1-3
+               key26_0
+               data27_0
+               start24_0
+               end_0
+               1
+               3))))))
+    (|#%name|
+     crypto-siphash-1-3
+     (case-lambda
+      ((key_0 data_0) (crypto-siphash-1-3_0 key_0 data_0 0 unsafe-undefined))
+      ((key_0 data_0 start_0 end25_0)
+       (crypto-siphash-1-3_0 key_0 data_0 start_0 end25_0))
+      ((key_0 data_0 start24_0)
+       (crypto-siphash-1-3_0 key_0 data_0 start24_0 unsafe-undefined))))))
+(define 1/crypto-argon2id
+  (|#%name|
+   crypto-argon2id
+   (lambda (pwd_0
+            salt_0
+            secret_0
+            ad_0
+            t-cost_0
+            m-cost_0
+            parallelism_0
+            outlen_0)
+     (begin
+       (if (bytes? pwd_0)
+         (void)
+         (raise-argument-error 'crypto-argon2id "bytes?" pwd_0))
+       (begin
+         (if (bytes? salt_0)
+           (void)
+           (raise-argument-error 'crypto-argon2id "bytes?" salt_0))
+         (begin
+           (if (bytes? secret_0)
+             (void)
+             (raise-argument-error 'crypto-argon2id "bytes?" secret_0))
+           (begin
+             (if (bytes? ad_0)
+               (void)
+               (raise-argument-error 'crypto-argon2id "bytes?" ad_0))
+             (begin
+               (if (exact-positive-integer? t-cost_0)
+                 (void)
+                 (raise-argument-error
+                  'crypto-argon2id
+                  "exact-positive-integer?"
+                  t-cost_0))
+               (begin
+                 (if (exact-positive-integer? m-cost_0)
+                   (void)
+                   (raise-argument-error
+                    'crypto-argon2id
+                    "exact-positive-integer?"
+                    m-cost_0))
+                 (begin
+                   (if (exact-positive-integer? parallelism_0)
+                     (void)
+                     (raise-argument-error
+                      'crypto-argon2id
+                      "exact-positive-integer?"
+                      parallelism_0))
+                   (begin
+                     (if (exact-positive-integer? outlen_0)
+                       (void)
+                       (raise-argument-error
+                        'crypto-argon2id
+                        "exact-positive-integer?"
+                        outlen_0))
+                     (let ((out_0 (make-bytes outlen_0)))
+                       (begin
+                         (if (eqv?
+                              1
+                              (|#%app|
+                               rktcrypto_argon2id
+                               pwd_0
+                               (unsafe-bytes-length pwd_0)
+                               salt_0
+                               (unsafe-bytes-length salt_0)
+                               secret_0
+                               (unsafe-bytes-length secret_0)
+                               ad_0
+                               (unsafe-bytes-length ad_0)
+                               t-cost_0
+                               m-cost_0
+                               parallelism_0
+                               out_0
+                               outlen_0))
+                           (void)
+                           (raise
+                            (let ((app_0
+                                   (string-append
+                                    (symbol->string 'crypto-argon2id)
+                                    ": Argon2id failed (bad parameters)")))
+                              (|#%app|
+                               exn:fail
+                               app_0
+                               (current-continuation-marks)))))
+                         out_0)))))))))))))
+(define 1/crypto-x25519
+  (|#%name|
+   crypto-x25519
+   (lambda (scalar_0 point_0)
+     (begin
+       (if (bytes? scalar_0)
+         (void)
+         (raise-argument-error 'crypto-x25519 "bytes?" scalar_0))
+       (begin
+         (if (bytes? point_0)
+           (void)
+           (raise-argument-error 'crypto-x25519 "bytes?" point_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length scalar_0) 32)
+             (void)
+             (raise-arguments-error
+              'crypto-x25519
+              "scalar must be 32 bytes"
+              "given"
+              (unsafe-bytes-length scalar_0)))
+           (begin
+             (if (eqv? (unsafe-bytes-length point_0) 32)
+               (void)
+               (raise-arguments-error
+                'crypto-x25519
+                "point must be 32 bytes"
+                "given"
+                (unsafe-bytes-length point_0)))
+             (let ((out_0 (make-bytes 32)))
+               (if (eqv? 1 (|#%app| rktcrypto_x25519 out_0 scalar_0 point_0))
+                 out_0
+                 #f)))))))))
+(define 1/crypto-ed25519-public-key
+  (|#%name|
+   crypto-ed25519-public-key
+   (lambda (seed_0)
+     (begin
+       (if (bytes? seed_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-public-key "bytes?" seed_0))
+       (begin
+         (if (eqv? (unsafe-bytes-length seed_0) 32)
+           (void)
+           (raise-arguments-error
+            'crypto-ed25519-public-key
+            "seed must be 32 bytes"
+            "given"
+            (unsafe-bytes-length seed_0)))
+         (let ((pk_0 (make-bytes 32)))
+           (begin (|#%app| rktcrypto_ed25519_pubkey pk_0 seed_0) pk_0)))))))
+(define 1/crypto-ed25519-sign
+  (|#%name|
+   crypto-ed25519-sign
+   (lambda (seed_0 msg_0)
+     (begin
+       (if (bytes? seed_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-sign "bytes?" seed_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-ed25519-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length seed_0) 32)
+             (void)
+             (raise-arguments-error
+              'crypto-ed25519-sign
+              "seed must be 32 bytes"
+              "given"
+              (unsafe-bytes-length seed_0)))
+           (let ((sig_0 (make-bytes 64)))
+             (begin
+               (|#%app|
+                rktcrypto_ed25519_sign
+                sig_0
+                msg_0
+                (unsafe-bytes-length msg_0)
+                seed_0)
+               sig_0))))))))
+(define 1/crypto-ed25519-verify
+  (|#%name|
+   crypto-ed25519-verify
+   (lambda (pk_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" pk_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-ed25519-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pk_0) 32)
+         (if (eqv? (unsafe-bytes-length sig_0) 64)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_ed25519_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pk_0))
+           #f)
+         #f)))))
+(define 1/crypto-p256-public-key
+  (|#%name|
+   crypto-p256-public-key
+   (lambda (priv_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-public-key "bytes?" priv_0))
+       (begin
+         (if (eqv? (unsafe-bytes-length priv_0) 32)
+           (void)
+           (raise-arguments-error
+            'crypto-p256-public-key
+            "private key must be 32 bytes"
+            "given"
+            (unsafe-bytes-length priv_0)))
+         (let ((pub_0 (make-bytes 65)))
+           (if (eqv? 1 (|#%app| rktcrypto_p256_pubkey pub_0 priv_0))
+             pub_0
+             #f)))))))
+(define 1/crypto-p256-ecdh
+  (|#%name|
+   crypto-p256-ecdh
+   (lambda (priv_0 peer-point_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdh "bytes?" priv_0))
+       (if (bytes? peer-point_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdh "bytes?" peer-point_0))
+       (if (eqv? (unsafe-bytes-length priv_0) 32)
+         (void)
+         (raise-arguments-error
+          'crypto-p256-ecdh
+          "private key must be 32 bytes"
+          "given"
+          (unsafe-bytes-length priv_0)))
+       (if (not (eqv? (unsafe-bytes-length peer-point_0) 65))
+         #f
+         (let ((out_0 (make-bytes 32)))
+           (if (eqv? 1 (|#%app| rktcrypto_p256_ecdh out_0 priv_0 peer-point_0))
+             out_0
+             #f)))))))
+(define 1/crypto-p256-ecdsa-sign
+  (|#%name|
+   crypto-p256-ecdsa-sign
+   (lambda (priv_0 msg_0)
+     (begin
+       (if (bytes? priv_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" priv_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-p256-ecdsa-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length priv_0) 32)
+             (void)
+             (raise-arguments-error
+              'crypto-p256-ecdsa-sign
+              "private key must be 32 bytes"
+              "given"
+              (unsafe-bytes-length priv_0)))
+           (let ((sig_0 (make-bytes 64)))
+             (begin
+               (if (eqv?
+                    1
+                    (|#%app|
+                     rktcrypto_p256_ecdsa_sign
+                     sig_0
+                     msg_0
+                     (unsafe-bytes-length msg_0)
+                     priv_0))
+                 (void)
+                 (raise
+                  (let ((app_0
+                         (string-append
+                          (symbol->string 'crypto-p256-ecdsa-sign)
+                          ": signing failed")))
+                    (|#%app| exn:fail app_0 (current-continuation-marks)))))
+               sig_0))))))))
+(define 1/crypto-p256-ecdsa-verify
+  (|#%name|
+   crypto-p256-ecdsa-verify
+   (lambda (pub_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pub_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" pub_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-p256-ecdsa-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pub_0) 65)
+         (if (eqv? (unsafe-bytes-length sig_0) 64)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_p256_ecdsa_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pub_0))
+           #f)
+         #f)))))
+(define 1/crypto-mlkem768-keypair
+  (|#%name|
+   crypto-mlkem768-keypair
+   (lambda ()
+     (let ((pk_0 (make-bytes 1184)))
+       (let ((sk_0 (make-bytes 2400)))
+         (if (eqv? 1 (|#%app| rktcrypto_mlkem768_keypair pk_0 sk_0))
+           (values pk_0 sk_0)
+           #f))))))
+(define 1/crypto-mlkem768-encaps
+  (|#%name|
+   crypto-mlkem768-encaps
+   (lambda (pk_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-encaps "bytes?" pk_0))
+       (if (not (eqv? (unsafe-bytes-length pk_0) 1184))
+         #f
+         (let ((ct_0 (make-bytes 1088)))
+           (let ((ss_0 (make-bytes 32)))
+             (if (eqv? 1 (|#%app| rktcrypto_mlkem768_encaps ct_0 ss_0 pk_0))
+               (values ct_0 ss_0)
+               #f))))))))
+(define 1/crypto-mlkem768-decaps
+  (|#%name|
+   crypto-mlkem768-decaps
+   (lambda (ct_0 sk_0)
+     (begin
+       (if (bytes? ct_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-decaps "bytes?" ct_0))
+       (if (bytes? sk_0)
+         (void)
+         (raise-argument-error 'crypto-mlkem768-decaps "bytes?" sk_0))
+       (if (not
+            (if (eqv? (unsafe-bytes-length ct_0) 1088)
+              (eqv? (unsafe-bytes-length sk_0) 2400)
+              #f))
+         #f
+         (let ((ss_0 (make-bytes 32)))
+           (if (eqv? 1 (|#%app| rktcrypto_mlkem768_decaps ss_0 ct_0 sk_0))
+             ss_0
+             #f)))))))
+(define 1/crypto-mldsa65-keypair
+  (|#%name|
+   crypto-mldsa65-keypair
+   (lambda ()
+     (let ((pk_0 (make-bytes 1952)))
+       (let ((sk_0 (make-bytes 4032)))
+         (if (eqv? 1 (|#%app| rktcrypto_mldsa65_keypair pk_0 sk_0))
+           (values pk_0 sk_0)
+           #f))))))
+(define 1/crypto-mldsa65-sign
+  (|#%name|
+   crypto-mldsa65-sign
+   (lambda (sk_0 msg_0)
+     (begin
+       (if (bytes? sk_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-sign "bytes?" sk_0))
+       (begin
+         (if (bytes? msg_0)
+           (void)
+           (raise-argument-error 'crypto-mldsa65-sign "bytes?" msg_0))
+         (begin
+           (if (eqv? (unsafe-bytes-length sk_0) 4032)
+             (void)
+             (raise-arguments-error
+              'crypto-mldsa65-sign
+              "secret key must be 4032 bytes"
+              "given"
+              (unsafe-bytes-length sk_0)))
+           (let ((sig_0 (make-bytes 3309)))
+             (begin
+               (if (eqv?
+                    1
+                    (|#%app|
+                     rktcrypto_mldsa65_sign
+                     sig_0
+                     msg_0
+                     (unsafe-bytes-length msg_0)
+                     sk_0))
+                 (void)
+                 (raise
+                  (let ((app_0
+                         (string-append
+                          (symbol->string 'crypto-mldsa65-sign)
+                          ": signing failed")))
+                    (|#%app| exn:fail app_0 (current-continuation-marks)))))
+               sig_0))))))))
+(define 1/crypto-mldsa65-verify
+  (|#%name|
+   crypto-mldsa65-verify
+   (lambda (pk_0 msg_0 sig_0)
+     (begin
+       (if (bytes? pk_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" pk_0))
+       (if (bytes? msg_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" msg_0))
+       (if (bytes? sig_0)
+         (void)
+         (raise-argument-error 'crypto-mldsa65-verify "bytes?" sig_0))
+       (if (eqv? (unsafe-bytes-length pk_0) 1952)
+         (if (eqv? (unsafe-bytes-length sig_0) 3309)
+           (eqv?
+            1
+            (|#%app|
+             rktcrypto_mldsa65_verify
+             sig_0
+             msg_0
+             (unsafe-bytes-length msg_0)
+             pk_0))
+           #f)
+         #f)))))
 (define port-insist-atomic-lock
   (lambda (p_0) (begin (1/port-closed-evt p_0) (void))))
 (define finish_3020

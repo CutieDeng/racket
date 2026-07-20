@@ -11,6 +11,7 @@
 #include <errno.h>
 #include "scheme.h"
 #include "rktio.h"
+#include "rktcrypto.h"
 
 #ifdef WIN32
 # define RACKET_API_EXTERN __declspec(dllexport)
@@ -126,6 +127,7 @@ static void run_cross_server(char **argv)
 static void init_foreign(void)
 {
 # include "rktio.inc"
+# include "rktcrypto.inc"
 }
 
 void racket_boot(racket_boot_arguments_t *ba)

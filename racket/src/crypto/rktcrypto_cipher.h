@@ -1,0 +1,143 @@
+#ifndef __RKTCRYPTO_CIPHER_H__
+#define __RKTCRYPTO_CIPHER_H__
+
+/* Internal symmetric-cipher and MAC interfaces for the rktcrypto
+   subsystem. The public AEAD dispatch in rktcrypto.h builds on these. */
+
+#include "rktcrypto_private.h"
+
+/* ---- ChaCha20 (RFC 8439) ---- */
+
+/* Produces the ChaCha20 keystream for `len` bytes and XORs it into
+   out[0..len) from in[0..len). key is 32 bytes, nonce is 12 bytes,
+   `counter` is the initial 32-bit block counter. in and out may alias
+   exactly (in == out) for in-place operation. */
+void rktcrypto_chacha20_xor(const unsigned char key[32],
+                            const unsigned char nonce[12],
+                            uint32_t counter,
+                            const unsigned char *in, unsigned char *out,
+                            intptr_t len);
+
+/* Writes one 64-byte ChaCha20 keystream block for the given counter
+   (used to derive the Poly1305 one-time key). */
+void rktcrypto_chacha20_block(const unsigned char key[32],
+                              const unsigned char nonce[12],
+                              uint32_t counter,
+                              unsigned char out[64]);
+
+/* HChaCha20: derives a 32-byte subkey from a 32-byte key and a 16-byte
+   nonce (used by XChaCha20). */
+void rktcrypto_hchacha20(const unsigned char key[32],
+                         const unsigned char nonce16[16],
+                         unsigned char subkey[32]);
+
+/* ---- Poly1305 (RFC 8439) ---- */
+
+typedef struct rktcrypto_poly1305_ctx_t {
+  uint32_t r[5];
+  uint32_t h[5];
+  uint32_t pad[4];
+  unsigned char buffer[16];
+  intptr_t buf_len;
+} rktcrypto_poly1305_ctx_t;
+
+/* key is the 32-byte one-time key (r || s). */
+void rktcrypto_poly1305_init(rktcrypto_poly1305_ctx_t *ctx, const unsigned char key[32]);
+void rktcrypto_poly1305_update(rktcrypto_poly1305_ctx_t *ctx,
+                               const unsigned char *data, intptr_t len);
+void rktcrypto_poly1305_final(rktcrypto_poly1305_ctx_t *ctx, unsigned char tag[16]);
+
+#if defined(__aarch64__)
+/* Fused ChaCha20 (en/decrypt) + Poly1305 absorb over whole 512-byte units,
+   interleaved so the SIMD keystream and the scalar MAC run concurrently. Writes
+   in..in+consumed to out; folds the ciphertext (out if encrypt, else in) into
+   `poly` (its 16-byte buffer must be empty). Returns whole-unit bytes consumed
+   (multiple of 512); the caller finishes the tail with the two-pass path. */
+intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
+                                          const unsigned char *in, unsigned char *out, intptr_t len,
+                                          int encrypt, rktcrypto_poly1305_ctx_t *poly);
+#endif
+
+/* ---- AES-256 (FIPS 197), encryption only, constant-time ---- */
+
+void rktcrypto_aes256_expand_key(const unsigned char key[32], unsigned char rk[240]);
+void rktcrypto_aes256_encrypt_block(const unsigned char rk[240],
+                                    const unsigned char in[16],
+                                    unsigned char out[16]);
+
+/* ---- AES-256-GCM (SP 800-38D), 12-byte nonce ---- */
+
+int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start);
+int rktcrypto_aes256gcm_open(const unsigned char key[32], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start);
+
+/* ---- AES-128-GCM (SP 800-38D), 12-byte nonce (TLS_AES_128_GCM_SHA256) ---- */
+int rktcrypto_aes128gcm_seal(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                             unsigned char *out, intptr_t out_start);
+int rktcrypto_aes128gcm_open(const unsigned char key[16], const unsigned char nonce[12],
+                             const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                             unsigned char *out, intptr_t out_start);
+
+/* ---- AES-CTR / AES-CBC (128/192/256), NIST SP 800-38A ---- */
+void rktcrypto_aes_ctr(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t len);
+void rktcrypto_aes_cbc_encrypt(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len);
+void rktcrypto_aes_cbc_decrypt(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len);
+/* AES-CMAC (SP 800-38B) */
+void rktcrypto_aes_cmac(const unsigned char *key, intptr_t keylen, const unsigned char *msg, intptr_t len, unsigned char tag[16]);
+/* AES-XTS (IEEE 1619). key=key1||key2 each keylen bytes; encrypt!=0 to encrypt. */
+void rktcrypto_aes_xts(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t len, int encrypt);
+/* General AES key schedule / single-block encrypt (128/192/256). Returns the
+   number of rounds Nr; rk must hold 240 bytes. Used by GMAC. */
+int rktcrypto_aes_expand_key(const unsigned char *key, intptr_t keylen, unsigned char rk[240]);
+void rktcrypto_aes_enc_block(const unsigned char *rk, int Nr, const unsigned char in[16], unsigned char out[16]);
+/* AES-GMAC (SP 800-38D): GCM authentication over msg-as-AAD with empty
+   plaintext; 12-byte iv. key is 16/24/32 bytes. Writes the 16-byte tag. */
+void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
+                        const unsigned char *msg, intptr_t len, unsigned char tag[16]);
+
+/* ---- Legacy ciphers (weak; interop only) ---- */
+/* Triple-DES EDE (FIPS 46-3), key = k1||k2||k3 (24 bytes), 8-byte blocks.
+   Operates on nblk whole blocks; padding is the caller's concern. */
+void rktcrypto_des3_ecb(const unsigned char key[24], const unsigned char *in,
+                        unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
+                        const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+/* RC4 stream cipher; in/out may alias. */
+void rktcrypto_rc4(const unsigned char *key, intptr_t keylen,
+                   const unsigned char *in, unsigned char *out, intptr_t len);
+/* Camellia (RFC 3713), 128-bit blocks, key 16/24/32 bytes. */
+void rktcrypto_camellia_ecb(const unsigned char *key, intptr_t keylen, const unsigned char *in,
+                            unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_camellia_cbc(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                            const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+
+/* ---- Regional-standard block ciphers ---- */
+/* SM4 (GB/T 32907-2016), 128-bit blocks, 128-bit key. */
+void rktcrypto_sm4_ecb(const unsigned char key[16], const unsigned char *in,
+                       unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_sm4_cbc(const unsigned char key[16], const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+/* CTR with full 128-bit big-endian counter; in/out may alias exactly. */
+void rktcrypto_sm4_ctr(const unsigned char key[16], const unsigned char iv[16],
+                       const unsigned char *in, unsigned char *out, intptr_t len);
+/* ARIA (RFC 5794 / KS X 1213-1), 128-bit blocks, key 16/24/32 bytes. */
+void rktcrypto_aria_ecb(const unsigned char *key, intptr_t keylen, const unsigned char *in,
+                        unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_aria_cbc(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                        const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt);
+void rktcrypto_aria_ctr(const unsigned char *key, intptr_t keylen, const unsigned char iv[16],
+                        const unsigned char *in, unsigned char *out, intptr_t len);
+
+#endif

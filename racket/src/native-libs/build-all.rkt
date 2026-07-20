@@ -25,6 +25,11 @@
     [else
      null])
    (cond
+     ;; aarch64: Racket's crypto+TLS run entirely on the in-tree rktcrypto
+     ;; library, so the distribution ships no OpenSSL binary. (Other
+     ;; architectures still package it pending performance validation of
+     ;; the pure-C rktcrypto fallbacks.)
+     [aarch64? null]
      [(and mac? (or m32? ppc?))
       '("openssl-1")]
      [else

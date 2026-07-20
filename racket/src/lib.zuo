@@ -31,6 +31,7 @@
          adjust-linking-config
 
          setup-rktio
+         setup-rktcrypto
          setup-boot
          racket-version
          check-destdir
@@ -342,6 +343,19 @@
         (if windows?
             (find-target "rktio_config.h" rktio-targets)
             rktio_config.h)))
+
+;; Unlike rktio, the rktcrypto library is plain C99 with no configure
+;; step, so its `targets-at` can be used directly on all platforms.
+(define (setup-rktcrypto crypto-src-dir crypto-dir config)
+  (define msvc? (eq? 'windows (hash-ref (runtime-env) 'toolchain-type)))
+  (mkdir-p crypto-dir)
+  (define crypto-targets
+    ((dynamic-require (build-path crypto-src-dir "build.zuo")
+                      'targets-at)
+     (make-at-dir crypto-dir)
+     config))
+  (find-target (~a "librktcrypto." (if msvc? "lib" (hash-ref config 'LTA "a")))
+               crypto-targets))
 
 (define (setup-boot at-dir config
                     [options (hash)])

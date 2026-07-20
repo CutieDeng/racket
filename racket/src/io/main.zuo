@@ -33,7 +33,7 @@
   (make-targets
    `([:target io-src (,io.rktl) ,void]
 
-     [:target ,io.rktl (,expander ,rktio.rktl)
+     [:target ,io.rktl (,expander ,rktio.rktl ,(at-source "../crypto/rktcrypto.rktl"))
               ,(lambda (path token)
                  (racket vars (expander-main)
                          "-t" (at-source "main.rkt")

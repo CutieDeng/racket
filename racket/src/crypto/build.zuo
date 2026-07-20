@@ -1,0 +1,151 @@
+#lang zuo
+(require "../lib.zuo")
+
+(provide-targets targets-at)
+
+;; Builds "librktcrypto", Racket's built-in cryptography subsystem.
+;; Unlike rktio, this library is plain C99 with no configure step:
+;; platform selection happens via predefined compiler macros, so the
+;; same `targets-at` works on all platforms given a toolchain config.
+
+(define (targets-at at-dir [vars (hash)])
+  (define msvc? (eq? 'windows (hash-ref (runtime-env) 'toolchain-type)))
+
+  (define config (let ([Makefile (at-dir "Makefile")])
+                   (if (file-exists? Makefile)
+                       (config-file->hash Makefile vars)
+                       vars)))
+  (define (lookup key) (hash-ref config key #f))
+
+  (define lto (or (lookup 'LTO) (if msvc? "obj" "o")))
+  (define lta (or (lookup 'LTA) (if msvc? "lib" "a")))
+
+  (define headers
+    (list (at-source "rktcrypto.h")
+          (at-source "rktcrypto_private.h")
+          (at-source "rktcrypto_digest.h")
+          (at-source "rktcrypto_cipher.h")
+          (at-source "rktcrypto_ffc.h")))
+  (define rktcrypto.h (car headers))
+
+  (define src-names
+    '("rktcrypto_entropy.c"
+      "rktcrypto_cpu.c"
+      "rktcrypto_x86.c"
+      "rktcrypto_ct.c"
+      "rktcrypto_sha256.c"
+      "rktcrypto_sha512.c"
+      "rktcrypto_sha3.c"
+      "rktcrypto_kmac.c"
+      "rktcrypto_legacy.c"
+      "rktcrypto_legacy_ciphers.c"
+      "rktcrypto_md4.c"
+      "rktcrypto_rmd160.c"
+      "rktcrypto_sm3.c"
+      "rktcrypto_whirlpool.c"
+      "rktcrypto_sm4.c"
+      "rktcrypto_aria.c"
+      "rktcrypto_blake2b.c"
+      "rktcrypto_blake3.c"
+      "rktcrypto_digest.c"
+      "rktcrypto_chacha20.c"
+      "rktcrypto_poly1305.c"
+      "rktcrypto_aes.c"
+      "rktcrypto_gcm.c"
+      "rktcrypto_aes_modes.c"
+      "rktcrypto_aead.c"
+      "rktcrypto_siphash.c"
+      "rktcrypto_argon2.c"
+      "rktcrypto_scrypt.c"
+      "rktcrypto_kdf.c"
+      "rktcrypto_drbg.c"
+      "rktcrypto_x25519.c"
+      "rktcrypto_ed25519.c"
+      "rktcrypto_p256.c"
+      ;; asmp-generated AArch64/Apple field-multiply (self-disables via
+      ;; #if guard on other targets; compiled as a preprocessed .S).
+      "rktcrypto_p256_asm.S"
+      "rktcrypto_ecc.c"
+      "rktcrypto_ecc_asm.S"
+      "rktcrypto_p521rr.c"
+      "rktcrypto_x448.c"
+      "rktcrypto_ed448.c"
+      "rktcrypto_mlkem.c"
+      "rktcrypto_mlkem512.c"
+      "rktcrypto_mlkem1024.c"
+      "rktcrypto_mldsa.c"
+      "rktcrypto_mldsa44.c"
+      "rktcrypto_mldsa87.c"
+      "rktcrypto_slhdsa.c"
+      "rktcrypto_bn.c"
+      "rktcrypto_bn_fips.S"
+      "rktcrypto_bn_op.S"
+      "rktcrypto_bn_sqr.S"
+      "rktcrypto_keccak_asm.S"
+      "rktcrypto_keccak_f2_asm.S"
+      "rktcrypto_sha1_asm.S"
+      "rktcrypto_md5_asm.S"
+      "rktcrypto_rsa.c"
+      "rktcrypto_rsa_keygen.c"
+      "rktcrypto_dsa.c"
+      "rktcrypto_dh.c"
+      "rktcrypto_x509.c"
+      "rktcrypto_tls_sig.c"
+      "rktcrypto_tls13.c"
+      "rktcrypto_selftest.c"))
+  (define objs
+    (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))
+         src-names))
+
+  (define librktcrypto.a (at-dir (~a "librktcrypto." lta)))
+
+  (define rktcrypto.rktl (at-source "rktcrypto.rktl"))
+  (define rktcrypto.inc (at-source "rktcrypto.inc"))
+  (define rktcrypto.def (at-source "rktcrypto.def"))
+
+  (define parse.rkt (at-source "../rktio/parse.rkt"))
+
+  (make-targets
+   `([:target default_rktcrypto (,librktcrypto.a) ,void]
+
+     [:target ,librktcrypto.a ,objs
+              ,(lambda (path token)
+                 (c-ar path
+                       objs
+                       (let ([ar (hash-ref config 'STATIC_AR #f)])
+                         (if ar
+                             (hash-set config 'AR (shell-subst ar config))
+                             (shell-subst-value config 'AR)))))]
+
+     ,@(map (lambda (name obj)
+              (let ([src (at-source name)])
+                `[:target ,obj (,src ,@headers)
+                          ,(lambda (path token)
+                             ;; crypto hot loops (hardware-intrinsic block ciphers,
+                             ;; hashes, bignum/EC field arithmetic) want -O3, like
+                             ;; OpenSSL's own C build; the tree default is -O2.
+                             (let ([copt (hash-set config 'CFLAGS
+                                                   (~a (hash-ref config 'CFLAGS "") " -O3"))])
+                               (c-compile obj src (config-include copt
+                                                                  (at-source ".")))))]))
+            src-names
+            objs)
+
+     [:target rktcrypto-rktl (,rktcrypto.rktl ,rktcrypto.inc ,rktcrypto.def) ,void]
+
+     [:target ,rktcrypto.rktl (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-o" rktcrypto.rktl rktcrypto.h))]
+     [:target ,rktcrypto.inc (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-c" "-o" rktcrypto.inc rktcrypto.h))]
+     [:target ,rktcrypto.def (,rktcrypto.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-d" "-o" rktcrypto.def rktcrypto.h))]
+
+     [:target clean ()
+              ,(lambda (token)
+                 (map rm* objs)
+                 (rm* librktcrypto.a))]
+
+     [:db-dir ,(at-dir ".")])))
