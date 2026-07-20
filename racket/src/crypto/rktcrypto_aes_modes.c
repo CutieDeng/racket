@@ -59,13 +59,18 @@ void rktcrypto_aes_cbc_encrypt(const unsigned char*key,intptr_t keylen,const uns
              k8=vld1q_u8(rk+128),k9=vld1q_u8(rk+144),k10=vld1q_u8(rk+160);
   if(len<16) return;
   if(Nr==10){
-    uint8x16_t s=veorq_u8(vld1q_u8(in),prev);
-    for(;o+16<=len;o+=16){
+    uint8x16_t s=veorq_u8(vld1q_u8(in),prev); intptr_t last=len-16;
+    /* hot loop is branchless: every block folds the next plaintext in; the final
+       block (which has no successor to load) is done once after the loop. */
+    for(;o<last;o+=16){
       AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
       AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
-      s=vaeseq_u8(s,k9); vst1q_u8(out+o,veorq_u8(s,k10));   /* reuse s: no spurious state copy */
-      if(o+32<=len) s=veorq_u8(s,veorq_u8(vld1q_u8(in+o+16),k10));
+      s=vaeseq_u8(s,k9); vst1q_u8(out+o,veorq_u8(s,k10));
+      s=veorq_u8(s,veorq_u8(vld1q_u8(in+o+16),k10));
     }
+    AESE_MC(s,k0);AESE_MC(s,k1);AESE_MC(s,k2);AESE_MC(s,k3);AESE_MC(s,k4);
+    AESE_MC(s,k5);AESE_MC(s,k6);AESE_MC(s,k7);AESE_MC(s,k8);
+    s=vaeseq_u8(s,k9); vst1q_u8(out+o,veorq_u8(s,k10));
   } else {
     uint8x16_t k11=vld1q_u8(rk+176),k12=vld1q_u8(rk+192),k13=vld1q_u8(rk+208),k14=vld1q_u8(rk+224);
     if(Nr==12){
