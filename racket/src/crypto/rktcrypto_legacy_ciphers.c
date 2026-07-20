@@ -78,61 +78,110 @@ static void des_schedule(const unsigned char k[8], des_ks *ks){
    6-bit groups of E(R) are contiguous windows of R (with wraparound at the ends).
    Each group is XORed with the pre-split 6-bit subkey group and indexes SP. */
 static uint32_t des_feistel(uint32_t R, const unsigned char kk[8]){
-  return DES_SP[0][(((R&1)<<5)|((R>>27)&0x1F)) ^ kk[0]]
+  /* The two wrapping E-groups are exactly single rotates: g0 = ror(R,27)&0x3f,
+     g7 = ror(R,31)&0x3f -- one ROR each instead of shift|shift|mask|or, so all
+     eight index computations are ~equal length (shortens the serial Feistel path
+     that bounds CBC-encrypt). */
+  uint32_t r0=(R>>27)|(R<<5), r7=(R>>31)|(R<<1);
+  return DES_SP[0][(r0&0x3F) ^ kk[0]]
         ^DES_SP[1][((R>>23)&0x3F) ^ kk[1]]
         ^DES_SP[2][((R>>19)&0x3F) ^ kk[2]]
         ^DES_SP[3][((R>>15)&0x3F) ^ kk[3]]
         ^DES_SP[4][((R>>11)&0x3F) ^ kk[4]]
         ^DES_SP[5][((R>>7)&0x3F) ^ kk[5]]
         ^DES_SP[6][((R>>3)&0x3F) ^ kk[6]]
-        ^DES_SP[7][(((R&0x1F)<<1)|((R>>31)&1)) ^ kk[7]];
+        ^DES_SP[7][(r7&0x3F) ^ kk[7]];
 }
 
 /* Fused 3DES block: the intermediate FP (end of stage k) and IP (start of stage
    k+1) are inverses and cancel, so one IP + 48 rounds (swap between stages) +
    one FP instead of 3 IP + 3 FP. */
-static void des3_block(const des_ks *s1,const des_ks *s2,const des_ks *s3,
-                       const unsigned char in[8], unsigned char out[8], int encrypt){
-  const des_ks *S[3]; int fwd[3],st,r; uint64_t b,o,pre; uint32_t L,R,t;
-  if(encrypt){ S[0]=s1;fwd[0]=1; S[1]=s2;fwd[1]=0; S[2]=s3;fwd[2]=1; }
-  else       { S[0]=s3;fwd[0]=0; S[1]=s2;fwd[1]=1; S[2]=s1;fwd[2]=0; }
-  b=DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
-   |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
-  L=(uint32_t)(b>>32); R=(uint32_t)b;
-  for(st=0;st<3;st++){
-    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; uint32_t nR=L^des_feistel(R,S[st]->g[rr]); L=R; R=nR; }
-    t=L; L=R; R=t;                                   /* inter-stage / preoutput swap */
-  }
-  pre=((uint64_t)L<<32)|R;
-  o=DES_FP_T[0][(pre>>56)&0xFF]|DES_FP_T[1][(pre>>48)&0xFF]|DES_FP_T[2][(pre>>40)&0xFF]|DES_FP_T[3][(pre>>32)&0xFF]
-   |DES_FP_T[4][(pre>>24)&0xFF]|DES_FP_T[5][(pre>>16)&0xFF]|DES_FP_T[6][(pre>>8)&0xFF]|DES_FP_T[7][pre&0xFF];
+/* IP (byte->state) and FP (state->bytes) via the byte-indexed tables. */
+static inline uint64_t des_ip(const unsigned char in[8]){
+  return DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
+        |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
+}
+static inline void des_fp_store(uint64_t pre, unsigned char out[8]){
+  uint64_t o=DES_FP_T[0][(pre>>56)&0xFF]|DES_FP_T[1][(pre>>48)&0xFF]|DES_FP_T[2][(pre>>40)&0xFF]|DES_FP_T[3][(pre>>32)&0xFF]
+           |DES_FP_T[4][(pre>>24)&0xFF]|DES_FP_T[5][(pre>>16)&0xFF]|DES_FP_T[6][(pre>>8)&0xFF]|DES_FP_T[7][pre&0xFF];
   out[0]=(o>>56)&0xFF;out[1]=(o>>48)&0xFF;out[2]=(o>>40)&0xFF;out[3]=(o>>32)&0xFF;
   out[4]=(o>>24)&0xFF;out[5]=(o>>16)&0xFF;out[6]=(o>>8)&0xFF;out[7]=o&0xFF;
+}
+static inline void des3_dirs(const des_ks *s1,const des_ks *s2,const des_ks *s3,
+                             const des_ks *S[3],int fwd[3],int encrypt){
+  if(encrypt){ S[0]=s1;fwd[0]=1; S[1]=s2;fwd[1]=0; S[2]=s3;fwd[2]=1; }
+  else       { S[0]=s3;fwd[0]=0; S[1]=s2;fwd[1]=1; S[2]=s1;fwd[2]=0; }
+}
+/* Core on the IP'd 64-bit state -> pre-output state (before FP). Fused: one IP +
+   48 rounds (swap between stages) + one FP. */
+static uint64_t des3_core(const des_ks *S[3],const int fwd[3],uint64_t b){
+  int st,r; uint32_t L=(uint32_t)(b>>32),R=(uint32_t)b,t;
+  for(st=0;st<3;st++){
+    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; uint32_t nR=L^des_feistel(R,S[st]->g[rr]); L=R; R=nR; }
+    t=L; L=R; R=t;
+  }
+  return ((uint64_t)L<<32)|R;
+}
+/* 4-way interleaved core: four independent blocks share each round's subkey, so
+   the four des_feistel SP-table load chains overlap -- hides the ~48-round Feistel
+   latency (throughput- not latency-bound), the win OpenSSL's single-block C can't
+   get. For ECB and CBC-decrypt, where blocks are independent. */
+static void des3_core4(const des_ks *S[3],const int fwd[3],const uint64_t b[4],uint64_t o[4]){
+  int st,r; uint32_t L0=(uint32_t)(b[0]>>32),R0=(uint32_t)b[0],L1=(uint32_t)(b[1]>>32),R1=(uint32_t)b[1],
+    L2=(uint32_t)(b[2]>>32),R2=(uint32_t)b[2],L3=(uint32_t)(b[3]>>32),R3=(uint32_t)b[3],t;
+  for(st=0;st<3;st++){
+    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; const unsigned char *k=S[st]->g[rr];
+      uint32_t n0=L0^des_feistel(R0,k); L0=R0; R0=n0;
+      uint32_t n1=L1^des_feistel(R1,k); L1=R1; R1=n1;
+      uint32_t n2=L2^des_feistel(R2,k); L2=R2; R2=n2;
+      uint32_t n3=L3^des_feistel(R3,k); L3=R3; R3=n3; }
+    t=L0;L0=R0;R0=t; t=L1;L1=R1;R1=t; t=L2;L2=R2;R2=t; t=L3;L3=R3;R3=t;
+  }
+  o[0]=((uint64_t)L0<<32)|R0; o[1]=((uint64_t)L1<<32)|R1;
+  o[2]=((uint64_t)L2<<32)|R2; o[3]=((uint64_t)L3<<32)|R3;
 }
 
 /* 3DES-EDE, key = k1||k2||k3 (24 bytes). encrypt!=0 -> EDE, else DED. */
 void rktcrypto_des3_ecb(const unsigned char key[24], const unsigned char *in,
                         unsigned char *out, intptr_t nblk, int encrypt){
-  des_ks s1,s2,s3; intptr_t i;
+  des_ks s1,s2,s3; const des_ks *S[3]; int fwd[3]; intptr_t i=0;
   des_schedule(key,&s1); des_schedule(key+8,&s2); des_schedule(key+16,&s3);
-  for(i=0;i<nblk;i++) des3_block(&s1,&s2,&s3,in+8*i,out+8*i,encrypt);
+  des3_dirs(&s1,&s2,&s3,S,fwd,encrypt);
+  for(; i+4<=nblk; i+=4){ uint64_t b[4],o[4];
+    b[0]=des_ip(in+8*i); b[1]=des_ip(in+8*i+8); b[2]=des_ip(in+8*i+16); b[3]=des_ip(in+8*i+24);
+    des3_core4(S,fwd,b,o);
+    des_fp_store(o[0],out+8*i); des_fp_store(o[1],out+8*i+8); des_fp_store(o[2],out+8*i+16); des_fp_store(o[3],out+8*i+24); }
+  for(; i<nblk; i++) des_fp_store(des3_core(S,fwd,des_ip(in+8*i)),out+8*i);
 }
 
 void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
                         const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt){
-  des_ks s1,s2,s3; unsigned char prev[8]; intptr_t i; int j;
+  des_ks s1,s2,s3; const des_ks *S[3]; int fwd[3]; intptr_t i;
   des_schedule(key,&s1); des_schedule(key+8,&s2); des_schedule(key+16,&s3);
-  memcpy(prev,iv,8);
+  des3_dirs(&s1,&s2,&s3,S,fwd,encrypt);
   if(encrypt){
-    for(i=0;i<nblk;i++){ unsigned char t[8];
-      for(j=0;j<8;j++) t[j]=in[8*i+j]^prev[j];
-      des3_block(&s1,&s2,&s3,t,out+8*i,1);
-      memcpy(prev,out+8*i,8); }
+    /* IP and FP are inverse linear permutations, so IP(P_i ^ C_{i-1}) = IP(P_i) ^
+       pre_{i-1} (the previous pre-output state): the chaining stays a single word
+       XOR -- no byte fold, no memcpy, no re-IP. */
+    uint64_t prevpre=des_ip(iv);
+    for(i=0;i<nblk;i++){ uint64_t pre=des3_core(S,fwd,des_ip(in+8*i)^prevpre);
+      des_fp_store(pre,out+8*i); prevpre=pre; }
   } else {
-    for(i=0;i<nblk;i++){ unsigned char t[8],c[8];
-      memcpy(c,in+8*i,8);
-      des3_block(&s1,&s2,&s3,c,t,0);
-      for(j=0;j<8;j++) out[8*i+j]=t[j]^prev[j];
+    /* decrypt: blocks are independent given the ciphertext -> 4-way interleave,
+       then XOR each plaintext with the previous ciphertext word. */
+    unsigned char prev[8]; memcpy(prev,iv,8); intptr_t j=0;
+    for(; j+4<=nblk; j+=4){ uint64_t b[4],o[4]; unsigned char *op=out+8*j; const unsigned char *ip=in+8*j;
+      b[0]=des_ip(ip); b[1]=des_ip(ip+8); b[2]=des_ip(ip+16); b[3]=des_ip(ip+24);
+      des3_core4(S,fwd,b,o);
+      unsigned char pt[32]; des_fp_store(o[0],pt); des_fp_store(o[1],pt+8); des_fp_store(o[2],pt+16); des_fp_store(o[3],pt+24);
+      for(int q=0;q<8;q++) op[q]=pt[q]^prev[q];
+      for(int q=0;q<8;q++) op[8+q]=pt[8+q]^ip[q];
+      for(int q=0;q<8;q++) op[16+q]=pt[16+q]^ip[8+q];
+      for(int q=0;q<8;q++) op[24+q]=pt[24+q]^ip[16+q];
+      memcpy(prev,ip+24,8); }
+    for(; j<nblk; j++){ unsigned char c[8]; memcpy(c,in+8*j,8);
+      unsigned char pt[8]; des_fp_store(des3_core(S,fwd,des_ip(c)),pt);
+      for(int q=0;q<8;q++) out[8*j+q]=pt[q]^prev[q];
       memcpy(prev,c,8); }
   }
 }
