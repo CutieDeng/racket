@@ -175,7 +175,7 @@
 (define (ssl-port? p) (and (hash-ref port->obj p #f) #t))
 (define (port-obj p) (hash-ref port->obj p #f))
 
-(define (make-ssl-input conn name close? in-orig)
+(define (make-ssl-input conn name on-close)
   (define buf #"")
   (define (read-in bstr)
     (cond
@@ -189,15 +189,16 @@
        (cond
          [(eof-object? got) eof]
          [else (set! buf got) (read-in bstr)])]))
-  (make-input-port name read-in #f
-                   (lambda () (tls-conn-close-notify conn) (when close? (close-input-port in-orig)))))
+  ;; Closing the input port must not send close_notify: TLS shutdown is a
+  ;; write-direction action, and it belongs to the output port's close.
+  (make-input-port name read-in #f on-close))
 
-(define (make-ssl-output conn name close? out-orig)
+(define (make-ssl-output conn name on-close)
   (make-output-port name always-evt
                     (lambda (bstr start end non-block? breakable?)
                       (if (= start end) 0
                           (tls-conn-write-bytes conn (subbytes bstr start end))))
-                    (lambda () (tls-conn-close-notify conn) (when close? (close-output-port out-orig)))))
+                    (lambda () (tls-conn-close-notify conn) (on-close))))
 
 (define (ports->ssl-ports i o
                           #:mode [mode 'connect]
@@ -243,8 +244,22 @@
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
                                    (if (pair? sa) sa alpn))))]))
   (define name (object-name i))
-  (define in (make-ssl-input conn name close? i))
-  (define out (make-ssl-output conn name close? o))
+  ;; The two SSL ports share one transport: closing just the output port
+  ;; must not FIN the underlying TCP stream while the input port is still
+  ;; draining the response (servers treat an early client FIN as an abort),
+  ;; so the original ports close only after BOTH SSL ports are closed.
+  (define close-lock (make-semaphore 1))
+  (define closed-sides 0)
+  (define (one-side-closed!)
+    (call-with-semaphore
+     close-lock
+     (lambda ()
+       (set! closed-sides (add1 closed-sides))
+       (when (and close? (= closed-sides 2))
+         (close-input-port i)
+         (close-output-port o)))))
+  (define in (make-ssl-input conn name one-side-closed!))
+  (define out (make-ssl-output conn name one-side-closed!))
   (define obj (ssl-port-obj conn context i o close? in out))
   (register-port! in obj) (register-port! out obj)
   (values in out))
@@ -281,7 +296,12 @@
   (define obj (port-obj p))
   (when obj
     (cond [(input-port? p) (close-input-port p)]
-          [else (close-output-port p)])))
+          [else
+           ;; Abandon means: stop writing without a TLS shutdown, so the
+           ;; peer keeps sending and the read direction stays usable
+           ;; (net/http-client abandons the request side before reading).
+           (tls-conn-abandon-write! (ssl-port-obj-conn obj))
+           (close-output-port p)])))
 
 (define (ssl-addresses p [port-numbers? #f])
   (define obj (port-obj p))

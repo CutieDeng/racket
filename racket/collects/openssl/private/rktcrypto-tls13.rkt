@@ -28,6 +28,7 @@
          tls-conn-read-bytes
          tls-conn-write-bytes
          tls-conn-close-notify
+         tls-conn-abandon-write!
          tls-conn-channel-binding)
 
 ;; ---- byte building ----
@@ -258,8 +259,11 @@
 ;;   recv : (-> (or/c bytes eof))     one application-data chunk
 ;;   send : (-> bytes void)           protect+write application data
 ;;   shut : (-> void)                 write close_notify
+;; closed  : read direction reached EOF (peer close_notify or transport EOF)
+;; wclosed : write direction closed (we sent close_notify, or the write side
+;;           was abandoned); the read direction stays usable (TLS half-close)
 (struct tls-conn (recv send shut
-                  rbuf closed
+                  rbuf closed wclosed
                   alpn peer-certs protocol
                   binding) #:mutable)   ; binding: hash for channel binding, or #f
 
@@ -282,7 +286,7 @@
         (rl-write-record r 23 (subbytes bs off (+ off chunk)))
         (loop (+ off chunk)))))
   (define (shut) (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 1 0))))
-  (tls-conn recv send shut #"" #f alpn peer-certs 'tls1.3 binding))
+  (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding))
 
 ;; Reads up to `n` application bytes; returns bytes or eof.
 (define (tls-conn-read-bytes c n)
@@ -300,13 +304,22 @@
        [else (set-tls-conn-rbuf! c got) (tls-conn-read-bytes c n)])]))
 
 (define (tls-conn-write-bytes c bs)
+  (when (tls-conn-wclosed c)
+    (raise (tls-error "write after the TLS write direction was closed")))
   ((tls-conn-send c) bs)
   (bytes-length bs))
 
+;; close_notify only closes the write direction (RFC 8446 6.1); reads keep
+;; draining until the peer's close_notify or transport EOF sets `closed`.
 (define (tls-conn-close-notify c)
-  (unless (tls-conn-closed c)
-    ((tls-conn-shut c))
-    (set-tls-conn-closed! c #t)))
+  (unless (tls-conn-wclosed c)
+    (set-tls-conn-wclosed! c #t)
+    ((tls-conn-shut c))))
+
+;; Close the write direction without sending close_notify, for
+;; ssl-abandon-port: the peer sees no shutdown and keeps sending.
+(define (tls-conn-abandon-write! c)
+  (set-tls-conn-wclosed! c #t))
 
 ;; Channel binding (RFC 9266 tls-exporter, plus tls-server-end-point).
 ;; Returns bytes, or raises if unavailable for this connection/kind.
@@ -326,7 +339,7 @@
     [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
 (define (make-tls-conn recv send shut peer-ders protocol [binding #f])
-  (tls-conn recv send shut #"" #f #f peer-ders protocol binding))
+  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding))
 
 ;; TLS 1.3 exporter (RFC 8446 sec 7.5) for channel binding (RFC 9266).
 ;;   exporter_secret = Derive-Secret(exporter_master, label, "")
