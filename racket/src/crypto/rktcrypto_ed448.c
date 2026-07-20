@@ -342,7 +342,7 @@ int rktcrypto_ed448_sign(unsigned char *sig,const unsigned char *msg,intptr_t ml
   return 1;
 }
 int rktcrypto_ed448_verify(const unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *pk){
-  unsigned char kbuf[114],k57[57],sbe[57],kbe[57]; ept G,A,Rp,SB,kA,rhs; u64 gx[NL],gy[NL]; int i;
+  unsigned char kbuf[114],k57[57],sbe[57],kbe[57]; ept G,A,SB,kA,rhs; u64 gx[NL],gy[NL]; int i;
   const unsigned char *R=sig,*S=sig+57;
   ed448_init();
   { BN Sn,L; unsigned char Sbe[57]; for(i=0;i<57;i++) Sbe[i]=S[56-i]; bn_from_be(&Sn,Sbe,57); bn_from_be(&L,L_BE,56); if(bn_cmp(&Sn,&L)>=0) return 0; }
@@ -356,7 +356,10 @@ int rktcrypto_ed448_verify(const unsigned char *sig,const unsigned char *msg,int
   sc_reduce_le(k57,kbuf,114);
   for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul_base(&SB,sbe,57);        /* S*B */
   for(i=0;i<57;i++) kbe[i]=k57[56-i]; pt_scalarmul_win(&kA,kbe,57,&A);  /* k*A */
-  if(!pt_decode(&Rp,R)) return 0;
-  pt_add(&rhs,&Rp,&kA);                                                  /* R + k*A */
-  { unsigned char e1[57],e2[57]; pt_encode(e1,&SB); pt_encode(e2,&rhs); return memcmp(e1,e2,57)==0; }
+  /* Verify S*B - k*A == R by encoding the LHS and comparing to the R bytes.
+     This avoids decoding R (a field sqrt) and encoding a second point (a field
+     inverse) vs comparing two re-encoded points. -P = (-X : Y : Z : -T). */
+  { u64 z[NL]={0,0,0,0,0,0,0,0}; fsub(kA.X,z,kA.X); fsub(kA.T,z,kA.T); }  /* -k*A */
+  pt_add(&rhs,&SB,&kA);                                                  /* S*B - k*A */
+  { unsigned char e[57]; pt_encode(e,&rhs); return memcmp(e,R,57)==0; }
 }
