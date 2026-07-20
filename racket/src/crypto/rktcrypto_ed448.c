@@ -254,6 +254,17 @@ static void pt_scalarmul_base(ept *R,const unsigned char *k_be,int kbytes){
   }
   *R=acc;
 }
+/* Variable-time S*B for verify (S is public): index the comb table directly and
+   skip zero nibbles, avoiding the constant-time 16-way cmov scan per window. */
+static void pt_scalarmul_base_vartime(ept *R,const unsigned char *k_be,int kbytes){
+  int w,nw=kbytes*2; ept acc; pt_identity(&acc);
+  ed448_comb_init();
+  for(w=0;w<nw && w<ED448_NWIN;w++){
+    int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
+    if(nib) pt_madd(&acc,&acc,&ed448_comb[w][nib]);
+  }
+  *R=acc;
+}
 
 /* encode point to 57 bytes: y little-endian (56) + sign(x) in bit 7 of byte 56. */
 static void pt_encode(unsigned char out[57],const ept *P){
@@ -373,7 +384,7 @@ int rktcrypto_ed448_verify(const unsigned char *sig,const unsigned char *msg,int
     rktcrypto_keccak_core_update(&c,pk,57); rktcrypto_keccak_core_update(&c,msg,mlen);
     rktcrypto_keccak_core_final(&c,kbuf,114); }
   sc_reduce_le(k57,kbuf,114);
-  for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul_base(&SB,sbe,57);        /* S*B */
+  for(i=0;i<57;i++) sbe[i]=S[56-i]; pt_scalarmul_base_vartime(&SB,sbe,57);  /* S*B (S public) */
   for(i=0;i<57;i++) kbe[i]=k57[56-i]; pt_scalarmul_win(&kA,kbe,57,&A);  /* k*A */
   /* Verify S*B - k*A == R by encoding the LHS and comparing to the R bytes.
      This avoids decoding R (a field sqrt) and encoding a second point (a field
