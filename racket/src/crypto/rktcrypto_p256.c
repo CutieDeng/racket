@@ -16,6 +16,35 @@
 typedef uint64_t u64;
 typedef unsigned __int128 u128;
 
+/* __builtin_addcll/__builtin_subcll are Clang builtins that GCC only grew
+   in GCC 14, so the distro compilers (Ubuntu 24.04 = 13, EL9 = 11, openEuler
+   = 10/12) fail to link them. Route through these wrappers: the builtin when
+   the compiler has it, otherwise u128 carry arithmetic that GCC folds into
+   the same adc/sbb chains at -O2. */
+#if defined(__has_builtin)
+# if __has_builtin(__builtin_addcll) && __has_builtin(__builtin_subcll)
+#  define P256_HAVE_CARRY_BUILTINS 1
+# endif
+#endif
+
+#ifdef P256_HAVE_CARRY_BUILTINS
+# define p256_addc(a,b,ci,co) __builtin_addcll((a),(b),(ci),(co))
+# define p256_subb(a,b,bi,bo) __builtin_subcll((a),(b),(bi),(bo))
+#else
+static inline unsigned long long p256_addc(unsigned long long a, unsigned long long b,
+                                           unsigned long long ci, unsigned long long *co) {
+  u128 s = (u128)a + b + ci;
+  *co = (unsigned long long)(s >> 64);
+  return (unsigned long long)s;
+}
+static inline unsigned long long p256_subb(unsigned long long a, unsigned long long b,
+                                           unsigned long long bi, unsigned long long *bo) {
+  u128 d = (u128)a - b - bi;
+  *bo = (unsigned long long)((d >> 64) & 1);
+  return (unsigned long long)d;
+}
+#endif
+
 /* ---- modulus contexts ---- */
 typedef struct { u64 m[4]; u64 n0; u64 rr[4]; } mont_ctx;
 
@@ -94,20 +123,20 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
    this directly shortens jac_double/mixed_add. */
 static void mont_add(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
   unsigned long long c,br,t0,t1,t2,t3,s0,s1,s2,s3,ge;
-  t0=__builtin_addcll(a[0],b[0],0,&c);  t1=__builtin_addcll(a[1],b[1],c,&c);
-  t2=__builtin_addcll(a[2],b[2],c,&c);  t3=__builtin_addcll(a[3],b[3],c,&c);
-  s0=__builtin_subcll(t0,m[0],0,&br);   s1=__builtin_subcll(t1,m[1],br,&br);
-  s2=__builtin_subcll(t2,m[2],br,&br);  s3=__builtin_subcll(t3,m[3],br,&br);
+  t0=p256_addc(a[0],b[0],0,&c);  t1=p256_addc(a[1],b[1],c,&c);
+  t2=p256_addc(a[2],b[2],c,&c);  t3=p256_addc(a[3],b[3],c,&c);
+  s0=p256_subb(t0,m[0],0,&br);   s1=p256_subb(t1,m[1],br,&br);
+  s2=p256_subb(t2,m[2],br,&br);  s3=p256_subb(t3,m[3],br,&br);
   ge = c | (br^1);                       /* carry-out OR (t >= m) */
   r[0]=ge?s0:t0; r[1]=ge?s1:t1; r[2]=ge?s2:t2; r[3]=ge?s3:t3;
 }
 static void mont_sub(u64 r[4],const u64 a[4],const u64 b[4],const u64 m[4]){
   unsigned long long br,c,t0,t1,t2,t3,mask;
-  t0=__builtin_subcll(a[0],b[0],0,&br);  t1=__builtin_subcll(a[1],b[1],br,&br);
-  t2=__builtin_subcll(a[2],b[2],br,&br); t3=__builtin_subcll(a[3],b[3],br,&br);
+  t0=p256_subb(a[0],b[0],0,&br);  t1=p256_subb(a[1],b[1],br,&br);
+  t2=p256_subb(a[2],b[2],br,&br); t3=p256_subb(a[3],b[3],br,&br);
   mask=0-br;                             /* all-ones iff a<b */
-  r[0]=__builtin_addcll(t0,m[0]&mask,0,&c);  r[1]=__builtin_addcll(t1,m[1]&mask,c,&c);
-  r[2]=__builtin_addcll(t2,m[2]&mask,c,&c);  r[3]=__builtin_addcll(t3,m[3]&mask,c,&c);
+  r[0]=p256_addc(t0,m[0]&mask,0,&c);  r[1]=p256_addc(t1,m[1]&mask,c,&c);
+  r[2]=p256_addc(t2,m[2]&mask,c,&c);  r[3]=p256_addc(t3,m[3]&mask,c,&c);
 }
 /* Squaring uses the CIOS multiply: its interleaved reduction gives higher
    throughput than a separate SOS symmetric squarer on this core. */
