@@ -323,8 +323,11 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_pubkey(unsigned char *pk, const unsig
 /* 57-byte public key from a 57-byte secret key. Returns 1. */
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_sign(unsigned char *sig,
                                                 const unsigned char *msg, intptr_t msglen,
-                                                const unsigned char *sk);
-/* Deterministic 114-byte Ed448 signature (pure mode, empty context). Returns 1. */
+                                                const unsigned char *sk,
+                                                const unsigned char *pk);
+/* Deterministic 114-byte Ed448 signature (pure mode, empty context). Returns 1.
+   pk = the signer's 57-byte public key (skips re-deriving A = s*G each sign, the
+   standard cached-public-key model); pass NULL to derive A from sk alone. */
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed448_verify(const unsigned char *sig,
                                                   const unsigned char *msg, intptr_t msglen,
                                                   const unsigned char *pk);

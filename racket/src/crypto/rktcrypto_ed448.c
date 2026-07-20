@@ -313,19 +313,23 @@ static void ed448_genA(unsigned char A[57],const unsigned char *sk){
 int rktcrypto_ed448_pubkey(unsigned char *pk,const unsigned char *sk){
   ed448_init(); ed448_genA(pk,sk); return 1;
 }
-int rktcrypto_ed448_sign(unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *sk){
-  unsigned char h[114],A[57],rbuf[114],r57[57],R[57],kbuf[114],k57[57],S57[57],sbe[57]; ept Ap,Rp; int i;
+int rktcrypto_ed448_sign(unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *sk,const unsigned char *pk){
+  unsigned char h[114],A[57],rbuf[114],r57[57],R[57],kbuf[114],k57[57],S57[57],sbe[57]; ept Rp; int i;
   ed448_init();
   shake256(h,114,sk,57); h[0]&=0xfc; h[55]|=0x80; h[56]=0;
-  /* A = s*G as a point (reuse h; genA would redundantly re-hash sk) */
-  for(i=0;i<57;i++) sbe[i]=h[56-i]; pt_scalarmul_base(&Ap,sbe,57);
   /* r = SHAKE256(dom4 || prefix || M) mod L ; prefix = h[57..113] */
   { rktcrypto_keccak_ctx_t c; rktcrypto_keccak_core_init(&c,136,0x1f);
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,h+57,57);
     rktcrypto_keccak_core_update(&c,msg,mlen); rktcrypto_keccak_core_final(&c,rbuf,114); }
   sc_reduce_le(r57,rbuf,114);
   for(i=0;i<57;i++) sbe[i]=r57[56-i]; pt_scalarmul_base(&Rp,sbe,57);
-  pt_encode2(A,R,&Ap,&Rp);                                  /* one inversion for both */
+  /* The public key A is needed only (as bytes) for the k-hash. When the caller
+     supplies it (the standard key model -- OpenSSL/NaCl store A with the key),
+     use it directly and skip re-deriving A = s*G, halving the base-mult work.
+     pk == NULL falls back to deriving A (seed-only callers). */
+  if(pk){ memcpy(A,pk,57); pt_encode(R,&Rp); }
+  else { ept Ap; for(i=0;i<57;i++) sbe[i]=h[56-i]; pt_scalarmul_base(&Ap,sbe,57);
+         pt_encode2(A,R,&Ap,&Rp); }                          /* one inversion for both */
   /* k = SHAKE256(dom4 || R || A || M) mod L */
   { rktcrypto_keccak_ctx_t c; rktcrypto_keccak_core_init(&c,136,0x1f);
     rktcrypto_keccak_core_update(&c,DOM4,10); rktcrypto_keccak_core_update(&c,R,57);
