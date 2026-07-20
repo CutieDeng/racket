@@ -391,6 +391,32 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdh(unsigned char *out66, const unsig
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdsa_sign(unsigned char *sig132, const unsigned char *msg, intptr_t msglen, const unsigned char *priv);
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdsa_verify(const unsigned char *sig132, const unsigned char *msg, intptr_t msglen, const unsigned char *pub133);
 
+/* ECDSA verification from a precomputed digest (20..64 bytes), for X.509
+   chains whose signature digest does not match the curve's TLS pairing. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p256_ecdsa_verify_h(const unsigned char *sig64, const unsigned char *h, intptr_t hlen, const unsigned char *pub65);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p384_ecdsa_verify_h(const unsigned char *sig96, const unsigned char *h, intptr_t hlen, const unsigned char *pub97);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_p521_ecdsa_verify_h(const unsigned char *sig132, const unsigned char *h, intptr_t hlen, const unsigned char *pub133);
+
+/*************************************************/
+/* TLS signature schemes over RSA                */
+/* pss = 0 for RSASSA-PKCS1-v1_5, 1 for RSASSA-PSS (MGF1 over the same
+   digest). alg is RKTCRYPTO_SHA256/384/512. The message is hashed
+   internally. Public keys are raw big-endian (n, e); private keys are
+   PKCS#1 RSAPrivateKey DER. Up to RSA-4096. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_rsa_verify_msg(int pss, int alg,
+                                                    const unsigned char *n, intptr_t nlen,
+                                                    const unsigned char *e, intptr_t elen,
+                                                    const unsigned char *msg, intptr_t msglen,
+                                                    const unsigned char *sig, intptr_t siglen);
+/* Returns 1 iff `sig` is a valid signature over `msg`. */
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_rsa_sign_msg(int pss, int alg,
+                                                       const unsigned char *key_der, intptr_t key_der_len,
+                                                       const unsigned char *msg, intptr_t msglen,
+                                                       unsigned char *sig);
+/* Signs `msg`; writes modulus-size signature to `sig` and returns its
+   length, or 0 on failure. PSS uses a fresh hLen salt. */
+
 /*************************************************/
 /* SipHash keyed PRF                             */
 

@@ -448,14 +448,13 @@ static int ecc_sign(const curve *cv,unsigned char *sig,const unsigned char *msg,
   }
   return 0;
 }
-static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *pub){
-  unsigned char h[64]; int hlen=(int)rktcrypto_digest_size(cv->hash_alg);
+static int ecc_verify_h(const curve *cv,const unsigned char *sig,const unsigned char *h,intptr_t hlen,const unsigned char *pub){
   u64 r[MAXL],s[MAXL],z[MAXL],w[MAXL],u1[MAXL],u2[MAXL],qx[MAXL],qy[MAXL],x[MAXL],y[MAXL],one[MAXL],v[MAXL];
   jpt Q,R1,R2,R;
   if(pub[0]!=4) return 0;
   bytes_to_limbs(r,sig,cv->nbytes,cv->nl); bytes_to_limbs(s,sig+cv->nbytes,cv->nbytes,cv->nl);
   if(bn_iszero(r,cv->nl)||bn_cmp(r,cv->n,cv->nl)>=0||bn_iszero(s,cv->nl)||bn_cmp(s,cv->n,cv->nl)>=0) return 0;
-  rktcrypto_digest_oneshot(cv->hash_alg,msg,0,mlen,h,0,hlen); hash_to_scalar(z,h,hlen,cv);
+  hash_to_scalar(z,h,(int)hlen,cv);
   fn_inv(w,s,cv);
   { u64 zm[MAXL],wm[MAXL],pm[MAXL]; to_mont(zm,z,cv->n,cv->rr_n,cv->n0_n,cv->nl); to_mont(wm,w,cv->n,cv->rr_n,cv->n0_n,cv->nl); fn_mul(pm,zm,wm,cv); from_mont(u1,pm,cv->n,cv->n0_n,cv->nl); }
   { u64 rm[MAXL],wm[MAXL],pm[MAXL]; to_mont(rm,r,cv->n,cv->rr_n,cv->n0_n,cv->nl); to_mont(wm,w,cv->n,cv->rr_n,cv->n0_n,cv->nl); fn_mul(pm,rm,wm,cv); from_mont(u2,pm,cv->n,cv->n0_n,cv->nl); }
@@ -472,6 +471,11 @@ static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned ch
   bn_cpy(v,x); if(bn_cmp(v,cv->n,cv->nl)>=0) bn_sub(v,v,cv->n,cv->nl);
   return bn_cmp(v,r,cv->nl)==0;
 }
+static int ecc_verify(const curve *cv,const unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *pub){
+  unsigned char h[64]; int hlen=(int)rktcrypto_digest_size(cv->hash_alg);
+  rktcrypto_digest_oneshot(cv->hash_alg,msg,0,mlen,h,0,hlen);
+  return ecc_verify_h(cv,sig,h,hlen,pub);
+}
 
 int rktcrypto_p384_pubkey(unsigned char *out,const unsigned char *priv){ ecc_init(); return ecc_pubkey(&C384,out,priv); }
 int rktcrypto_p384_ecdh(unsigned char *out,const unsigned char *scalar,const unsigned char *point){ ecc_init(); return ecc_ecdh(&C384,out,scalar,point); }
@@ -481,3 +485,9 @@ int rktcrypto_p521_pubkey(unsigned char *out,const unsigned char *priv){ ecc_ini
 int rktcrypto_p521_ecdh(unsigned char *out,const unsigned char *scalar,const unsigned char *point){ ecc_init(); return ecc_ecdh(&C521,out,scalar,point); }
 int rktcrypto_p521_ecdsa_sign(unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *priv){ ecc_init(); return ecc_sign(&C521,sig,msg,mlen,priv); }
 int rktcrypto_p521_ecdsa_verify(const unsigned char *sig,const unsigned char *msg,intptr_t mlen,const unsigned char *pub){ ecc_init(); return ecc_verify(&C521,sig,msg,mlen,pub); }
+/* Precomputed-digest variants for X.509 chains whose signature digest does
+   not match the curve's TLS pairing (e.g. ecdsa-with-SHA256 on a P-384 CA). */
+int rktcrypto_p384_ecdsa_verify_h(const unsigned char *sig,const unsigned char *h,intptr_t hlen,const unsigned char *pub){
+  ecc_init(); if(hlen<20||hlen>64) return 0; return ecc_verify_h(&C384,sig,h,hlen,pub); }
+int rktcrypto_p521_ecdsa_verify_h(const unsigned char *sig,const unsigned char *h,intptr_t hlen,const unsigned char *pub){
+  ecc_init(); if(hlen<20||hlen>64) return 0; return ecc_verify_h(&C521,sig,h,hlen,pub); }

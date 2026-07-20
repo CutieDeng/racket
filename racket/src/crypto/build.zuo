@@ -90,6 +90,7 @@
       "rktcrypto_dsa.c"
       "rktcrypto_dh.c"
       "rktcrypto_x509.c"
+      "rktcrypto_tls_sig.c"
       "rktcrypto_tls13.c"
       "rktcrypto_selftest.c"))
   (define objs

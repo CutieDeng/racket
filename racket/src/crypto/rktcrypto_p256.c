@@ -629,15 +629,14 @@ int rktcrypto_p256_ecdsa_sign(unsigned char sig[64],const unsigned char *msg,int
   return 0;
 }
 
-int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char pub65[65]){
-  unsigned char digest[32]; u64 z[4],r_[4],s_[4],w[4],u1[4],u2[4];
+static int p256_verify_digest32(const unsigned char sig[64],const unsigned char digest[32],const unsigned char pub65[65]){
+  u64 z[4],r_[4],s_[4],w[4],u1[4],u2[4];
   u64 smont[4],winv[4],zmont[4],rmont[4],u1m[4],u2m[4];
   jac Pub,A1,A2,R; u64 px[4],py[4];
   if(!inited)p256_init();
   if(pub65[0]!=4) return 0;
   bytes_to_bn(r_,sig); bytes_to_bn(s_,sig+32);
   if(fp_iszero(r_)||fp_iszero(s_)||bn_geq(r_,N)||bn_geq(s_,N)) return 0;
-  sha256(msg,msglen,digest);
   bytes_to_bn(z,digest);
   if(bn_geq(z,N)) bn_sub(z,z,N);
   /* w = s^-1 mod n; u1 = z*w; u2 = r*w */
@@ -672,4 +671,20 @@ int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char 
     }
   }
   return 0;
+}
+
+int rktcrypto_p256_ecdsa_verify(const unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char pub65[65]){
+  unsigned char digest[32];
+  sha256(msg,msglen,digest);
+  return p256_verify_digest32(sig,digest,pub65);
+}
+
+/* Precomputed-digest variant (X.509 chains with a non-SHA-256 digest over a
+   P-256 key): z = leftmost 256 bits of the digest, per ECDSA. */
+int rktcrypto_p256_ecdsa_verify_h(const unsigned char sig[64],const unsigned char *h,intptr_t hlen,const unsigned char pub65[65]){
+  unsigned char d32[32];
+  if(hlen<20||hlen>64) return 0;
+  if(hlen>=32) memcpy(d32,h,32);
+  else { memset(d32,0,(size_t)(32-hlen)); memcpy(d32+(32-hlen),h,(size_t)hlen); }
+  return p256_verify_digest32(sig,d32,pub65);
 }
