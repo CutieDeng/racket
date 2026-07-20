@@ -71,6 +71,14 @@ static void __attribute__((unused)) sha1_block(rktcrypto_sha1_ctx_t *ctx, const 
    sha1su0/su1, round function sha1c (0-19) / sha1p (20-39,60-79) / sha1m (40-59). */
 static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, intptr_t nblk)
 {
+#if defined(__aarch64__) && defined(__APPLE__)
+  /* Hand-scheduled asmp kernel (asm/gen_sha1.py): the sha1c/sha1h chain is
+     identical to this C, but transcribing OpenSSL's exact instruction placement
+     recovers the ~7% that clang's scheduling of the intrinsics left on the table
+     (0.93 -> 1.00x). State stays register-resident across all nblk blocks. */
+  void sha1_blocks_asm(uint32_t *st, const unsigned char *p, long nblk);
+  sha1_blocks_asm(ctx->h, p, nblk);
+#else
   uint32x4_t ABCD, ABCD0, MSG0, MSG1, MSG2, MSG3, T0, T1;
   uint32_t E0, E0S, E1;
   const uint32x4_t C0=vdupq_n_u32(0x5A827999u), C1=vdupq_n_u32(0x6ED9EBA1u),
@@ -107,6 +115,7 @@ static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, int
     p += 64;
   }
   vst1q_u32(ctx->h, ABCD); ctx->h[4] = E0;
+#endif
 }
 #else
 static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, intptr_t nblk)
