@@ -17,10 +17,15 @@ union digest_ctx {
   rktcrypto_blake3_ctx_t blake3;
   rktcrypto_sha1_ctx_t sha1;
   rktcrypto_md5_ctx_t md5;
+  rktcrypto_md4_ctx_t md4;
+  rktcrypto_rmd160_ctx_t rmd160;
+  rktcrypto_sm3_ctx_t sm3;
+  rktcrypto_whirlpool_ctx_t whirlpool;
 };
 
 /* Family selector plus fixed parameters for each algorithm id. */
-enum family { F_SHA256, F_SHA512, F_KECCAK, F_BLAKE2B, F_BLAKE3, F_SHA1, F_MD5, F_NONE };
+enum family { F_SHA256, F_SHA512, F_KECCAK, F_BLAKE2B, F_BLAKE3, F_SHA1, F_MD5,
+              F_MD4, F_RMD160, F_SM3, F_WHIRLPOOL, F_NONE };
 
 struct alg_info {
   enum family family;
@@ -50,6 +55,10 @@ static struct alg_info info_for(int alg)
     case RKTCRYPTO_BLAKE3:     a.family = F_BLAKE3;  a.digest_size = 32; a.block_size = 64; a.is_xof = 1; break;
     case RKTCRYPTO_SHA1:       a.family = F_SHA1;    a.digest_size = 20; a.block_size = 64;  break;
     case RKTCRYPTO_MD5:        a.family = F_MD5;     a.digest_size = 16; a.block_size = 64;  break;
+    case RKTCRYPTO_MD4:        a.family = F_MD4;     a.digest_size = 16; a.block_size = 64;  break;
+    case RKTCRYPTO_RIPEMD160:  a.family = F_RMD160;  a.digest_size = 20; a.block_size = 64;  break;
+    case RKTCRYPTO_SM3:        a.family = F_SM3;     a.digest_size = 32; a.block_size = 64;  break;
+    case RKTCRYPTO_WHIRLPOOL:  a.family = F_WHIRLPOOL; a.digest_size = 64; a.block_size = 64; break;
     default: break;
   }
   return a;
@@ -112,6 +121,18 @@ int rktcrypto_digest_init(int alg, unsigned char *ctx, intptr_t ctx_len, intptr_
     case F_MD5:
       rktcrypto_md5_core_init(&u.md5);
       break;
+    case F_MD4:
+      rktcrypto_md4_core_init(&u.md4);
+      break;
+    case F_RMD160:
+      rktcrypto_rmd160_core_init(&u.rmd160);
+      break;
+    case F_SM3:
+      rktcrypto_sm3_core_init(&u.sm3);
+      break;
+    case F_WHIRLPOOL:
+      rktcrypto_whirlpool_core_init(&u.whirlpool);
+      break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));
@@ -139,6 +160,10 @@ int rktcrypto_digest_update(int alg, unsigned char *ctx, intptr_t ctx_len,
     case F_BLAKE3:  rktcrypto_blake3_core_update(&u.blake3, data + start, len); break;
     case F_SHA1:    rktcrypto_sha1_core_update(&u.sha1, data + start, len); break;
     case F_MD5:     rktcrypto_md5_core_update(&u.md5, data + start, len); break;
+    case F_MD4:     rktcrypto_md4_core_update(&u.md4, data + start, len); break;
+    case F_RMD160:  rktcrypto_rmd160_core_update(&u.rmd160, data + start, len); break;
+    case F_SM3:     rktcrypto_sm3_core_update(&u.sm3, data + start, len); break;
+    case F_WHIRLPOOL: rktcrypto_whirlpool_core_update(&u.whirlpool, data + start, len); break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));
@@ -166,6 +191,10 @@ int rktcrypto_digest_final(int alg, unsigned char *ctx, intptr_t ctx_len,
     case F_BLAKE3:  rktcrypto_blake3_core_final(&u.blake3, out + out_start, out_len); break;
     case F_SHA1:    rktcrypto_sha1_core_final(&u.sha1, out + out_start, out_len); break;
     case F_MD5:     rktcrypto_md5_core_final(&u.md5, out + out_start, out_len); break;
+    case F_MD4:     rktcrypto_md4_core_final(&u.md4, out + out_start, out_len); break;
+    case F_RMD160:  rktcrypto_rmd160_core_final(&u.rmd160, out + out_start, out_len); break;
+    case F_SM3:     rktcrypto_sm3_core_final(&u.sm3, out + out_start, out_len); break;
+    case F_WHIRLPOOL: rktcrypto_whirlpool_core_final(&u.whirlpool, out + out_start, out_len); break;
     default: return 0;
   }
   memcpy(ctx, &u, sizeof(u));

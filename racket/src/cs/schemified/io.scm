@@ -447,14 +447,18 @@
    'temp-dir
    '9))
 (define hash2610 (hasheq))
-(define hash2525
+(define hash2865
   (hasheq
    'blake2b
    '12
    'blake3
    '13
+   'md4
+   '18
    'md5
    '15
+   'ripemd160
+   '16
    'sha1
    '14
    'sha224
@@ -478,7 +482,11 @@
    'shake128
    '10
    'shake256
-   '11))
+   '11
+   'sm3
+   '17
+   'whirlpool
+   '19))
 (define hash3229
   (hasheq
    'SW_HIDE
@@ -35334,6 +35342,10 @@
 (define RKTCRYPTO_BLAKE_2626 13)
 (define RKTCRYPTO_SHA_2988 14)
 (define RKTCRYPTO_MD_2131 15)
+(define RKTCRYPTO_RIPEMD_2148 16)
+(define RKTCRYPTO_SM_1952 17)
+(define RKTCRYPTO_MD_2026 18)
+(define RKTCRYPTO_WHIRLPOOL 19)
 (define RKTCRYPTO_AEAD_CHACHA20_POLY_1878 1)
 (define RKTCRYPTO_AEAD_XCHACHA20_POLY_2901 2)
 (define RKTCRYPTO_AEAD_AES256_GCM 3)
@@ -35502,24 +35514,26 @@
 (define alg->id
   (lambda (who_0 alg_0)
     (let ((index_0
-           (if (symbol? alg_0) (hash-ref hash2525 alg_0 (lambda () 0)) 0)))
-      (if (unsafe-fx< index_0 7)
-        (if (unsafe-fx< index_0 3)
+           (if (symbol? alg_0) (hash-ref hash2865 alg_0 (lambda () 0)) 0)))
+      (if (unsafe-fx< index_0 9)
+        (if (unsafe-fx< index_0 4)
           (if (unsafe-fx< index_0 1)
             (raise-argument-error who_0 "crypto-digest-algorithm/c" alg_0)
-            (if (unsafe-fx< index_0 2) 1 2))
-          (if (unsafe-fx< index_0 4)
-            3
-            (if (unsafe-fx< index_0 5) 4 (if (unsafe-fx< index_0 6) 5 6))))
-        (if (unsafe-fx< index_0 11)
-          (if (unsafe-fx< index_0 8)
-            7
-            (if (unsafe-fx< index_0 9) 8 (if (unsafe-fx< index_0 10) 9 10)))
-          (if (unsafe-fx< index_0 13)
-            (if (unsafe-fx< index_0 12) 11 12)
-            (if (unsafe-fx< index_0 14)
-              13
-              (if (unsafe-fx< index_0 15) 14 15))))))))
+            (if (unsafe-fx< index_0 2) 1 (if (unsafe-fx< index_0 3) 2 3)))
+          (if (unsafe-fx< index_0 6)
+            (if (unsafe-fx< index_0 5) 4 5)
+            (if (unsafe-fx< index_0 7) 6 (if (unsafe-fx< index_0 8) 7 8))))
+        (if (unsafe-fx< index_0 14)
+          (if (unsafe-fx< index_0 11)
+            (if (unsafe-fx< index_0 10) 9 10)
+            (if (unsafe-fx< index_0 12) 11 (if (unsafe-fx< index_0 13) 12 13)))
+          (if (unsafe-fx< index_0 16)
+            (if (unsafe-fx< index_0 15) 14 15)
+            (if (unsafe-fx< index_0 17)
+              16
+              (if (unsafe-fx< index_0 18)
+                17
+                (if (unsafe-fx< index_0 19) 18 19)))))))))
 (define 1/crypto-digest-ctx-size
   (|#%name|
    crypto-digest-ctx-size

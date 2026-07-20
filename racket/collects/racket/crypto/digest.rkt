@@ -19,8 +19,9 @@
   '(sha224 sha256 sha384 sha512 sha512/256
     sha3-224 sha3-256 sha3-384 sha3-512
     shake128 shake256 blake2b blake3
+    ripemd160 sm3 whirlpool
     ;; legacy, cryptographically broken; for compatibility only
-    sha1 md5))
+    sha1 md5 md4))
 
 (define (digest-algorithm? v) (and (memq v algorithms) #t))
 

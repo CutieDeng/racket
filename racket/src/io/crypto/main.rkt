@@ -110,6 +110,10 @@
     [(blake3)     RKTCRYPTO_BLAKE3]
     [(sha1)       RKTCRYPTO_SHA1]
     [(md5)        RKTCRYPTO_MD5]
+    [(ripemd160)  RKTCRYPTO_RIPEMD160]
+    [(sm3)        RKTCRYPTO_SM3]
+    [(md4)        RKTCRYPTO_MD4]
+    [(whirlpool)  RKTCRYPTO_WHIRLPOOL]
     [else (raise-argument-error who "crypto-digest-algorithm/c" alg)]))
 
 (define/who (crypto-digest-ctx-size alg)

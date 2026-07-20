@@ -55,6 +55,66 @@ void rktcrypto_md5_core_update(rktcrypto_md5_ctx_t *ctx,
 void rktcrypto_md5_core_final(rktcrypto_md5_ctx_t *ctx,
                               unsigned char *out, intptr_t out_len);
 
+/* ---- MD4 (RFC 1320): legacy, broken ---- */
+
+typedef struct rktcrypto_md4_ctx_t {
+  uint32_t h[4];
+  uint64_t len;         /* message length in bits */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_md4_ctx_t;
+
+void rktcrypto_md4_core_init(rktcrypto_md4_ctx_t *ctx);
+void rktcrypto_md4_core_update(rktcrypto_md4_ctx_t *ctx,
+                               const unsigned char *data, intptr_t len);
+void rktcrypto_md4_core_final(rktcrypto_md4_ctx_t *ctx,
+                              unsigned char *out, intptr_t out_len);
+
+/* ---- RIPEMD-160 (ISO/IEC 10118-3) ---- */
+
+typedef struct rktcrypto_rmd160_ctx_t {
+  uint32_t h[5];
+  uint64_t len;         /* message length in bits */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_rmd160_ctx_t;
+
+void rktcrypto_rmd160_core_init(rktcrypto_rmd160_ctx_t *ctx);
+void rktcrypto_rmd160_core_update(rktcrypto_rmd160_ctx_t *ctx,
+                                  const unsigned char *data, intptr_t len);
+void rktcrypto_rmd160_core_final(rktcrypto_rmd160_ctx_t *ctx,
+                                 unsigned char *out, intptr_t out_len);
+
+/* ---- SM3 (GB/T 32905-2016) ---- */
+
+typedef struct rktcrypto_sm3_ctx_t {
+  uint32_t h[8];
+  uint64_t len;         /* message length in bits */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_sm3_ctx_t;
+
+void rktcrypto_sm3_core_init(rktcrypto_sm3_ctx_t *ctx);
+void rktcrypto_sm3_core_update(rktcrypto_sm3_ctx_t *ctx,
+                               const unsigned char *data, intptr_t len);
+void rktcrypto_sm3_core_final(rktcrypto_sm3_ctx_t *ctx,
+                              unsigned char *out, intptr_t out_len);
+
+/* ---- Whirlpool (ISO/IEC 10118-3, final 2003 version) ---- */
+
+typedef struct rktcrypto_whirlpool_ctx_t {
+  uint64_t h[8];
+  uint64_t len;         /* message length in bits (< 2^64) */
+  unsigned char buf[64];
+  intptr_t buf_len;
+} rktcrypto_whirlpool_ctx_t;
+
+void rktcrypto_whirlpool_core_init(rktcrypto_whirlpool_ctx_t *ctx);
+void rktcrypto_whirlpool_core_update(rktcrypto_whirlpool_ctx_t *ctx,
+                                     const unsigned char *data, intptr_t len);
+void rktcrypto_whirlpool_core_final(rktcrypto_whirlpool_ctx_t *ctx,
+                                    unsigned char *out, intptr_t out_len);
+
 /* ---- SHA-384 / SHA-512 / SHA-512-256 (FIPS 180-4) ---- */
 
 typedef struct rktcrypto_sha512_ctx_t {

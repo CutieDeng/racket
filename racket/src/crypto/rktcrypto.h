@@ -92,6 +92,10 @@ RKTCRYPTO_EXTERN_NOERR void rktcrypto_secure_clear(unsigned char *buf, intptr_t 
 #define RKTCRYPTO_BLAKE3     13
 #define RKTCRYPTO_SHA1       14   /* legacy, broken; compatibility only */
 #define RKTCRYPTO_MD5        15   /* legacy, broken; compatibility only */
+#define RKTCRYPTO_RIPEMD160  16   /* legacy 160-bit; interop (HASH160, PGP) */
+#define RKTCRYPTO_SM3        17   /* GB/T 32905 (Chinese national standard) */
+#define RKTCRYPTO_MD4        18   /* legacy, broken; compatibility only */
+#define RKTCRYPTO_WHIRLPOOL  19   /* ISO/IEC 10118-3 512-bit */
 
 /* Upper bound on the incremental context size across all algorithms;
    Racket allocates a byte string of at least this many bytes to hold
