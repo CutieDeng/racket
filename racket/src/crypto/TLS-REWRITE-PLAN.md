@@ -1,5 +1,16 @@
 # TLS 栈重写规划：从零实现 rktcrypto TLS 后端，移除 libssl
 
+> **状态（2026-07-20）：已完成。** TLS 1.3 + 1.2 客户端/服务端从零实现，
+> `openssl/private/rktcrypto-*.rkt` 全公开 API on rktcrypto，`libssl.rkt`/
+> `mzssl.rkt`/`private/ffi.rkt` 已删。`ssl-available?` 在不加载任何 OpenSSL
+> 下为 `#t`，`tls-acceptance.rkt`（8 例）+ `integration.rkt`（71）全过，
+> `net/http-client` HTTPS 可用。互操作实测：openssl s_server/s_client
+> （1.3 三套 + 1.2 ECDHE-RSA/ECDSA）、公网 HTTPS 全验证 + 负例正确拒绝、
+> HRR、SNI、ALPN、通道绑定(tls-exporter)、keylog(SSLKEYLOGFILE)。
+> **遗留（优化项，不影响判据）**：1.3 会话恢复(ticket/PSK)、端口层完整
+> 非阻塞/半关闭、1.2 tls-unique 绑定；`openssl/legacy`（非 TLS 分组密码）
+> 仍经 libcrypto，属独立后续。
+
 > 本文档用于**开启新对话任务**。一个新会话读完本文即可直接动手，无需回溯历史。
 > 目标读者是接手实现的工程/Agent。文末是**验收标准**，逐阶段可判定。
 
