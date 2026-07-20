@@ -167,15 +167,34 @@ static void pt_dbl_noT(ept *R,const ept *P){
   fadd(G,A,B); fsub(F,G,C); fsub(H,A,B);
   fmul(R->X,E,F); fmul(R->Y,G,H); fmul(R->Z,F,G);
 }
+static void pt_neg(ept *R,const ept *P){ u64 z[NL]={0,0,0,0,0,0,0,0};
+  fsub(R->X,z,P->X); fe_copy(R->Y,P->Y); fe_copy(R->Z,P->Z); fsub(R->T,z,P->T); }
+/* Variable-base k*P via width-5 wNAF (verify only; k public -> variable time ok).
+   ~448 doublings (unavoidable) but only ~75 adds + 8-entry odd-multiple table,
+   vs a fixed width-4 window's ~114 window-adds + 15-entry table. */
 static void pt_scalarmul_win(ept *R,const unsigned char *k_be,int kbytes,const ept *P){
-  ept T[16],acc; int i,w,nw=kbytes*2;
-  pt_identity(&T[0]); T[1]=*P;
-  for(i=2;i<16;i++) pt_add(&T[i],&T[i-1],P);
+  ept odd[8],dP,acc; signed char wnaf[456]; unsigned char k[64]; int i,wlen=0,nz;
+  /* k as little-endian bytes */
+  for(i=0;i<kbytes;i++) k[i]=k_be[kbytes-1-i];
+  for(i=kbytes;i<64;i++) k[i]=0;
+  /* width-5 wNAF digits (LSB first): each nonzero is odd, |d| < 16 */
+  for(;;){ nz=0; for(i=0;i<64;i++) if(k[i]){nz=1;break;} if(!nz) break;
+    if(k[0]&1){ int d=k[0]&31; if(d>=16) d-=32; wnaf[wlen++]=(signed char)d;
+      if(d>0){ int b=d,j=0; while(b){ int v=k[j]-(b&0xff); k[j]=(unsigned char)v; b=(b>>8)+(v<0?1:0); j++; } }
+      else   { int b=-d,j=0; while(b){ int v=k[j]+(b&0xff); k[j]=(unsigned char)v; b=(b>>8)+(v>>8); j++; } }
+    } else wnaf[wlen++]=0;
+    for(i=0;i<63;i++) k[i]=(unsigned char)((k[i]>>1)|(k[i+1]<<7)); k[63]>>=1;   /* k >>= 1 */
+  }
+  /* odd[j] = (2j+1)*P : P,3P,5P,...,15P */
+  odd[0]=*P; pt_dbl(&dP,P);
+  for(i=1;i<8;i++) pt_add(&odd[i],&odd[i-1],&dP);
   pt_identity(&acc);
-  for(w=nw-1;w>=0;w--){
-    int nib=(k_be[kbytes-1-(w>>1)]>>((w&1)*4))&0xF;
-    pt_dbl_noT(&acc,&acc); pt_dbl_noT(&acc,&acc); pt_dbl_noT(&acc,&acc); pt_dbl(&acc,&acc);
-    if(nib) pt_add(&acc,&acc,&T[nib]);
+  for(i=wlen-1;i>=0;i--){
+    if(wnaf[i]){ pt_dbl(&acc,&acc);
+      if(wnaf[i]>0) pt_add(&acc,&acc,&odd[(wnaf[i]-1)>>1]);
+      else { ept ng; pt_neg(&ng,&odd[(-wnaf[i]-1)>>1]); pt_add(&acc,&acc,&ng); }
+    } else if(i==0) pt_dbl(&acc,&acc);   /* last op must leave a valid T for the caller */
+    else pt_dbl_noT(&acc,&acc);
   }
   *R=acc;
 }
