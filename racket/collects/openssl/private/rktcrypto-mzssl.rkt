@@ -209,12 +209,16 @@
     (cond
       [(eq? mode 'connect)
        (define anchors (cx-ref context 'trust-anchors))
+       ;; The `encrypt`/context protocol symbol pins the max version: 'tls12
+       ;; forces TLS 1.2, everything else negotiates (prefers 1.3).
+       (define proto (cx-ref context 'protocol))
        (tls13-connect i o
                       (hash 'host hostname
                             'alpn (if (pair? alpn) alpn (cx-ref context 'alpn))
                             'verify? (cx-ref context 'verify?)
                             'verify-hostname? (cx-ref context 'verify-hostname?)
-                            'trust-anchors anchors))]
+                            'trust-anchors anchors
+                            'tls12-only? (memq proto '(tls12 tls11 tls))))]
       [else
        (define key (cx-ref context 'private-key))
        (unless key (error/ssl "ssl-accept: server context has no private key"))

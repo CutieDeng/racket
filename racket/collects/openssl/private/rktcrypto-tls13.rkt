@@ -14,7 +14,13 @@
 (require "rktcrypto-ffi.rkt"
          "rktcrypto-x509.rkt"
          "rktcrypto-verify.rkt"
-         racket/port)
+         racket/port
+         racket/lazy-require)
+
+;; TLS 1.2 lives in a sibling module that requires this one; break the cycle
+;; with a lazy require so the 1.2 continuation loads on first use.
+(lazy-require
+ ["rktcrypto-tls12.rkt" (tls12-client-finish tls12-accept tls12-suites)])
 
 (provide tls13-connect
          tls13-accept
@@ -235,10 +241,35 @@
 ;; =====================================================================
 ;; The connection object exposed to callers
 ;; =====================================================================
-(struct tls-conn (rl                       ; record layer (application keys installed)
-                  rbuf                      ; buffered decrypted app data
-                  closed
+;; Transport-agnostic so both the TLS 1.3 record layer (here) and the TLS
+;; 1.2 record layer (rktcrypto-tls12.rkt) plug into the same interface.
+;;   recv : (-> (or/c bytes eof))     one application-data chunk
+;;   send : (-> bytes void)           protect+write application data
+;;   shut : (-> void)                 write close_notify
+(struct tls-conn (recv send shut
+                  rbuf closed
                   alpn peer-certs protocol) #:mutable)
+
+;; Build the 1.3 tls-conn from an installed record layer.
+(define (tls13-make-conn r alpn peer-certs)
+  (define (recv)
+    (let loop ()
+      (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
+        (define-values (type payload) (rl-read-record r))
+        (cond
+          [(and (= type 23) (positive? (bytes-length payload))) payload]
+          [(= type 23) (loop)]
+          [(= type 21) eof]                                  ; close_notify
+          [(= type 22) (loop)]                               ; NewSessionTicket / KeyUpdate
+          [else (loop)]))))
+  (define (send bs)
+    (let loop ([off 0])
+      (when (< off (bytes-length bs))
+        (define chunk (min 16384 (- (bytes-length bs) off)))
+        (rl-write-record r 23 (subbytes bs off (+ off chunk)))
+        (loop (+ off chunk)))))
+  (define (shut) (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 1 0))))
+  (tls-conn recv send shut #"" #f alpn peer-certs 'tls1.3))
 
 ;; Reads up to `n` application bytes; returns bytes or eof.
 (define (tls-conn-read-bytes c n)
@@ -250,30 +281,31 @@
      (set-tls-conn-rbuf! c (subbytes buf take))
      (subbytes buf 0 take)]
     [else
-     (let loop ()
-       (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) (set-tls-conn-closed! c #t) eof)])
-         (define-values (type payload) (rl-read-record (tls-conn-rl c)))
-         (cond
-           [(= type 23)
-            (cond [(zero? (bytes-length payload)) (loop)]
-                  [else (set-tls-conn-rbuf! c payload) (tls-conn-read-bytes c n)])]
-           [(= type 21) (set-tls-conn-closed! c #t) eof]      ; close_notify
-           [(= type 22) (loop)]                                ; post-handshake (NewSessionTicket, KeyUpdate*)
-           [else (loop)])))]))
+     (define got ((tls-conn-recv c)))
+     (cond
+       [(eof-object? got) (set-tls-conn-closed! c #t) eof]
+       [else (set-tls-conn-rbuf! c got) (tls-conn-read-bytes c n)])]))
 
 (define (tls-conn-write-bytes c bs)
-  (let loop ([off 0])
-    (when (< off (bytes-length bs))
-      (define chunk (min 16384 (- (bytes-length bs) off)))
-      (rl-write-record (tls-conn-rl c) 23 (subbytes bs off (+ off chunk)))
-      (loop (+ off chunk))))
+  ((tls-conn-send c) bs)
   (bytes-length bs))
 
 (define (tls-conn-close-notify c)
   (unless (tls-conn-closed c)
-    (with-handlers ([exn:fail? void])
-      (rl-write-record (tls-conn-rl c) 21 (bytes 1 0)))   ; warning close_notify
+    ((tls-conn-shut c))
     (set-tls-conn-closed! c #t)))
+;; Generic tls-conn constructor used by the TLS 1.2 engine.
+(define (make-tls-conn recv send shut peer-ders protocol)
+  (tls-conn recv send shut #"" #f #f peer-ders protocol))
+
+(provide tls13-make-conn make-tls-conn
+         (struct-out rl) make-rl rl-read-record rl-write-record
+         rl-set-read-key! rl-set-write-key!
+         make-hsr hsr-next hsr-app
+         (struct-out transcript) make-transcript tr-add! tr-hash tr-set-alg!
+         u8 u16 u24 vec be->int ext parse-extensions
+         tls-error tls-alert exn:tls-alert
+         digest hmac random-bytes ct-equal?)
 
 ;; =====================================================================
 ;; Client handshake
@@ -313,22 +345,33 @@
 
   (define session-id (random-bytes 32))
 
+  (define only-12? (hash-ref opts 'tls12-only? #f))
+  (define offer-12? (or only-12? (hash-ref opts 'offer-12? #t)))
+  (define client-random (random-bytes 32))
+  (define all-suites (cond [only-12? (tls12-suites)]
+                           [offer-12? (append client-suites (tls12-suites))]
+                           [else client-suites]))
   (define (build-client-hello key-share-entries [cookie #f])
     (define exts
       (bytes-append
-       (ext #x002b (vec 1 (u16 #x0304)))                    ; supported_versions
+       (ext #x002b (vec 1 (cond [only-12? (u16 #x0303)]
+                                [offer-12? (bytes-append (u16 #x0304) (u16 #x0303))]
+                                [else (u16 #x0304)]))) ; supported_versions
        (ext #x000a (vec 2 (apply bytes-append (map u16 groups))))  ; supported_groups
+       (ext #x000b (vec 1 (bytes 0)))                          ; ec_point_formats: uncompressed
        (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes)))) ; signature_algorithms
        (ext #x0033 (vec 2 (apply bytes-append key-share-entries)))    ; key_share
+       (ext #x0017 #"")                                        ; extended_master_secret
+       (ext #xff01 (vec 1 #""))                                ; renegotiation_info (empty)
        (if cookie (ext #x002c (vec 2 cookie)) #"")
        (if host (ext #x0000 (vec 2 (bytes-append (u8 0) (vec 2 (string->bytes/latin-1 host))))) #"")  ; SNI
        (if (pair? alpn)
            (ext #x0010 (vec 2 (apply bytes-append (map (lambda (p) (vec 1 p)) alpn))))
            #"")))
     (define body
-      (bytes-append (u16 #x0303) (random-bytes 32)
+      (bytes-append (u16 #x0303) client-random
                     (vec 1 session-id)
-                    (vec 2 (apply bytes-append (map u16 client-suites)))
+                    (vec 2 (apply bytes-append (map u16 all-suites)))
                     (vec 1 (bytes 0))               ; compression: null
                     (vec 2 exts)))
     (bytes-append (u8 1) (u24 (bytes-length body)) body))
@@ -374,11 +417,21 @@
      (unless (= sh2-type 2) (raise (tls-error "expected ServerHello after HRR")))
      (finish-client-handshake r hs tr sh2 want-group privs verify? host anchors alpn)]
     [else
-     (tr-add! tr sh)
      (define-values (suite exts) (parse-server-hello sh))
-     (define ks-ext (assoc #x0033 exts))
-     (define grp (be->int (cdr ks-ext) 0 2))
-     (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? host anchors alpn)]))
+     (define sv-ext (assoc #x002b exts))
+     (define chose-13? (and sv-ext (>= (bytes-length (cdr sv-ext)) 2)
+                            (= #x0304 (be->int (cdr sv-ext) 0 2))))
+     (cond
+       [chose-13?
+        (tr-add! tr sh)
+        (define ks-ext (assoc #x0033 exts))
+        (define grp (be->int (cdr ks-ext) 0 2))
+        (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? host anchors alpn)]
+       [else
+        ;; Server negotiated TLS 1.2. Hand off to the 1.2 continuation with
+        ;; the raw transcript (ClientHello || ServerHello) so far.
+        (tls12-client-finish (rl-in r) (rl-out r) hs (bytes-append ch1 sh) sh client-random
+                             (hash 'host host 'verify? verify? 'trust-anchors anchors))])]))
 
 ;; After a (possibly retried) ServerHello whose suite/exts we've parsed.
 (define (finish-client-handshake r hs tr sh want-group privs verify? host anchors alpn)
@@ -447,7 +500,7 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-read-key! r aead sapk sapiv)
   (rl-set-write-key! r aead capk capiv)
-  (tls-conn r #"" #f (unbox selected-alpn) (unbox peer-certs) 'tls1.3))
+  (tls13-make-conn r (unbox selected-alpn) (unbox peer-certs)))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -503,9 +556,35 @@
   (define-values (ch-type ch) (hsr-next hs))
   (unless (= ch-type 1) (raise (tls-error "expected ClientHello")))
   (define-values (ch-suites ch-exts) (parse-client-hello ch))
-  ;; choose a cipher suite from the client's list that we support
-  (define suite (or (for/or ([s (in-list ch-suites)] #:when (suite-supported? s)) s)
-                    (raise (tls-error "no common cipher suite"))))
+  (define ch-random (subbytes ch 6 38))
+  ;; Prefer TLS 1.3 only when the client advertises it (supported_versions
+  ;; carries 0x0304) and offers a 1.3 suite; otherwise fall to TLS 1.2.
+  (define sv (let ([e (assoc #x002b ch-exts)]) (and e (cdr e))))
+  (define client-13?
+    (and sv (positive? (bytes-length sv))
+         (let ([n (bytes-ref sv 0)])
+           (let loop ([i 1]) (and (< i (+ 1 n))
+                                  (or (= #x0304 (be->int sv i (+ i 2))) (loop (+ i 2))))))))
+  (define suite13 (and client-13? (for/or ([s (in-list ch-suites)] #:when (suite-supported? s)) s)))
+  (cond
+    [(not suite13)
+     (define s12 (for/or ([s (in-list ch-suites)]
+                          #:when (and (>= s #xC000) (server-can-12? s key))) s))
+     (unless s12 (raise (tls-error "no common cipher suite")))
+     (tls12-accept in out hs ch ch-random s12 opts)]
+    [else (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite13)]))
+
+(define (server-can-12? s key)
+  ;; ECDHE-RSA suites need an RSA key; ECDHE-ECDSA need a P-256 key.
+  (case s
+    [(#xC02F #xC030 #xCCA8) (eq? (car key) 'rsa)]
+    [(#xC02B #xC02C #xCCA9) (eq? (car key) 'p256)]
+    [else #f]))
+
+(define (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite)
+  (define cert-ders (hash-ref opts 'cert-ders))
+  (define key (hash-ref opts 'key))
+  (define our-alpn (hash-ref opts 'alpn '()))
   (define-values (alg aead klen ilen dname) (suite-params suite))
   (define tr (make-transcript alg))
   ;; key_share: find a group we both support
@@ -601,7 +680,7 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-write-key! r aead sapk sapiv)
   (rl-set-read-key! r aead capk capiv)
-  (tls-conn r #"" #f neg-alpn '() 'tls1.3))
+  (tls13-make-conn r neg-alpn '()))
 
 ;; ---- server helpers ----
 (define (gen-server-share group)

@@ -128,7 +128,13 @@
                          #:client-ctx cc #:hostname "not-lambda.example"
                          #:expect-client-fail #t)))
 
-     ;; 6. Negative: untrusted root must be rejected (empty trust store).
+     ;; 6. TLS 1.2 loopback (client pinned to 1.2; server negotiates down).
+     (check! "TLS 1.2 loopback handshake + echo"
+             (let ([ci (loopback #:server-ctx (server-ctx-with-test-cert)
+                                 #:client-ctx (ssl-make-client-context 'tls12))])
+               (and (port? ci) (eq? (ssl-protocol-version ci) 'tls1.2))))
+
+     ;; 7. Negative: untrusted root must be rejected (empty trust store).
      (let ([cc (ssl-make-client-context 'tls13)])
        (ssl-set-verify! cc #t)
        (check! "untrusted certificate rejected"
