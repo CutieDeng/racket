@@ -197,6 +197,28 @@ void rktcrypto_keccak_core_update(rktcrypto_keccak_ctx_t *ctx,
        permutation is hardware-accelerated). rate is a multiple of 8. */
     if (ctx->pos == 0 && len >= ctx->rate) {
       intptr_t words = ctx->rate >> 3;
+      intptr_t nblk = len / ctx->rate;
+#if defined(__ARM_FEATURE_SHA3)
+      /* Fused absorb: the state stays resident in vector registers across all
+         blocks (input XORed straight into the register state, permuted in
+         place) -- no per-block state load/store round-trip. One kernel per
+         sponge rate; other rates fall through to the portable word loop. */
+      void keccak_absorb21_asm(uint64_t*,const unsigned char*,intptr_t,const uint64_t*);
+      void keccak_absorb18_asm(uint64_t*,const unsigned char*,intptr_t,const uint64_t*);
+      void keccak_absorb17_asm(uint64_t*,const unsigned char*,intptr_t,const uint64_t*);
+      void keccak_absorb13_asm(uint64_t*,const unsigned char*,intptr_t,const uint64_t*);
+      void keccak_absorb9_asm (uint64_t*,const unsigned char*,intptr_t,const uint64_t*);
+      int fused = 1;
+      switch (words) {
+        case 21: keccak_absorb21_asm(ctx->state, data, nblk, RC); break;
+        case 18: keccak_absorb18_asm(ctx->state, data, nblk, RC); break;
+        case 17: keccak_absorb17_asm(ctx->state, data, nblk, RC); break;
+        case 13: keccak_absorb13_asm(ctx->state, data, nblk, RC); break;
+        case 9:  keccak_absorb9_asm (ctx->state, data, nblk, RC); break;
+        default: fused = 0; break;
+      }
+      if (fused) { data += nblk * ctx->rate; len -= nblk * ctx->rate; continue; }
+#endif
       while (len >= ctx->rate) {
         intptr_t w;
         for (w = 0; w < words; w++) {
