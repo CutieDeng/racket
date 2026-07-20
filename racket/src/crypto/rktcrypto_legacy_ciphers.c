@@ -59,56 +59,48 @@ static void des_sp_init(void){
   }
   des_sp_inited=1;
 }
-static void des_schedule(const unsigned char k[8], uint64_t sk[16]){
-  uint64_t key=0, cd; uint32_t C,D; int r;
+/* Subkey stored PRE-SPLIT into its eight 6-bit groups (des_key[r][b]) so the
+   feistel hot loop does no per-lookup subkey shift and no post-XOR mask: each
+   R-window (<=0x3f) XOR a 6-bit key group (<=0x3f) indexes SP directly. */
+typedef struct { unsigned char g[16][8]; } des_ks;
+static void des_schedule(const unsigned char k[8], des_ks *ks){
+  uint64_t key=0, cd, sk; uint32_t C,D; int r,b;
   if(!des_sp_inited) des_sp_init();
   { int i; for(i=0;i<8;i++) key=(key<<8)|k[i]; }
   cd=des_perm(key,DES_PC1,56,64); C=(cd>>28)&0xFFFFFFF; D=cd&0xFFFFFFF;
   for(r=0;r<16;r++){ int s=DES_SH[r];
     C=((C<<s)|(C>>(28-s)))&0xFFFFFFF; D=((D<<s)|(D>>(28-s)))&0xFFFFFFF;
-    sk[r]=des_perm(((uint64_t)C<<28)|D,DES_PC2,48,56); }
+    sk=des_perm(((uint64_t)C<<28)|D,DES_PC2,48,56);
+    for(b=0;b<8;b++) ks->g[r][b]=(unsigned char)((sk>>(42-6*b))&0x3F); }
 }
 
 /* E-expansion via shifts (no 48-bit permutation loop): the eight overlapping
    6-bit groups of E(R) are contiguous windows of R (with wraparound at the ends).
-   Each group is XORed with the matching 6 bits of the subkey and indexes SP. */
-static uint32_t des_feistel(uint32_t R, uint64_t k){
-  return DES_SP[0][(((((R&1)<<5)|((R>>27)&0x1F)) ^ (uint32_t)(k>>42)) & 0x3F)]
-        ^DES_SP[1][((((R>>23)&0x3F)) ^ (uint32_t)(k>>36)) & 0x3F]
-        ^DES_SP[2][((((R>>19)&0x3F)) ^ (uint32_t)(k>>30)) & 0x3F]
-        ^DES_SP[3][((((R>>15)&0x3F)) ^ (uint32_t)(k>>24)) & 0x3F]
-        ^DES_SP[4][((((R>>11)&0x3F)) ^ (uint32_t)(k>>18)) & 0x3F]
-        ^DES_SP[5][((((R>>7)&0x3F)) ^ (uint32_t)(k>>12)) & 0x3F]
-        ^DES_SP[6][((((R>>3)&0x3F)) ^ (uint32_t)(k>>6)) & 0x3F]
-        ^DES_SP[7][((((R&0x1F)<<1)|((R>>31)&1)) ^ (uint32_t)k) & 0x3F];
-}
-
-static void des_block(const uint64_t sk[16], const unsigned char in[8], unsigned char out[8], int enc){
-  uint64_t b,pre,o; uint32_t L,R; int r;
-  b=DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
-   |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
-  L=b>>32; R=b&0xFFFFFFFF;
-  for(r=0;r<16;r++){ int rr=enc?r:15-r; uint32_t nR=L^des_feistel(R,sk[rr]); L=R; R=nR; }
-  pre=((uint64_t)R<<32)|L;
-  o=DES_FP_T[0][(pre>>56)&0xFF]|DES_FP_T[1][(pre>>48)&0xFF]|DES_FP_T[2][(pre>>40)&0xFF]|DES_FP_T[3][(pre>>32)&0xFF]
-   |DES_FP_T[4][(pre>>24)&0xFF]|DES_FP_T[5][(pre>>16)&0xFF]|DES_FP_T[6][(pre>>8)&0xFF]|DES_FP_T[7][pre&0xFF];
-  out[0]=(o>>56)&0xFF;out[1]=(o>>48)&0xFF;out[2]=(o>>40)&0xFF;out[3]=(o>>32)&0xFF;
-  out[4]=(o>>24)&0xFF;out[5]=(o>>16)&0xFF;out[6]=(o>>8)&0xFF;out[7]=o&0xFF;
+   Each group is XORed with the pre-split 6-bit subkey group and indexes SP. */
+static uint32_t des_feistel(uint32_t R, const unsigned char kk[8]){
+  return DES_SP[0][(((R&1)<<5)|((R>>27)&0x1F)) ^ kk[0]]
+        ^DES_SP[1][((R>>23)&0x3F) ^ kk[1]]
+        ^DES_SP[2][((R>>19)&0x3F) ^ kk[2]]
+        ^DES_SP[3][((R>>15)&0x3F) ^ kk[3]]
+        ^DES_SP[4][((R>>11)&0x3F) ^ kk[4]]
+        ^DES_SP[5][((R>>7)&0x3F) ^ kk[5]]
+        ^DES_SP[6][((R>>3)&0x3F) ^ kk[6]]
+        ^DES_SP[7][(((R&0x1F)<<1)|((R>>31)&1)) ^ kk[7]];
 }
 
 /* Fused 3DES block: the intermediate FP (end of stage k) and IP (start of stage
    k+1) are inverses and cancel, so one IP + 48 rounds (swap between stages) +
    one FP instead of 3 IP + 3 FP. */
-static void des3_block(const uint64_t s1[16],const uint64_t s2[16],const uint64_t s3[16],
+static void des3_block(const des_ks *s1,const des_ks *s2,const des_ks *s3,
                        const unsigned char in[8], unsigned char out[8], int encrypt){
-  const uint64_t *S[3]; int fwd[3],st,r; uint64_t b,o,pre; uint32_t L,R,t;
+  const des_ks *S[3]; int fwd[3],st,r; uint64_t b,o,pre; uint32_t L,R,t;
   if(encrypt){ S[0]=s1;fwd[0]=1; S[1]=s2;fwd[1]=0; S[2]=s3;fwd[2]=1; }
   else       { S[0]=s3;fwd[0]=0; S[1]=s2;fwd[1]=1; S[2]=s1;fwd[2]=0; }
   b=DES_IP_T[0][in[0]]|DES_IP_T[1][in[1]]|DES_IP_T[2][in[2]]|DES_IP_T[3][in[3]]
    |DES_IP_T[4][in[4]]|DES_IP_T[5][in[5]]|DES_IP_T[6][in[6]]|DES_IP_T[7][in[7]];
   L=(uint32_t)(b>>32); R=(uint32_t)b;
   for(st=0;st<3;st++){
-    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; uint32_t nR=L^des_feistel(R,S[st][rr]); L=R; R=nR; }
+    for(r=0;r<16;r++){ int rr=fwd[st]?r:15-r; uint32_t nR=L^des_feistel(R,S[st]->g[rr]); L=R; R=nR; }
     t=L; L=R; R=t;                                   /* inter-stage / preoutput swap */
   }
   pre=((uint64_t)L<<32)|R;
@@ -121,25 +113,25 @@ static void des3_block(const uint64_t s1[16],const uint64_t s2[16],const uint64_
 /* 3DES-EDE, key = k1||k2||k3 (24 bytes). encrypt!=0 -> EDE, else DED. */
 void rktcrypto_des3_ecb(const unsigned char key[24], const unsigned char *in,
                         unsigned char *out, intptr_t nblk, int encrypt){
-  uint64_t s1[16],s2[16],s3[16]; intptr_t i;
-  des_schedule(key,s1); des_schedule(key+8,s2); des_schedule(key+16,s3);
-  for(i=0;i<nblk;i++) des3_block(s1,s2,s3,in+8*i,out+8*i,encrypt);
+  des_ks s1,s2,s3; intptr_t i;
+  des_schedule(key,&s1); des_schedule(key+8,&s2); des_schedule(key+16,&s3);
+  for(i=0;i<nblk;i++) des3_block(&s1,&s2,&s3,in+8*i,out+8*i,encrypt);
 }
 
 void rktcrypto_des3_cbc(const unsigned char key[24], const unsigned char iv[8],
                         const unsigned char *in, unsigned char *out, intptr_t nblk, int encrypt){
-  uint64_t s1[16],s2[16],s3[16]; unsigned char prev[8]; intptr_t i; int j;
-  des_schedule(key,s1); des_schedule(key+8,s2); des_schedule(key+16,s3);
+  des_ks s1,s2,s3; unsigned char prev[8]; intptr_t i; int j;
+  des_schedule(key,&s1); des_schedule(key+8,&s2); des_schedule(key+16,&s3);
   memcpy(prev,iv,8);
   if(encrypt){
     for(i=0;i<nblk;i++){ unsigned char t[8];
       for(j=0;j<8;j++) t[j]=in[8*i+j]^prev[j];
-      des3_block(s1,s2,s3,t,out+8*i,1);
+      des3_block(&s1,&s2,&s3,t,out+8*i,1);
       memcpy(prev,out+8*i,8); }
   } else {
     for(i=0;i<nblk;i++){ unsigned char t[8],c[8];
       memcpy(c,in+8*i,8);
-      des3_block(s1,s2,s3,c,t,0);
+      des3_block(&s1,&s2,&s3,c,t,0);
       for(j=0;j<8;j++) out[8*i+j]=t[j]^prev[j];
       memcpy(prev,c,8); }
   }
