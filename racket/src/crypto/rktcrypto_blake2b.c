@@ -104,26 +104,66 @@ static void inc_counter(rktcrypto_blake2b_ctx_t *ctx, uint64_t n)
   if (ctx->t[0] < n) ctx->t[1]++;
 }
 
+/* Compress nblk complete (non-final) 128-byte blocks straight from `blocks`.
+   The chaining state h and counter t are hoisted into locals for the whole run
+   -- loaded and stored once, not per block -- and the message words are read
+   directly from the input (no per-byte buffering). This is the bulk fast path;
+   the final (possibly partial) block still goes through blake2b_compress. */
+static void blake2b_blocks(rktcrypto_blake2b_ctx_t *ctx, const unsigned char *blocks, intptr_t nblk)
+{
+  uint64_t h0=ctx->h[0],h1=ctx->h[1],h2=ctx->h[2],h3=ctx->h[3],
+           h4=ctx->h[4],h5=ctx->h[5],h6=ctx->h[6],h7=ctx->h[7];
+  uint64_t t0=ctx->t[0],t1=ctx->t[1];
+  for (; nblk > 0; nblk--, blocks += 128) {
+    uint64_t m[16], v[16]; int i;
+    for (i = 0; i < 16; i++) {
+      const unsigned char *p = blocks + 8 * i;
+      m[i] = ((uint64_t)p[0]) | ((uint64_t)p[1] << 8) | ((uint64_t)p[2] << 16) | ((uint64_t)p[3] << 24)
+           | ((uint64_t)p[4] << 32) | ((uint64_t)p[5] << 40) | ((uint64_t)p[6] << 48) | ((uint64_t)p[7] << 56);
+    }
+    t0 += 128; t1 += (t0 < 128);
+    v[0]=h0; v[1]=h1; v[2]=h2; v[3]=h3; v[4]=h4; v[5]=h5; v[6]=h6; v[7]=h7;
+    v[8]=BLAKE2B_IV[0]; v[9]=BLAKE2B_IV[1]; v[10]=BLAKE2B_IV[2]; v[11]=BLAKE2B_IV[3];
+    v[12]=BLAKE2B_IV[4]^t0; v[13]=BLAKE2B_IV[5]^t1; v[14]=BLAKE2B_IV[6]; v[15]=BLAKE2B_IV[7];
+#define ROUND(r)                             \
+    G(r, 0, v[0], v[4], v[ 8], v[12]);       \
+    G(r, 1, v[1], v[5], v[ 9], v[13]);       \
+    G(r, 2, v[2], v[6], v[10], v[14]);       \
+    G(r, 3, v[3], v[7], v[11], v[15]);       \
+    G(r, 4, v[0], v[5], v[10], v[15]);       \
+    G(r, 5, v[1], v[6], v[11], v[12]);       \
+    G(r, 6, v[2], v[7], v[ 8], v[13]);       \
+    G(r, 7, v[3], v[4], v[ 9], v[14]);
+    ROUND(0)  ROUND(1)  ROUND(2)  ROUND(3)
+    ROUND(4)  ROUND(5)  ROUND(6)  ROUND(7)
+    ROUND(8)  ROUND(9)  ROUND(10) ROUND(11)
+#undef ROUND
+    h0^=v[0]^v[8]; h1^=v[1]^v[9]; h2^=v[2]^v[10]; h3^=v[3]^v[11];
+    h4^=v[4]^v[12]; h5^=v[5]^v[13]; h6^=v[6]^v[14]; h7^=v[7]^v[15];
+  }
+  ctx->h[0]=h0; ctx->h[1]=h1; ctx->h[2]=h2; ctx->h[3]=h3;
+  ctx->h[4]=h4; ctx->h[5]=h5; ctx->h[6]=h6; ctx->h[7]=h7;
+  ctx->t[0]=t0; ctx->t[1]=t1;
+}
+
 void rktcrypto_blake2b_core_update(rktcrypto_blake2b_ctx_t *ctx,
                                    const unsigned char *data, intptr_t len)
 {
-  while (len > 0) {
-    if (ctx->buf_len == 128) {
-      /* buffer full and more data follows: it is not the last block */
-      inc_counter(ctx, 128);
-      blake2b_compress(ctx, ctx->buf, 0);
-      ctx->buf_len = 0;
-    }
-    {
-      intptr_t n = 128 - ctx->buf_len;
-      intptr_t i;
-      if (n > len) n = len;
-      for (i = 0; i < n; i++) ctx->buf[ctx->buf_len + i] = data[i];
-      ctx->buf_len += n;
-      data += n;
-      len -= n;
-    }
+  /* Top off a partially-filled buffer and flush it as one block. */
+  if (ctx->buf_len > 0 && len > 128 - ctx->buf_len) {
+    intptr_t fill = 128 - ctx->buf_len; intptr_t i;
+    for (i = 0; i < fill; i++) ctx->buf[ctx->buf_len + i] = data[i];
+    blake2b_blocks(ctx, ctx->buf, 1);
+    ctx->buf_len = 0; data += fill; len -= fill;
   }
+  /* Process complete blocks straight from the input, leaving 1..128 bytes
+     behind so the final block is always handled by core_final. */
+  if (len > 128) {
+    intptr_t nblk = (len - 1) >> 7;
+    blake2b_blocks(ctx, data, nblk);
+    data += nblk << 7; len -= nblk << 7;
+  }
+  { intptr_t i; for (i = 0; i < len; i++) ctx->buf[ctx->buf_len + i] = data[i]; ctx->buf_len += len; }
 }
 
 void rktcrypto_blake2b_core_final(rktcrypto_blake2b_ctx_t *ctx,
