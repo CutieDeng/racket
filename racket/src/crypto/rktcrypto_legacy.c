@@ -214,7 +214,18 @@ void rktcrypto_md5_core_update(rktcrypto_md5_ctx_t *ctx,
     while (len && ctx->buf_len < 64) { ctx->buf[ctx->buf_len++] = *data++; len--; }
     if (ctx->buf_len == 64) { md5_block(ctx, ctx->buf); ctx->buf_len = 0; }
   }
-  while (len >= 64) { md5_block(ctx, data); data += 64; len -= 64; }
+  if (len >= 64) {
+    intptr_t nb = len >> 6;
+#if defined(__aarch64__) && defined(__APPLE__)
+    /* asmp kernel (asm/md5_blocks.asm): OpenSSL-schedule MD5 with asmp register
+       allocation; state stays register-resident across all blocks. 0.92 -> 1.00x. */
+    void md5_blocks_asm(uint32_t *st, const unsigned char *p, long nblk);
+    md5_blocks_asm(ctx->h, data, (long)nb);
+#else
+    intptr_t i; for (i = 0; i < nb; i++) md5_block(ctx, data + (i << 6));
+#endif
+    data += nb << 6; len -= nb << 6;
+  }
   while (len) { ctx->buf[ctx->buf_len++] = *data++; len--; }
 }
 
