@@ -274,11 +274,15 @@ static void cam_schedule(const unsigned char *key,int keylen,cam_key *ck){
   }
 }
 static void cam_crypt_block(const cam_key *ck,const unsigned char in[16],unsigned char out[16]){
-  uint64_t D1=cam_load64(in),D2=cam_load64(in+8); int stage,i,r=0,fl=0;
+  uint64_t D1=cam_load64(in),D2=cam_load64(in+8); int stage,fl=0,ns=ck->nr/6;
+  const uint64_t *k=ck->k;
   D1^=ck->kw[0]; D2^=ck->kw[1];
-  for(stage=0;stage<ck->nr/6;stage++){
-    for(i=0;i<6;i++){ if(i%2==0) D2^=cam_F(D1,ck->k[r]); else D1^=cam_F(D2,ck->k[r]); r++; }
-    if(stage<ck->nr/6-1){ D1=cam_FL(D1,ck->ke[fl*2]); D2=cam_FLINV(D2,ck->ke[fl*2+1]); fl++; }
+  for(stage=0;stage<ns;stage++){
+    /* six feistel rounds unrolled: static D1/D2 alternation (no i%2 branch),
+       immediate-offset subkey loads instead of a running index. */
+    D2^=cam_F(D1,k[0]); D1^=cam_F(D2,k[1]); D2^=cam_F(D1,k[2]);
+    D1^=cam_F(D2,k[3]); D2^=cam_F(D1,k[4]); D1^=cam_F(D2,k[5]); k+=6;
+    if(stage<ns-1){ D1=cam_FL(D1,ck->ke[fl*2]); D2=cam_FLINV(D2,ck->ke[fl*2+1]); fl++; }
   }
   D2^=ck->kw[2]; D1^=ck->kw[3];
   cam_store64(out,D2); cam_store64(out+8,D1);
