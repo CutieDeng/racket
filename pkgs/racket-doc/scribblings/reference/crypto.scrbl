@@ -15,7 +15,7 @@
                               racket/crypto/sign
                               (except-in racket/random crypto-random-bytes)))
 
-@title[#:tag "crypto"]{Cryptography}
+@title[#:tag "crypto" #:style 'toc]{Cryptography}
 
 @defmodule[racket/crypto]{The @racketmodname[racket/crypto] library
 re-exports @racketmodname[racket/crypto/random] and
@@ -26,6 +26,8 @@ Racket's built-in cryptography support is implemented by the
 runtime, so it does not depend on OpenSSL or any other external
 library. Operations on secret data are constant-time with respect to
 the data's @emph{content}; lengths are not treated as secrets.
+
+@local-table-of-contents[]
 
 @; ------------------------------------------------------------------------
 

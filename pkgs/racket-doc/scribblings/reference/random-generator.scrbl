@@ -4,7 +4,7 @@
                               racket/fixnum
                               racket/random))
 
-@title[#:tag "random-generators"]{Fast Random Generators}
+@title[#:tag "random-generators" #:style 'toc]{Fast Random Generators}
 
 @defmodule[racket/random/generator]
 
@@ -25,6 +25,10 @@ A generator is @emph{not} thread-safe. Use one generator per thread
 or place; @racket[rgen-fork], @racket[rgen-jump!], and the
 @racket[#:stream] argument of @racket[make-rgen] all produce
 decorrelated streams for parallel work.
+
+@local-table-of-contents[]
+
+@section{Constructing Generators}
 
 @defproc[(rgen? [v any/c]) boolean?]{Returns @racket[#t] if
 @racket[v] is a fast random generator, @racket[#f] otherwise.}
