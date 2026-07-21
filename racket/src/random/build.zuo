@@ -1,0 +1,88 @@
+#lang zuo
+(require "../lib.zuo")
+
+(provide-targets targets-at)
+
+;; Builds "librktrandom", Racket's built-in high-performance
+;; non-cryptographic PRNG subsystem. Like rktcrypto, this library is
+;; plain C99 with no configure step: platform selection happens via
+;; predefined compiler macros, so the same `targets-at` works on all
+;; platforms given a toolchain config.
+
+(define (targets-at at-dir [vars (hash)])
+  (define msvc? (eq? 'windows (hash-ref (runtime-env) 'toolchain-type)))
+
+  (define config (let ([Makefile (at-dir "Makefile")])
+                   (if (file-exists? Makefile)
+                       (config-file->hash Makefile vars)
+                       vars)))
+  (define (lookup key) (hash-ref config key #f))
+
+  (define lto (or (lookup 'LTO) (if msvc? "obj" "o")))
+  (define lta (or (lookup 'LTA) (if msvc? "lib" "a")))
+
+  (define headers
+    (list (at-source "rktrandom.h")
+          (at-source "rktrandom_private.h")))
+  (define rktrandom.h (car headers))
+
+  (define src-names
+    '("rktrandom_gen.c"
+      "rktrandom_dist.c"
+      "rktrandom_selftest.c"))
+  (define objs
+    (map (lambda (name) (at-dir (path-replace-extension name (~a "." lto))))
+         src-names))
+
+  (define librktrandom.a (at-dir (~a "librktrandom." lta)))
+
+  (define rktrandom.rktl (at-source "rktrandom.rktl"))
+  (define rktrandom.inc (at-source "rktrandom.inc"))
+  (define rktrandom.def (at-source "rktrandom.def"))
+
+  (define parse.rkt (at-source "../rktio/parse.rkt"))
+
+  (make-targets
+   `([:target default_rktrandom (,librktrandom.a) ,void]
+
+     [:target ,librktrandom.a ,objs
+              ,(lambda (path token)
+                 (c-ar path
+                       objs
+                       (let ([ar (hash-ref config 'STATIC_AR #f)])
+                         (if ar
+                             (hash-set config 'AR (shell-subst ar config))
+                             (shell-subst-value config 'AR)))))]
+
+     ,@(map (lambda (name obj)
+              (let ([src (at-source name)])
+                `[:target ,obj (,src ,@headers)
+                          ,(lambda (path token)
+                             ;; generator loops want -O3 to match the
+                             ;; reference implementations' builds; the
+                             ;; tree default is -O2.
+                             (let ([copt (hash-set config 'CFLAGS
+                                                   (~a (hash-ref config 'CFLAGS "") " -O3"))])
+                               (c-compile obj src (config-include copt
+                                                                  (at-source ".")))))]))
+            src-names
+            objs)
+
+     [:target rktrandom-rktl (,rktrandom.rktl ,rktrandom.inc ,rktrandom.def) ,void]
+
+     [:target ,rktrandom.rktl (,rktrandom.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-o" rktrandom.rktl rktrandom.h))]
+     [:target ,rktrandom.inc (,rktrandom.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-c" "-o" rktrandom.inc rktrandom.h))]
+     [:target ,rktrandom.def (,rktrandom.h ,parse.rkt)
+              ,(lambda (path token)
+                 (racket config parse.rkt "-d" "-o" rktrandom.def rktrandom.h))]
+
+     [:target clean ()
+              ,(lambda (token)
+                 (map rm* objs)
+                 (rm* librktrandom.a))]
+
+     [:db-dir ,(at-dir ".")])))

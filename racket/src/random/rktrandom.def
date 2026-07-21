@@ -1,0 +1,12 @@
+EXPORTS
+rktrandom_state_size
+rktrandom_init
+rktrandom_init_int
+rktrandom_fill
+rktrandom_jump
+rktrandom_long_jump
+rktrandom_fill_f64
+rktrandom_fill_normal
+rktrandom_fill_exp
+rktrandom_fill_bounded
+rktrandom_selftest
