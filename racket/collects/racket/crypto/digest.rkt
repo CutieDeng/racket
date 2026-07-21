@@ -117,6 +117,21 @@
 (define (make-digest alg #:length [outlen 0])
   (make-a-digest alg outlen))
 
+;; An independent fork of the digest state: the copy and the original
+;; are updated and finalized separately. Hashing many inputs that share
+;; a common prefix then costs one absorption of the prefix plus a
+;; context copy per input. Sound because every rktcrypto digest context
+;; is flat, position-independent bytes (see rktcrypto_digest.h).
+(define (digest-copy dg)
+  (digest (digest-algorithm dg)
+          (bytes-copy (digest-ctx dg))
+          (digest-done? dg)))
+
+;; The digest of the input absorbed so far, without consuming the
+;; context: finalizes a copy, so `dg` remains usable.
+(define (digest-peek dg #:length [len #f])
+  (digest-final!* 'digest-peek (digest-copy dg) len))
+
 (define (digest-update! dg data
                         #:start [start 0]
                         #:end [end (and (bytes? data) (bytes-length data))])
@@ -154,6 +169,10 @@
                                (#:start exact-nonnegative-integer?
                                 #:end (or/c exact-nonnegative-integer? #f))
                                void?)]
+          [digest-copy (-> digest? digest?)]
+          [digest-peek (->* (digest?)
+                            (#:length (or/c exact-positive-integer? #f))
+                            bytes?)]
           [digest-final! (->* (digest?)
                               (#:length (or/c exact-positive-integer? #f))
                               bytes?)]

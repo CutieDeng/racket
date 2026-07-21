@@ -90,14 +90,15 @@
        (define nonce (bytes-append fixed expl))
        (bytes-append expl (aead-seal (r12-aead r) key nonce a frag))]))
   (set-r12-wseq! r (add1 seq))
-  (write-bytes (bytes-append (bytes type 3 3)
-                             (bytes (arithmetic-shift (bytes-length body) -8) (bitwise-and (bytes-length body) 255))
-                             body)
-               (r12-out r))
-  (flush-output (r12-out r)))
+  (with-transport-errors
+    (write-bytes (bytes-append (bytes type 3 3)
+                               (bytes (arithmetic-shift (bytes-length body) -8) (bitwise-and (bytes-length body) 255))
+                               body)
+                 (r12-out r))
+    (flush-output (r12-out r))))
 
 (define (read-exact in n)
-  (define bs (read-bytes n in))
+  (define bs (with-transport-errors (read-bytes n in)))
   (when (or (eof-object? bs) (< (bytes-length bs) n)) (raise (tls-error "EOF in 1.2 record")))
   bs)
 
@@ -307,10 +308,11 @@
 ;; helpers
 ;; =====================================================================
 (define (write-plaintext out type payload)
-  (write-bytes (bytes-append (bytes type 3 3)
-                             (bytes (arithmetic-shift (bytes-length payload) -8) (bitwise-and (bytes-length payload) 255))
-                             payload) out)
-  (flush-output out))
+  (with-transport-errors
+    (write-bytes (bytes-append (bytes type 3 3)
+                               (bytes (arithmetic-shift (bytes-length payload) -8) (bitwise-and (bytes-length payload) 255))
+                               payload) out)
+    (flush-output out)))
 
 ;; Read raw records until a ChangeCipherSpec passes (discard it). Handshake
 ;; records that arrive before are buffered by the caller's hsr already.

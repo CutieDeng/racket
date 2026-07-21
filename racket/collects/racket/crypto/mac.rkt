@@ -52,8 +52,12 @@
     (u:crypto-bytes-clear! o-key)))
 
 ;; Incremental HMAC: an inner digest primed with the ipad key block,
-;; plus the retained opad key block for the final wrap.
-(struct hmac (algorithm inner o-key [done? #:mutable])
+;; plus an outer digest primed with the opad key block for the final
+;; wrap. Keeping the key material as primed digest midstates (rather
+;; than retained key-block bytes) means `hmac-copy` forks a keyed
+;; context without re-absorbing either key block, and no raw key
+;; block outlives `make-hmac`.
+(struct hmac (algorithm inner outer [done? #:mutable])
   #:omit-define-syntaxes)
 
 (define (make-hmac alg key)
@@ -62,9 +66,21 @@
   (define o-key (xor-block k0 #x5c))
   (define inner (make-digest alg))
   (digest-update! inner i-key)
+  (define outer (make-digest alg))
+  (digest-update! outer o-key)
   (u:crypto-bytes-clear! k0)
   (u:crypto-bytes-clear! i-key)
-  (hmac alg inner o-key #f))
+  (u:crypto-bytes-clear! o-key)
+  (hmac alg inner outer #f))
+
+;; An independent fork of the HMAC state. Copying a fresh context
+;; amortizes the key-block absorptions over many messages under one
+;; key; copying mid-stream forks the MAC of a shared prefix.
+(define (hmac-copy h)
+  (hmac (hmac-algorithm h)
+        (digest-copy (hmac-inner h))
+        (digest-copy (hmac-outer h))
+        (hmac-done? h)))
 
 (define (hmac-update! h data
                       #:start [start 0]
@@ -77,11 +93,10 @@
 (define (hmac-final! h)
   (when (hmac-done? h)
     (raise-arguments-error 'hmac-final! "HMAC has already been finalized"))
-  (define alg (hmac-algorithm h))
-  (define inner (digest-final! (hmac-inner h)))
+  (define outer (hmac-outer h))
+  (digest-update! outer (digest-final! (hmac-inner h)))
   (begin0
-    (digest-bytes alg (bytes-append (hmac-o-key h) inner))
-    (u:crypto-bytes-clear! (hmac-o-key h))
+    (digest-final! outer)
     (set-hmac-done?! h #t)))
 
 ;; SipHash keyed PRF: an 8-byte MAC keyed by a 16-byte key, for short
@@ -102,6 +117,7 @@
                             #:end exact-nonnegative-integer?)
                            bytes?)]
           [make-hmac (-> hmac-algorithm/c bytes? hmac?)]
+          [hmac-copy (-> hmac? hmac?)]
           [hmac-update! (->* (hmac? bytes?)
                              (#:start exact-nonnegative-integer?
                               #:end exact-nonnegative-integer?)

@@ -9,6 +9,8 @@
          racket/function
          racket/promise
          openssl/sha1
+         file/untgz
+         file/unzip
          version/utils
          setup/link
          "../path.rkt"
@@ -781,8 +783,45 @@
                           git-dir
                           checksum)])])))))
 
-  ;; pre-succeed removes packages that are being updated
-  (pre-succeed)
+  ;; pre-succeed removes packages that are being updated. The removal
+  ;; plan is composed of independently computed lists (the explicit
+  ;; update list, dependency-triggered updates from planning restarts,
+  ;; and clone adjustments), so the same package can appear more than
+  ;; once. First run the plan in collect-only mode to flatten it into
+  ;; a list of names, then dedupe and check the whole set against the
+  ;; package db while nothing has been removed yet, and only then
+  ;; remove each package once.
+  (define removal-names
+    (let ([rev-names '()])
+      (parameterize ([current-removal-collector
+                      (lambda (pkg-name)
+                        (set! rev-names (cons pkg-name rev-names)))])
+        (pre-succeed))
+      (let* ([collected (reverse rev-names)]
+             [names (remove-duplicates collected)])
+        (unless (or quiet?
+                    (= (length collected) (length names)))
+          (define counts
+            (for/fold ([counts #hash()]) ([name (in-list collected)])
+              (hash-update counts name add1 0)))
+          (printf/flush "Note: packages listed multiple times in the update plan; uninstalling once:~a\n"
+                        (format-list
+                         (for/list ([name (in-list names)]
+                                    #:when ((hash-ref counts name) . > . 1))
+                           name))))
+        names)))
+  (let ([db (read-pkg-db)])
+    (define missing
+      (for/list ([name (in-list removal-names)]
+                 #:unless (hash-ref db name #f))
+        name))
+    (unless (null? missing)
+      (pkg-error (~a "packages to uninstall for re-install are not currently installed;\n"
+                     " nothing has been uninstalled or installed\n"
+                     "  packages:~a")
+                 (format-list missing))))
+  (for-each (remove-package #t quiet? use-trash? dry-run?)
+            removal-names)
 
   (define post-metadata-ns (make-metadata-namespace))
   ;; moves packages into place and installs links:
@@ -1055,6 +1094,85 @@
 ;; are already being updated and their downloaded checksums;
 ;; it maps a package name to a checksum, and a box of the package
 ;; name to #t (to avoid multiple update attempts).
+;; An update trigger based on archive checksum or source identity can
+;; fire when the actual package content is unchanged (e.g., a rebuilt
+;; archive of the same tree, or the same content offered from a new
+;; path). For locally available sources, compare the new content
+;; against the installed package --- ignoring "compiled" directories,
+;; which `raco setup` adds to an installed package --- so that a
+;; content-identical "update" can be skipped instead of uninstalling
+;; and reinstalling. #t means provably identical; #f means different
+;; or not locally comparable, in which case the update proceeds as
+;; usual. Note that skipping leaves the recorded source and checksum
+;; of the installed package as they are.
+(define (equal-to-installed-content? db name type src)
+  (and
+   (memq type '(file dir))
+   (let ([installed-dir (with-handlers ([exn:fail? (lambda (x) #f)])
+                          (pkg-directory* name #:db db))])
+     (and installed-dir
+          (case type
+            [(dir)
+             (and (directory-exists? src)
+                  (same-package-content? (path->complete-path src) installed-dir))]
+            [(file)
+             (and (file-exists? src)
+                  (let ([tmp-dir (make-temporary-file "pkg-content~a" 'directory)])
+                    (dynamic-wind
+                     void
+                     (lambda ()
+                       (and (with-handlers ([exn:fail? (lambda (x) #f)])
+                              (unpack-archive-into src tmp-dir))
+                            (same-package-content? tmp-dir installed-dir)))
+                     (lambda () (delete-directory/files tmp-dir)))))]
+            [else #f])))))
+
+;; Unpacks a local package archive the same way that staging does;
+;; produces #f for archive formats that are not handled here
+(define (unpack-archive-into pkg-path pkg-dir)
+  (case (filename-extension pkg-path)
+    [(#"tgz" #"tar" #"gz")
+     (untgz pkg-path #:dest pkg-dir)
+     (remove-extra-directory-layer pkg-dir)
+     #t]
+    [(#"zip")
+     (unzip pkg-path (make-filesystem-entry-reader #:dest pkg-dir)
+            #:preserve-attributes? #t
+            #:utc-timestamps? #t)
+     (remove-extra-directory-layer pkg-dir)
+     #t]
+    [else #f]))
+
+(define (same-package-content? new-dir installed-dir)
+  (define (compiled-dir? p)
+    (define-values (base name dir?) (split-path p))
+    (and (path? name)
+         (equal? #"compiled" (path->bytes name))))
+  (define (content-list dir)
+    (sort
+     (for/list ([f (in-directory dir (lambda (d) (not (compiled-dir? d))))]
+                #:unless (compiled-dir? f)
+                #:when (file-exists? f))
+       (path->string (find-relative-path dir f)))
+     string<?))
+  (define new-files (content-list new-dir))
+  (and (equal? new-files (content-list installed-dir))
+       (for/and ([rel (in-list new-files)])
+         (same-file-content? (build-path new-dir rel)
+                             (build-path installed-dir rel)))))
+
+(define (same-file-content? a b)
+  (and (= (file-size a) (file-size b))
+       (call-with-input-file* a
+         (lambda (in-a)
+           (call-with-input-file* b
+             (lambda (in-b)
+               (let loop ()
+                 (define bstr-a (read-bytes 65536 in-a))
+                 (and (equal? bstr-a (read-bytes 65536 in-b))
+                      (or (eof-object? bstr-a)
+                          (loop))))))))))
+
 (define ((packages-to-update download-printf db
                              #:all-db all-db
                              #:must-update? [must-update? #t]
@@ -1128,17 +1246,29 @@
                          (pkg-desc-checksum pkg-name) 
                          new-checksum)))
           
+          (define stale?
+            (or
+             ;; Different checksum => update
+             (not (equal? (pkg-info-checksum info)
+                          new-checksum))
+             ;; No checksum available => always update
+             (not new-checksum)
+             ;; Different source => always update
+             (not (same-orig-pkg? (pkg-info-orig-pkg info)
+                                  (desc->orig-pkg type
+                                                  (pkg-desc-source pkg-name)
+                                                  (pkg-desc-extra-path pkg-name))))))
+          ;; A stale checksum or source does not imply changed content
+          ;; (e.g., a rebuilt archive of the same tree), and skipping a
+          ;; content-identical update avoids an uninstall+reinstall:
+          (define unchanged?
+            (and stale?
+                 (not force-update?)
+                 (equal-to-installed-content? db name type (pkg-desc-source pkg-name))))
+          (when unchanged?
+            (download-printf "Content of ~a is unchanged; skipping update\n" name))
           (if (or force-update?
-                  ;; Different checksum => update
-                  (not (equal? (pkg-info-checksum info)
-                               new-checksum))
-                  ;; No checksum available => always update
-                  (not new-checksum)
-                  ;; Different source => always update
-                  (not (same-orig-pkg? (pkg-info-orig-pkg info)
-                                       (desc->orig-pkg type
-                                                       (pkg-desc-source pkg-name)
-                                                       (pkg-desc-extra-path pkg-name)))))
+                  (and stale? (not unchanged?)))
               ;; Update:
               (begin
                 (hash-set! update-cache (box name) #t)

@@ -69,13 +69,23 @@
           (parameterize ([current-https-protocol (if (getenv "PLT_PKG_SSL_NO_VERIFY")
                                                      (current-https-protocol)
                                                      'secure)])
-            (get-pure-port/headers url
-                                   (if none-match-etag
-                                       (cons (format "If-None-Match: \"~a\"" none-match-etag)
-                                             headers)
-                                       headers)
-                                   #:redirections 25
-                                   #:status? #t)))
+            ;; an HTTP-level dropped connection (e.g., "http-client:
+            ;; Connection ended early") is as transient as a network
+            ;; error, so make it retryable, too
+            (with-handlers ([(lambda (e)
+                               (and (exn:fail? e)
+                                    (not (exn:fail:network? e))
+                                    (regexp-match? #rx"^http-client:" (exn-message e))))
+                             (lambda (e)
+                               (raise (exn:fail:can-retry (exn-message e)
+                                                          (exn-continuation-marks e))))])
+              (get-pure-port/headers url
+                                     (if none-match-etag
+                                         (cons (format "If-None-Match: \"~a\"" none-match-etag)
+                                               headers)
+                                         headers)
+                                     #:redirections 25
+                                     #:status? #t))))
         (define status (string->number (substring hs 9 12)))
         (define etag (and get-etag?
                           (let ([s (extract-field "etag" hs)])

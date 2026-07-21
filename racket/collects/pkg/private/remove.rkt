@@ -15,7 +15,15 @@
 	 "rename-dir.rkt")
 
 (provide remove-package
-         pkg-remove)
+         pkg-remove
+         current-removal-collector)
+
+;; When set, `remove-package` in for-install mode reports the package
+;; name to the collector procedure instead of removing anything, so
+;; that a composed removal plan can be flattened, deduplicated, and
+;; checked before any package is actually removed; see
+;; `install-packages`
+(define current-removal-collector (make-parameter #f))
 
 (define (demote-packages quiet? dry-run? pkg-names)
   (define db (read-pkg-db))
@@ -30,44 +38,58 @@
         (update-pkg-db! pkg-name (update-auto pi #t))))))
 
 (define ((remove-package for-install? quiet? use-trash? dry-run?) pkg-name)
-  (unless quiet?
-    (printf/flush "~a ~a~a\n"
-                  (if for-install?
-                      "Uninstalling to prepare re-install of"
-                      "Uninstalling")
-                  pkg-name
-                  (dry-run-explain dry-run?)))
-  (define db (read-pkg-db))
-  (define pi (package-info pkg-name #:db db))
-  (match-define (pkg-info orig-pkg checksum _) pi)
-  (define pkg-dir (pkg-directory* pkg-name #:db db))
-  (unless dry-run?
-    (remove-from-pkg-db! pkg-name))
-  (define scope (current-pkg-scope))
-  (define user? (not (or (eq? scope 'installation)
-                         (path? scope))))
-  (unless dry-run?
-    (match orig-pkg
-      [`(,(or 'link 'static-link 'clone) ,_ . ,_)
-       (links pkg-dir
-              #:remove? #t
-              #:user? user?
-              #:file (scope->links-file scope)
-              #:root? (not (sc-pkg-info? pi)))]
-      [_
-       (links pkg-dir
-              #:remove? #t
-              #:user? user?
-              #:file (scope->links-file scope)
-              #:root? (not (sc-pkg-info? pi)))
-       (cond
-        [(and use-trash?
-              (select-trash-dest pkg-name))
-         => (lambda (trash-dest)
-              (printf/flush "Moving ~a to trash: ~a\n" pkg-name trash-dest)
-              (rename-directory pkg-dir trash-dest))]
-        [else
-         (delete-directory/files pkg-dir)])])))
+  (cond
+   [(and for-install? (current-removal-collector))
+    => (lambda (collect!) (collect! pkg-name))]
+   [else
+    (define db (read-pkg-db))
+    (define pi (package-info pkg-name (not for-install?) #:db db))
+    (cond
+     [(not pi)
+      ;; A removal plan for an update can be composed from
+      ;; independently computed lists, so the package may have been
+      ;; removed by an earlier part of the plan already; removing is
+      ;; idempotent, so just note the situation and continue
+      (unless quiet?
+        (printf/flush "Not uninstalling ~a to prepare re-install; already uninstalled\n"
+                      pkg-name))]
+     [else
+      (unless quiet?
+        (printf/flush "~a ~a~a\n"
+                      (if for-install?
+                          "Uninstalling to prepare re-install of"
+                          "Uninstalling")
+                      pkg-name
+                      (dry-run-explain dry-run?)))
+      (match-define (pkg-info orig-pkg checksum _) pi)
+      (define pkg-dir (pkg-directory* pkg-name #:db db))
+      (unless dry-run?
+        (remove-from-pkg-db! pkg-name))
+      (define scope (current-pkg-scope))
+      (define user? (not (or (eq? scope 'installation)
+                             (path? scope))))
+      (unless dry-run?
+        (match orig-pkg
+          [`(,(or 'link 'static-link 'clone) ,_ . ,_)
+           (links pkg-dir
+                  #:remove? #t
+                  #:user? user?
+                  #:file (scope->links-file scope)
+                  #:root? (not (sc-pkg-info? pi)))]
+          [_
+           (links pkg-dir
+                  #:remove? #t
+                  #:user? user?
+                  #:file (scope->links-file scope)
+                  #:root? (not (sc-pkg-info? pi)))
+           (cond
+            [(and use-trash?
+                  (select-trash-dest pkg-name))
+             => (lambda (trash-dest)
+                  (printf/flush "Moving ~a to trash: ~a\n" pkg-name trash-dest)
+                  (rename-directory pkg-dir trash-dest))]
+            [else
+             (delete-directory/files pkg-dir)])]))])]))
       
 
 (define (pkg-remove given-pkgs

@@ -5,7 +5,15 @@
    binding-generated API in rktcrypto.h dispatches to these. Each
    algorithm family exposes fixed-size context structs so that Racket
    can hold the context in a byte string with no malloc/free across
-   the FFI boundary. */
+   the FFI boundary.
+
+   API contract: every context struct is flat and position-independent
+   -- no pointers (internal or external), no heap allocation, all
+   state inline -- so a byte-for-byte copy of a context is a valid
+   independent fork of the digest state at any point in the stream.
+   `digest-copy` at the Racket level relies on this to hash many
+   inputs sharing a common prefix without recomputation; any new
+   algorithm added here must preserve the property. */
 
 #include "rktcrypto_private.h"
 

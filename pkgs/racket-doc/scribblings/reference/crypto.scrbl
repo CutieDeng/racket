@@ -155,11 +155,29 @@ Creates an incremental digest context.}
 Absorbs @racket[data] into @racket[dg]. An error is raised if
 @racket[dg] has been finalized.}
 
+@defproc[(digest-copy [dg digest?]) digest?]{
+Returns an independent copy of @racket[dg]: the copy and the original
+can be updated and finalized separately. Copying makes hashing many
+inputs that share a common prefix cheap---absorb the prefix once, then
+copy the context for each suffix---and the copy may be taken at any
+byte position, not just at block boundaries. Note that a copy
+duplicates the digest's internal state; if that state is
+secret-derived (as in a keyed hash), clear or discard each copy with
+the same care as the original.}
+
+@defproc[(digest-peek [dg digest?]
+                      [#:length length (or/c exact-positive-integer? #f) #f])
+         bytes?]{
+Like @racket[digest-final!], but does not consume the context: returns
+the digest of the input absorbed so far, and @racket[dg] remains
+usable for further updates.}
+
 @defproc[(digest-final! [dg digest?]
                         [#:length length (or/c exact-positive-integer? #f) #f])
          bytes?]{
 Finalizes @racket[dg] and returns the digest. The context becomes
-unusable afterward.}
+unusable afterward; use @racket[digest-copy] or @racket[digest-peek]
+first to keep a usable fork of the state.}
 
 @deftogether[(
 @defproc[(digest-output-size [alg (and/c digest-algorithm/c (not/c (lambda (a) (digest-xof? a))))]) exact-positive-integer?]
@@ -192,6 +210,12 @@ compare with @racket[crypto-bytes=?].}
 
 @defproc[(make-hmac [alg hmac-algorithm/c] [key bytes?]) hmac?]{
 Creates an incremental HMAC context.}
+
+@defproc[(hmac-copy [h hmac?]) hmac?]{
+Returns an independent copy of @racket[h], like @racket[digest-copy]
+for HMAC contexts. Copying a freshly created context computes many
+MACs under one key without re-absorbing the key blocks for each
+message; copying mid-stream forks the MAC of a shared prefix.}
 
 @defproc[(hmac? [v any/c]) boolean?]{Recognizes HMAC contexts.}
 

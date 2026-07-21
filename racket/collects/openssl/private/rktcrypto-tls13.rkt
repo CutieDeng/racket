@@ -83,8 +83,16 @@
 (define (make-rl in out)
   (rl in out #f #f #f 0 #f #f #f 0))
 
+;; report raw transport I/O errors as TLS (network) errors, so that
+;; callers' network-retry logic applies to them as it did with the
+;; OpenSSL-based `mzssl`
+(define-syntax-rule (with-transport-errors body ...)
+  (with-handlers ([(lambda (e) (and (exn:fail? e) (not (exn:fail:network? e))))
+                   (lambda (e) (raise (tls-error (exn-message e))))])
+    body ...))
+
 (define (read-n in n)
-  (define bs (read-bytes n in))
+  (define bs (with-transport-errors (read-bytes n in)))
   (when (or (eof-object? bs) (< (bytes-length bs) n))
     (raise (tls-error "unexpected EOF from peer")))
   bs)
@@ -116,16 +124,17 @@
 ;; Writes a record of `type` with `payload`, encrypting when a write key is
 ;; installed. Splits >16KiB payloads.
 (define (rl-write-record r type payload)
-  (cond
-    [(rl-wkey r)
-     (define inner (bytes-append payload (u8 type)))
-     (define rec (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner))
-     (set-rl-wseq! r (add1 (rl-wseq r)))
-     (write-bytes rec (rl-out r))]
-    [else
-     (write-bytes (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)
-                  (rl-out r))])
-  (flush-output (rl-out r)))
+  (with-transport-errors
+    (cond
+      [(rl-wkey r)
+       (define inner (bytes-append payload (u8 type)))
+       (define rec (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner))
+       (set-rl-wseq! r (add1 (rl-wseq r)))
+       (write-bytes rec (rl-out r))]
+      [else
+       (write-bytes (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)
+                    (rl-out r))])
+    (flush-output (rl-out r))))
 
 (define (rl-set-read-key! r aead key iv) (set-rl-raead! r aead) (set-rl-rkey! r key) (set-rl-riv! r iv) (set-rl-rseq! r 0))
 (define (rl-set-write-key! r aead key iv) (set-rl-waead! r aead) (set-rl-wkey! r key) (set-rl-wiv! r iv) (set-rl-wseq! r 0))
@@ -142,10 +151,13 @@
   (when f (f (string-append label " " (hex client-random) " " (hex secret)))))
 
 ;; ---- errors ----
-(struct exn:tls exn:fail (alert) #:transparent)
+;; a subtype of `exn:fail:network` so that network-level retry logic
+;; (e.g., `raco pkg`'s `call-with-network-retries`) treats TLS
+;; failures as retryable, matching the OpenSSL-based `mzssl`
+(struct exn:tls exn:fail:network (alert) #:transparent)
 (define (tls-error msg) (exn:tls msg (current-continuation-marks) #f))
 (define (tls-alert code msg) (exn:tls (format "TLS alert: ~a (~a)" msg code) (current-continuation-marks) code))
-(provide (struct-out exn:tls))
+(provide (struct-out exn:tls) with-transport-errors)
 
 ;; =====================================================================
 ;; Handshake message reader (reassembles across records)

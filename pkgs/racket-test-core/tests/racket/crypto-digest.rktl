@@ -97,6 +97,55 @@
         digest-final! d #:length 40))
 
 ;; ----------------------------------------
+;; Context copy (fork) and peek
+
+;; Fork at a non-block-boundary offset: both branches must match a
+;; full one-shot recompute, for every algorithm.
+(let ([prefix (make-bytes 100 65)]
+      [sfx-a #"suffix one"]
+      [sfx-b #"and a different, longer suffix two"])
+  (for ([alg (in-list (digest-algorithms))])
+    (define len (and (digest-xof? alg) 48))
+    (define (one-shot suffix)
+      (digest-bytes alg (bytes-append prefix suffix) #:length len))
+    (define d (make-digest alg))
+    (digest-update! d prefix)
+    (define d2 (digest-copy d))
+    (digest-update! d sfx-a)
+    (digest-update! d2 sfx-b)
+    (test (one-shot sfx-a) digest-final! d #:length len)
+    (test (one-shot sfx-b) digest-final! d2 #:length len)))
+
+;; BLAKE3 fork with a multi-chunk prefix (CV stack in play)
+(let* ([prefix (make-bytes 3000 42)]
+       [d (make-digest 'blake3)])
+  (digest-update! d prefix)
+  (define d2 (digest-copy d))
+  (digest-update! d #"tail-a")
+  (digest-update! d2 #"tail-b")
+  (test (digest-bytes 'blake3 (bytes-append prefix #"tail-a")) digest-final! d)
+  (test (digest-bytes 'blake3 (bytes-append prefix #"tail-b")) digest-final! d2))
+
+;; peek returns the digest so far and leaves the context usable
+(let ([d (make-digest 'sha256)])
+  (digest-update! d #"hello ")
+  (test (digest-bytes 'sha256 #"hello ") digest-peek d)
+  (digest-update! d #"world")
+  (test (digest-bytes 'sha256 #"hello world") digest-peek d)
+  (test (digest-bytes 'sha256 #"hello world") digest-final! d))
+;; XOF peek needs a length
+(let ([d (make-digest 'shake128)])
+  (digest-update! d #"abc")
+  (test (digest-bytes 'shake128 #"abc" #:length 16) digest-peek d #:length 16))
+;; a copy of a finalized digest is finalized too, and peek respects it
+(err/rt-test (let ([d (make-digest 'sha256)])
+               (digest-final! d)
+               (digest-final! (digest-copy d)))
+             exn:fail?)
+(err/rt-test (let ([d (make-digest 'sha256)]) (digest-final! d) (digest-peek d))
+             exn:fail?)
+
+;; ----------------------------------------
 ;; Port input matches byte-string input
 
 (test (digest-bytes 'sha256 #"hello world")
@@ -167,6 +216,30 @@
   (hmac-update! h #"jumps over the lazy dog")
   (test (hmac-bytes 'sha256 #"key" #"The quick brown fox jumps over the lazy dog")
         hmac-final! h))
+
+;; HMAC copy: many MACs from one primed context, and mid-stream forks
+(let ([base (make-hmac 'sha256 #"key")])
+  (define h1 (hmac-copy base))
+  (hmac-update! h1 #"message one")
+  (test (hmac-bytes 'sha256 #"key" #"message one") hmac-final! h1)
+  (define h2 (hmac-copy base))
+  (hmac-update! h2 #"message two")
+  (test (hmac-bytes 'sha256 #"key" #"message two") hmac-final! h2)
+  (hmac-update! base #"shared prefix ")
+  (define h3 (hmac-copy base))
+  (hmac-update! base #"left")
+  (hmac-update! h3 #"right")
+  (test (hmac-bytes 'sha256 #"key" #"shared prefix left") hmac-final! base)
+  (test (hmac-bytes 'sha256 #"key" #"shared prefix right") hmac-final! h3))
+;; long key (hashed to a key block) through the primed-midstate path
+(let* ([key (make-bytes 200 7)]
+       [h (make-hmac 'sha512 key)])
+  (hmac-update! h #"data")
+  (test (hmac-bytes 'sha512 key #"data") hmac-final! h))
+(err/rt-test (let ([h (make-hmac 'sha256 #"k")])
+               (hmac-final! h)
+               (hmac-final! (hmac-copy h)))
+             exn:fail?)
 
 ;; HMAC with a SHA-3 digest
 (test #t bytes? (hmac-bytes 'sha3-256 #"k" #"data"))
