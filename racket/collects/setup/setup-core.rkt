@@ -2003,6 +2003,16 @@
                      [(hash-ref installed-libs k #f)
                       ;; just installed it, so keep it
                       (hash-set ht k v)]
+                     [(and (pair? v)
+                           (list? v)
+                           (andmap path-string? v)
+                           (not coll-path))
+                      ;; the recorded collection doesn't resolve in this
+                      ;; setup's view (e.g., a package-provided collection
+                      ;; while packages are hidden during the core build's
+                      ;; `raco setup` pass), so we can't tell whether the
+                      ;; lib is stale; keep it
+                      (hash-set ht k v)]
                      [(and coll-path
                            ;; If we set up this collection, then the lib
                            ;; must be in the installed list if it's to be kept:

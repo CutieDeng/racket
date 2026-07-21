@@ -332,10 +332,14 @@
      (tls13-exporter (hash-ref b 'alg) (hash-ref b 'exporter-master)
                      #"EXPORTER-Channel-Binding" #"" 32)]
     [(tls-server-end-point)
-     (define certs (tls-conn-peer-certs c))
-     (unless (pair? certs) (raise (tls-error "no peer certificate for tls-server-end-point")))
+     ;; RFC 5929: both sides hash the *server's* certificate, so the
+     ;; server must use its own certificate, not the peer's
+     (define der (or (and b (hash-ref b 'server-cert-der #f))
+                     (let ([certs (tls-conn-peer-certs c)])
+                       (and (pair? certs) (car certs)))))
+     (unless der (raise (tls-error "no server certificate for tls-server-end-point")))
      ;; hash of the DER leaf (SHA-256; sufficient for RFC 5929 in practice)
-     (digest SHA256 (car certs))]
+     (digest SHA256 der)]
     [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
 (define (make-tls-conn recv send shut peer-ders protocol [binding #f])
@@ -561,7 +565,9 @@
   (rl-set-read-key! r aead sapk sapiv)
   (rl-set-write-key! r aead capk capiv)
   (tls13-make-conn r (unbox selected-alpn) (unbox peer-certs)
-                   (hash 'alg alg 'exporter-master exporter-master)))
+                   (hash 'alg alg 'exporter-master exporter-master
+                         'server-cert-der (let ([pc (unbox peer-certs)])
+                                            (and (pair? pc) (car pc))))))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -752,7 +758,9 @@
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-write-key! r aead sapk sapiv)
   (rl-set-read-key! r aead capk capiv)
-  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master))))
+  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master
+                                        'server-cert-der (and (pair? cert-ders)
+                                                              (car cert-ders))))))
 
 ;; ---- server helpers ----
 (define (gen-server-share group)
