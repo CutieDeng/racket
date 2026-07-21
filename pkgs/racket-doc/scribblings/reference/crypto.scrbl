@@ -115,7 +115,7 @@ Digest algorithms are named by symbol. The supported algorithms are
 @racket['sha512/256], @racket['sha3-224], @racket['sha3-256],
 @racket['sha3-384], @racket['sha3-512], @racket['shake128],
 @racket['shake256], @racket['blake2b], and @racket['blake3]. The SHAKE
-algorithms are @deftech{extendable-output functions} (XOFs): they have
+algorithms are @deftech{extendable-output functions} (@deftech{XOFs}): they have
 no fixed output size, so a length must be supplied. BLAKE3 is also an
 XOF but has a 32-byte default, so a length is optional for it.
 
