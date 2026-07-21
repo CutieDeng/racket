@@ -12,7 +12,7 @@
     (define start-pos (- (file-position in) 2))
     (define vers-len (min 63 (read-byte in)))
     (define vers (read-bytes vers-len in))
-    (unless (equal? vers version-bytes)
+    (unless (version-bytes-compatible? vers)
       (raise-read-error '|loading code|
                         "version mismatch"
                         "expected" (version)

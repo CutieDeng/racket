@@ -35016,6 +35016,40 @@
          'purely-functional?))))))
 (define version-bytes$1 (string->bytes/utf-8 (version)))
 (define vm-bytes$1 (linklet-virtual-machine-bytes))
+(define series-bytes
+  (let ((len_0 (unsafe-bytes-length version-bytes$1)))
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda (i_0 dots_0)
+          (if (= i_0 len_0)
+            version-bytes$1
+            (if (eqv? (unsafe-bytes-ref version-bytes$1 i_0) 46)
+              (if (= dots_0 1)
+                (subbytes version-bytes$1 0 i_0)
+                (let ((app_0 (add1 i_0))) (loop_0 app_0 (add1 dots_0))))
+              (loop_0 (add1 i_0) dots_0)))))))
+     (loop_0 0 0))))
+(define version-bytes-compatible?
+  (lambda (vers_0)
+    (let ((or-part_0 (equal? vers_0 version-bytes$1)))
+      (if or-part_0
+        or-part_0
+        (let ((or-part_1 (equal? vers_0 series-bytes)))
+          (if or-part_1
+            or-part_1
+            (let ((slen_0 (unsafe-bytes-length series-bytes)))
+              (if (> (unsafe-bytes-length vers_0) slen_0)
+                (if (eqv? (unsafe-bytes-ref vers_0 slen_0) 46)
+                  (equal? (subbytes vers_0 0 slen_0) series-bytes)
+                  #f)
+                #f))))))))
+(define version-string-compatible?
+  (lambda (vers_0)
+    (if (string? vers_0)
+      (version-bytes-compatible? (string->bytes/utf-8 vers_0))
+      #f)))
 (define datum->syntax$3 datum->syntax)
 (define syntax-property$2 syntax-property)
 (define syntax-span$2 syntax-span)
@@ -71857,7 +71891,7 @@
             (let ((vers-len_0 (min 63 (read-byte in_0))))
               (let ((vers_0 (read-bytes vers-len_0 in_0)))
                 (begin
-                  (if (equal? vers_0 version-bytes$1)
+                  (if (version-bytes-compatible? vers_0)
                     (void)
                     (let ((app_0 (bytes->string/utf-8 vers_0 '#\x3f)))
                       (let ((app_1
@@ -74191,7 +74225,7 @@
             "value"
             data_0))
          (begin
-           (if (equal? (version) (serialized-syntax-version data_0))
+           (if (version-string-compatible? (serialized-syntax-version data_0))
              (void)
              (raise-arguments-error
               'syntax-deserialize
