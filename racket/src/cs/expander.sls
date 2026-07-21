@@ -125,6 +125,11 @@
                                      (cons 'internal internal-table)
                                      (cons 'schemify schemify-table))
 
+  ;; Expose the rktrandom primitive table to Racket code (used by
+  ;; `racket/random`); rktio/rktcrypto are consumed inside the io
+  ;; linklet instead, so they need no entry here.
+  (primitive-table '|#%rktrandom| |#%rktrandom-instance|)
+
   ;; ----------------------------------------
 
   ;; `install-reader!` is from the `io` library, where the

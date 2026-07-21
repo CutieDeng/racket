@@ -314,7 +314,10 @@
                       (list regexp.scm))
 
      ,(library-target io.so (at-source "io.sls") io-deps
-                      (list io.scm (at-source "io/terminal.ss")))
+                      (list io.scm (at-source "io/terminal.ss")
+                            (at-source "../rktio/rktio.rktl")
+                            (at-source "../crypto/rktcrypto.rktl")
+                            (at-source "../random/rktrandom.rktl")))
 
      ,(library-target thread.so (at-source "thread.sls") thread-deps
                       (list thread.scm))
