@@ -15,6 +15,7 @@
    missing foreign entries and degrades the crypto/TLS surface. */
 #ifndef WIN32
 # include "rktcrypto.h"
+# include "rktrandom.h"
 #endif
 
 #ifdef WIN32
@@ -133,6 +134,7 @@ static void init_foreign(void)
 # include "rktio.inc"
 #ifndef WIN32
 # include "rktcrypto.inc"
+# include "rktrandom.inc"
 #endif
 }
 

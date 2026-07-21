@@ -46,7 +46,7 @@
 
   ;; ----------------------------------------
 
-  (module (|#%rktio-instance| |#%rktcrypto-instance| ptr->address address->ptr)
+  (module (|#%rktio-instance| |#%rktcrypto-instance| |#%rktrandom-instance| ptr->address address->ptr)
     (meta define (convert-type t)
           (syntax-case t (ref *ref rktio_bool_t rktio_const_string_t)
             [(ref . _) #'uptr]
@@ -230,6 +230,10 @@
           ;; a missing entry turns into a raising stub in
           ;; `convert-function` instead of failing the boot
           #f]
+         [(and (> (string-length str) 10)
+               (string=? (substring str 0 10) "rktrandom_"))
+          ;; librktrandom is optional in the same way
+          #f]
          [else (foreign-entry str)])))
 
     ;; workaround for `include` not using `(source-directories)` when
@@ -261,6 +265,19 @@
                         (foreign-entry? "rktcrypto_system_random")))))))
 
     (include-rel "../crypto/rktcrypto.rktl")
+
+    (define loaded-librktrandom
+      (or (foreign-entry? "rktrandom_selftest")
+          ;; same optional-subsystem treatment as librktcrypto
+          (let ([path (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                      (#%current-directory))
+                                  (string-append "../../lib/librktrandom" (utf8->string (system-type 'so-suffix))))])
+            (and (#%file-exists? path)
+                 (guard (exn [#t #f])
+                   (and (load-shared-object path)
+                        (foreign-entry? "rktrandom_selftest")))))))
+
+    (include-rel "../random/rktrandom.rktl")
 
     (define (rktio_filesize_ref fs)
       (ftype-ref rktio_filesize_t () (make-ftype-pointer rktio_filesize_t (ptr->address fs))))
@@ -571,7 +588,45 @@
           (syntax-rules ()
             [(begin form ...)
              (extract-functions [] form ...)]))
-        (include-rel "../crypto/rktcrypto.rktl"))))
+        (include-rel "../crypto/rktcrypto.rktl")))
+
+    (define |#%rktrandom-instance|
+      (let ()
+        (define-syntax extract-functions
+          (syntax-rules (define-constant
+                          define-type
+                          define-struct-type
+                          define-function
+                          define-function/errno
+                          define-function/errno+step
+                          define-function/result_t
+                          define-function/alloc_result_t)
+            ;; also expose whether the optional librktrandom is actually
+            ;; part of this build
+            [(_ accum) (hasheq 'rktrandom-available?
+                               (lambda () (and loaded-librktrandom #t))
+                               . accum)]
+            [(_ accum (define-constant id v) . rest)
+             (extract-functions ('id v . accum) . rest)]
+            [(_ accum (define-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-struct-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-function _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno+step _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/alloc_result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]))
+        (define-syntax begin
+          (syntax-rules ()
+            [(begin form ...)
+             (extract-functions [] form ...)]))
+        (include-rel "../random/rktrandom.rktl"))))
 
   (define (immobile-cell->address p)
     (address->ptr (rumble:immobile-cell->address p)))
@@ -654,6 +709,11 @@
   ;; ----------------------------------------
 
   (export system-library-subpath)
+
+  ;; the #%rktrandom primitive table is consumed directly from Racket
+  ;; code (racket/random), unlike #%rktio/#%rktcrypto whose consumers
+  ;; live inside the flattened io linklet:
+  (export |#%rktrandom-instance|)
   (define system-library-subpath
     (case-lambda
      [() (system-library-subpath (system-type 'gc))]
@@ -679,6 +739,7 @@
       [(|#%thread|) |#%thread-instance|]
       [(|#%rktio|) |#%rktio-instance|]
       [(|#%rktcrypto|) |#%rktcrypto-instance|]
+      [(|#%rktrandom|) |#%rktrandom-instance|]
       [else #f]))
 
   (include "include.ss")

@@ -32,6 +32,7 @@
 
          setup-rktio
          setup-rktcrypto
+         setup-rktrandom
          setup-boot
          racket-version
          check-destdir
@@ -356,6 +357,18 @@
      config))
   (find-target (~a "librktcrypto." (if msvc? "lib" (hash-ref config 'LTA "a")))
                crypto-targets))
+
+;; Like rktcrypto: plain C99, no configure step.
+(define (setup-rktrandom random-src-dir random-dir config)
+  (define msvc? (eq? 'windows (hash-ref (runtime-env) 'toolchain-type)))
+  (mkdir-p random-dir)
+  (define random-targets
+    ((dynamic-require (build-path random-src-dir "build.zuo")
+                      'targets-at)
+     (make-at-dir random-dir)
+     config))
+  (find-target (~a "librktrandom." (if msvc? "lib" (hash-ref config 'LTA "a")))
+               random-targets))
 
 (define (setup-boot at-dir config
                     [options (hash)])
