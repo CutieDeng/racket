@@ -590,6 +590,19 @@
              (extract-functions [] form ...)]))
         (include-rel "../crypto/rktcrypto.rktl")))
 
+    ;; Refill helpers for the Racket-level scalar draw buffers:
+    ;; run the C fill into a scratch bytevector, then convert to an
+    ;; flvector with unboxed reads/writes (neither side allocates).
+    ;; Racket code cannot express this loop without boxing each
+    ;; element, which is why it lives here.
+    (define (rgen-refill-double! fill-proc gen-id state scratch flv)
+      (let ([n (#%flvector-length flv)])
+        (fill-proc gen-id state scratch 0 (#%fx* n 8))
+        (let loop ([i 0])
+          (unless (#%fx= i n)
+            (#%flvector-set! flv i (#%bytevector-ieee-double-native-ref scratch (#%fx* i 8)))
+            (loop (#%fx+ i 1))))))
+
     (define |#%rktrandom-instance|
       (let ()
         (define-syntax extract-functions
@@ -605,6 +618,15 @@
             ;; part of this build
             [(_ accum) (hasheq 'rktrandom-available?
                                (lambda () (and loaded-librktrandom #t))
+                               'rgen-refill-f64!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_f64 gen-id state scratch flv))
+                               'rgen-refill-normal!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_normal gen-id state scratch flv))
+                               'rgen-refill-exp!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_exp gen-id state scratch flv))
                                . accum)]
             [(_ accum (define-constant id v) . rest)
              (extract-functions ('id v . accum) . rest)]

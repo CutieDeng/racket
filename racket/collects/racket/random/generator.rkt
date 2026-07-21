@@ -16,6 +16,7 @@
          (for-syntax racket/base)
          racket/fixnum
          racket/flonum
+         racket/performance-hint
          racket/unsafe/ops)
 
 (provide rgen?
@@ -68,6 +69,13 @@
 (define rktrandom_fill_normal  (prim 'rktrandom_fill_normal))
 (define rktrandom_fill_exp     (prim 'rktrandom_fill_exp))
 (define rktrandom_fill_bounded (prim 'rktrandom_fill_bounded))
+;; Chez-level refills: C fill into a scratch byte string, then an
+;; unboxed convert into an flvector (see io.sls); scalar flonum draws
+;; then reduce to `unsafe-flvector-ref`, which the compiler unboxes
+;; at inlined call sites.
+(define rgen-refill-f64!    (prim 'rgen-refill-f64!))
+(define rgen-refill-normal! (prim 'rgen-refill-normal!))
+(define rgen-refill-exp!    (prim 'rgen-refill-exp!))
 
 (define rktrandom-available?
   (let ([p (hash-ref rktrandom-table 'rktrandom-available? #f)])
@@ -86,33 +94,42 @@
 ;; ----------------------------------------
 ;; generator objects
 
-(define BUF-SIZE 8192)
-(define DBUF-SIZE 4096) ; scalar normal/exponential refill: 512 doubles
+(define BUF-SIZE 8192)  ; word-stream buffer, bytes
+(define DBUF-LEN 512)   ; scalar uniform/normal/exponential buffers, flvector slots
 
 ;; `pos` is the next unread byte offset in `buf`; BUF-SIZE = empty.
-;; `nbuf`/`ebuf` are lazily created buffers of C-generated normal and
-;; exponential variates for the scalar draws.
+;; `ubuf`/`nbuf`/`ebuf` are lazily created flvectors of C-generated
+;; uniform, normal, and exponential variates for the scalar draws
+;; (refilled through the Chez-level unboxed converter); `scratch` is
+;; the shared conversion byte string. Scalar flonum draws therefore
+;; consume generator words in DBUF-LEN chunks, independently of the
+;; `buf` word stream.
 (struct rgen (alg           ; symbol
               id            ; int generator id
               state         ; state byte string
-              buf           ; refill buffer
+              [buf #:mutable] ; #f or bytes, lazily created
               [pos #:mutable]
-              [nbuf #:mutable] ; #f or bytes
+              [ubuf #:mutable] ; #f or flvector
+              [upos #:mutable]
+              [nbuf #:mutable]
               [npos #:mutable]
               [ebuf #:mutable]
-              [epos #:mutable])
+              [epos #:mutable]
+              [scratch #:mutable]) ; #f or bytes
   #:authentic
   #:reflection-name 'random-generator)
 
 (define (make-rgen-struct alg id state)
-  (rgen alg id state (make-bytes BUF-SIZE) BUF-SIZE #f DBUF-SIZE #f DBUF-SIZE))
+  (rgen alg id state #f BUF-SIZE
+        #f DBUF-LEN #f DBUF-LEN #f DBUF-LEN #f))
 
 ;; After any state-level reposition (jump, fork), buffered draws no
 ;; longer belong to the stream: drop them.
 (define (rgen-drop-buffers! g)
   (set-rgen-pos! g BUF-SIZE)
-  (set-rgen-npos! g DBUF-SIZE)
-  (set-rgen-epos! g DBUF-SIZE))
+  (set-rgen-upos! g DBUF-LEN)
+  (set-rgen-npos! g DBUF-LEN)
+  (set-rgen-epos! g DBUF-LEN))
 
 (define (rgen-algorithm g) (rgen-alg g))
 
@@ -182,14 +199,15 @@
   (make-rgen-struct alg id state))
 
 (define (rgen-copy g)
+  (define (flv-copy v) (and v (flvector-copy v)))
   (rgen (rgen-alg g) (rgen-id g)
         (bytes-copy (rgen-state g))
-        (bytes-copy (rgen-buf g))
+        (let ([b (rgen-buf g)]) (and b (bytes-copy b)))
         (rgen-pos g)
-        (let ([nb (rgen-nbuf g)]) (and nb (bytes-copy nb)))
-        (rgen-npos g)
-        (let ([eb (rgen-ebuf g)]) (and eb (bytes-copy eb)))
-        (rgen-epos g)))
+        (flv-copy (rgen-ubuf g)) (rgen-upos g)
+        (flv-copy (rgen-nbuf g)) (rgen-npos g)
+        (flv-copy (rgen-ebuf g)) (rgen-epos g)
+        #f))
 
 ;; ----------------------------------------
 ;; bulk fill
@@ -206,24 +224,67 @@
 ;; ----------------------------------------
 ;; buffered scalar draws
 ;;
-;; The buffer is consumed in 8-byte steps; a refill is one C call.
+;; The word buffer is consumed in 8-byte steps; a refill is one C
+;; call. The hot draws live inside `begin-encourage-inline`, so
+;; cross-module call sites get the body inlined at compile time:
+;; the call disappears, and for the flonum draws the compiler can
+;; keep the result unboxed in the caller's floating-point context.
+;; Fast paths are deliberately single-path (refill first, then an
+;; unconditional read) -- a two-way join before the read would
+;; defeat the unboxing.
 
-(define-syntax-rule (with-word g word body ...)
-  (let ([pos (rgen-pos g)])
-    (let-values ([(buf pos*)
-                  (if (unsafe-fx<= pos (- BUF-SIZE 8))
-                      (values (rgen-buf g) pos)
-                      (let ([buf (rgen-buf g)])
-                        (rktrandom_fill (rgen-id g) (rgen-state g) buf 0 BUF-SIZE)
-                        (values buf 0)))])
-      (set-rgen-pos! g (unsafe-fx+ pos* 8))
-      (let ([word (lambda (k) (unsafe-bytes-ref buf (unsafe-fx+ pos* k)))])
-        body ...))))
+;; Refill helpers return the new position so fast paths can be a
+;; single `let`.
+(define (rgen-refill-words! g)
+  (define buf (or (rgen-buf g)
+                  (let ([b (make-bytes BUF-SIZE)])
+                    (set-rgen-buf! g b)
+                    b)))
+  (rktrandom_fill (rgen-id g) (rgen-state g) buf 0 BUF-SIZE)
+  (set-rgen-pos! g 0)
+  0)
+
+(define (rgen-scratch! g)
+  (or (rgen-scratch g)
+      (let ([b (make-bytes (* DBUF-LEN 8))])
+        (set-rgen-scratch! g b)
+        b)))
+
+(define (rgen-refill-u! g)
+  (define flv (or (rgen-ubuf g)
+                  (let ([v (make-flvector DBUF-LEN)])
+                    (set-rgen-ubuf! g v)
+                    v)))
+  (rgen-refill-f64! (rgen-id g) (rgen-state g) (rgen-scratch! g) flv)
+  (set-rgen-upos! g 0)
+  0)
+
+(define (rgen-refill-n! g)
+  (define flv (or (rgen-nbuf g)
+                  (let ([v (make-flvector DBUF-LEN)])
+                    (set-rgen-nbuf! g v)
+                    v)))
+  (rgen-refill-normal! (rgen-id g) (rgen-state g) (rgen-scratch! g) flv)
+  (set-rgen-npos! g 0)
+  0)
+
+(define (rgen-refill-e! g)
+  (define flv (or (rgen-ebuf g)
+                  (let ([v (make-flvector DBUF-LEN)])
+                    (set-rgen-ebuf! g v)
+                    v)))
+  (rgen-refill-exp! (rgen-id g) (rgen-state g) (rgen-scratch! g) flv)
+  (set-rgen-epos! g 0)
+  0)
 
 ;; Full 64-bit draw as an exact integer (allocates a bignum when the
 ;; top bits are set; prefer rgen-fixnum/rgen-real in hot code).
 (define (rgen-u64 g)
-  (with-word g b
+  (let* ([p0 (rgen-pos g)]
+         [p (if (unsafe-fx<= p0 (- BUF-SIZE 8)) p0 (rgen-refill-words! g))]
+         [buf (rgen-buf g)])
+    (set-rgen-pos! g (unsafe-fx+ p 8))
+    (define (b k) (unsafe-bytes-ref buf (unsafe-fx+ p k)))
     (bitwise-ior
      (unsafe-fxior (b 0)
                    (unsafe-fxior (unsafe-fxlshift (b 1) 8)
@@ -236,48 +297,48 @@
                                                 (unsafe-fxlshift (b 7) 24))))
       32))))
 
-;; 56 uniform random bits as a nonnegative fixnum (fixnum-safe on all
-;; 64-bit Racket CS builds).
-(define (rgen-fixnum g)
-  (with-word g b
-    (unsafe-fxior
-     (unsafe-fxior (b 0)
-                   (unsafe-fxior (unsafe-fxlshift (b 1) 8)
-                                 (unsafe-fxior (unsafe-fxlshift (b 2) 16)
-                                               (unsafe-fxlshift (b 3) 24))))
-     (unsafe-fxior (unsafe-fxlshift (b 4) 32)
-                   (unsafe-fxior (unsafe-fxlshift (b 5) 40)
-                                 (unsafe-fxlshift (b 6) 48))))))
+(begin-encourage-inline
 
-;; Uniform [0,1) with 53 random bits: (hi27 * 2^26 + lo26) * 2^-53.
-(define (rgen-real g)
-  (with-word g b
-    (define lo26
-      (unsafe-fxior (b 0)
-                    (unsafe-fxior (unsafe-fxlshift (b 1) 8)
-                                  (unsafe-fxlshift (unsafe-fxand (b 2) #x3F) 16))))
-    (define hi27
-      (unsafe-fxior (b 3)
-                    (unsafe-fxior (unsafe-fxlshift (b 4) 8)
-                                  (unsafe-fxior (unsafe-fxlshift (b 5) 16)
-                                                (unsafe-fxlshift (unsafe-fxand (b 6) #x7) 24)))))
-    (fl* (fl+ (fl* (fx->fl hi27) 67108864.0) ; 2^26
-              (fx->fl lo26))
-         1.1102230246251565e-16)))           ; 2^-53
+  ;; 56 uniform random bits as a nonnegative fixnum (fixnum-safe on
+  ;; all 64-bit Racket CS builds).
+  (define (rgen-fixnum g)
+    (let* ([p0 (rgen-pos g)]
+           [p (if (unsafe-fx<= p0 (- BUF-SIZE 8)) p0 (rgen-refill-words! g))]
+           [buf (rgen-buf g)])
+      (set-rgen-pos! g (unsafe-fx+ p 8))
+      (unsafe-fxior
+       (unsafe-fxior (unsafe-bytes-ref buf p)
+                     (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 1)) 8)
+                                   (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 2)) 16)
+                                                 (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 3)) 24))))
+       (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 4)) 32)
+                     (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 5)) 40)
+                                   (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 6)) 48))))))
 
-;; 60 uniform random bits as a nonnegative fixnum (internal; public
-;; rgen-fixnum stays at 56 bits for headroom in user arithmetic).
-(define (rgen-fixnum60 g)
-  (with-word g b
-    (unsafe-fxior
-     (unsafe-fxior (unsafe-fxior (b 0)
-                                 (unsafe-fxior (unsafe-fxlshift (b 1) 8)
-                                               (unsafe-fxior (unsafe-fxlshift (b 2) 16)
-                                                             (unsafe-fxlshift (b 3) 24))))
-                   (unsafe-fxior (unsafe-fxlshift (b 4) 32)
-                                 (unsafe-fxior (unsafe-fxlshift (b 5) 40)
-                                               (unsafe-fxlshift (b 6) 48))))
-     (unsafe-fxlshift (unsafe-fxand (b 7) #xF) 56))))
+  ;; 60 uniform random bits (internal; used by rgen-integer).
+  (define (rgen-fixnum60 g)
+    (let* ([p0 (rgen-pos g)]
+           [p (if (unsafe-fx<= p0 (- BUF-SIZE 8)) p0 (rgen-refill-words! g))]
+           [buf (rgen-buf g)])
+      (set-rgen-pos! g (unsafe-fx+ p 8))
+      (unsafe-fxior
+       (unsafe-fxior
+        (unsafe-fxior (unsafe-bytes-ref buf p)
+                      (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 1)) 8)
+                                    (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 2)) 16)
+                                                  (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 3)) 24))))
+        (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 4)) 32)
+                      (unsafe-fxior (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 5)) 40)
+                                    (unsafe-fxlshift (unsafe-bytes-ref buf (unsafe-fx+ p 6)) 48))))
+       (unsafe-fxlshift (unsafe-fxand (unsafe-bytes-ref buf (unsafe-fx+ p 7)) #xF) 56))))
+
+  ;; Uniform [0,1) with 53 random bits, served unboxed from the
+  ;; C-filled flvector buffer.
+  (define (rgen-real g)
+    (let* ([p0 (rgen-upos g)]
+           [p (if (unsafe-fx< p0 DBUF-LEN) p0 (rgen-refill-u! g))])
+      (set-rgen-upos! g (unsafe-fx+ p 1))
+      (unsafe-flvector-ref (rgen-ubuf g) p))))
 
 ;; Unbiased uniform integer in [0,n): masked rejection for n below
 ;; 2^60 (average < 2 draws), bignum path above that.
@@ -306,10 +367,15 @@
 (define (next-pow2 n)
   (unsafe-fxlshift 1 (integer-length (unsafe-fx- n 1))))
 
-(define rgen-boolean
-  (case-lambda
-    [(g) (with-word g b (unsafe-fx< (unsafe-fxand (b 0) 1) 1))]
-    [(g p) (fl< (rgen-real g) (real->double-flonum p))]))
+(begin-encourage-inline
+  (define rgen-boolean
+    (case-lambda
+      [(g)
+       (let* ([p0 (rgen-pos g)]
+              [p (if (unsafe-fx<= p0 (- BUF-SIZE 8)) p0 (rgen-refill-words! g))])
+         (set-rgen-pos! g (unsafe-fx+ p 8))
+         (unsafe-fx< (unsafe-fxand (unsafe-bytes-ref (rgen-buf g) p) 1) 1))]
+      [(g p) (fl< (rgen-real g) (real->double-flonum p))])))
 
 ;; ----------------------------------------
 ;; fused distribution fills
@@ -421,53 +487,30 @@
 ;; ----------------------------------------
 ;; buffered scalar variates
 
-(define big-endian? (system-big-endian?))
+(begin-encourage-inline
+  (define (rgen-normal-raw g)
+    (let* ([p0 (rgen-npos g)]
+           [p (if (unsafe-fx< p0 DBUF-LEN) p0 (rgen-refill-n! g))])
+      (set-rgen-npos! g (unsafe-fx+ p 1))
+      (unsafe-flvector-ref (rgen-nbuf g) p)))
 
-(define (rgen-normal-raw g)
-  (define pos (rgen-npos g))
-  (define buf
-    (cond
-      [(fx<= pos (fx- DBUF-SIZE 8)) (rgen-nbuf g)]
-      [else
-       (define buf (or (rgen-nbuf g)
-                       (let ([b (make-bytes DBUF-SIZE)])
-                         (set-rgen-nbuf! g b)
-                         b)))
-       (rktrandom_fill_normal (rgen-id g) (rgen-state g) buf 0 DBUF-SIZE)
-       (set-rgen-npos! g 0)
-       buf]))
-  (define p (rgen-npos g))
-  (set-rgen-npos! g (fx+ p 8))
-  (floating-point-bytes->real buf big-endian? p (fx+ p 8)))
+  (define rgen-normal
+    (case-lambda
+      [(g) (rgen-normal-raw g)]
+      [(g mu) (fl+ (real->double-flonum mu) (rgen-normal-raw g))]
+      [(g mu sigma) (fl+ (real->double-flonum mu)
+                         (fl* (real->double-flonum sigma) (rgen-normal-raw g)))]))
 
-(define rgen-normal
-  (case-lambda
-    [(g) (rgen-normal-raw g)]
-    [(g mu) (fl+ (real->double-flonum mu) (rgen-normal-raw g))]
-    [(g mu sigma) (fl+ (real->double-flonum mu)
-                       (fl* (real->double-flonum sigma) (rgen-normal-raw g)))]))
+  (define (rgen-exponential-raw g)
+    (let* ([p0 (rgen-epos g)]
+           [p (if (unsafe-fx< p0 DBUF-LEN) p0 (rgen-refill-e! g))])
+      (set-rgen-epos! g (unsafe-fx+ p 1))
+      (unsafe-flvector-ref (rgen-ebuf g) p)))
 
-(define (rgen-exponential-raw g)
-  (define pos (rgen-epos g))
-  (define buf
-    (cond
-      [(fx<= pos (fx- DBUF-SIZE 8)) (rgen-ebuf g)]
-      [else
-       (define buf (or (rgen-ebuf g)
-                       (let ([b (make-bytes DBUF-SIZE)])
-                         (set-rgen-ebuf! g b)
-                         b)))
-       (rktrandom_fill_exp (rgen-id g) (rgen-state g) buf 0 DBUF-SIZE)
-       (set-rgen-epos! g 0)
-       buf]))
-  (define p (rgen-epos g))
-  (set-rgen-epos! g (fx+ p 8))
-  (floating-point-bytes->real buf big-endian? p (fx+ p 8)))
-
-(define rgen-exponential
-  (case-lambda
-    [(g) (rgen-exponential-raw g)]
-    [(g rate) (fl/ (rgen-exponential-raw g) (real->double-flonum rate))]))
+  (define rgen-exponential
+    (case-lambda
+      [(g) (rgen-exponential-raw g)]
+      [(g rate) (fl/ (rgen-exponential-raw g) (real->double-flonum rate))])))
 
 ;; ----------------------------------------
 ;; substreams
@@ -489,9 +532,12 @@
 ;; Returns a new generator whose stream is separated from g's by one
 ;; jump, advancing g past the region the child will use.
 (define (rgen-fork g)
-  (define child (rgen-copy g))
+  ;; the child restarts from the current state (buffered draws are
+  ;; dropped, per the chunk semantics), so there is no need to copy
+  ;; the parent's buffers
+  (define child (make-rgen-struct (rgen-alg g) (rgen-id g)
+                                  (bytes-copy (rgen-state g))))
   (rgen-jump! g)
-  (rgen-drop-buffers! child)
   child)
 
 ;; ----------------------------------------
