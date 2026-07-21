@@ -2,7 +2,8 @@
 (require "../common/check.rkt"
          "../host/rktcrypto.rkt")
 
-(provide crypto-random-bytes!
+(provide crypto-primitives-available?
+         crypto-random-bytes!
          crypto-bytes=?
          crypto-bytes-clear!
          crypto-subsystem-self-test?
@@ -80,9 +81,16 @@
   (check-start/end who bstr start end)
   (rktcrypto_secure_clear bstr start end))
 
-;; Runs the rktcrypto known-answer self-tests; `#t` means all passed.
+;; Whether the optional librktcrypto subsystem is part of this build;
+;; when it is not (Windows), every crypto- primitive raises when called.
+(define (crypto-primitives-available?)
+  rktcrypto-available?)
+
+;; Runs the rktcrypto known-answer self-tests; `#t` means all passed
+;; (and `#f`, in particular, when librktcrypto is not in this build).
 (define/who (crypto-subsystem-self-test?)
-  (eqv? 1 (rktcrypto_selftest_core)))
+  (and rktcrypto-available?
+       (eqv? 1 (rktcrypto_selftest_core))))
 
 ;; ----------------------------------------
 ;; Message digests

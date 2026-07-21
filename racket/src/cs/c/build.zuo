@@ -140,8 +140,14 @@
   (define librktio.a (list-ref librktio.a+rktio_config.h 0))
   (define rktio_config.h (list-ref librktio.a+rktio_config.h 1))
 
+  ;; librktcrypto is not part of Windows builds (its C sources need a
+  ;; 128-bit integer type and other non-MSVC compiler features); the io
+  ;; layer detects the missing entries and the TLS/crypto surface reports
+  ;; itself unavailable, with net/http-client falling back to win32-ssl.
+  (define rktcrypto? (not windows?))
   (define rktcrypto-dir (at-dir "rktcrypto"))
-  (define librktcrypto.a (setup-rktcrypto (at-source "../../crypto") rktcrypto-dir config))
+  (define librktcrypto.a (and rktcrypto?
+                              (setup-rktcrypto (at-source "../../crypto") rktcrypto-dir config)))
 
   (define main-deps
     (append
@@ -193,7 +199,7 @@
                             (at-dir CS m "lz4/lib/liblz4.a")))
                   '()))
             (list librktio.a)
-            (list librktcrypto.a)
+            (if rktcrypto? (list librktcrypto.a) '())
             pbchunk-objs))
 
   (define MemoryModule.o (at-dir (.c->.o "MemoryModule.c")))
@@ -645,7 +651,8 @@
                 ,(lambda (path token)
                    (c-compile libracketcsxxx_RAW.dll
                               (append (map target->path boot-objs)
-                                      (list libres.o (target->path librktio.a) (target->path librktcrypto.a))
+                                      (list libres.o (target->path librktio.a))
+                                      (if rktcrypto? (list (target->path librktcrypto.a)) '())
                                       (if msvc?
                                           windows-libs
                                           (make-mingw-to-ms-link-libraries m (at-dir) config)))
@@ -1001,7 +1008,8 @@
          (when (equal? (lookup 'LZ4_LIB) "")
            (unpack-lib (at-dir CS m "lz4/lib/liblz4.a")))
          (unpack-lib (target->path librktio.a))
-         (unpack-lib (target->path librktcrypto.a))
+         (when rktcrypto?
+           (unpack-lib (target->path librktcrypto.a)))
          (unpack-lib (at-dir CS m "boot" m "libkernel.a"))
          (shell/wait (lookup 'AR) (lookup 'ARFLAGS) libracketcs.a
                      (filter (glob->matcher "*.o") (ls* repack-dir))

@@ -14,6 +14,14 @@
 (define (lookup n)
   (hash-ref rktcrypto-table n))
 
+;; Whether the optional librktcrypto is actually part of this build
+;; (Windows builds run without it, and every function raises when
+;; called); an old host without the flag implies it is present.
+(provide rktcrypto-available?)
+(define rktcrypto-available?
+  (let ([p (hash-ref rktcrypto-table 'rktcrypto-available? #f)])
+    (or (not p) (and (p) #t))))
+
 (define-syntax-rule (define-constant n v)
   (begin
     (define n v)

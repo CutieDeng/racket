@@ -18,6 +18,11 @@
 (define-ffi-definer define-rkt (ffi-lib #f)
   #:default-make-fail make-not-available)
 
+;; Whether librktcrypto is actually part of this build; Windows builds
+;; run without it, and every binding below raises when called there.
+(define rktcrypto-available?
+  (and (get-ffi-obj 'rktcrypto_system_random (ffi-lib #f) _fpointer (lambda () #f)) #t))
+
 ;; ---- digest algorithm ids (rktcrypto.h) ----
 (define SHA256 2)
 (define SHA384 3)

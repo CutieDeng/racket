@@ -11,7 +11,11 @@
 #include <errno.h>
 #include "scheme.h"
 #include "rktio.h"
-#include "rktcrypto.h"
+/* librktcrypto is not part of Windows builds; the io layer detects the
+   missing foreign entries and degrades the crypto/TLS surface. */
+#ifndef WIN32
+# include "rktcrypto.h"
+#endif
 
 #ifdef WIN32
 # define RACKET_API_EXTERN __declspec(dllexport)
@@ -127,7 +131,9 @@ static void run_cross_server(char **argv)
 static void init_foreign(void)
 {
 # include "rktio.inc"
+#ifndef WIN32
 # include "rktcrypto.inc"
+#endif
 }
 
 void racket_boot(racket_boot_arguments_t *ba)

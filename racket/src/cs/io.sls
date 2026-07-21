@@ -141,13 +141,18 @@
                            [wrap-result (if (#%memq 'msg-queue (map syntax->datum #'(flag ...)))
                                             #'wrap-result/allow-callbacks
                                             #'wrap-result)])
-               #'(let ([proc (foreign-procedure conv ... (rktio-lookup 'name)
-                                                (arg-type ...)
-                                                ret-type)])
-                   (lambda (arg-name ...)
-                     (let-unwrappers
-                      ([orig-arg-type arg-name] ...)
-                      (wrap-result orig-ret-type (proc arg-name ...))))))]))
+               #'(let ([addr (rktio-lookup 'name)])
+                   (if addr
+                       (let ([proc (foreign-procedure conv ... addr
+                                                      (arg-type ...)
+                                                      ret-type)])
+                         (lambda (arg-name ...)
+                           (let-unwrappers
+                            ([orig-arg-type arg-name] ...)
+                            (wrap-result orig-ret-type (proc arg-name ...)))))
+                       ;; optional subsystem entry missing from this build
+                       (lambda (arg-name ...)
+                         (#%error 'name "unavailable: librktcrypto is not part of this Racket build")))))]))
 
     (define-syntax (define-function stx)
       (syntax-case stx ()
@@ -216,7 +221,16 @@
                                           (string-append "../../lib/librktio" (utf8->string (system-type 'so-suffix)))))))
 
     (define (rktio-lookup name)
-      (foreign-entry (symbol->string name)))
+      (let ([str (symbol->string name)])
+        (cond
+         [(foreign-entry? str) (foreign-entry str)]
+         [(and (> (string-length str) 10)
+               (string=? (substring str 0 10) "rktcrypto_"))
+          ;; librktcrypto is optional (not part of Windows builds);
+          ;; a missing entry turns into a raising stub in
+          ;; `convert-function` instead of failing the boot
+          #f]
+         [else (foreign-entry str)])))
 
     ;; workaround for `include` not using `(source-directories)` when
     ;; a path starts with "..":
@@ -233,9 +247,14 @@
 
     (define loaded-librktcrypto
       (or (foreign-entry? "rktcrypto_system_random")
-          (load-shared-object (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
-                                              (#%current-directory))
-                                          (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix)))))))
+          ;; Not statically linked (e.g. Windows builds, where librktcrypto
+          ;; is not built at all): try a shared object, else run without
+          ;; the crypto subsystem and let its entry points raise
+          (guard (exn [#t #f])
+            (and (load-shared-object (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                                     (#%current-directory))
+                                                 (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix)))))
+                 (foreign-entry? "rktcrypto_system_random")))))
 
     (include-rel "../crypto/rktcrypto.rktl")
 
@@ -523,7 +542,11 @@
                           define-function/errno+step
                           define-function/result_t
                           define-function/alloc_result_t)
-            [(_ accum) (hasheq . accum)]
+            ;; also expose whether the optional librktcrypto is actually
+            ;; part of this build (Windows builds run without it)
+            [(_ accum) (hasheq 'rktcrypto-available?
+                               (lambda () (and loaded-librktcrypto #t))
+                               . accum)]
             [(_ accum (define-constant . _) . rest)
              (extract-functions accum . rest)]
             [(_ accum (define-type . _) . rest)

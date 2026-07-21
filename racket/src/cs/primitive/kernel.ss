@@ -335,6 +335,7 @@
   [crypto-p256-ecdsa-sign (known-procedure/single-valued 4)]
   [crypto-p256-ecdsa-verify (known-procedure/single-valued 8)]
   [crypto-p256-public-key (known-procedure/single-valued 2)]
+  [crypto-primitives-available? (known-procedure/single-valued 1)]
   [crypto-random-bytes! (known-procedure/single-valued 14)]
   [crypto-siphash-1-3 (known-procedure/single-valued 28)]
   [crypto-siphash-2-4 (known-procedure/single-valued 28)]

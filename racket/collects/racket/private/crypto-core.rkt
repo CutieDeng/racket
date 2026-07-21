@@ -20,10 +20,21 @@
 (define (primitive name)
   (dynamic-require ''#%kernel name (lambda () #f)))
 
-(define prim-random-bytes! (primitive 'crypto-random-bytes!))
-(define prim-bytes=? (primitive 'crypto-bytes=?))
-(define prim-bytes-clear! (primitive 'crypto-bytes-clear!))
-(define prim-self-test? (primitive 'crypto-subsystem-self-test?))
+;; The kernel primitives exist whenever the io layer does, but on
+;; builds without librktcrypto (Windows) they raise when called; the
+;; kernel's own availability probe distinguishes the two. An older
+;; kernel without the probe implies the subsystem is present.
+(define prim-available?
+  (let ([p (primitive 'crypto-primitives-available?)])
+    (or (not p) (and (p) #t))))
+
+(define (guarded name)
+  (and prim-available? (primitive name)))
+
+(define prim-random-bytes! (guarded 'crypto-random-bytes!))
+(define prim-bytes=? (guarded 'crypto-bytes=?))
+(define prim-bytes-clear! (guarded 'crypto-bytes-clear!))
+(define prim-self-test? (guarded 'crypto-subsystem-self-test?))
 
 (define (crypto-primitives-available?)
   (and prim-random-bytes! #t))

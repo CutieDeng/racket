@@ -209,6 +209,8 @@
                           #:error/ssl [error/ssl error]
                           #:hostname [hostname #f]
                           #:alpn [alpn '()])
+  (unless ssl-available?
+    (error 'ports->ssl-ports "~a" ssl-load-fail-reason))
   (define context (or ctx (if (eq? mode 'connect)
                               (ssl-make-client-context encrypt)
                               (ssl-make-server-context encrypt))))
@@ -280,6 +282,8 @@
   #:property prop:evt (lambda (l) (wrap-evt (ssl-listener-tcp l) (lambda (_) l))))
 
 (define (ssl-listen port [backlog 4] [reuse? #f] [hostname #f] [ctx-or-proto 'auto])
+  (unless ssl-available?
+    (error 'ssl-listen "~a" ssl-load-fail-reason))
   (define ctx (if (ssl-context? ctx-or-proto) ctx-or-proto (ssl-make-server-context ctx-or-proto)))
   (ssl-listener (tcp-listen port backlog reuse? hostname) ctx))
 
@@ -347,8 +351,13 @@
 (define (ssl-default-channel-binding p) (list 'tls-exporter (ssl-channel-binding p 'tls-exporter)))
 
 ;; ---- misc provides expected by consumers ----
-(define ssl-available? #t)
-(define ssl-load-fail-reason #f)
+;; #f on builds without librktcrypto (Windows): `net/http-client` then
+;; falls back to the platform TLS (win32-ssl/SChannel) for https.
+(define ssl-available? rktcrypto-available?)
+(define ssl-load-fail-reason
+  (if ssl-available?
+      #f
+      "librktcrypto is not part of this Racket build, so the openssl module's TLS is unavailable"))
 ;; Protocol enumerations (functions, matching the historical API).
 (define the-supported-protocols '(secure auto tls tls12 tls13))
 (define (supported-client-protocols) the-supported-protocols)
