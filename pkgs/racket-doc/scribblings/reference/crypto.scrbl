@@ -1,5 +1,10 @@
 #lang scribble/doc
-@(require "mz.rkt" (for-label racket/crypto
+@(require (except-in "mz.rkt"
+                     crypto-bytes-clear!
+                     crypto-bytes=?
+                     crypto-random-bytes!
+                     crypto-subsystem-self-test?)
+          (for-label racket/crypto
                               racket/crypto/random
                               racket/crypto/util
                               racket/crypto/digest
@@ -8,7 +13,7 @@
                               racket/crypto/secretbox
                               racket/crypto/kex
                               racket/crypto/sign
-                              racket/random))
+                              (except-in racket/random crypto-random-bytes)))
 
 @title[#:tag "crypto"]{Cryptography}
 
