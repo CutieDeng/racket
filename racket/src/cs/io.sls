@@ -249,12 +249,16 @@
       (or (foreign-entry? "rktcrypto_system_random")
           ;; Not statically linked (e.g. Windows builds, where librktcrypto
           ;; is not built at all): try a shared object, else run without
-          ;; the crypto subsystem and let its entry points raise
-          (guard (exn [#t #f])
-            (and (load-shared-object (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
-                                                     (#%current-directory))
-                                                 (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix)))))
-                 (foreign-entry? "rktcrypto_system_random")))))
+          ;; the crypto subsystem and let its entry points raise. Probe for
+          ;; the file first -- this runs during boot, where a raise from
+          ;; `load-shared-object` would take the process down.
+          (let ([path (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                      (#%current-directory))
+                                  (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix))))])
+            (and (#%file-exists? path)
+                 (guard (exn [#t #f])
+                   (and (load-shared-object path)
+                        (foreign-entry? "rktcrypto_system_random")))))))
 
     (include-rel "../crypto/rktcrypto.rktl")
 
