@@ -83,6 +83,7 @@
 (define-function () #f rktio_get_ctl_c_handler)
 (define-function () #f rktio_from_bytes_list)
 (define-function () #f rktio_free_bytes_list)
+(define-function () #f rktio_writev_pinned)
 (define-function () #f rktio_make_sha1_ctx)
 (define-function () #f rktio_make_sha2_ctx)
 (define-function () #f rktio_process_result_stdin_fd)

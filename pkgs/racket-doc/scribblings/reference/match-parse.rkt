@@ -74,13 +74,14 @@
             (cdr (map fixup-sexp (vector->list (struct->vector s)))))]
     [(? symbol? s)
      (case s
-       [(lvp pat qp ht-opt kv-opt literal ooo datum struct-id
+       [(lvp pat qp pv-segment ht-opt kv-opt literal ooo datum struct-id
              string bytes number character expr id
              rx-expr px-expr pred-expr def-expr
              derived-pattern)
         (match-nonterm (symbol->string s))]
        [(QUOTE VAR LIST LIST-REST LIST* LIST-NO-ORDER VECTOR HASH-TABLE BOX STRUCT
-               REGEXP PREGEXP AND OR NOT APP ? QUASIQUOTE CONS MCONS HASH HASH*)
+               PVECTOR PVECTOR* REGEXP PREGEXP AND OR NOT APP ? QUASIQUOTE
+               CONS MCONS HASH HASH*)
         (make-element symbol-color (list (string-downcase (symbol->string s))))]
        [(***)
         (make-element symbol-color '("..."))]
@@ -159,5 +160,4 @@
                     "non-matching line: ~e"
                     line)]))
     lines)))
-
 

@@ -28,7 +28,11 @@
          "graph.rkt"
          "config.rkt"
          "regexp.rkt"
-         "recur-handler.rkt")
+         "recur-handler.rkt"
+         (only-in '#%kernel
+                  core-intmap-count
+                  core-intmap-install-struct-property!
+                  core-intmap-range->list))
 
 (provide display
          write
@@ -59,6 +63,18 @@
            do-global-print
 
            install-do-global-print!))
+
+(define (core-intmap-custom-write m out mode)
+  (cond
+    [mode
+     (write-string "#intmap" out)
+     (write (core-intmap-range->list m #f #f #t #f) out)]
+    [else
+     (write-string "#<intmap:" out)
+     (write-string (number->string (core-intmap-count m)) out)
+     (write-string ">" out)]))
+
+(void (core-intmap-install-struct-property! prop:custom-write core-intmap-custom-write))
 
 (define/who (display v [o (current-output-port)])
   (display-via-handler who v o))

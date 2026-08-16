@@ -3,6 +3,11 @@
   (import (rename (except (chezpart)
                           close-port)
                   [define chez:define])
+          (only (chezscheme)
+                ;; for zero-copy scatter/gather write (rktio_writev_pinned):
+                lock-object unlock-object
+                make-ftype-scheme-object-pointer ftype-pointer-address
+                bytevector-u64-native-set!)
           (rename (only (chezscheme)
                         read-char peek-char
                         current-directory
@@ -46,7 +51,7 @@
 
   ;; ----------------------------------------
 
-  (module (|#%rktio-instance| ptr->address address->ptr)
+  (module (|#%rktio-instance| |#%rktcrypto-instance| |#%rktrandom-instance| ptr->address address->ptr)
     (meta define (convert-type t)
           (syntax-case t (ref *ref rktio_bool_t rktio_const_string_t)
             [(ref . _) #'uptr]
@@ -141,13 +146,18 @@
                            [wrap-result (if (#%memq 'msg-queue (map syntax->datum #'(flag ...)))
                                             #'wrap-result/allow-callbacks
                                             #'wrap-result)])
-               #'(let ([proc (foreign-procedure conv ... (rktio-lookup 'name)
-                                                (arg-type ...)
-                                                ret-type)])
-                   (lambda (arg-name ...)
-                     (let-unwrappers
-                      ([orig-arg-type arg-name] ...)
-                      (wrap-result orig-ret-type (proc arg-name ...))))))]))
+               #'(let ([addr (rktio-lookup 'name)])
+                   (if addr
+                       (let ([proc (foreign-procedure conv ... addr
+                                                      (arg-type ...)
+                                                      ret-type)])
+                         (lambda (arg-name ...)
+                           (let-unwrappers
+                            ([orig-arg-type arg-name] ...)
+                            (wrap-result orig-ret-type (proc arg-name ...)))))
+                       ;; optional subsystem entry missing from this build
+                       (lambda (arg-name ...)
+                         (#%error 'name "unavailable: librktcrypto is not part of this Racket build")))))]))
 
     (define-syntax (define-function stx)
       (syntax-case stx ()
@@ -216,7 +226,20 @@
                                           (string-append "../../lib/librktio" (utf8->string (system-type 'so-suffix)))))))
 
     (define (rktio-lookup name)
-      (foreign-entry (symbol->string name)))
+      (let ([str (symbol->string name)])
+        (cond
+         [(foreign-entry? str) (foreign-entry str)]
+         [(and (> (string-length str) 10)
+               (string=? (substring str 0 10) "rktcrypto_"))
+          ;; librktcrypto is optional (not part of Windows builds);
+          ;; a missing entry turns into a raising stub in
+          ;; `convert-function` instead of failing the boot
+          #f]
+         [(and (> (string-length str) 10)
+               (string=? (substring str 0 10) "rktrandom_"))
+          ;; librktrandom is optional in the same way
+          #f]
+         [else (foreign-entry str)])))
 
     ;; workaround for `include` not using `(source-directories)` when
     ;; a path starts with "..":
@@ -230,6 +253,36 @@
                                 (source-directories))])
            (#%datum->syntax #'inc `(include ,(or new-path #'path))))]))
     (include-rel "../rktio/rktio.rktl")
+
+    (define loaded-librktcrypto
+      (or (foreign-entry? "rktcrypto_system_random")
+          ;; Not statically linked (e.g. Windows builds, where librktcrypto
+          ;; is not built at all): try a shared object, else run without
+          ;; the crypto subsystem and let its entry points raise. Probe for
+          ;; the file first -- this runs during boot, where a raise from
+          ;; `load-shared-object` would take the process down.
+          (let ([path (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                      (#%current-directory))
+                                  (string-append "../../lib/librktcrypto" (utf8->string (system-type 'so-suffix))))])
+            (and (#%file-exists? path)
+                 (guard (exn [#t #f])
+                   (and (load-shared-object path)
+                        (foreign-entry? "rktcrypto_system_random")))))))
+
+    (include-rel "../crypto/rktcrypto.rktl")
+
+    (define loaded-librktrandom
+      (or (foreign-entry? "rktrandom_selftest")
+          ;; same optional-subsystem treatment as librktcrypto
+          (let ([path (path-build (or (#%getenv "RACKET_IO_SOURCE_DIR")
+                                      (#%current-directory))
+                                  (string-append "../../lib/librktrandom" (utf8->string (system-type 'so-suffix))))])
+            (and (#%file-exists? path)
+                 (guard (exn [#t #f])
+                   (and (load-shared-object path)
+                        (foreign-entry? "rktrandom_selftest")))))))
+
+    (include-rel "../random/rktrandom.rktl")
 
     (define (rktio_filesize_ref fs)
       (ftype-ref rktio_filesize_t () (make-ftype-pointer rktio_filesize_t (ptr->address fs))))
@@ -407,6 +460,41 @@
       (rktio_to_bytes_list lls len)
       (void))
 
+    ;; Zero-copy scatter/gather write. `bstrs` is a vector of byte strings,
+    ;; `starts`/`ends` parallel vectors of fixnums giving each slice's range.
+    ;; Pins every slice (so GC won't move it), builds a C iovec array of
+    ;; {data-address, len} pairs in a bytevector, and calls `rktio_writev`
+    ;; once; then unpins. Returns `rktio_writev`'s result (byte count, 0 for
+    ;; would-block, or an error vector). The caller resumes a partial write
+    ;; by advancing past the written prefix (byte-granular). Locking spans
+    ;; only the single foreign call, which is not collect-safe, so no GC can
+    ;; run while the raw addresses are live in the iovec.
+    (define (rktio_writev_pinned rktio fd bstrs starts ends)
+      (let* ([count (vector-length bstrs)]
+             [iov (make-bytevector (fxsll count 4))]) ; 16 bytes per entry
+        ;; lock all first so none can move while we read addresses
+        (let loop ([i 0])
+          (when (fx< i count)
+            (lock-object (vector-ref bstrs i))
+            (loop (fx+ i 1))))
+        (let loop ([i 0])
+          (when (fx< i count)
+            (let ([b (vector-ref bstrs i)]
+                  [st (vector-ref starts i)])
+              (bytevector-u64-native-set!
+               iov (fxsll i 4)
+               (+ (ftype-pointer-address (make-ftype-scheme-object-pointer b)) st))
+              (bytevector-u64-native-set!
+               iov (fx+ (fxsll i 4) 8)
+               (fx- (vector-ref ends i) st)))
+            (loop (fx+ i 1))))
+        (let ([r (rktio_writev rktio fd iov count)])
+          (let loop ([i 0])
+            (when (fx< i count)
+              (unlock-object (vector-ref bstrs i))
+              (loop (fx+ i 1))))
+          r)))
+
     (define (rktio_make_sha1_ctx)
       (make-bytevector (ftype-sizeof rktio_sha1_ctx_t)))
     (define (rktio_make_sha2_ctx)
@@ -490,6 +578,7 @@
                                  'rktio_free_bytes_list rktio_free_bytes_list
                                  'rktio_from_bytes_list rktio_from_bytes_list
                                  'rktio_free_bytes_list rktio_free_bytes_list
+                                 'rktio_writev_pinned rktio_writev_pinned
                                  'rktio_make_sha1_ctx rktio_make_sha1_ctx
                                  'rktio_make_sha2_ctx rktio_make_sha2_ctx
                                  'rktio_process_result_stdin_fd rktio_process_result_stdin_fd
@@ -502,7 +591,105 @@
                                  'rktio_do_install_os_signal_handler rktio_do_install_os_signal_handler
                                  'rktio_get_ctl_c_handler rktio_get_ctl_c_handler]
                                 form ...)]))
-        (include-rel "../rktio/rktio.rktl"))))
+        (include-rel "../rktio/rktio.rktl")))
+
+    (define |#%rktcrypto-instance|
+      (let ()
+        (define-syntax extract-functions
+          (syntax-rules (define-constant
+                          define-type
+                          define-struct-type
+                          define-function
+                          define-function/errno
+                          define-function/errno+step
+                          define-function/result_t
+                          define-function/alloc_result_t)
+            ;; also expose whether the optional librktcrypto is actually
+            ;; part of this build (Windows builds run without it)
+            [(_ accum) (hasheq 'rktcrypto-available?
+                               (lambda () (and loaded-librktcrypto #t))
+                               . accum)]
+            [(_ accum (define-constant . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-struct-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-function _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno+step _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/alloc_result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]))
+        (define-syntax begin
+          (syntax-rules ()
+            [(begin form ...)
+             (extract-functions [] form ...)]))
+        (include-rel "../crypto/rktcrypto.rktl")))
+
+    ;; Refill helpers for the Racket-level scalar draw buffers:
+    ;; run the C fill into a scratch bytevector, then convert to an
+    ;; flvector with unboxed reads/writes (neither side allocates).
+    ;; Racket code cannot express this loop without boxing each
+    ;; element, which is why it lives here.
+    (define (rgen-refill-double! fill-proc gen-id state scratch flv)
+      (let ([n (#%flvector-length flv)])
+        (fill-proc gen-id state scratch 0 (#%fx* n 8))
+        (let loop ([i 0])
+          (unless (#%fx= i n)
+            (#%flvector-set! flv i (#%bytevector-ieee-double-native-ref scratch (#%fx* i 8)))
+            (loop (#%fx+ i 1))))))
+
+    (define |#%rktrandom-instance|
+      (let ()
+        (define-syntax extract-functions
+          (syntax-rules (define-constant
+                          define-type
+                          define-struct-type
+                          define-function
+                          define-function/errno
+                          define-function/errno+step
+                          define-function/result_t
+                          define-function/alloc_result_t)
+            ;; also expose whether the optional librktrandom is actually
+            ;; part of this build
+            [(_ accum) (hasheq 'rktrandom-available?
+                               (lambda () (and loaded-librktrandom #t))
+                               'rgen-refill-f64!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_f64 gen-id state scratch flv))
+                               'rgen-refill-normal!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_normal gen-id state scratch flv))
+                               'rgen-refill-exp!
+                               (lambda (gen-id state scratch flv)
+                                 (rgen-refill-double! rktrandom_fill_exp gen-id state scratch flv))
+                               . accum)]
+            [(_ accum (define-constant id v) . rest)
+             (extract-functions ('id v . accum) . rest)]
+            [(_ accum (define-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-struct-type . _) . rest)
+             (extract-functions accum . rest)]
+            [(_ accum (define-function _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/errno+step _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]
+            [(_ accum (define-function/alloc_result_t _ _ _ id . _) . rest)
+             (extract-functions ('id id . accum) . rest)]))
+        (define-syntax begin
+          (syntax-rules ()
+            [(begin form ...)
+             (extract-functions [] form ...)]))
+        (include-rel "../random/rktrandom.rktl"))))
 
   (define (immobile-cell->address p)
     (address->ptr (rumble:immobile-cell->address p)))
@@ -585,6 +772,11 @@
   ;; ----------------------------------------
 
   (export system-library-subpath)
+
+  ;; the #%rktrandom primitive table is consumed directly from Racket
+  ;; code (racket/random), unlike #%rktio/#%rktcrypto whose consumers
+  ;; live inside the flattened io linklet:
+  (export |#%rktrandom-instance|)
   (define system-library-subpath
     (case-lambda
      [() (system-library-subpath (system-type 'gc))]
@@ -609,6 +801,8 @@
       [(|#%pthread|) (hasheq)]
       [(|#%thread|) |#%thread-instance|]
       [(|#%rktio|) |#%rktio-instance|]
+      [(|#%rktcrypto|) |#%rktcrypto-instance|]
+      [(|#%rktrandom|) |#%rktrandom-instance|]
       [else #f]))
 
   (include "include.ss")

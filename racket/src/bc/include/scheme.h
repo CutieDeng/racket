@@ -408,6 +408,62 @@ typedef struct Scheme_Vector {
   Scheme_Object *els[mzFLEX_ARRAY_DECL];
 } Scheme_Vector;
 
+#define SCHEME_PVECTOR_EMPTY 0
+#define SCHEME_PVECTOR_SINGLE 1
+#define SCHEME_PVECTOR_DEEP 2
+
+#define SCHEME_PVECTOR_NODE_DIGIT 1
+#define SCHEME_PVECTOR_NODE_TREE 2
+#define SCHEME_PVECTOR_NODE_CURSOR 3
+
+typedef struct Scheme_PVector {
+  Scheme_Inclhash_Object iso;
+  intptr_t length;
+  unsigned char shape;
+  unsigned char prefix_len;
+  unsigned char suffix_len;
+  unsigned char reserved;
+  Scheme_Object *a;
+  Scheme_Object *b;
+  Scheme_Object *c;
+  Scheme_Object *d;
+} Scheme_PVector;
+
+typedef struct Scheme_PVector_Digit {
+  Scheme_Object so;
+  unsigned char kind;
+  unsigned char count;
+  unsigned char level;
+  unsigned char reserved[sizeof(intptr_t) - 3];
+  Scheme_Object *els[4];
+} Scheme_PVector_Digit;
+
+typedef struct Scheme_PVector_Node {
+  Scheme_Object so;
+  unsigned char kind;
+  unsigned char arity;
+  unsigned char level;
+  unsigned char reserved[sizeof(intptr_t) - 3];
+  intptr_t measure;
+  Scheme_Object *a;
+  Scheme_Object *b;
+  Scheme_Object *c;
+} Scheme_PVector_Node;
+
+typedef struct Scheme_PVector_Cursor {
+  Scheme_Object so;
+  unsigned char kind;
+  unsigned char segment;
+  unsigned char offset;
+  unsigned char count;
+  int depth;
+  Scheme_Object *pv;
+  Scheme_Object *leaf;
+  Scheme_Object *stack;
+  Scheme_Object *stack_indexes;
+  int reverse;
+} Scheme_PVector_Cursor;
+
 # define SHARED_ALLOCATED 0x2
 # define SHARED_ALLOCATEDP(so) (MZ_OPT_HASH_KEY((Scheme_Inclhash_Object *)(so)) & SHARED_ALLOCATED)
 # define SHARED_ALLOCATED_SET(so) (MZ_OPT_HASH_KEY((Scheme_Inclhash_Object *)(so)) |= SHARED_ALLOCATED)
@@ -545,6 +601,9 @@ typedef intptr_t (*Scheme_Secondary_Hash_Proc)(Scheme_Object *obj, void *cycle_d
 #define SCHEME_MUTABLE_VECTORP(obj)  (SCHEME_VECTORP(obj) && SCHEME_MUTABLEP(obj))
 #define SCHEME_IMMUTABLE_VECTORP(obj)  (SCHEME_VECTORP(obj) && SCHEME_IMMUTABLEP(obj))
 
+#define SCHEME_PVECTORP(obj)  SAME_TYPE(SCHEME_TYPE(obj), scheme_pvector_type)
+#define SCHEME_PVECTOR_NODEP(obj)  SAME_TYPE(SCHEME_TYPE(obj), scheme_pvector_node_type)
+
 #define SCHEME_FLVECTORP(obj)  SAME_TYPE(SCHEME_TYPE(obj), scheme_flvector_type)
 #define SCHEME_EXTFLVECTORP(obj)  SAME_TYPE(SCHEME_TYPE(obj), scheme_extflvector_type)
 #define SCHEME_FXVECTORP(obj)  SAME_TYPE(SCHEME_TYPE(obj), scheme_fxvector_type)
@@ -661,6 +720,28 @@ typedef intptr_t (*Scheme_Secondary_Hash_Proc)(Scheme_Object *obj, void *cycle_d
 #define SCHEME_VEC_SIZE(obj) (((Scheme_Vector *)(obj))->size)
 #define SCHEME_VEC_ELS(obj)  (((Scheme_Vector *)(obj))->els)
 #define SCHEME_VEC_BASE(obj) SCHEME_VEC_ELS(obj)
+
+#define SCHEME_PVECTOR_LENGTH(obj) (((Scheme_PVector *)(obj))->length)
+#define SCHEME_PVECTOR_SHAPE(obj) (((Scheme_PVector *)(obj))->shape)
+#define SCHEME_PVECTOR_PREFIX_LEN(obj) (((Scheme_PVector *)(obj))->prefix_len)
+#define SCHEME_PVECTOR_SUFFIX_LEN(obj) (((Scheme_PVector *)(obj))->suffix_len)
+#define SCHEME_PVECTOR_A(obj) (((Scheme_PVector *)(obj))->a)
+#define SCHEME_PVECTOR_B(obj) (((Scheme_PVector *)(obj))->b)
+#define SCHEME_PVECTOR_C(obj) (((Scheme_PVector *)(obj))->c)
+#define SCHEME_PVECTOR_D(obj) (((Scheme_PVector *)(obj))->d)
+
+#define SCHEME_PVECTOR_DIGIT_COUNT(obj) (((Scheme_PVector_Digit *)(obj))->count)
+#define SCHEME_PVECTOR_DIGIT_ELS(obj) (((Scheme_PVector_Digit *)(obj))->els)
+
+#define SCHEME_PVECTOR_NODE_KIND(obj) (((Scheme_PVector_Digit *)(obj))->kind)
+#define SCHEME_PVECTOR_NODE_ARITY(obj) (((Scheme_PVector_Node *)(obj))->arity)
+#define SCHEME_PVECTOR_NODE_LEVEL(obj) (((Scheme_PVector_Node *)(obj))->level)
+#define SCHEME_PVECTOR_NODE_MEASURE(obj) (((Scheme_PVector_Node *)(obj))->measure)
+#define SCHEME_PVECTOR_NODE_A(obj) (((Scheme_PVector_Node *)(obj))->a)
+#define SCHEME_PVECTOR_NODE_B(obj) (((Scheme_PVector_Node *)(obj))->b)
+#define SCHEME_PVECTOR_NODE_C(obj) (((Scheme_PVector_Node *)(obj))->c)
+
+#define SCHEME_PVECTOR_CURSORP(obj) (SCHEME_PVECTOR_NODEP(obj) && (SCHEME_PVECTOR_NODE_KIND(obj) == SCHEME_PVECTOR_NODE_CURSOR))
 
 #define SCHEME_FLVEC_SIZE(obj) (((Scheme_Double_Vector *)(obj))->size)
 #define SCHEME_FLVEC_ELS(obj)  (((Scheme_Double_Vector *)(obj))->els)
@@ -2166,4 +2247,3 @@ extern Scheme_Extension_Table *scheme_extension_table;
 #endif
 
 #endif /* ! SCHEME_H */
-

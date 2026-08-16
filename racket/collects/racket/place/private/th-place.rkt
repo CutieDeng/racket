@@ -223,15 +223,13 @@
        (for/fold ([nh #t]) ([p (in-hash-pairs o)])
          (and nh (dcw (car p)) (dcw (cdr p))))]
       [(struct? o)
-        (define key (prefab-struct-key o))
-        (when (not key)
-          (error "Must be a prefab struct"))
-        (for/fold ([nh #t]) ([p (cdr (vector->list (struct->vector o)))])
-          (and nh (dcw p)))]
+       (define key (prefab-struct-key o))
+       (and key
+            (for/fold ([nh #t]) ([p (cdr (vector->list (struct->vector o)))])
+              (and nh (dcw p))))]
       [(port? o) (or (file-stream-port? o) (tcp-port? o))]
       [(cpointer? o) #t]
       [(tcp-listener? o) #t]
       [else #f]))
 
-  (dcw x)
-  #t)
+  (dcw x))

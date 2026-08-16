@@ -24,11 +24,13 @@
        "zlib")]
     [else
      null])
-   (cond
-     [(and mac? (or m32? ppc?))
-      '("openssl-1")]
-     [else
-      '("openssl-3")])
+   ;; No OpenSSL on any platform. Racket's crypto + TLS run entirely on the
+   ;; in-tree rktcrypto engine, and the `openssl` collection never loads an
+   ;; OpenSSL binary (openssl/libssl and openssl/libcrypto are #f shims;
+   ;; ssl-available? probes rktcrypto in the executable, not a bundled libssl).
+   ;; A bundled libssl/libcrypto would therefore be dead weight, so the
+   ;; distribution ships none — completing the OpenSSL removal on every arch.
+   null
    '("expat"
      "gettext")
    (cond

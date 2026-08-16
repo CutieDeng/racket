@@ -129,10 +129,14 @@ EXTRA_REPOS_BASE =
 # to include in a distribution; if "{}" appears at the start,
 # then the content of "build/PKGS" can override when that file
 # exists:
-PKGS = {} main-distribution main-distribution-test
+PKGS = {} main-distribution main-distribution-test racket-tstring tstring
 
-# Needed for any distribution (not meant to be configured):
-REQUIRED_PKGS = racket-lib
+# Needed for any distribution (not meant to be configured); the
+# tstring packages are required because the development and
+# distribution `config.rktd` points `interactive-file` at
+# `racket/interactive/tstring`, so every build that installs packages
+# (including a minimal `make in-place PKGS=""`) must provide them:
+REQUIRED_PKGS = racket-lib racket-tstring tstring
 
 # Needed for distro-build (not meant to be configured):
 DISTRO_BUILD_PKGS = distro-build-lib

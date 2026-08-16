@@ -1,0 +1,7 @@
+(kernel instrs issue-bound port-bound chain-latency)
+(bn_op 3300 1100 520 358)
+(bn_fips 15613 5205 2064 49)
+(ecc 828 276 117 42)
+(keccak 841 281 85 265)
+(keccak_f2 135 45 13 53)
+(sha1 119 40 14 18)

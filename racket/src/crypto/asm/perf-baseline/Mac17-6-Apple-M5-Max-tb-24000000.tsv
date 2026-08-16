@@ -1,0 +1,29 @@
+# machine: Mac17,6|Apple M5 Max|tb=24000000
+# recorded by perf-check.sh update; ns/op median of 5 reps
+bn/bn_sqr_mont_8w	32.490
+bn/bn_mul_mont_fips32	592.540
+bn/bn_mul_mont_op16	131.290
+bn/bn_sqr_mont_8w_k16	113.040
+bn/bn_sqr_mont_8w_k32	435.510
+md5sha1/md5_blocks_asm	94.190
+md5sha1/sha1_blocks_asm	27.490
+keccak/keccak_absorb13_asm	722.610
+keccak/keccak_absorb18_asm	725.410
+keccak/keccak_absorb21_asm	729.040
+keccak/keccak_absorb9_asm	724.230
+keccak/keccak_absorb17_asm	725.740
+keccak_f2/keccak_f2_asm	187.120
+ecc/mul_plain6	16.360
+ecc/mul_plain9	28.510
+reduce_p384/reduce_p384_C_throughput	20.580
+reduce_p384/reduce_p384_asm_throughput	9.640
+reduce_p384/reduce_p384_asm_latency	12.330
+reduce_p384/reduce_p384_C_latency	20.600
+p256/jac_double_hw	86.110
+p256/mont_sqrn_asm_rep=8_amortized_mod_n	17.660
+p256/mont_sqrn_p256_rep=8_amortized	9.930
+p256/mont_sqrn_asm_rep=1_mod_n	18.460
+p256/mont_sqrn_p256_rep=1	11.950
+mont_cios/mont_cios_nl4	52.059
+mont_cios/mont_cios_nl6	74.059
+mont_cios/mont_cios_nl8	114.967

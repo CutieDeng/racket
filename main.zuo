@@ -248,6 +248,11 @@
                                                                 ""))
                                       'PLT_SETUP_OPTIONS (build-shell
                                                           (if also? "-D" "")
+                                                          ;; that same package-blind setup pass must not
+                                                          ;; install or tidy foreign libraries: it cannot
+                                                          ;; see package-supplied libraries, so its tidy
+                                                          ;; step would discard them from "lib"
+                                                          (if prefix "" "-F")
                                                           (setup-options)
                                                           (get-recompile-cache-options))
                                       'DESTDIR (if prefix

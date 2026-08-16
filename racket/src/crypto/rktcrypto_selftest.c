@@ -1,0 +1,383 @@
+/* Known-answer self-tests for rktcrypto.
+
+   Each algorithm added to rktcrypto must extend this file with a
+   known-answer test that runs in well under a millisecond. The tests
+   guard against miscompilation, broken platform dispatch, and
+   bad links; they are not a substitute for the full test suite. */
+
+#include "rktcrypto.h"
+#include "rktcrypto_bn.h"
+
+#include <string.h>
+
+static int test_ct_bytes_equal(void)
+{
+  unsigned char a[7] = {0, 1, 2, 3, 4, 5, 255};
+  unsigned char b[7] = {0, 1, 2, 3, 4, 5, 255};
+
+  if (!rktcrypto_ct_bytes_equal(a, 0, b, 0, 7)) return 0;
+  if (!rktcrypto_ct_bytes_equal(a, 0, a, 0, 7)) return 0;
+  if (!rktcrypto_ct_bytes_equal(a, 0, b, 0, 0)) return 0;
+  if (!rktcrypto_ct_bytes_equal(a, 2, b, 2, 5)) return 0;
+
+  b[6] = 254; /* differ in last byte */
+  if (rktcrypto_ct_bytes_equal(a, 0, b, 0, 7)) return 0;
+  b[6] = 255;
+  b[0] = 1; /* differ in first byte */
+  if (rktcrypto_ct_bytes_equal(a, 0, b, 0, 7)) return 0;
+  if (!rktcrypto_ct_bytes_equal(a, 1, b, 1, 6)) return 0;
+
+  if (rktcrypto_ct_bytes_equal(a, 0, b, 0, -1)) return 0;
+
+  return 1;
+}
+
+static int test_secure_clear(void)
+{
+  unsigned char buf[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  int i;
+
+  rktcrypto_secure_clear(buf, 2, 6);
+  if ((buf[0] != 1) || (buf[1] != 2)) return 0;
+  for (i = 2; i < 6; i++)
+    if (buf[i] != 0) return 0;
+  if ((buf[6] != 7) || (buf[7] != 8)) return 0;
+
+  rktcrypto_secure_clear(buf, 4, 4); /* empty range is a no-op */
+  rktcrypto_secure_clear(buf, 4, 2); /* reversed range is a no-op */
+  if (buf[6] != 7) return 0;
+
+  return 1;
+}
+
+static int test_drbg(void)
+{
+  /* Fill region and non-all-zero, same discipline as the OS RNG. */
+  unsigned char buf[40];
+  unsigned char acc = 0;
+  int i;
+  for (i = 0; i < 40; i++) buf[i] = 0xAA;
+  if (!rktcrypto_random_bytes(buf, 4, 36)) return 0;
+  if (buf[0] != 0xAA || buf[3] != 0xAA || buf[36] != 0xAA || buf[39] != 0xAA)
+    return 0;
+  for (i = 4; i < 36; i++) acc |= buf[i];
+  if (acc == 0) return 0;
+  if (!rktcrypto_random_bytes(buf, 0, 0)) return 0;
+  return 1;
+}
+
+static int test_system_random(void)
+{
+  /* Sanity only: correct fill region, and output is not all-zeros
+     for a request long enough that all-zeros means a broken source
+     rather than bad luck (probability 2^-256). */
+  unsigned char buf[40];
+  unsigned char acc = 0;
+  int i;
+
+  for (i = 0; i < 40; i++) buf[i] = 0xAA;
+
+  if (!rktcrypto_system_random(buf, 4, 36)) return 0;
+  if ((buf[0] != 0xAA) || (buf[3] != 0xAA)
+      || (buf[36] != 0xAA) || (buf[39] != 0xAA))
+    return 0;
+
+  for (i = 4; i < 36; i++) acc |= buf[i];
+  if (acc == 0) return 0;
+
+  if (!rktcrypto_system_random(buf, 0, 0)) return 0;
+
+  return 1;
+}
+
+/* One known-answer test per digest family, so a miscompiled or
+   mislinked core is caught at first use rather than producing wrong
+   hashes silently. */
+static int test_digests(void)
+{
+  static const struct { int alg; const char *msg; int outlen; unsigned char want[64]; } kats[] = {
+    { RKTCRYPTO_SHA256, "abc", 32,
+      {0xba,0x78,0x16,0xbf,0x8f,0x01,0xcf,0xea,0x41,0x41,0x40,0xde,0x5d,0xae,0x22,0x23,
+       0xb0,0x03,0x61,0xa3,0x96,0x17,0x7a,0x9c,0xb4,0x10,0xff,0x61,0xf2,0x00,0x15,0xad} },
+    { RKTCRYPTO_SHA512, "abc", 64,
+      {0xdd,0xaf,0x35,0xa1,0x93,0x61,0x7a,0xba,0xcc,0x41,0x73,0x49,0xae,0x20,0x41,0x31,
+       0x12,0xe6,0xfa,0x4e,0x89,0xa9,0x7e,0xa2,0x0a,0x9e,0xee,0xe6,0x4b,0x55,0xd3,0x9a,
+       0x21,0x92,0x99,0x2a,0x27,0x4f,0xc1,0xa8,0x36,0xba,0x3c,0x23,0xa3,0xfe,0xeb,0xbd,
+       0x45,0x4d,0x44,0x23,0x64,0x3c,0xe8,0x0e,0x2a,0x9a,0xc9,0x4f,0xa5,0x4c,0xa4,0x9f} },
+    { RKTCRYPTO_SHA3_256, "abc", 32,
+      {0x3a,0x98,0x5d,0xa7,0x4f,0xe2,0x25,0xb2,0x04,0x5c,0x17,0x2d,0x6b,0xd3,0x90,0xbd,
+       0x85,0x5f,0x08,0x6e,0x3e,0x9d,0x52,0x5b,0x46,0xbf,0xe2,0x45,0x11,0x43,0x15,0x32} },
+    { RKTCRYPTO_BLAKE2B, "abc", 64,
+      {0xba,0x80,0xa5,0x3f,0x98,0x1c,0x4d,0x0d,0x6a,0x27,0x97,0xb6,0x9f,0x12,0xf6,0xe9,
+       0x4c,0x21,0x2f,0x14,0x68,0x5a,0xc4,0xb7,0x4b,0x12,0xbb,0x6f,0xdb,0xff,0xa2,0xd1,
+       0x7d,0x87,0xc5,0x39,0x2a,0xab,0x79,0x2d,0xc2,0x52,0xd5,0xde,0x45,0x33,0xcc,0x95,
+       0x18,0xd3,0x8a,0xa8,0xdb,0xf1,0x92,0x5a,0xb9,0x23,0x86,0xed,0xd4,0x00,0x99,0x23} },
+    /* BLAKE3 of "abc" (== bytes 0x61,0x62,0x63; not the 0..250 vector) */
+    { RKTCRYPTO_BLAKE3, "abc", 32,
+      {0x64,0x37,0xb3,0xac,0x38,0x46,0x51,0x33,0xff,0xb6,0x3b,0x75,0x27,0x3a,0x8d,0xb5,
+       0x48,0xc5,0x58,0x46,0x5d,0x79,0xdb,0x03,0xfd,0x35,0x9c,0x6c,0xd5,0xbd,0x9d,0x85} },
+    { RKTCRYPTO_SHA1, "abc", 20,
+      {0xa9,0x99,0x3e,0x36,0x47,0x06,0x81,0x6a,0xba,0x3e,0x25,0x71,0x78,0x50,0xc2,0x6c,
+       0x9c,0xd0,0xd8,0x9d} },
+    { RKTCRYPTO_MD5, "abc", 16,
+      {0x90,0x01,0x50,0x98,0x3c,0xd2,0x4f,0xb0,0xd6,0x96,0x3f,0x7d,0x28,0xe1,0x7f,0x72} },
+    { RKTCRYPTO_MD4, "abc", 16,
+      {0xa4,0x48,0x01,0x7a,0xaf,0x21,0xd8,0x52,0x5f,0xc1,0x0a,0xe8,0x7a,0xa6,0x72,0x9d} },
+    { RKTCRYPTO_RIPEMD160, "abc", 20,
+      {0x8e,0xb2,0x08,0xf7,0xe0,0x5d,0x98,0x7a,0x9b,0x04,0x4a,0x8e,0x98,0xc6,0xb0,0x87,
+       0xf1,0x5a,0x0b,0xfc} },
+    { RKTCRYPTO_SM3, "abc", 32,
+      {0x66,0xc7,0xf0,0xf4,0x62,0xee,0xed,0xd9,0xd1,0xf2,0xd4,0x6b,0xdc,0x10,0xe4,0xe2,
+       0x41,0x67,0xc4,0x87,0x5c,0xf2,0xf7,0xa2,0x29,0x7d,0xa0,0x2b,0x8f,0x4b,0xa8,0xe0} },
+    { RKTCRYPTO_WHIRLPOOL, "abc", 64,
+      {0x4e,0x24,0x48,0xa4,0xc6,0xf4,0x86,0xbb,0x16,0xb6,0x56,0x2c,0x73,0xb4,0x02,0x0b,
+       0xf3,0x04,0x3e,0x3a,0x73,0x1b,0xce,0x72,0x1a,0xe1,0xb3,0x03,0xd9,0x7e,0x6d,0x4c,
+       0x71,0x81,0xee,0xbd,0xb6,0xc5,0x7e,0x27,0x7d,0x0e,0x34,0x95,0x71,0x14,0xcb,0xd6,
+       0xc7,0x97,0xfc,0x9d,0x95,0xd8,0xb5,0x82,0xd2,0x25,0x29,0x20,0x76,0xd4,0xee,0xf5} }
+  };
+  unsigned char out[64];
+  size_t k;
+
+  for (k = 0; k < sizeof(kats) / sizeof(kats[0]); k++) {
+    intptr_t mlen = (intptr_t)strlen(kats[k].msg);
+    memset(out, 0, sizeof(out));
+    if (!rktcrypto_digest_oneshot(kats[k].alg, (const unsigned char *)kats[k].msg, 0, mlen,
+                                  out, 0, kats[k].outlen))
+      return 0;
+    if (memcmp(out, kats[k].want, (size_t)kats[k].outlen) != 0)
+      return 0;
+  }
+  return 1;
+}
+
+/* ChaCha20-Poly1305 AEAD known-answer test (RFC 8439 2.8.2). */
+static int test_aead(void)
+{
+  unsigned char key[32], nonce[12] = {0x07,0,0,0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47};
+  unsigned char aad[12] = {0x50,0x51,0x52,0x53,0xc0,0xc1,0xc2,0xc3,0xc4,0xc5,0xc6,0xc7};
+  static const char *pt = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+  static const unsigned char tag_want[16] = {
+    0x1a,0xe1,0x0b,0x59,0x4f,0x09,0xe2,0x6a,0x7e,0x90,0x2e,0xcb,0xd0,0x60,0x06,0x91
+  };
+  unsigned char out[160], dec[160];
+  intptr_t ptlen, i;
+
+  for (i = 0; i < 32; i++) key[i] = (unsigned char)(0x80 + i);
+  ptlen = (intptr_t)strlen(pt);
+
+  if (!rktcrypto_aead_seal(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                           aad, 0, 12, (const unsigned char *)pt, 0, ptlen, out, 0))
+    return 0;
+  if (memcmp(out + ptlen, tag_want, 16) != 0)
+    return 0;
+  if (!rktcrypto_aead_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                           aad, 0, 12, out, 0, ptlen + 16, dec, 0))
+    return 0;
+  if (memcmp(dec, pt, (size_t)ptlen) != 0)
+    return 0;
+  /* Tampering must be rejected. */
+  out[0] ^= 1;
+  if (rktcrypto_aead_open(RKTCRYPTO_AEAD_CHACHA20_POLY1305, key, 32, nonce, 12,
+                          aad, 0, 12, out, 0, ptlen + 16, dec, 0))
+    return 0;
+
+  /* AES-256-GCM KAT: all-zero key/nonce, 16 zero bytes of plaintext
+     (NIST vector: ct cea7403d..., tag d0d1c8a7...). */
+  {
+    unsigned char zkey[32] = {0}, znonce[12] = {0}, zpt[16] = {0}, zout[32];
+    static const unsigned char zct[16] = {
+      0xce,0xa7,0x40,0x3d,0x4d,0x60,0x6b,0x6e,0x07,0x4e,0xc5,0xd3,0xba,0xf3,0x9d,0x18};
+    static const unsigned char ztag[16] = {
+      0xd0,0xd1,0xc8,0xa7,0x99,0x99,0x6b,0xf0,0x26,0x5b,0x98,0xb5,0xd4,0x8a,0xb9,0x19};
+    if (!rktcrypto_aead_seal(RKTCRYPTO_AEAD_AES256_GCM, zkey, 32, znonce, 12,
+                             (const unsigned char *)"", 0, 0, zpt, 0, 16, zout, 0))
+      return 0;
+    if (memcmp(zout, zct, 16) != 0 || memcmp(zout + 16, ztag, 16) != 0)
+      return 0;
+  }
+  return 1;
+}
+
+/* SipHash-2-4 known-answer test (reference vector, empty input). */
+static int test_siphash(void)
+{
+  unsigned char key[16], out[8];
+  static const unsigned char want[8] = {0x31,0x0e,0x0e,0xdd,0x47,0xdb,0x6f,0x72};
+  int i;
+  for (i = 0; i < 16; i++) key[i] = (unsigned char)i;
+  if (!rktcrypto_siphash(key, 16, 2, 4, (const unsigned char *)"", 0, 0, out, 0))
+    return 0;
+  return memcmp(out, want, 8) == 0;
+}
+
+/* Argon2id KAT (RFC 9106 test vector). Uses a small memory cost, so
+   it is cheap enough for a startup self-test. */
+static int test_argon2id(void)
+{
+  unsigned char pwd[32], salt[16], secret[8], ad[12], out[32];
+  static const unsigned char want[32] = {
+    0x0d,0x64,0x0d,0xf5,0x8d,0x78,0x76,0x6c,0x08,0xc0,0x37,0xa3,0x4a,0x8b,0x53,0xc9,
+    0xd0,0x1e,0xf0,0x45,0x2d,0x75,0xb6,0x5e,0xb5,0x25,0x20,0xe9,0x6b,0x01,0xe6,0x59};
+  memset(pwd, 1, 32); memset(salt, 2, 16); memset(secret, 3, 8); memset(ad, 4, 12);
+  if (!rktcrypto_argon2id(pwd, 32, salt, 16, secret, 8, ad, 12, 3, 32, 4, out, 32))
+    return 0;
+  return memcmp(out, want, 32) == 0;
+}
+
+/* X25519 KAT (RFC 7748 single test vector). */
+static int test_x25519(void)
+{
+  static const unsigned char scalar[32] = {
+    0xa5,0x46,0xe3,0x6b,0xf0,0x52,0x7c,0x9d,0x3b,0x16,0x15,0x4b,0x82,0x46,0x5e,0xdd,
+    0x62,0x14,0x4c,0x0a,0xc1,0xfc,0x5a,0x18,0x50,0x6a,0x22,0x44,0xba,0x44,0x9a,0xc4};
+  static const unsigned char point[32] = {
+    0xe6,0xdb,0x68,0x67,0x58,0x30,0x30,0xdb,0x35,0x94,0xc1,0xa4,0x24,0xb1,0x5f,0x7c,
+    0x72,0x66,0x24,0xec,0x26,0xb3,0x35,0x3b,0x10,0xa9,0x03,0xa6,0xd0,0xab,0x1c,0x4c};
+  static const unsigned char want[32] = {
+    0xc3,0xda,0x55,0x37,0x9d,0xe9,0xc6,0x90,0x8e,0x94,0xea,0x4d,0xf2,0x8d,0x08,0x4f,
+    0x32,0xec,0xcf,0x03,0x49,0x1c,0x71,0xf7,0x54,0xb4,0x07,0x55,0x77,0xa2,0x85,0x52};
+  unsigned char out[32];
+  if (!rktcrypto_x25519(out, scalar, point)) return 0;
+  return memcmp(out, want, 32) == 0;
+}
+
+/* Ed25519 KAT: seed = 00 01 .. 1f, verified against OpenSSL. */
+static int test_ed25519(void)
+{
+  unsigned char seed[32], pk[32], sig[64];
+  int i;
+  static const unsigned char want_pk[32] = {
+    0x03,0xa1,0x07,0xbf,0xf3,0xce,0x10,0xbe,0x1d,0x70,0xdd,0x18,0xe7,0x4b,0xc0,0x99,
+    0x67,0xe4,0xd6,0x30,0x9b,0xa5,0x0d,0x5f,0x1d,0xdc,0x86,0x64,0x12,0x55,0x31,0xb8};
+  for (i = 0; i < 32; i++) seed[i] = (unsigned char)i;
+  rktcrypto_ed25519_pubkey(pk, seed);
+  if (memcmp(pk, want_pk, 32) != 0) return 0;
+  rktcrypto_ed25519_sign(sig, (const unsigned char *)"abc", 3, seed);
+  if (!rktcrypto_ed25519_verify(sig, (const unsigned char *)"abc", 3, pk)) return 0;
+  sig[0] ^= 1;
+  if (rktcrypto_ed25519_verify(sig, (const unsigned char *)"abc", 3, pk)) return 0;
+  return 1;
+}
+
+/* P-256 KAT: priv = 01 02 .. 20, pubkey verified against OpenSSL;
+   plus an ECDSA sign/verify round-trip and tamper rejection. */
+static int test_p256(void)
+{
+  unsigned char priv[32], pub[65], sig[64];
+  int i;
+  static const unsigned char want_pub[65] = {
+    0x04,0x51,0x5c,0x3d,0x6e,0xb9,0xe3,0x96,0xb9,0x04,0xd3,0xfe,0xca,0x7f,0x54,0xfd,
+    0xcd,0x0c,0xc1,0xe9,0x97,0xbf,0x37,0x5d,0xca,0x51,0x5a,0xd0,0xa6,0xc3,0xb4,0x03,
+    0x5f,0x45,0x36,0xbe,0x3a,0x50,0xf3,0x18,0xfb,0xf9,0xa5,0x47,0x59,0x02,0xa2,0x21,
+    0x50,0x2b,0xef,0x0d,0x57,0xe0,0x8c,0x53,0xb2,0xcc,0x0a,0x56,0xf1,0x7d,0x9f,0x93,0x54};
+  for (i = 0; i < 32; i++) priv[i] = (unsigned char)(i + 1);
+  if (!rktcrypto_p256_pubkey(pub, priv)) return 0;
+  if (memcmp(pub, want_pub, 65) != 0) return 0;
+  if (!rktcrypto_p256_ecdsa_sign(sig, (const unsigned char *)"abc", 3, priv)) return 0;
+  if (!rktcrypto_p256_ecdsa_verify(sig, (const unsigned char *)"abc", 3, pub)) return 0;
+  sig[0] ^= 1;
+  if (rktcrypto_p256_ecdsa_verify(sig, (const unsigned char *)"abc", 3, pub)) return 0;
+  return 1;
+}
+
+static int test_mlkem768(void)
+{
+  unsigned char coins[64], m[32], pk[1184], sk[2400], ct[1088], ss1[32], ss2[32];
+  int i;
+  static const unsigned char want_ss[32] = {
+    0xf2,0xc2,0x67,0x8a,0x3b,0xe8,0xba,0x85,0xe9,0x05,0x3a,0x0e,0xaf,0xfc,0x55,0x76,
+    0x61,0xd1,0x5f,0x27,0x42,0xca,0xaf,0x27,0x2c,0xd9,0x37,0x70,0x06,0x2b,0x53,0xca};
+  for (i = 0; i < 64; i++) coins[i] = (unsigned char)i;
+  for (i = 0; i < 32; i++) m[i] = (unsigned char)(255 - i);
+  if (!rktcrypto_mlkem768_keypair_derand(pk, sk, coins)) return 0;
+  if (!rktcrypto_mlkem768_enc_derand(ct, ss1, pk, m)) return 0;
+  if (memcmp(ss1, want_ss, 32) != 0) return 0;
+  if (!rktcrypto_mlkem768_decaps(ss2, ct, sk)) return 0;
+  if (memcmp(ss1, ss2, 32) != 0) return 0;         /* correct decapsulation */
+  ct[0] ^= 1;                                       /* implicit rejection */
+  if (!rktcrypto_mlkem768_decaps(ss2, ct, sk)) return 0;
+  if (memcmp(ss1, ss2, 32) == 0) return 0;          /* must differ */
+  return 1;
+}
+
+static int test_mldsa65(void)
+{
+  unsigned char seed[32], pk[1952], sk[4032], sig[3309];
+  unsigned char msg[3] = { 'a', 'b', 'c' };
+  int i;
+  for (i = 0; i < 32; i++) seed[i] = (unsigned char)i;
+  if (!rktcrypto_mldsa65_keypair_derand(pk, sk, seed)) return 0;
+  if (!rktcrypto_mldsa65_sign_derand(sig, msg, 3, sk)) return 0;
+  if (!rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;  /* genuine signature */
+  sig[0] ^= 1;                                                /* tampered signature */
+  if (rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;
+  sig[0] ^= 1;
+  msg[0] ^= 1;                                                /* wrong message */
+  if (rktcrypto_mldsa65_verify(sig, msg, 3, pk)) return 0;
+  return 1;
+}
+
+/* Montgomery multiply/square known-answer test. On aarch64+Apple this exercises
+   the routed asm kernels: bn_mul_mont_op16 (k=16), bn_mul_mont_fips32 (k=32),
+   and bn_sqr_mont_8w (k=16 and k=32). The oracle is the portable schoolbook
+   bn_mul + bn_mod (not the Montgomery path), so a broken asm kernel is caught
+   at runtime in the real build. A few microseconds; no key material. */
+static int test_bn_montmul_one(int bytes)
+{
+  unsigned char mb[256], ab[256], bb[256];
+  BN m, a, b, rr, one, aR, bR, abR, got, prod, want, aaR, sqr;
+  uint64_t n0;
+  int i;
+  /* Odd modulus of exactly `bytes*8` bits: MSB set (full limb count) + LSB set. */
+  for (i = 0; i < bytes; i++) mb[i] = (unsigned char)(0x9e * (i + 1) + 0x37);
+  mb[0] |= 0x80; mb[bytes - 1] |= 1;
+  /* Operands: distinct fixed patterns, reduced below m. */
+  for (i = 0; i < bytes; i++) { ab[i] = (unsigned char)(i * 7 + 3); bb[i] = (unsigned char)(i * 13 + 1); }
+  bn_from_be(&m, mb, bytes);
+  bn_from_be(&a, ab, bytes); bn_mod(&a, &a, &m);
+  bn_from_be(&b, bb, bytes); bn_mod(&b, &b, &m);
+  bn_set_u64(&one, 1);
+  bn_mont_setup(&n0, &rr, &m);
+
+  /* Montgomery multiply path: got = a*b mod m. */
+  bn_montmul(&aR, &a, &rr, &m, n0);      /* a -> aR (Montgomery form) */
+  bn_montmul(&bR, &b, &rr, &m, n0);      /* b -> bR */
+  bn_montmul(&abR, &aR, &bR, &m, n0);    /* abR = a*b*R mod m */
+  bn_montmul(&got, &abR, &one, &m, n0);  /* back to normal domain */
+  bn_mul(&prod, &a, &b); bn_mod(&want, &prod, &m);   /* independent oracle */
+  if (bn_cmp(&got, &want) != 0) return 0;
+
+  /* Montgomery square path: sqr = a*a mod m. */
+  bn_montsqr(&aaR, &aR, &m, n0);         /* a^2 * R mod m */
+  bn_montmul(&sqr, &aaR, &one, &m, n0);
+  bn_mul(&prod, &a, &a); bn_mod(&want, &prod, &m);
+  if (bn_cmp(&sqr, &want) != 0) return 0;
+  return 1;
+}
+
+static int test_bn_montmul(void)
+{
+  if (!test_bn_montmul_one(128)) return 0;   /* k=16: op16 + sqr_8w */
+  if (!test_bn_montmul_one(256)) return 0;   /* k=32: fips32 + sqr_8w */
+  return 1;
+}
+
+int rktcrypto_selftest_core(void)
+{
+  if (!test_ct_bytes_equal()) return 0;
+  if (!test_secure_clear()) return 0;
+  if (!test_system_random()) return 0;
+  if (!test_drbg()) return 0;
+  if (!test_digests()) return 0;
+  if (!test_aead()) return 0;
+  if (!test_siphash()) return 0;
+  if (!test_argon2id()) return 0;
+  if (!test_x25519()) return 0;
+  if (!test_ed25519()) return 0;
+  if (!test_p256()) return 0;
+  if (!test_bn_montmul()) return 0;
+  if (!test_mlkem768()) return 0;
+  if (!test_mldsa65()) return 0;
+  if (rktcrypto_tls13_selftest() != 0) return 0;   /* RFC 8448 key schedule */
+  return 1;
+}

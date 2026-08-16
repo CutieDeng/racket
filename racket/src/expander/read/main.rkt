@@ -27,6 +27,8 @@
          "constant.rkt"
          "box.rkt"
          "regexp.rkt"
+         "pvector-literal.rkt"
+         "intmap-literal.rkt"
          "extension.rkt"
          "language.rkt"
          "number.rkt")
@@ -168,6 +170,11 @@
 ;; ----------------------------------------
 ;; The top-level reading layer within `#%dot` handling --- which is
 ;; the reader's main dispatch layer.
+
+(define (peek-intmap-literal-start? in config)
+  (and (eqv? (peek-char/special in config 0) #\n)
+       (let ([c (peek-char/special in config 1)])
+         (not (eqv? c #\f)))))
 
 (define (read-undotted init-c in config)
   (define c (read-char/skip-whitespace-and-comments init-c read-one in config))
@@ -340,7 +347,25 @@
         [else (read-delimited-constant c (char=? c #\f) '(#\a #\l #\s #\e) #f in config)])]
       [(#\e) (read-symbol-or-number #f in config #:mode "#e")]
       [(#\E) (read-symbol-or-number #f in config #:mode "#E")]
-      [(#\i) (read-symbol-or-number #f in config #:mode "#i")]
+      [(#\i)
+       (define c2 (and (peek-intmap-literal-start? in config)
+                       (peek-char/special in config)))
+       (cond
+        [c2
+         (define accum-str (accum-string-init! config))
+         (accum-string-add! accum-str dispatch-c)
+         (accum-string-add! accum-str c)
+         (read-char/special in config)
+         (accum-string-add! accum-str c2)
+         (read-intmap
+          read-one
+          dispatch-c
+          c
+          c2
+          (accum-string-get! accum-str config)
+          in
+          config)]
+        [else (read-symbol-or-number #f in config #:mode "#i")])]
       [(#\I) (read-symbol-or-number #f in config #:mode "#I")]
       [(#\d) (read-symbol-or-number #f in config #:mode "#d")]
       [(#\B) (read-symbol-or-number #f in config #:mode "#B")]
@@ -383,6 +408,15 @@
        (when (char? c2) (accum-string-add! accum-str c2))
        (case c2
          [(#\x) (read-regexp c accum-str in config)]
+         [(#\v)
+          (read-pvector
+           read-one
+           dispatch-c
+           c
+           c2
+           (accum-string-get! accum-str config)
+           in
+           config)]
          [else (bad-syntax-error in config #:due-to c2
                                  (accum-string-get! accum-str config))])]
       [(#\l)

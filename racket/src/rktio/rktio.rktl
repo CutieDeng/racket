@@ -48,6 +48,14 @@
 (define-constant RKTIO_PROCESS_WINDOWS_CHAIN_TERMINATION (<< 1 3))
 (define-constant RKTIO_PROCESS_NO_CLOSE_FDS (<< 1 4))
 (define-constant RKTIO_PROCESS_NO_INHERIT_FDS (<< 1 5))
+(define-constant RKTIO_PROCESS_RESET_SIGINT (<< 1 6))
+(define-constant RKTIO_PROCESS_RESET_SIGQUIT (<< 1 7))
+(define-constant RKTIO_PROCESS_RESET_SIGHUP (<< 1 8))
+(define-constant RKTIO_SIGNAL_HANGUP 1)
+(define-constant RKTIO_SIGNAL_INTERRUPT 2)
+(define-constant RKTIO_SIGNAL_QUIT 3)
+(define-constant RKTIO_SIGNAL_KILL 9)
+(define-constant RKTIO_SIGNAL_TERMINATE 15)
 (define-constant RKTIO_PROCESS_ERROR -2)
 (define-constant RKTIO_PROCESS_DONE 1)
 (define-constant RKTIO_PROCESS_RUNNING 0)
@@ -168,6 +176,7 @@
 (define-type rktio_bool_t int)
 (define-type rktio_char16_t unsigned-short)
 (define-type rktio_const_string_t (*ref char))
+(define-struct-type rktio_iovec_t (((ref char) base) (intptr_t len)))
 (define-type rktio_filesize_t rktio_int64_t)
 (define-struct-type
  rktio_length_and_addrinfo_t
@@ -364,6 +373,15 @@
   ((ref rktio_fd_t) rfd)
   ((*ref char) buffer)
   (intptr_t len)))
+(define-function/errno
+ RKTIO_WRITE_ERROR
+ ()
+ intptr_t
+ rktio_writev
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) fd)
+  ((*ref rktio_iovec_t) iov)
+  (intptr_t iovcnt)))
 (define-function/errno
  RKTIO_READ_ERROR
  ()
@@ -945,6 +963,12 @@
  rktio_ok_t
  rktio_process_interrupt
  (((ref rktio_t) rktio) ((ref rktio_process_t) sp)))
+(define-function/errno
+ #f
+ ()
+ rktio_ok_t
+ rktio_process_signal
+ (((ref rktio_t) rktio) ((ref rktio_process_t) sp) (int sig)))
 (define-function
  ()
  void

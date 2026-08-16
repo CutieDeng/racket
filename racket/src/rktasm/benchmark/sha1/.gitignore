@@ -1,0 +1,13 @@
+# Build outputs
+*.o
+*.dSYM/
+benchmark
+debug_sha1
+debug_sha1_v2
+test_sha1c
+test_sha1_noreverse
+test_layout
+
+# Generated files
+sha1_asm.s
+results.json

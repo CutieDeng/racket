@@ -1182,6 +1182,16 @@
         #t
         1/read-accept-compiled
         #f
+        1/read-accept-pvector
+        #t
+        1/read-accept-pvector-raw
+        #t
+        1/read-accept-intmap
+        #t
+        1/read-accept-intmap-unordered
+        #f
+        1/read-accept-intmap-duplicate-keys
+        #f
         read-accept-bar-quote
         #t
         1/read-accept-graph
@@ -2737,36 +2747,70 @@
                "procedure (value of prop:sequence) produced a non-sequence: "
                s_0))
             s_0)))))))
+(define core-pvector-cursor-min-length 32768)
+(define core-pvector-procs
+  (vector
+   core-pvector?
+   core-pvector-empty?
+   core-unsafe-pvector-length
+   core-unsafe-pvector-ref
+   core-pvector-drop
+   core-pvector-cursor-start
+   core-pvector-cursor-next
+   core-pvector-for-each
+   core-pvector-cursor-value+next
+   core-pvector-fold-left
+   core-unsafe-pvector-for-each
+   core-unsafe-pvector-fold-left))
+(define load-core-pvector-procs (lambda () core-pvector-procs))
+(define core-pvector-procs-for
+  (lambda (v_0)
+    (if core-pvector-procs
+      (if (|#%app| (unsafe-vector-ref core-pvector-procs 0) v_0)
+        core-pvector-procs
+        #f)
+      #f)))
 (define stream?
   (lambda (v_0)
     (let ((or-part_0 (list? v_0)))
-      (if or-part_0 or-part_0 (stream-via-prop? v_0)))))
+      (if or-part_0
+        or-part_0
+        (let ((or-part_1 (stream-via-prop? v_0)))
+          (if or-part_1 or-part_1 (if (core-pvector-procs-for v_0) #t #f)))))))
 (define unsafe-stream-not-empty?
   (lambda (v_0)
     (if (null? v_0)
       #f
-      (let ((or-part_0 (pair? v_0)))
-        (if or-part_0
-          or-part_0
-          (not (|#%app| (unsafe-vector-ref (stream-ref v_0) 0) v_0)))))))
+      (if (pair? v_0)
+        #t
+        (let ((cond-val_0 (core-pvector-procs-for v_0)))
+          (if cond-val_0
+            (not (|#%app| (unsafe-vector-ref cond-val_0 1) v_0))
+            (not (|#%app| (unsafe-vector-ref (stream-ref v_0) 0) v_0))))))))
 (define unsafe-stream-first
   (lambda (v_0)
     (if (pair? v_0)
       (car v_0)
-      (|#%app| (unsafe-vector-ref (stream-ref v_0) 1) v_0))))
+      (let ((cond-val_0 (core-pvector-procs-for v_0)))
+        (if cond-val_0
+          (|#%app| (unsafe-vector-ref cond-val_0 3) v_0 0)
+          (|#%app| (unsafe-vector-ref (stream-ref v_0) 1) v_0))))))
 (define unsafe-stream-rest
   (lambda (v_0)
     (if (pair? v_0)
       (cdr v_0)
-      (let ((r_0 (|#%app| (unsafe-vector-ref (stream-ref v_0) 2) v_0)))
-        (begin
-          (if (stream? r_0)
-            (void)
-            (raise-mismatch-error
-             'stream-rest-guard
-             "result is not a stream: "
-             r_0))
-          r_0)))))
+      (let ((cond-val_0 (core-pvector-procs-for v_0)))
+        (if cond-val_0
+          (|#%app| (unsafe-vector-ref cond-val_0 4) v_0 1)
+          (let ((r_0 (|#%app| (unsafe-vector-ref (stream-ref v_0) 2) v_0)))
+            (begin
+              (if (stream? r_0)
+                (void)
+                (raise-mismatch-error
+                 'stream-rest-guard
+                 "result is not a stream: "
+                 r_0))
+              r_0)))))))
 (define sequence?
   (lambda (v_0)
     (let ((or-part_0 (exact-nonnegative-integer? v_0)))
@@ -2778,10 +2822,10 @@
             (let ((or-part_2 (sequence-via-prop? v_0)))
               (if or-part_2
                 or-part_2
-                (let ((or-part_3 (stream? v_0)))
+                (let ((or-part_3 (mpair? v_0)))
                   (if or-part_3
                     or-part_3
-                    (let ((or-part_4 (mpair? v_0)))
+                    (let ((or-part_4 (list? v_0)))
                       (if or-part_4
                         or-part_4
                         (let ((or-part_5 (vector? v_0)))
@@ -2806,9 +2850,46 @@
                                                 (let ((or-part_11 (hash? v_0)))
                                                   (if or-part_11
                                                     or-part_11
-                                                    (if (:sequence? v_0)
-                                                      (not (struct-type? v_0))
-                                                      #f)))))))))))))))))))))))))))
+                                                    (let ((or-part_12
+                                                           (stream? v_0)))
+                                                      (if or-part_12
+                                                        or-part_12
+                                                        (if (:sequence? v_0)
+                                                          (not
+                                                           (struct-type? v_0))
+                                                          #f)))))))))))))))))))))))))))))
+(define :core-pvector-gen
+  (lambda (v_0 procs_0)
+    (let ((len_0 (|#%app| (unsafe-vector-ref procs_0 2) v_0)))
+      (if (if (unsafe-vector-ref procs_0 5)
+            (if (unsafe-vector-ref procs_0 6) (unsafe-fx>= len_0 32768) #f)
+            #f)
+        (let ((state_0
+               (vector 0 (|#%app| (unsafe-vector-ref procs_0 5) v_0 #f))))
+          (values
+           (lambda (state_1)
+             (let ((app_0 (unsafe-vector-ref procs_0 6)))
+               (|#%app| app_0 (unsafe-vector-ref state_1 1))))
+           #f
+           (lambda (state_1)
+             (begin
+               (unsafe-vector-set!
+                state_1
+                0
+                (unsafe-fx+ (unsafe-vector-ref state_1 0) 1))
+               state_1))
+           state_0
+           (lambda (state_1) (unsafe-fx< (unsafe-vector-ref state_1 0) len_0))
+           #f
+           #f))
+        (values
+         (lambda (index_0) (|#%app| (unsafe-vector-ref procs_0 3) v_0 index_0))
+         #f
+         (lambda (index_0) (unsafe-fx+ index_0 1))
+         0
+         (lambda (index_0) (unsafe-fx< index_0 len_0))
+         #f
+         #f)))))
 (define make-sequence
   (lambda (who_0 v_0)
     (if (exact-nonnegative-integer? v_0)
@@ -2869,26 +2950,29 @@
                               (make-sequence
                                who_0
                                (|#%app| (:sequence-ref v_0) v_0))
-                              (if (stream? v_0)
-                                (:stream-gen v_0)
-                                (raise
-                                 (let ((app_0
-                                        (format
-                                         "for: expected a sequence for ~a, got something else: ~v"
-                                         (if (= 1 (length who_0))
-                                           (car who_0)
-                                           who_0)
-                                         v_0)))
-                                   (|#%app|
-                                    exn:fail:contract
-                                    app_0
-                                    (current-continuation-marks))))))))))))))))))))
+                              (let ((cond-val_0 (core-pvector-procs-for v_0)))
+                                (if cond-val_0
+                                  (:core-pvector-gen v_0 cond-val_0)
+                                  (if (stream? v_0)
+                                    (:stream-gen v_0)
+                                    (raise
+                                     (let ((app_0
+                                            (format
+                                             "for: expected a sequence for ~a, got something else: ~v"
+                                             (if (= 1 (length who_0))
+                                               (car who_0)
+                                               who_0)
+                                             v_0)))
+                                       (|#%app|
+                                        exn:fail:contract
+                                        app_0
+                                        (current-continuation-marks))))))))))))))))))))))
 (define-values
  (struct:range make-range range? range-ref range-set!)
  (make-struct-type
   'stream
   #f
-  3
+  5
   0
   #f
   (list
@@ -2904,7 +2988,7 @@
               (let ((app_0 (|#%app| range-ref v_0 1)))
                 (|#%app| app_0 (|#%app| range-ref v_0 0)))))
          (let ((app_1 (|#%app| range-ref v_0 1)))
-           (make-range app_0 app_1 (|#%app| range-ref v_0 2)))))))
+           (make-range app_0 app_1 (|#%app| range-ref v_0 2) #f #f))))))
    (cons
     prop:gen-sequence
     (lambda (v_0)
@@ -16617,11 +16701,12 @@
     (if (syntax?$1 s_0) (|#%app| (error-syntax->name-handler) s_0) #f)))
 (define extract-source-location
   (lambda (s_0)
-    (let ((loc_0 (if s_0 (|#%app| (error-syntax->srcloc-handler) s_0) #f)))
-      (if (srcloc? loc_0)
-        (let ((str_0 (srcloc->string loc_0)))
+    (if (syntax?$1 s_0)
+      (if (syntax-srcloc$1 s_0)
+        (let ((str_0 (srcloc->string (syntax-srcloc$1 s_0))))
           (if str_0 (string-append str_0 ": ") #f))
-        #f))))
+        #f)
+      #f)))
 (define ->datum
   (lambda (expr_0)
     (let ((with-handlers-handler20_0
@@ -16649,8 +16734,6 @@
 (define install-error-syntax->string-handler!
   (lambda ()
     (begin
-      (error-syntax->srcloc-handler
-       (lambda (s_0) (if (syntax?$1 s_0) (syntax-srcloc$1 s_0) #f)))
       (error-syntax->name-handler
        (lambda (s_0)
          (begin
@@ -18374,11 +18457,6 @@
                                     mi137_0
                                     #t)
                                    (void))
-                                 (if (not instance-phase_0)
-                                   (|#%app|
-                                    (module-force-bulk-binding m_1)
-                                    (namespace-bulk-binding-registry ns138_0))
-                                   (void))
                                  (if skip-run?122_0
                                    (void)
                                    (let ((small-ht_0
@@ -19218,7 +19296,7 @@
                   (lambda (s_0) (error "bad syntax:" s_0)))))
             (lambda (t_0) v_0))))))))
 (define 1/make-set!-transformer
-  (let ((finish915
+  (let ((finish913
          (make-struct-type-install-properties
           '(set!-transformer)
           1
@@ -19238,7 +19316,7 @@
             #f
             #f
             '(1 . 0))))
-      (let ((effect916 (finish915 struct:set!-transformer_0)))
+      (let ((effect914 (finish913 struct:set!-transformer_0)))
         (let ((set!-transformer1_0
                (|#%name|
                 set!-transformer
@@ -34938,6 +35016,40 @@
          'purely-functional?))))))
 (define version-bytes$1 (string->bytes/utf-8 (version)))
 (define vm-bytes$1 (linklet-virtual-machine-bytes))
+(define series-bytes
+  (let ((len_0 (unsafe-bytes-length version-bytes$1)))
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda (i_0 dots_0)
+          (if (= i_0 len_0)
+            version-bytes$1
+            (if (eqv? (unsafe-bytes-ref version-bytes$1 i_0) 46)
+              (if (= dots_0 1)
+                (subbytes version-bytes$1 0 i_0)
+                (let ((app_0 (add1 i_0))) (loop_0 app_0 (add1 dots_0))))
+              (loop_0 (add1 i_0) dots_0)))))))
+     (loop_0 0 0))))
+(define version-bytes-compatible?
+  (lambda (vers_0)
+    (let ((or-part_0 (equal? vers_0 version-bytes$1)))
+      (if or-part_0
+        or-part_0
+        (let ((or-part_1 (equal? vers_0 series-bytes)))
+          (if or-part_1
+            or-part_1
+            (let ((slen_0 (unsafe-bytes-length series-bytes)))
+              (if (> (unsafe-bytes-length vers_0) slen_0)
+                (if (eqv? (unsafe-bytes-ref vers_0 slen_0) 46)
+                  (equal? (subbytes vers_0 0 slen_0) series-bytes)
+                  #f)
+                #f))))))))
+(define version-string-compatible?
+  (lambda (vers_0)
+    (if (string? vers_0)
+      (version-bytes-compatible? (string->bytes/utf-8 vers_0))
+      #f)))
 (define datum->syntax$3 datum->syntax)
 (define syntax-property$2 syntax-property)
 (define syntax-span$2 syntax-span)
@@ -60211,6 +60323,13 @@
     (if (string? p_0)
       (string->path p_0)
       (if (bytes? p_0) (bytes->path p_0) p_0))))
+(define coerce-to-complete-path
+  (lambda (p_0)
+    (if (string? p_0)
+      (simplify-path (path->complete-path (string->path p_0)))
+      (if (bytes? p_0)
+        (simplify-path (path->complete-path (bytes->path p_0)))
+        (if (path? p_0) (simplify-path (path->complete-path p_0)) #f)))))
 (define coerce-to-path
   (lambda (p_0)
     (if (string? p_0)
@@ -61037,11 +61156,79 @@
                    "hash?"
                    ht_0))
                 (let ((paths_0 (hash-ref ht_0 'compiled-file-roots #f)))
-                  (let ((or-part_0
-                         (if (list? paths_0)
-                           (map_2353 coerce-to-relative-path paths_0)
-                           #f)))
-                    (if or-part_0 or-part_0 (list 'same))))))))))
+                  (let ((base-roots_0
+                         (let ((or-part_0
+                                (if (list? paths_0)
+                                  (map_2353 coerce-to-relative-path paths_0)
+                                  #f)))
+                           (if or-part_0 or-part_0 (list 'same)))))
+                    (let ((cache-root-specs_0
+                           (hash-ref ht_0 'compiled-file-cache-roots #f)))
+                      (let ((system-cache-root_0
+                             (coerce-to-complete-path
+                              (hash-ref
+                               ht_0
+                               'compiled-file-system-cache-root
+                               #f))))
+                        (let ((cache-root_0
+                               (|#%name|
+                                cache-root
+                                (lambda (spec_0)
+                                  (if (eq? spec_0 'user)
+                                    (if (1/use-user-specific-search-paths)
+                                      (build-path
+                                       (find-system-path 'cache-dir)
+                                       "compiled")
+                                      #f)
+                                    (if (eq? spec_0 'system)
+                                      system-cache-root_0
+                                      (coerce-to-complete-path spec_0)))))))
+                          (let ((cache-roots_0
+                                 (if (list? cache-root-specs_0)
+                                   (reverse$1
+                                    (letrec*
+                                     ((for-loop_0
+                                       (|#%name|
+                                        for-loop
+                                        (lambda (fold-var_0 lst_0)
+                                          (if (pair? lst_0)
+                                            (let ((spec_0 (unsafe-car lst_0)))
+                                              (let ((rest_0
+                                                     (unsafe-cdr lst_0)))
+                                                (let ((fold-var_1
+                                                       (let ((root_0
+                                                              (cache-root_0
+                                                               spec_0)))
+                                                         (if root_0
+                                                           (let ((fold-var_1
+                                                                  (cons
+                                                                   root_0
+                                                                   fold-var_0)))
+                                                             (values
+                                                              fold-var_1))
+                                                           fold-var_0))))
+                                                  (for-loop_0
+                                                   fold-var_1
+                                                   rest_0))))
+                                            fold-var_0)))))
+                                     (for-loop_0 null cache-root-specs_0)))
+                                   null)))
+                            (letrec*
+                             ((loop_0
+                               (|#%name|
+                                loop
+                                (lambda (roots_0 seen_0)
+                                  (if (null? roots_0)
+                                    (reverse$1 seen_0)
+                                    (if (member (car roots_0) seen_0)
+                                      (loop_0 (cdr roots_0) seen_0)
+                                      (let ((app_0 (cdr roots_0)))
+                                        (loop_0
+                                         app_0
+                                         (cons (car roots_0) seen_0)))))))))
+                             (loop_0
+                              (append cache-roots_0 base-roots_0)
+                              null))))))))))))))
     (|#%name|
      find-compiled-file-roots
      (case-lambda
@@ -61704,6 +61891,22 @@
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-accept-compiled))
 (define 1/read-accept-box
   (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-box))
+(define 1/read-accept-pvector
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector))
+(define 1/read-accept-pvector-raw
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-pvector-raw))
+(define 1/read-accept-intmap
+  (make-parameter #t (lambda (v_0) (if v_0 #t #f)) 'read-accept-intmap))
+(define 1/read-accept-intmap-unordered
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-unordered))
+(define 1/read-accept-intmap-duplicate-keys
+  (make-parameter
+   #f
+   (lambda (v_0) (if v_0 #t #f))
+   'read-accept-intmap-duplicate-keys))
 (define 1/read-single-flonum
   (make-parameter #f (lambda (v_0) (if v_0 #t #f)) 'read-single-flonum))
 (define 1/read-decimal-as-inexact
@@ -61792,6 +61995,11 @@
           (check-parameter 1/read-syntax-accept-graph config_0)
           (check-parameter 1/read-accept-compiled config_0)
           (check-parameter 1/read-accept-box config_0)
+          (check-parameter 1/read-accept-pvector config_0)
+          (check-parameter 1/read-accept-pvector-raw config_0)
+          (check-parameter 1/read-accept-intmap config_0)
+          (check-parameter 1/read-accept-intmap-unordered config_0)
+          (check-parameter 1/read-accept-intmap-duplicate-keys config_0)
           (check-parameter read-accept-bar-quote config_0)
           (check-parameter 1/read-decimal-as-inexact config_0)
           (check-parameter 1/read-single-flonum config_0)
@@ -69253,6 +69461,261 @@
                           temp16_1
                           (list temp17_0)))))))))
           (wrap rx_0 in_0 config_0 #f))))))
+(define discard-current-line$1
+  (|#%name|
+   discard-current-line
+   (lambda (in_0 config_0)
+     (letrec*
+      ((loop_0
+        (|#%name|
+         loop
+         (lambda ()
+           (let ((c_0
+                  (let ((source_0
+                         (read-config/inner-source
+                          (read-config/outer-inner config_0))))
+                    (let ((c_0
+                           (peek-char-or-special in_0 0 'special source_0)))
+                      (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+             (if (let ((or-part_0 (eof-object? c_0)))
+                   (if or-part_0 or-part_0 (eqv? c_0 '#\xa)))
+               (void)
+               (begin
+                 (let ((source_0
+                        (read-config/inner-source
+                         (read-config/outer-inner config_0))))
+                   (read-char-or-special in_0 special1.1 source_0))
+                 (loop_0))))))))
+      (loop_0)))))
+(define read-expect-char$1
+  (|#%name|
+   read-expect-char
+   (lambda (expected_0 accum-str_0 in_0 config_0)
+     (let ((c_0
+            (let ((source_0
+                   (read-config/inner-source
+                    (read-config/outer-inner config_0))))
+              (read-char-or-special in_0 special1.1 source_0))))
+       (begin
+         (if (eqv? c_0 expected_0)
+           (void)
+           (begin
+             (discard-current-line$1 in_0 config_0)
+             (let ((temp4_0 "expected `~a` to continue `#pvector` after `~a`"))
+               (reader-error.1
+                unsafe-undefined
+                c_0
+                #f
+                unsafe-undefined
+                in_0
+                config_0
+                temp4_0
+                (list expected_0 accum-str_0)))))
+         c_0)))))
+(define raw-pvector-literal-datum?
+  (lambda (datum_0)
+    (if (pair? datum_0)
+      (if (pair? (cdr datum_0))
+        (if (null? (cddr datum_0)) (not (eq? (cadr datum_0) #f)) #f)
+        #f)
+      #f)))
+(define read-pvector
+  (lambda (read-one_0
+           dispatch-c_0
+           init-c_0
+           second-c_0
+           accum-str_0
+           in_0
+           config_0)
+    (begin
+      (if (check-parameter 1/read-accept-pvector config_0)
+        (void)
+        (begin
+          (discard-current-line$1 in_0 config_0)
+          (let ((temp9_0 "`#pvector` forms not enabled"))
+            (reader-error.1
+             unsafe-undefined
+             '#\x78
+             #f
+             unsafe-undefined
+             in_0
+             config_0
+             temp9_0
+             (list)))))
+      (let ((chars_0 (list '#\x65 '#\x63 '#\x74 '#\x6f '#\x72)))
+        (letrec*
+         ((loop_0
+           (|#%name|
+            loop
+            (lambda (chars_1 accum-str_1)
+              (if (null? chars_1)
+                (let ((datum_0
+                       (|#%app|
+                        read-one_0
+                        #f
+                        in_0
+                        (disable-wrapping config_0))))
+                  (begin
+                    (if (if (not
+                             (check-parameter
+                              1/read-accept-pvector-raw
+                              config_0))
+                          (raw-pvector-literal-datum? datum_0)
+                          #f)
+                      (let ((temp12_0 "`#pvector` raw literals not enabled"))
+                        (reader-error.1
+                         unsafe-undefined
+                         '#\x78
+                         #f
+                         unsafe-undefined
+                         in_0
+                         config_0
+                         temp12_0
+                         (list)))
+                      (void))
+                    (wrap
+                     (catch-and-reraise-as-reader/proc
+                      in_0
+                      config_0
+                      (lambda () (core-pvector-literal->pvector datum_0)))
+                     in_0
+                     config_0
+                     init-c_0)))
+                (let ((c_0
+                       (read-expect-char$1
+                        (car chars_1)
+                        accum-str_1
+                        in_0
+                        config_0)))
+                  (let ((app_0 (cdr chars_1)))
+                    (loop_0
+                     app_0
+                     (string-append accum-str_1 (string c_0))))))))))
+         (loop_0 chars_0 accum-str_0))))))
+(define 1/core-intmap-literal->intmap core-intmap-literal->intmap)
+(define read-core-intmap-literal->intmap
+  (lambda (datum_0 accept-unordered?_0 accept-duplicate-keys?_0)
+    (begin
+      (if (if core-intmap-literal->intmap #t #f)
+        (void)
+        (error
+         'core-intmap-literal->intmap
+         "native intmap literal input is not available"))
+      (core-intmap-literal->intmap
+       datum_0
+       accept-unordered?_0
+       accept-duplicate-keys?_0))))
+(define discard-current-line
+  (lambda (in_0 config_0)
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda ()
+          (let ((c_0
+                 (let ((source_0
+                        (read-config/inner-source
+                         (read-config/outer-inner config_0))))
+                   (let ((c_0 (peek-char-or-special in_0 0 'special source_0)))
+                     (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+            (if (let ((or-part_0 (eof-object? c_0)))
+                  (if or-part_0 or-part_0 (eqv? c_0 '#\xa)))
+              (void)
+              (begin
+                (let ((source_0
+                       (read-config/inner-source
+                        (read-config/outer-inner config_0))))
+                  (read-char-or-special in_0 special1.1 source_0))
+                (loop_0))))))))
+     (loop_0))))
+(define read-expect-char
+  (lambda (expected_0 accum-str_0 in_0 config_0)
+    (let ((c_0
+           (let ((source_0
+                  (read-config/inner-source
+                   (read-config/outer-inner config_0))))
+             (read-char-or-special in_0 special1.1 source_0))))
+      (begin
+        (if (eqv? c_0 expected_0)
+          (void)
+          (begin
+            (discard-current-line in_0 config_0)
+            (let ((temp4_0 "expected `~a` to continue `#intmap` after `~a`"))
+              (reader-error.1
+               unsafe-undefined
+               c_0
+               #f
+               unsafe-undefined
+               in_0
+               config_0
+               temp4_0
+               (list expected_0 accum-str_0)))))
+        c_0))))
+(define read-intmap
+  (lambda (read-one_0
+           dispatch-c_0
+           init-c_0
+           second-c_0
+           accum-str_0
+           in_0
+           config_0)
+    (begin
+      (if (check-parameter 1/read-accept-intmap config_0)
+        (void)
+        (begin
+          (discard-current-line in_0 config_0)
+          (let ((temp9_0 "`#intmap` forms not enabled"))
+            (reader-error.1
+             unsafe-undefined
+             '#\x78
+             #f
+             unsafe-undefined
+             in_0
+             config_0
+             temp9_0
+             (list)))))
+      (let ((chars_0 (list '#\x74 '#\x6d '#\x61 '#\x70)))
+        (letrec*
+         ((loop_0
+           (|#%name|
+            loop
+            (lambda (chars_1 accum-str_1)
+              (if (null? chars_1)
+                (let ((datum_0
+                       (|#%app|
+                        read-one_0
+                        #f
+                        in_0
+                        (disable-wrapping config_0))))
+                  (wrap
+                   (catch-and-reraise-as-reader/proc
+                    in_0
+                    config_0
+                    (lambda ()
+                      (let ((app_0
+                             (check-parameter
+                              1/read-accept-intmap-unordered
+                              config_0)))
+                        (read-core-intmap-literal->intmap
+                         datum_0
+                         app_0
+                         (check-parameter
+                          1/read-accept-intmap-duplicate-keys
+                          config_0)))))
+                   in_0
+                   config_0
+                   init-c_0))
+                (let ((c_0
+                       (read-expect-char
+                        (car chars_1)
+                        accum-str_1
+                        in_0
+                        config_0)))
+                  (let ((app_0 (cdr chars_1)))
+                    (loop_0
+                     app_0
+                     (string-append accum-str_1 (string c_0))))))))))
+         (loop_0 chars_0 accum-str_0))))))
 (define read-extension-reader
   (lambda (read-one_0 read-recur_0 dispatch-c_0 in_0 config_0)
     (let ((extend-str_0
@@ -69704,7 +70167,7 @@
                                          in38_0))
                                        (raise-argument-error
                                         who31_0
-                                        "(or/c (procedure-arity-includes/c 2) (procedure-arity-includes/c 6))"
+                                        "(or/c (procedure-arity-includes?/c 2) (procedure-arity-includes?/c 6))"
                                         extension_0)))
                                    (if (procedure-arity-includes?
                                         extension_0
@@ -69723,7 +70186,7 @@
                                      (if get-info?30_0
                                        (raise-argument-error
                                         who31_0
-                                        "(procedure-arity-includes/c 5)"
+                                        "(procedure-arity-includes?/c 5)"
                                         extension_0)
                                        (if (procedure-arity-includes?
                                             extension_0
@@ -69735,7 +70198,7 @@
                                           (|#%app| extension_0 in38_0))
                                          (raise-argument-error
                                           who31_0
-                                          "(or/c (procedure-arity-includes/c 1) (procedure-arity-includes/c 5))"
+                                          "(or/c (procedure-arity-includes?/c 1) (procedure-arity-includes?/c 5))"
                                           extension_0)))))))
                             (if get-info?30_0
                               (begin
@@ -69745,7 +70208,7 @@
                                   (void)
                                   (raise-result-error
                                    'read-language
-                                   "(procedure-arity-includes/c 2)"
+                                   "(procedure-arity-includes?/c 2)"
                                    result-v_0))
                                 result-v_0)
                               (if (1/special-comment? result-v_0)
@@ -70016,6 +70479,22 @@
                                v_1)))))))))
                 (loop_0 v_0))))))
         (void)))))
+(define peek-intmap-literal-start?
+  (lambda (in_0 config_0)
+    (if (eqv?
+         (let ((source_0
+                (read-config/inner-source (read-config/outer-inner config_0))))
+           (let ((c_0 (peek-char-or-special in_0 0 'special source_0)))
+             (if (eq? c_0 'special) (special1.1 'special) c_0)))
+         '#\x6e)
+      (let ((c_0
+             (let ((source_0
+                    (read-config/inner-source
+                     (read-config/outer-inner config_0))))
+               (let ((c_0 (peek-char-or-special in_0 1 'special source_0)))
+                 (if (eq? c_0 'special) (special1.1 'special) c_0)))))
+        (not (eqv? c_0 '#\x66)))
+      #f)))
 (define read-undotted
   (lambda (init-c_0 in_0 config_0)
     (let ((c_0
@@ -70804,81 +71283,127 @@
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 20)
-                            (let ((temp219_0 "#i"))
+                            (let ((c2_0
+                                   (if (peek-intmap-literal-start?
+                                        in_0
+                                        config_0)
+                                     (let ((source_0
+                                            (read-config/inner-source
+                                             (read-config/outer-inner
+                                              config_0))))
+                                       (let ((c_1
+                                              (peek-char-or-special
+                                               in_0
+                                               0
+                                               'special
+                                               source_0)))
+                                         (if (eq? c_1 'special)
+                                           (special1.1 'special)
+                                           c_1)))
+                                     #f)))
+                              (if c2_0
+                                (let ((accum-str_0
+                                       (accum-string-init! config_0)))
+                                  (begin
+                                    (accum-string-add!
+                                     accum-str_0
+                                     dispatch-c_0)
+                                    (accum-string-add! accum-str_0 c_0)
+                                    (let ((source_0
+                                           (read-config/inner-source
+                                            (read-config/outer-inner
+                                             config_0))))
+                                      (read-char-or-special
+                                       in_0
+                                       special1.1
+                                       source_0))
+                                    (accum-string-add! accum-str_0 c2_0)
+                                    (read-intmap
+                                     read-one
+                                     dispatch-c_0
+                                     c_0
+                                     c2_0
+                                     (accum-string-get!.1
+                                      0
+                                      accum-str_0
+                                      config_0)
+                                     in_0
+                                     config_0)))
+                                (let ((temp221_0 "#i"))
+                                  (read-symbol-or-number.1
+                                   #f
+                                   temp221_0
+                                   #f
+                                   in_0
+                                   config_0))))
+                            (let ((temp225_0 "#I"))
                               (read-symbol-or-number.1
                                #f
-                               temp219_0
-                               #f
-                               in_0
-                               config_0))
-                            (let ((temp223_0 "#I"))
-                              (read-symbol-or-number.1
-                               #f
-                               temp223_0
+                               temp225_0
                                #f
                                in_0
                                config_0)))))
                       (if (unsafe-fx< index_0 23)
                         (if (unsafe-fx< index_0 22)
-                          (let ((temp227_0 "#d"))
+                          (let ((temp229_0 "#d"))
                             (read-symbol-or-number.1
                              #f
-                             temp227_0
+                             temp229_0
                              #f
                              in_0
                              config_0))
-                          (let ((temp231_0 "#B"))
+                          (let ((temp233_0 "#B"))
                             (read-symbol-or-number.1
                              #f
-                             temp231_0
+                             temp233_0
                              #f
                              in_0
                              config_0)))
                         (if (unsafe-fx< index_0 24)
-                          (let ((temp235_0 "#o"))
+                          (let ((temp237_0 "#o"))
                             (read-symbol-or-number.1
                              #f
-                             temp235_0
+                             temp237_0
                              #f
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 25)
-                            (let ((temp239_0 "#O"))
+                            (let ((temp241_0 "#O"))
                               (read-symbol-or-number.1
                                #f
-                               temp239_0
+                               temp241_0
                                #f
                                in_0
                                config_0))
-                            (let ((temp243_0 "#D"))
+                            (let ((temp245_0 "#D"))
                               (read-symbol-or-number.1
                                #f
-                               temp243_0
+                               temp245_0
                                #f
                                in_0
                                config_0))))))
                     (if (unsafe-fx< index_0 30)
                       (if (unsafe-fx< index_0 27)
-                        (let ((temp247_0 "#b"))
+                        (let ((temp249_0 "#b"))
                           (read-symbol-or-number.1
                            #f
-                           temp247_0
+                           temp249_0
                            #f
                            in_0
                            config_0))
                         (if (unsafe-fx< index_0 28)
-                          (let ((temp251_0 "#x"))
+                          (let ((temp253_0 "#x"))
                             (read-symbol-or-number.1
                              #f
-                             temp251_0
+                             temp253_0
                              #f
                              in_0
                              config_0))
                           (if (unsafe-fx< index_0 29)
-                            (let ((temp255_0 "#X"))
+                            (let ((temp257_0 "#X"))
                               (read-symbol-or-number.1
                                #f
-                               temp255_0
+                               temp257_0
                                #f
                                in_0
                                config_0))
@@ -70909,7 +71434,7 @@
                                     read-case-sensitive
                                     config_0
                                     #f))
-                                  (let ((temp259_0
+                                  (let ((temp261_0
                                          "expected `s', `S`, `i`, or `I` after `~a~a`"))
                                     (reader-error.1
                                      unsafe-undefined
@@ -70918,7 +71443,7 @@
                                      unsafe-undefined
                                      in_0
                                      config_0
-                                     temp259_0
+                                     temp261_0
                                      (list dispatch-c_0 c_0)))))))))
                       (if (unsafe-fx< index_0 32)
                         (if (unsafe-fx< index_0 31)
@@ -70954,7 +71479,7 @@
                                          dispatch-c_0
                                          in_0
                                          config_0)
-                                        (let ((temp265_0
+                                        (let ((temp267_0
                                                (accum-string-get!.1
                                                 0
                                                 accum-str_0
@@ -70963,7 +71488,7 @@
                                            c2_0
                                            in_0
                                            config_0
-                                           temp265_0))))))))))
+                                           temp267_0))))))))))
                         (if (unsafe-fx< index_0 33)
                           (let ((accum-str_0 (accum-string-init! config_0)))
                             (begin
@@ -70989,16 +71514,28 @@
                                        accum-str_0
                                        in_0
                                        config_0)
-                                      (let ((temp271_0
-                                             (accum-string-get!.1
-                                              0
-                                              accum-str_0
-                                              config_0)))
-                                        (bad-syntax-error.1
+                                      (if (eqv? c2_0 '#\x76)
+                                        (read-pvector
+                                         read-one
+                                         dispatch-c_0
+                                         c_0
                                          c2_0
+                                         (accum-string-get!.1
+                                          0
+                                          accum-str_0
+                                          config_0)
                                          in_0
-                                         config_0
-                                         temp271_0))))))))
+                                         config_0)
+                                        (let ((temp275_0
+                                               (accum-string-get!.1
+                                                0
+                                                accum-str_0
+                                                config_0)))
+                                          (bad-syntax-error.1
+                                           c2_0
+                                           in_0
+                                           config_0
+                                           temp275_0)))))))))
                           (if (unsafe-fx< index_0 34)
                             (read-extension-lang.1
                              #f
@@ -71024,7 +71561,7 @@
                                  in_0
                                  config_0
                                  c_0)
-                                (let ((temp284_0
+                                (let ((temp288_0
                                        "`~a~~` compiled expressions not enabled"))
                                   (reader-error.1
                                    unsafe-undefined
@@ -71033,7 +71570,7 @@
                                    unsafe-undefined
                                    in_0
                                    config_0
-                                   temp284_0
+                                   temp288_0
                                    (list dispatch-c_0)))))))))))))))))))
 (define retry-special-comment
   (lambda (v_0 in_0 config_0)
@@ -71354,7 +71891,7 @@
             (let ((vers-len_0 (min 63 (read-byte in_0))))
               (let ((vers_0 (read-bytes vers-len_0 in_0)))
                 (begin
-                  (if (equal? vers_0 version-bytes$1)
+                  (if (version-bytes-compatible? vers_0)
                     (void)
                     (let ((app_0 (bytes->string/utf-8 vers_0 '#\x3f)))
                       (let ((app_1
@@ -73688,7 +74225,7 @@
             "value"
             data_0))
          (begin
-           (if (equal? (version) (serialized-syntax-version data_0))
+           (if (version-string-compatible? (serialized-syntax-version data_0))
              (void)
              (raise-arguments-error
               'syntax-deserialize
@@ -73810,10 +74347,7 @@
           'variable-reference->namespace
           "variable-reference?"
           vr_0))
-       (let ((ns_0
-              (variable-reference->namespace*
-               'variable-reference->namespace
-               vr_0)))
+       (let ((ns_0 (variable-reference->namespace* vr_0)))
          (let ((mpi_0 (namespace-mpi ns_0)))
            (begin
              (if (non-self-module-path-index? mpi_0)
@@ -73833,37 +74367,17 @@
                    temp6_0)))
                (void))
              ns_0)))))))
-(define check-got-ns
-  (lambda (who_0 vr_0 maybe-ns_0)
-    (begin
-      (if (1/namespace? maybe-ns_0)
-        (void)
-        (raise-arguments-error
-         who_0
-         "variable reference has no associated namespace"
-         "variable reference"
-         vr_0
-         "hint"
-         (unquoted-printing-string
-          "is the variable reference from a non-module, non-top-level linklet?")))
-      maybe-ns_0)))
 (define variable-reference->namespace*
-  (lambda (who_0 vr_0)
+  (lambda (vr_0)
     (let ((inst_0 (variable-reference->instance vr_0)))
       (if (symbol? inst_0)
         (let ((app_0 (list 'quote inst_0)))
           (1/module->namespace
            app_0
-           (check-got-ns
-            who_0
-            vr_0
-            (instance-data (variable-reference->instance vr_0 #t)))))
+           (instance-data (variable-reference->instance vr_0 #t))))
         (if (not inst_0)
-          (check-got-ns
-           who_0
-           vr_0
-           (instance-data (variable-reference->instance vr_0 #t)))
-          (check-got-ns who_0 vr_0 (instance-data inst_0)))))))
+          (instance-data (variable-reference->instance vr_0 #t))
+          (instance-data inst_0))))))
 (define 1/variable-reference->module-path-index
   (|#%name|
    variable-reference->module-path-index
@@ -73875,11 +74389,7 @@
           'variable-reference->module-path-index
           "variable-reference?"
           vr_0))
-       (let ((mpi_0
-              (namespace-mpi
-               (variable-reference->namespace*
-                'variable-reference->module-path-index
-                vr_0))))
+       (let ((mpi_0 (namespace-mpi (variable-reference->namespace* vr_0))))
          (if (eq? top-level-module-path-index mpi_0) #f mpi_0))))))
 (define 1/variable-reference->resolved-module-path
   (|#%name|
@@ -73905,10 +74415,7 @@
           'variable-reference->module-source
           "variable-reference?"
           vr_0))
-       (let ((ns_0
-              (variable-reference->namespace*
-               'variable-reference->module-source
-               vr_0)))
+       (let ((ns_0 (variable-reference->namespace* vr_0)))
          (namespace-source-name ns_0))))))
 (define 1/variable-reference->phase
   (|#%name|
@@ -73921,8 +74428,7 @@
           'variable-reference->phase
           "variable-reference?"
           vr_0))
-       (namespace-phase
-        (variable-reference->namespace* 'variable-reference->phase vr_0))))))
+       (namespace-phase (variable-reference->namespace* vr_0))))))
 (define 1/variable-reference->module-base-phase
   (|#%name|
    variable-reference->module-base-phase
@@ -73934,10 +74440,7 @@
           'variable-reference->module-base-phase
           "variable-reference?"
           vr_0))
-       (namespace-0-phase
-        (variable-reference->namespace*
-         'variable-reference->module-base-phase
-         vr_0))))))
+       (namespace-0-phase (variable-reference->namespace* vr_0))))))
 (define 1/variable-reference->module-declaration-inspector
   (|#%name|
    variable-reference->module-declaration-inspector
@@ -73958,9 +74461,7 @@
          (void))
        (let ((or-part_0
               (namespace-declaration-inspector
-               (variable-reference->namespace*
-                'variable-reference->module-declaration-inspector
-                vr_0))))
+               (variable-reference->namespace* vr_0))))
          (if or-part_0
            or-part_0
            (raise-arguments-error
@@ -75039,6 +75540,16 @@
    1/read-accept-compiled
    'read-accept-box
    1/read-accept-box
+   'read-accept-pvector
+   1/read-accept-pvector
+   'read-accept-pvector-raw
+   1/read-accept-pvector-raw
+   'read-accept-intmap
+   1/read-accept-intmap
+   'read-accept-intmap-unordered
+   1/read-accept-intmap-unordered
+   'read-accept-intmap-duplicate-keys
+   1/read-accept-intmap-duplicate-keys
    'read-decimal-as-inexact
    1/read-decimal-as-inexact
    'read-single-flonum
@@ -75920,6 +76431,10 @@
       1/read-curly-brace-with-tag
       #f
       1/read-accept-box
+      #t
+      1/read-accept-pvector
+      #t
+      1/read-accept-pvector-raw
       #t
       read-accept-bar-quote
       #t

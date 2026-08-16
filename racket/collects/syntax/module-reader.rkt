@@ -269,7 +269,7 @@
            (if str (format "~a: ~a" msg str) msg))
          src line col pos
          (let-values ([(line col pos2) (port-next-location in)])
-           (and pos pos2 (- pos2 pos)))))
+           (and pos pos2 (max 0 (- pos2 pos))))))
       (let*-values ([(spec-line spec-col spec-pos) (port-next-location in)]
                     [(leading-spaces) (peek-leading-spaces in)]
                     [(spec-col) (and spec-col (+ spec-col leading-spaces))]

@@ -6,6 +6,7 @@
          "port.rkt"
          "count.rkt"
          "output-port.rkt"
+         "fd-port.rkt"
          "lock.rkt"
          "parameter.rkt"
          "write.rkt"
@@ -13,6 +14,7 @@
 
 (provide write-byte
          write-bytes
+         write-bytes*
          write-bytes-avail
          write-bytes-avail*
          write-bytes-avail/enable-break
@@ -73,6 +75,51 @@
        (check who exact-nonnegative-integer? end-pos)
        (check-range who start-pos end-pos (bytes-length bstr) bstr)
        (do-write-bytes who out bstr start-pos end-pos))]))
+
+;; Adaptively write a list of byte strings, picking the fastest strategy for
+;; the slice profile (blocking; returns the total bytes written = sum of the
+;; slice lengths). Rationale from measurement (see
+;; racket/src/rktio/RKTIO-WRITEV-DESIGN.md):
+;;   - concat cost ~ O(total bytes): one allocation + copy of a big buffer
+;;     (superlinear for very large buffers due to GC/large-object allocation).
+;;   - zero-copy vectored (rktio_writev) cost ~ O(#slices) for pinning + one
+;;     syscall: wins only when few slices carry a large payload, where it
+;;     dodges the big allocation (measured 275x-1330x over concat for
+;;     8x256KB / 4x2MB), but loses badly for many small slices (per-slice
+;;     `lock-object` pinning dominates).
+;; So: few large slices -> vectored; small total -> concat; otherwise
+;; write each slice directly (no big allocation, no per-slice pinning). The
+;; dispatch reads only `#slices` and `total`, both O(#slices) and already
+;; needed for the result. For any non-fd port, just write sequentially.
+(define writev-max-slices 16)              ; above this, pinning overhead dominates
+(define writev-min-total (* 64 1024))      ; below this, concat's allocation is cheap
+;; In the non-vectored case concat almost always wins: its single allocation
+;; beats N per-slice dispatches for many slices, and is cheap for a small
+;; total. Only a *huge* total makes the single big allocation worse than
+;; writing each slice directly, so keep this cap high (16MB) as a safety
+;; valve rather than a routine threshold (measured: concat still beats
+;; N-write at 300KB by ~3.5x).
+(define concat-max-total (* 16 1024 1024))
+
+(define/who (write-bytes* bstrs [out (current-output-port)])
+  (check who (lambda (v) (and (list? v) (andmap bytes? v))) #:contract "(listof bytes?)" bstrs)
+  (define o (->core-output-port out who))
+  (define total (for/sum ([b (in-list bstrs)]) (bytes-length b)))
+  (cond
+    [(not (fd-output-port? o))
+     (for ([b (in-list bstrs)]) (do-write-bytes who o b 0 (bytes-length b)))]
+    [(and (fx<= (length bstrs) writev-max-slices)
+          (>= total writev-min-total))
+     ;; few large slices: zero-copy scatter/gather, dodging a big allocation
+     (fd-output-port-write-bytes-list! o bstrs)]
+    [(<= total concat-max-total)
+     ;; small/medium total: one allocation + one write beats N dispatches
+     (do-write-bytes who o (apply bytes-append bstrs) 0 total)]
+    [else
+     ;; many slices with a large total: avoid both a huge allocation and
+     ;; per-slice pinning by writing each slice directly into the port buffer
+     (for ([b (in-list bstrs)]) (do-write-bytes who o b 0 (bytes-length b)))])
+  total)
 
 ;; `o` must be a core output port
 (define (unsafe-write-bytes who bstr o)

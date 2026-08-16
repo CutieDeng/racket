@@ -24,6 +24,7 @@ Sforeign_symbol("rktio_std_fd", (void *)rktio_std_fd);
 Sforeign_symbol("rktio_create_console", (void *)rktio_create_console);
 Sforeign_symbol("rktio_read", (void *)rktio_read);
 Sforeign_symbol("rktio_write", (void *)rktio_write);
+Sforeign_symbol("rktio_writev", (void *)rktio_writev);
 Sforeign_symbol("rktio_read_converted", (void *)rktio_read_converted);
 Sforeign_symbol("rktio_read_in", (void *)rktio_read_in);
 Sforeign_symbol("rktio_write_in", (void *)rktio_write_in);
@@ -109,6 +110,7 @@ Sforeign_symbol("rktio_process_allowed_flags", (void *)rktio_process_allowed_fla
 Sforeign_symbol("rktio_process_pid", (void *)rktio_process_pid);
 Sforeign_symbol("rktio_process_kill", (void *)rktio_process_kill);
 Sforeign_symbol("rktio_process_interrupt", (void *)rktio_process_interrupt);
+Sforeign_symbol("rktio_process_signal", (void *)rktio_process_signal);
 Sforeign_symbol("rktio_process_forget", (void *)rktio_process_forget);
 Sforeign_symbol("rktio_poll_process_done", (void *)rktio_poll_process_done);
 Sforeign_symbol("rktio_process_status", (void *)rktio_process_status);

@@ -24,6 +24,7 @@ rktio_std_fd
 rktio_create_console
 rktio_read
 rktio_write
+rktio_writev
 rktio_read_converted
 rktio_read_in
 rktio_write_in
@@ -109,6 +110,7 @@ rktio_process_allowed_flags
 rktio_process_pid
 rktio_process_kill
 rktio_process_interrupt
+rktio_process_signal
 rktio_process_forget
 rktio_poll_process_done
 rktio_process_status

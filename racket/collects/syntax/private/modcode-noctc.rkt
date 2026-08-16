@@ -152,13 +152,21 @@
           #:rkt-try-ss? [rkt-try-ss? #t])
   (define path0 (path-string->path path0-str))
   (define roots (root-strs->roots root-strs))
+  (define vanished (gensym 'vanished))
+  (let retry-loop ([remaining-attempts 6])
   (define-values (path type)
     (get-module-path
      path0
      #:roots roots
      #:submodule? (pair? submodule-path)
      #:sub-path sub-path
-     #:choose choose
+     ;; On the final attempt after the compiled file kept vanishing,
+     ;; prefer the source file when it exists, so that progress does not
+     ;; depend on the compiled file staying in place.
+     #:choose (if (and (remaining-attempts . <= . 1) (not choose))
+                  (lambda (src zo so)
+                    (if (file-exists? src) 'src #f))
+                  choose)
      #:rkt-try-ss? rkt-try-ss?))
   (define (extract-submodule m [sm-path submodule-path])
     (cond
@@ -178,7 +186,21 @@
   (case type
     [(zo)
      (notify path)
-     (extract-submodule (read-one path0 path #f read-syntax))]
+     ;; The compiled file can vanish between `get-module-path`'s choice
+     ;; and the open here when a concurrent builder republishes it. Treat
+     ;; that as a cache miss: redo the choice, which reads the fresh
+     ;; compiled file or falls back to the source file and `compiler`.
+     (define code
+       (with-handlers ([(lambda (exn)
+                          (and (remaining-attempts . > . 1)
+                               (or (exn:fail:filesystem? exn)
+                                   (exn:missing-module? exn))
+                               (not (file-exists? path))))
+                        (lambda (exn) vanished)])
+         (read-one path0 path #f read-syntax)))
+     (if (eq? code vanished)
+         (retry-loop (sub1 remaining-attempts))
+         (extract-submodule code))]
     [(so)
      (if ext-handler
          (begin
@@ -199,4 +221,4 @@
          ;; allow any result:
          (compile-one)
          ;; expect a compiled-module result:
-         (extract-submodule (compile-one)))]))
+         (extract-submodule (compile-one)))])))

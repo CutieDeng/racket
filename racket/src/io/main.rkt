@@ -15,6 +15,7 @@
          "security/main.rkt"
          "envvar/main.rkt"
          "sha/main.rkt"
+         "crypto/main.rkt"
          "subprocess/main.rkt"
          "host/processor-count.rkt"
          "network/main.rkt"
@@ -59,6 +60,7 @@
          (all-from-out "security/main.rkt")
          (all-from-out "envvar/main.rkt")
          (all-from-out "sha/main.rkt")
+         (all-from-out "crypto/main.rkt")
          (all-from-out "subprocess/main.rkt")
          (all-from-out "host/processor-count.rkt")
          (all-from-out "network/main.rkt")

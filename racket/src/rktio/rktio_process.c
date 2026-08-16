@@ -854,9 +854,27 @@ rktio_status_t *rktio_process_status(rktio_t *rktio, rktio_process_t *sp)
   return result;
 }
 
-static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
+static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int sig)
 {
 #if defined(RKTIO_SYSTEM_UNIX)
+  /* Translate portable signal specifiers; other positive values are
+     passed on to kill()/killpg() as-is: */
+  switch (sig) {
+  case RKTIO_SIGNAL_HANGUP:    sig = SIGHUP;  break;
+  case RKTIO_SIGNAL_INTERRUPT: sig = SIGINT;  break;
+  case RKTIO_SIGNAL_QUIT:      sig = SIGQUIT; break;
+  case RKTIO_SIGNAL_KILL:      sig = SIGKILL; break;
+  case RKTIO_SIGNAL_TERMINATE: sig = SIGTERM; break;
+  default:
+    if (sig <= 0) {
+      /* Disallow, since 0 or negative values to kill() would mean
+         something different than signaling `sp`: */
+      set_racket_error(RKTIO_ERROR_UNSUPPORTED);
+      return 0;
+    }
+    break;
+  }
+
 # if defined(CENTRALIZED_SIGCHILD)
   {
     int status;
@@ -892,7 +910,7 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
   while (1) {
 
     if (sp->is_group) {
-      if (!killpg(sp->pid, as_kill ? SIGKILL : SIGINT)) {
+      if (!killpg(sp->pid, sig)) {
         centralized_wait_resume();
         return 1;
       }
@@ -907,7 +925,7 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
       }
 # endif
     } else {
-      if (!kill(sp->pid, as_kill ? SIGKILL : SIGINT)) {
+      if (!kill(sp->pid, sig)) {
         centralized_wait_resume();
         return 1;
       }
@@ -924,7 +942,26 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
 
   return 0;
 #endif
-#if defined(RKTIO_SYSTEM_WINDOWS)  
+#if defined(RKTIO_SYSTEM_WINDOWS)
+  int as_kill;
+
+  switch (sig) {
+  case RKTIO_SIGNAL_KILL:
+    as_kill = 1;
+    break;
+  case RKTIO_SIGNAL_INTERRUPT:
+    as_kill = 0;
+    break;
+  case RKTIO_SIGNAL_TERMINATE:
+    /* Best effort: Ctrl-Break for a group, terminate a non-group
+       process: */
+    as_kill = !sp->is_group;
+    break;
+  default:
+    set_racket_error(RKTIO_ERROR_UNSUPPORTED);
+    return 0;
+  }
+
   if (as_kill || sp->is_group) {
     DWORD w;
 
@@ -953,12 +990,17 @@ static int do_subprocess_kill(rktio_t *rktio, rktio_process_t *sp, int as_kill)
 
 int rktio_process_kill(rktio_t *rktio, rktio_process_t *sp)
 {
-  return do_subprocess_kill(rktio, sp, 1);
+  return do_subprocess_kill(rktio, sp, RKTIO_SIGNAL_KILL);
 }
 
 int rktio_process_interrupt(rktio_t *rktio, rktio_process_t *sp)
 {
-  return do_subprocess_kill(rktio, sp, 0);
+  return do_subprocess_kill(rktio, sp, RKTIO_SIGNAL_INTERRUPT);
+}
+
+int rktio_process_signal(rktio_t *rktio, rktio_process_t *sp, int sig)
+{
+  return do_subprocess_kill(rktio, sp, sig);
 }
 
 void rktio_process_forget(rktio_t *rktio, rktio_process_t *sp)
@@ -1362,6 +1404,11 @@ int rktio_process_allowed_flags(rktio_t *rktio)
   flags |= (RKTIO_PROCESS_WINDOWS_EXACT_CMDLINE
             | RKTIO_PROCESS_WINDOWS_CHAIN_TERMINATION);
 #endif
+#ifdef RKTIO_SYSTEM_UNIX
+  flags |= (RKTIO_PROCESS_RESET_SIGINT
+            | RKTIO_PROCESS_RESET_SIGQUIT
+            | RKTIO_PROCESS_RESET_SIGHUP);
+#endif
   return flags;
 }
 
@@ -1716,6 +1763,16 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
       }
 
       rktio_restore_modified_signal_handlers();
+
+      /* Resetting to the default disposition must happen after
+         restoring modified handlers, since restoring may reinstate an
+         inherited SIG_IGN: */
+      if (flags & RKTIO_PROCESS_RESET_SIGINT)
+        signal(SIGINT, SIG_DFL);
+      if (flags & RKTIO_PROCESS_RESET_SIGQUIT)
+        signal(SIGQUIT, SIG_DFL);
+      if (flags & RKTIO_PROCESS_RESET_SIGHUP)
+        signal(SIGHUP, SIG_DFL);
 
       /* Set real CWD: */
       if (!rktio_set_current_directory(rktio, current_directory)) {

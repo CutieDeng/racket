@@ -7,6 +7,7 @@
 # include <fcntl.h>
 # include <unistd.h>
 # include <sys/select.h>
+# include <sys/uio.h>
 #endif
 #ifdef RKTIO_SYSTEM_WINDOWS
 # include <windows.h>
@@ -1959,6 +1960,115 @@ intptr_t rktio_write_in(rktio_t *rktio, rktio_fd_t *rfd, const char *buffer, int
 rktio_result_t *rktio_write_in_r(rktio_t *rktio, rktio_fd_t *rfd, const char *buffer, intptr_t start, intptr_t end)
 {
   return maybe_success(do_write(rktio, rfd, buffer+start, end-start, &rfd->res.err), &rfd->res, RKTIO_WRITE_ERROR);
+}
+
+/* Scatter/gather write. See `rktio_writev` in rktio.h for semantics. */
+
+/* Max iovec slices submitted per writev(2); more slices loop in the caller.
+   64 * sizeof(struct iovec) = 1KB on the stack. */
+#define RKTIO_WRITEV_MAX 64
+
+static intptr_t writev_sequential(rktio_t *rktio, rktio_fd_t *rfd,
+                                  rktio_iovec_t *iov, intptr_t iovcnt,
+                                  rktio_err_t *err)
+{
+  /* Reuse do_write per slice so sockets / pending-open / Windows text /
+     terminal conversion are all handled exactly as for rktio_write. Stop
+     at the first slice that partially writes, would block, or errors,
+     returning the cumulative count so the caller can resume. */
+  intptr_t i, acc = 0;
+  for (i = 0; i < iovcnt; i++) {
+    intptr_t l = iov[i].len, w;
+    if (l <= 0) continue;
+    w = do_write(rktio, rfd, iov[i].base, l, err);
+    if (w == RKTIO_WRITE_ERROR)
+      return (acc > 0) ? acc : RKTIO_WRITE_ERROR;
+    if (w == 0)
+      return acc;               /* would block (acc may be 0) */
+    acc += w;
+    if (w < l)
+      return acc;               /* partial: caller resumes past prefix */
+  }
+  return acc;
+}
+
+static intptr_t do_writev(rktio_t *rktio, rktio_fd_t *rfd,
+                          rktio_iovec_t *iov, intptr_t iovcnt,
+                          rktio_err_t *err)
+{
+  if (iovcnt <= 0)
+    return 0;
+
+#ifdef RKTIO_SYSTEM_UNIX
+  /* Fast path: a single writev(2) for plain file/pipe fds. */
+  if (!(rfd->modes & RKTIO_OPEN_SOCKET)
+# ifdef RKTIO_USE_PENDING_OPEN
+      && !rfd->pending
+# endif
+      ) {
+    struct iovec vec[RKTIO_WRITEV_MAX];
+    intptr_t i, n, total, result;
+    int flags, errsaved;
+
+    /* Collect up to RKTIO_WRITEV_MAX slices, capping the total request at
+       MAX_READ_WRITE_REQUEST_BYTES (matching do_write's LIMIT_REQUEST_SIZE);
+       a slice may be truncated at the cap and the rest left for the caller. */
+    n = 0; total = 0;
+    for (i = 0; (i < iovcnt) && (n < RKTIO_WRITEV_MAX); i++) {
+      intptr_t l = iov[i].len;
+      if (l <= 0) continue;      /* skip empty slices */
+      if (total + l > MAX_READ_WRITE_REQUEST_BYTES) {
+        l = MAX_READ_WRITE_REQUEST_BYTES - total;
+        vec[n].iov_base = (void *)iov[i].base;
+        vec[n].iov_len = l;
+        n++; total += l;
+        break;                   /* request is now capped */
+      }
+      vec[n].iov_base = (void *)iov[i].base;
+      vec[n].iov_len = l;
+      n++; total += l;
+    }
+
+    if (total == 0)
+      return 0;                  /* nothing to write (all slices empty) */
+
+    flags = fcntl(rfd->fd, F_GETFL, 0);
+    if (!(flags & RKTIO_NONBLOCKING))
+      fcntl(rfd->fd, F_SETFL, flags | RKTIO_NONBLOCKING);
+
+    do {
+      result = writev(rfd->fd, vec, n);
+    } while ((result == -1) && (errno == EINTR));
+
+    if (result == -1) {
+      errsaved = errno;
+      rktio_get_posix_error(err);
+    } else
+      errsaved = 0;
+
+    if (!(flags & RKTIO_NONBLOCKING))
+      fcntl(rfd->fd, F_SETFL, flags);
+
+    if ((rfd->modes & RKTIO_OPEN_TRACK_TERMINAL_OUTPUT) && (result > 0))
+      wrote_to_terminal(result);
+
+    if (result == -1) {
+      if (errsaved == EAGAIN)
+        return 0;
+      else
+        return RKTIO_WRITE_ERROR;
+    } else
+      return result;
+  }
+#endif
+
+  /* Sockets, pending opens, and all of Windows: sequential fallback. */
+  return writev_sequential(rktio, rfd, iov, iovcnt, err);
+}
+
+intptr_t rktio_writev(rktio_t *rktio, rktio_fd_t *rfd, rktio_iovec_t *iov, intptr_t iovcnt)
+{
+  return do_writev(rktio, rfd, iov, iovcnt, &rktio->err);
 }
 
 void rktio_std_write_in_best_effort(rktio_t *rktio, int which, char *buffer, intptr_t start, intptr_t end) {

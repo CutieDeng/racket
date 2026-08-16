@@ -1,0 +1,21 @@
+(FEAT "Add .context directive (named register sets)"
+
+()
+"Implement context register sets (`.context NAME field=reg …`) in the GNU
+frontend: parse declarations and (context NAME) function imports, apply
+register substitution in a new pre-CFG pass (semantic/apply-contexts.rkt),
+and validate consistency across imports, field aliasing, and hand-written
+vs context register conflicts. Add L1 scope (library) with callee-saved
+register save verification — turns silent AAPCS64 violations into
+assembly-time errors. 9 KAT tests pass; real rktcrypto p256 add byte-
+identical with hand-written version.
+
+Modified:
+- cli/as.rkt
+- docs/context-register-sets-design.md
+- parser/ast.rkt
+- parser/gnu-parser.rkt
+- semantic/apply-contexts.rkt
+- test/context-test.rkt
+"
+)

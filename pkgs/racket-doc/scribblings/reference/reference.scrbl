@@ -77,6 +77,8 @@ In addition, it re-exports @racket[for-syntax] everything from
 @include-section["macros.scrbl"]
 @include-section["io.scrbl"]
 @include-section["security.scrbl"]
+@include-section["crypto.scrbl"]
+@include-section["random-generator.scrbl"]
 @include-section["os.scrbl"]
 @include-section["memory.scrbl"]
 @include-section["unsafe.scrbl"]

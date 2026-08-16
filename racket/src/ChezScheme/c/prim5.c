@@ -1722,8 +1722,307 @@ static IBOOL s_native_little_endian() {
 
 #define proc2ptr(x) TO_PTR(x)
 
+/* SwissTable (rumble/swisstable.ss) probe loops.
+
+   ctrl is a bytevector of `cap` control bytes (cap is a power of two
+   and a multiple of 16); slots is a vector of 2*cap elements with the
+   key of slot i at index 2i and its value at 2i+1; h is the prepared
+   nonnegative hash value.  Group geometry matches the Scheme side:
+   16-byte aligned groups probed triangularly by group index, EMPTY =
+   0xFF, DELETED = 0x80, full = H2 (low 7 bits of h).  Group matching
+   uses SSE2 or NEON when available and an exact bytewise scan
+   otherwise, so there are no false positives (unlike SWAR
+   zero-detection) and no full-byte re-check is needed.
+
+   These functions allocate nothing and never call back into Scheme,
+   so no object can move during a call and the raw bytevector/vector
+   pointers stay valid throughout.  Scheme code performs the key
+   comparisons for equal/eqv tables via s_swiss_scan, whose resume
+   state is packed into a single fixnum-sized value; that bounds the
+   supported capacity to 2^28 slots (enforced by the Scheme side). */
+
+#define SWISS_GROUP 16
+
+#if defined(__SSE2__) || (defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86)))
+# include <emmintrin.h>
+# define SWISS_SSE2 1
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__) || (defined(_MSC_VER) && defined(_M_ARM64))
+# include <arm_neon.h>
+# define SWISS_NEON 1
+#endif
+
+static int swiss_ctz64(U64 x) {
+#if defined(__GNUC__) || defined(__clang__)
+  return (int)__builtin_ctzll(x);
+#else
+  int n = 0;
+  while ((x & 1) == 0) { x >>= 1; n += 1; }
+  return n;
+#endif
+}
+
+/* Group-match masks.  On SSE2 and on the portable path, bit i of the
+   mask corresponds to byte i of the group.  On NEON the mask carries
+   one nibble per byte (the vshrn narrowing trick), so the position
+   helpers divide bit positions by 4.  Masks are exact equality
+   matches in every case. */
+
+#ifdef SWISS_SSE2
+
+typedef U64 swiss_mask;
+#define SWISS_FIRST(m) ((unsigned)swiss_ctz64(m))
+#define SWISS_CLEAR_FIRST(m) ((m) & ((m) - 1))
+#define SWISS_SKIP_BELOW(m, b) ((m) & ~(((U64)1 << (b)) - 1))
+
+static swiss_mask swiss_grp_match(const octet *grp, unsigned c) {
+  __m128i v = _mm_loadu_si128((const __m128i *)grp);
+  __m128i eq = _mm_cmpeq_epi8(v, _mm_set1_epi8((char)c));
+  return (swiss_mask)(unsigned)_mm_movemask_epi8(eq);
+}
+
+#elif defined(SWISS_NEON)
+
+typedef U64 swiss_mask;
+#define SWISS_FIRST(m) ((unsigned)(swiss_ctz64(m) >> 2))
+#define SWISS_CLEAR_FIRST(m) ((m) & ~((U64)0xF << (swiss_ctz64(m) & ~3)))
+#define SWISS_SKIP_BELOW(m, b) ((m) & ~(((U64)1 << (4 * (b))) - 1))
+
+static swiss_mask swiss_grp_match(const octet *grp, unsigned c) {
+  uint8x16_t v = vld1q_u8(grp);
+  uint8x16_t eq = vceqq_u8(v, vdupq_n_u8((uint8_t)c));
+  uint8x8_t nib = vshrn_n_u16(vreinterpretq_u16_u8(eq), 4);
+  return (swiss_mask)vget_lane_u64(vreinterpret_u64_u8(nib), 0);
+}
+
+#else
+
+typedef U64 swiss_mask;
+#define SWISS_FIRST(m) ((unsigned)swiss_ctz64(m))
+#define SWISS_CLEAR_FIRST(m) ((m) & ((m) - 1))
+#define SWISS_SKIP_BELOW(m, b) ((m) & ~(((U64)1 << (b)) - 1))
+
+static swiss_mask swiss_grp_match(const octet *grp, unsigned c) {
+  swiss_mask m = 0;
+  int i;
+  for (i = 0; i < SWISS_GROUP; i += 1)
+    if (grp[i] == c) m |= (U64)1 << i;
+  return m;
+}
+
+#endif
+
+#define SWISS_GRP_EMPTY(grp) swiss_grp_match(grp, 0xFF)
+#define SWISS_GRP_DELETED(grp) swiss_grp_match(grp, 0x80)
+
+static iptr swiss_locate_eq_loop(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  unsigned h2 = (unsigned)(h & 0x7f);
+  uptr g = (h >> 7) & gmask, step = 1;
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask m = swiss_grp_match(grp, h2);
+    while (m != 0) {
+      uptr i = (g << 4) + SWISS_FIRST(m);
+      if (Svector_ref(slots, i << 1) == key)
+        return (iptr)i;
+      m = SWISS_CLEAR_FIRST(m);
+    }
+    if (SWISS_GRP_EMPTY(grp) != 0)
+      return -1;
+    g = (g + step) & gmask;
+    step += 1;
+  }
+}
+
+static ptr s_swiss_ref_eq(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap, ptr dflt) {
+  iptr i = swiss_locate_eq_loop(ctrl, slots, key, h, cap);
+  return (i < 0) ? dflt : Svector_ref(slots, (i << 1) + 1);
+}
+
+static iptr s_swiss_locate_eq(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap) {
+  return swiss_locate_eq_loop(ctrl, slots, key, h, cap);
+}
+
+/* Insert-oriented probe for eq-compared keys.  Returns:
+     r >= 0            : key present at slot r
+     r < 0, r even     : absent; reuse tombstone slot (-r - 2) / 2
+     r < 0, r odd      : absent; place at empty slot (-r - 3) / 2
+   The caller applies the load-factor check before using an empty
+   slot and updates control bytes, slots, and counters. */
+static iptr s_swiss_probe_eq(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  unsigned h2 = (unsigned)(h & 0x7f);
+  uptr g = (h >> 7) & gmask, step = 1;
+  iptr tomb = -1;
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask m = swiss_grp_match(grp, h2);
+    swiss_mask empty;
+    while (m != 0) {
+      uptr i = (g << 4) + SWISS_FIRST(m);
+      if (Svector_ref(slots, i << 1) == key)
+        return (iptr)i;
+      m = SWISS_CLEAR_FIRST(m);
+    }
+    empty = SWISS_GRP_EMPTY(grp);
+    if (tomb < 0) {
+      swiss_mask d = SWISS_GRP_DELETED(grp);
+      if (d != 0) tomb = (iptr)((g << 4) + SWISS_FIRST(d));
+    }
+    if (empty != 0) {
+      if (tomb >= 0) return -2 - 2 * tomb;
+      return -3 - 2 * (iptr)((g << 4) + SWISS_FIRST(empty));
+    }
+    g = (g + step) & gmask;
+    step += 1;
+  }
+}
+
+/* Kind-agnostic candidate iterator: yields slot indexes whose control
+   byte matches H2, in probe order, without touching keys, so the
+   Scheme caller can apply equal?/eqv? (which may call arbitrary
+   Scheme code between calls).  state is -1 to start a scan, or the
+   previous return value to resume after it.  Returns -1 when the
+   probe proves absence, otherwise a state value encoding the
+   candidate: (g << 28) | (step << 4) | byte, where the candidate's
+   slot index is g*16 + byte.  All candidates of a group are yielded
+   before the group's EMPTY check, since insertions after removals
+   can place a key beyond an empty byte within its group. */
+static iptr s_swiss_scan(ptr ctrl, uptr cap, uptr h, iptr state) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  unsigned h2 = (unsigned)(h & 0x7f);
+  uptr g, step;
+  unsigned skip;
+  if (state < 0) {
+    g = (h >> 7) & gmask;
+    step = 1;
+    skip = 0;
+  } else {
+    g = (uptr)state >> 28;
+    step = ((uptr)state >> 4) & 0xFFFFFF;
+    skip = (unsigned)(state & 0xF) + 1;
+  }
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask m = swiss_grp_match(grp, h2);
+    if (skip != 0) {
+      if (skip >= SWISS_GROUP)
+        m = 0;
+      else
+        m = SWISS_SKIP_BELOW(m, skip);
+    }
+    if (m != 0) {
+      unsigned b = SWISS_FIRST(m);
+      return (iptr)(((uptr)g << 28) | (step << 4) | b);
+    }
+    if (SWISS_GRP_EMPTY(grp) != 0)
+      return -1;
+    g = (g + step) & gmask;
+    step += 1;
+    skip = 0;
+  }
+}
+
+/* Insert-position probe without key comparisons: the caller has
+   already proved the key absent via s_swiss_scan.  Returns the same
+   negative encodings as s_swiss_probe_eq (never a nonnegative
+   result). */
+static iptr s_swiss_find_slot(ptr ctrl, uptr cap, uptr h) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  uptr g = (h >> 7) & gmask, step = 1;
+  iptr tomb = -1;
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask empty = SWISS_GRP_EMPTY(grp);
+    if (tomb < 0) {
+      swiss_mask d = SWISS_GRP_DELETED(grp);
+      if (d != 0) tomb = (iptr)((g << 4) + SWISS_FIRST(d));
+    }
+    if (empty != 0) {
+      if (tomb >= 0) return -2 - 2 * tomb;
+      return -3 - 2 * (iptr)((g << 4) + SWISS_FIRST(empty));
+    }
+    g = (g + step) & gmask;
+    step += 1;
+  }
+}
+
+/* Indirect variants for weak/ephemeron tables: the key slot holds a
+   weak or ephemeron pair whose car is the (possibly bwp'd) key, so
+   candidates dereference the pair before the pointer comparison.  A
+   bwp'd car simply fails the comparison; dead entries are reclaimed
+   lazily on the Scheme side.  Cleared slots hold a non-pair hole
+   record, so the pair check also filters those. */
+
+static iptr s_swiss_locate_eq_ind(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  unsigned h2 = (unsigned)(h & 0x7f);
+  uptr g = (h >> 7) & gmask, step = 1;
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask m = swiss_grp_match(grp, h2);
+    while (m != 0) {
+      uptr i = (g << 4) + SWISS_FIRST(m);
+      ptr cell = Svector_ref(slots, i << 1);
+      if (Spairp(cell) && Scar(cell) == key)
+        return (iptr)i;
+      m = SWISS_CLEAR_FIRST(m);
+    }
+    if (SWISS_GRP_EMPTY(grp) != 0)
+      return -1;
+    g = (g + step) & gmask;
+    step += 1;
+  }
+}
+
+/* Insert-oriented indirect probe; same return encoding as
+   s_swiss_probe_eq. */
+static iptr s_swiss_probe_eq_ind(ptr ctrl, ptr slots, ptr key, uptr h, uptr cap) {
+  const octet *cb = (const octet *)&BVIT(ctrl, 0);
+  uptr gmask = (cap >> 4) - 1;
+  unsigned h2 = (unsigned)(h & 0x7f);
+  uptr g = (h >> 7) & gmask, step = 1;
+  iptr tomb = -1;
+  for (;;) {
+    const octet *grp = cb + (g << 4);
+    swiss_mask m = swiss_grp_match(grp, h2);
+    swiss_mask empty;
+    while (m != 0) {
+      uptr i = (g << 4) + SWISS_FIRST(m);
+      ptr cell = Svector_ref(slots, i << 1);
+      if (Spairp(cell) && Scar(cell) == key)
+        return (iptr)i;
+      m = SWISS_CLEAR_FIRST(m);
+    }
+    empty = SWISS_GRP_EMPTY(grp);
+    if (tomb < 0) {
+      swiss_mask d = SWISS_GRP_DELETED(grp);
+      if (d != 0) tomb = (iptr)((g << 4) + SWISS_FIRST(d));
+    }
+    if (empty != 0) {
+      if (tomb >= 0) return -2 - 2 * tomb;
+      return -3 - 2 * (iptr)((g << 4) + SWISS_FIRST(empty));
+    }
+    g = (g + step) & gmask;
+    step += 1;
+  }
+}
+
 void S_prim5_init(void) {
     if (!S_boot_time) return;
+
+    Sforeign_symbol("(cs)swiss_ref_eq", (void *)s_swiss_ref_eq);
+    Sforeign_symbol("(cs)swiss_locate_eq", (void *)s_swiss_locate_eq);
+    Sforeign_symbol("(cs)swiss_probe_eq", (void *)s_swiss_probe_eq);
+    Sforeign_symbol("(cs)swiss_scan", (void *)s_swiss_scan);
+    Sforeign_symbol("(cs)swiss_find_slot", (void *)s_swiss_find_slot);
+    Sforeign_symbol("(cs)swiss_locate_eq_ind", (void *)s_swiss_locate_eq_ind);
+    Sforeign_symbol("(cs)swiss_probe_eq_ind", (void *)s_swiss_probe_eq_ind);
 
 #ifdef PTHREADS
     Sforeign_symbol("(cs)fork_thread", (void *)S_fork_thread);

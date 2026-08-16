@@ -140,7 +140,19 @@ boxes that are not @tech{impersonators}.
 @include-section["hashes.scrbl"]
 
 @; ----------------------------------------------------------------------
+@include-section["swisstables.scrbl"]
+
+@; ----------------------------------------------------------------------
 @include-section["treelists.scrbl"]
+
+@; ----------------------------------------------------------------------
+@include-section["pvectors.scrbl"]
+
+@; ----------------------------------------------------------------------
+@include-section["intmaps.scrbl"]
+
+@; ----------------------------------------------------------------------
+@include-section["intbits.scrbl"]
 
 @; ----------------------------------------------------------------------
 @include-section["sequences.scrbl"]

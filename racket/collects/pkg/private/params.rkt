@@ -1,6 +1,8 @@
 #lang racket/base
 (require racket/path
-         setup/dirs)
+         setup/dirs
+         (only-in setup/private/dirs
+                  get-pkg-catalog-lookup-version))
 
 (provide (all-defined-out))
 
@@ -12,7 +14,7 @@
 (define current-pkg-scope-version
   (make-parameter (get-installation-name)))
 (define current-pkg-lookup-version
-  (make-parameter (version)))
+  (make-parameter (or (get-pkg-catalog-lookup-version) (version))))
 (define current-pkg-error
   (make-parameter (lambda args (apply error 'pkg args))))
 (define current-no-pkg-db

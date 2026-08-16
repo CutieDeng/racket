@@ -457,6 +457,135 @@
   (test #f custodian-box-value cb))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; signal specifiers for `subprocess-kill`
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Bad specifiers are rejected without signaling the process:
+(let ()
+  (define-values (sp o i e) (subprocess #f #f #f cat))
+  (err/rt-test (subprocess-kill sp 'sigterm))
+  (err/rt-test (subprocess-kill sp 0))
+  (err/rt-test (subprocess-kill sp 256))
+  (err/rt-test (subprocess-kill sp -15))
+  (test 'running subprocess-status sp)
+  (subprocess-kill sp 'kill)
+  (test sp sync sp)
+  (close-output-port i)
+  (close-input-port o)
+  (close-input-port e))
+
+;; `current-subprocess-custodian-mode` accepts the same specifiers:
+(parameterize ([current-subprocess-custodian-mode 'terminate])
+  (test 'terminate current-subprocess-custodian-mode))
+(parameterize ([current-subprocess-custodian-mode 15])
+  (test 15 current-subprocess-custodian-mode))
+(err/rt-test (current-subprocess-custodian-mode 'sigterm))
+(err/rt-test (current-subprocess-custodian-mode 0))
+
+(unless (eq? 'windows (system-type))
+  ;; A signal-terminated process reports 128 + signal number:
+  (define (try-signal spec expect-status)
+    (define-values (sp o i e) (subprocess #f #f #f cat))
+    (subprocess-kill sp spec)
+    (test sp sync sp)
+    (test expect-status subprocess-status sp)
+    (close-output-port i)
+    (close-input-port o)
+    (close-input-port e))
+  (try-signal 'terminate (+ 128 15))
+  (try-signal 'hang-up (+ 128 1))
+  (try-signal 15 (+ 128 15))
+  (try-signal 9 (+ 128 9))
+
+  ;; `'terminate` stops a process that ignores an interrupt signal
+  ;; (as happens for the whole tree under a shell background job):
+  (let ()
+    (define-values (sp o i e)
+      (subprocess #f #f #f "/bin/sh" "-c" "trap '' INT; exec cat"))
+    (sleep 0.1) ; let the shell install the trap and `exec`
+    (subprocess-kill sp 'interrupt)
+    (sleep 0.1)
+    (test 'running subprocess-status sp)
+    (subprocess-kill sp 'terminate)
+    (test sp sync sp)
+    (test (+ 128 15) subprocess-status sp)
+    (close-output-port i)
+    (close-input-port o)
+    (close-input-port e))
+
+  ;; A custodian in `'terminate` mode shuts subprocesses down gracefully:
+  (let ()
+    (define c (make-custodian))
+    (define-values (sp o i e)
+      (parameterize ([current-custodian c]
+                     [current-subprocess-custodian-mode 'terminate])
+        (subprocess #f #f #f cat)))
+    (test 'running subprocess-status sp)
+    (custodian-shutdown-all c)
+    (test sp sync sp)
+    (test (+ 128 15) subprocess-status sp)))
+
+;; `subprocess-group?` reports whether signals go to a whole group:
+(let ()
+  (define-values (sp o i e) (subprocess #f #f #f cat))
+  (test #f subprocess-group? sp)
+  (subprocess-kill sp 'kill)
+  (test sp sync sp)
+  (close-output-port i)
+  (close-input-port o)
+  (close-input-port e))
+(let ()
+  (define-values (sp o i e)
+    (parameterize ([subprocess-group-enabled #t])
+      (subprocess #f #f #f cat)))
+  (test #t subprocess-group? sp)
+  (subprocess-kill sp 'kill)
+  (test sp sync sp)
+  (close-output-port i)
+  (close-input-port o)
+  (close-input-port e))
+(err/rt-test (subprocess-group? 10))
+
+;; `current-subprocess-reset-signals` accepts only known signal lists:
+(parameterize ([current-subprocess-reset-signals '(interrupt quit hang-up)])
+  (test '(interrupt quit hang-up) current-subprocess-reset-signals))
+(err/rt-test (current-subprocess-reset-signals '(int)))
+(err/rt-test (current-subprocess-reset-signals 'interrupt))
+
+(unless (eq? 'windows (system-type))
+  ;; Resetting `'interrupt` makes a subprocess signalable again even
+  ;; when the spawning process inherited SIGINT as ignored (as under a
+  ;; shell background job); without the reset, the ignored disposition
+  ;; propagates and `subprocess-kill` with `'interrupt` is a no-op:
+  (let ()
+    (define script
+      (format "~s"
+              '(let ()
+                 (define (probe reset?)
+                   (define-values (sp o i e)
+                     (parameterize ([current-subprocess-reset-signals
+                                     (if reset? '(interrupt) '())])
+                       (subprocess #f #f #f "/bin/cat")))
+                   (subprocess-kill sp 'interrupt)
+                   (define r (if (sync/timeout 1 sp) 'dead 'alive))
+                   (unless (eq? r 'dead)
+                     (subprocess-kill sp 'kill)
+                     (sync sp))
+                   (close-output-port i)
+                   (close-input-port o)
+                   (close-input-port e)
+                   r)
+                 (printf "~a ~a\n" (probe #f) (probe #t)))))
+    (define-values (sp o i e)
+      (subprocess #f #f #f "/bin/sh" "-c" "trap '' INT; exec \"$0\" -e \"$1\"" self script))
+    (test "alive dead" read-line o)
+    (test sp sync sp)
+    (test 0 subprocess-status sp)
+    (close-output-port i)
+    (close-input-port o)
+    (close-input-port e)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; process groups
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

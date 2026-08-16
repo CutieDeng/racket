@@ -7,6 +7,9 @@
          racket/function
          racket/generator
          racket/match
+         (only-in '#%kernel vector-copy)
+         '#%flfxnum
+         racket/unsafe/ops
          (rename-in "private/for.rkt"
                     [stream-ref stream-get-generics])
          "private/sequence.rkt"
@@ -51,7 +54,7 @@
          stream-filter
          stream-add-between
          stream-count
-         
+
          stream/c
 
          for/stream
@@ -110,77 +113,361 @@
 (define (stream-cons? st)
   (and (stream? st) (not (stream-empty? st))))
 
-(define (stream->list s)
-  (for/list ([v (in-stream s)]) v))
+(define pvector-stream-procs #f)
 
-(define (stream-length s)
-  (unless (stream? s) (raise-argument-error 'stream-length "stream?" s))
+(define (load-pvector-stream-procs)
+  (unless pvector-stream-procs
+    (set! pvector-stream-procs
+          (with-handlers ([exn:fail? (lambda (_) 'unavailable)])
+            (let ([unsafe-pvector-length
+                   (dynamic-require '(submod racket/pvector unsafe)
+                                    'unsafe-pvector-length)])
+              (vector (dynamic-require 'racket/pvector 'pvector?)
+                      (dynamic-require 'racket/pvector 'pvector->list)
+                      (dynamic-require 'racket/pvector 'pvector-length)
+                      (dynamic-require 'racket/pvector 'pvector-ref)
+                      (dynamic-require 'racket/pvector 'pvector-drop)
+                      (dynamic-require 'racket/pvector 'pvector-take)
+                      (dynamic-require 'racket/pvector 'pvector-empty)
+                      (dynamic-require 'racket/pvector 'pvector-append)
+                      (dynamic-require 'racket/pvector 'pvector->vector)
+                      (dynamic-require 'racket/pvector 'vector->pvector)
+                      (dynamic-require 'racket/pvector 'pvector-for-each)
+                      (dynamic-require 'racket/pvector 'pvector-map)
+                      #f
+                      (dynamic-require 'racket/pvector 'make-pvector)
+                      unsafe-pvector-length
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-ref)
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-drop)
+                      (dynamic-require '(submod racket/pvector unsafe)
+                                       'unsafe-pvector-take))))))
+  (and (vector? pvector-stream-procs)
+       pvector-stream-procs))
+
+(define (pvector-stream-procs-for s)
+  (let ([procs (load-pvector-stream-procs)])
+    (and procs
+         ((vector-ref procs 0) s)
+         procs)))
+
+(define (stream->list s)
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-map-stream->list s)]
+    [(pvector-filter-stream? s)
+     (pvector-filter-stream->list s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-filter-take-stream->list s)]
+    [(pvector-append-stream? s)
+     (pvector-append-stream->list s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (if procs
+           ((vector-ref procs 1) s)
+           (for/list ([v (in-stream s)]) v)))]))
+
+(define (stream-length/slow s)
   (let loop ([s s] [len 0])
     (if (stream-empty? s)
         len
         (loop (stream-rest s) (add1 len)))))
 
-(define (stream-ref st i)
-  (unless (stream? st) (raise-argument-error 'stream-ref "stream?" st))
-  (unless (exact-nonnegative-integer? i)
-    (raise-argument-error 'stream-ref "exact-nonnegative-integer?" i))
+(define (stream-length s)
+  (unless (stream? s) (raise-argument-error 'stream-length "stream?" s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-map-stream-length s)]
+    [(pvector-filter-stream? s)
+     (pvector-filter-stream-length s)]
+    [(pvector-append-stream? s)
+     (pvector-append-stream-length s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (if procs
+           ((vector-ref procs 14) s)
+           (stream-length/slow s)))]))
+
+(define (stream-ref/slow st i)
   (let loop ([n i] [s st])
     (cond
      [(stream-empty? s)
-      (raise-arguments-error 'stream-ref
-                             "stream ended before index"
-                             "index" i
-                             ;; Why `"stream" st` is omitted:
-                             ;; including `st` in the error message
-                             ;; means that it has to be kept live;
-                             ;; that's not so great for a stream, where
-                             ;; lazy construction could otherwise allow
-                             ;; a element to be reached without consuming
-                             ;; proportional memory
-                             #;"stream" #;st)]
+      (raise-stream-ended-before-index 'stream-ref i)]
      [(zero? n)
       (stream-first s)]
      [else
       (loop (sub1 n) (stream-rest s))])))
 
-(define (stream-tail st i)
-  (unless (stream? st) (raise-argument-error 'stream-tail "stream?" st))
+(define (raise-stream-ended-before-index who i)
+  (raise-arguments-error who
+                         "stream ended before index"
+                         "index" i
+                         ;; Why `"stream" st` is omitted:
+                         ;; including `st` in the error message
+                         ;; means that it has to be kept live;
+                         ;; that's not so great for a stream, where
+                         ;; lazy construction could otherwise allow
+                         ;; a element to be reached without consuming
+                         ;; proportional memory
+                         #;"stream" #;st))
+
+(define (stream-ref st i)
+  (unless (stream? st) (raise-argument-error 'stream-ref "stream?" st))
   (unless (exact-nonnegative-integer? i)
-    (raise-argument-error 'stream-tail "exact-nonnegative-integer?" i))
+    (raise-argument-error 'stream-ref "exact-nonnegative-integer?" i))
+  (cond
+    [(pvector-map-stream? st)
+     (pvector-map-stream-ref st i)]
+    [(pvector-filter-stream? st)
+     (pvector-filter-stream-ref st i)]
+    [(pvector-append-stream? st)
+     (pvector-append-stream-ref st i)]
+    [else
+     (define procs (pvector-stream-procs-for st))
+     (if procs
+         (let ([len ((vector-ref procs 14) st)])
+           (if (< i len)
+               ((vector-ref procs 15) st i)
+               (raise-stream-ended-before-index 'stream-ref i)))
+         (stream-ref/slow st i))]))
+
+(define (stream-tail/slow st i)
   (let loop ([n i] [s st])
     (cond
       [(zero? n) s]
       [(stream-empty? s)
-       (raise-arguments-error 'stream-tail
-                              "stream ended before index"
-                              "index" i
-                              ;; See "Why `"stream" st` is omitted" above
-                              #;"stream" #;st)]
+       (raise-stream-ended-before-index 'stream-tail i)]
       [else
        (loop (sub1 n) (stream-rest s))])))
 
-(define (stream-take st i)
-  (unless (stream? st) (raise-argument-error 'stream-take "stream?" st))
+(define (stream-tail st i)
+  (unless (stream? st) (raise-argument-error 'stream-tail "stream?" st))
   (unless (exact-nonnegative-integer? i)
-    (raise-argument-error 'stream-take "exact-nonnegative-integer?" i))
+    (raise-argument-error 'stream-tail "exact-nonnegative-integer?" i))
+  (cond
+    [(zero? i) st]
+    [(pvector-map-stream? st)
+     (pvector-map-stream-tail st i)]
+    [(pvector-filter-stream? st)
+     (pvector-filter-stream-tail-at st i)]
+    [(pvector-append-stream? st)
+     (pvector-append-stream-tail-at st i)]
+    [else
+     (define procs (pvector-stream-procs-for st))
+     (if procs
+         (let ([len ((vector-ref procs 14) st)])
+           (if (<= i len)
+               ((vector-ref procs 16) st i)
+               (raise-stream-ended-before-index 'stream-tail i)))
+         (stream-tail/slow st i))]))
+
+(define (stream-take/slow st i)
   (stream-lazy
    (let loop ([n i] [s st])
      (cond
        [(zero? n) empty-stream]
        [(stream-empty? s)
-        (raise-arguments-error 'stream-take
-                               "stream ended before index"
-                               "index" i
-                               ;; See "Why `"stream" st` is omitted" above
-                               #;"stream" #;st)]
+        (raise-stream-ended-before-index 'stream-take i)]
        [else
         (stream-cons (stream-first s)
                      (loop (sub1 n) (stream-rest s)))]))))
 
+(define (stream-take st i)
+  (unless (stream? st) (raise-argument-error 'stream-take "stream?" st))
+  (unless (exact-nonnegative-integer? i)
+    (raise-argument-error 'stream-take "exact-nonnegative-integer?" i))
+  (cond
+    [(pvector-map-stream? st)
+     (pvector-map-stream-take st i)]
+    [(pvector-append-stream? st)
+     (pvector-append-stream-take st i)]
+    [(pvector-filter-stream? st)
+     (pvector-filter-stream-take st i)]
+    [else
+     (define procs (pvector-stream-procs-for st))
+     (if procs
+         (let ([len ((vector-ref procs 14) st)])
+           (if (<= i len)
+               ((vector-ref procs 17) st i)
+               (raise-stream-ended-before-index 'stream-take i)))
+         (stream-take/slow st i))]))
+
+(define (reverse-onto acc tail)
+  (let loop ([acc acc] [tail tail])
+    (if (null? acc)
+        tail
+        (loop (cdr acc) (cons (car acc) tail)))))
+
+(define (pvector-stream-unsafe-length procs s)
+  ((vector-ref procs 14) s))
+
+(define (all-pvectors? l pvector?)
+  (let loop ([l l])
+    (cond
+      [(null? l) #t]
+      [(pvector? (car l)) (loop (cdr l))]
+      [else #f])))
+
+(define (pvector-stream-append l)
+  (let ([procs (load-pvector-stream-procs)])
+    (and procs
+         (all-pvectors? l (vector-ref procs 0))
+         (let ([pvector-empty (vector-ref procs 6)]
+               [pvector-append (vector-ref procs 7)])
+           (let loop ([l l] [result (pvector-empty)])
+             (if (null? l)
+                 result
+                 (loop (cdr l) (pvector-append result (car l)))))))))
+
+(struct pvector-append-stream (s pos len tail procs)
+  #:property prop:stream
+  (vector
+   (lambda (st)
+     (and (unsafe-fx>= (pvector-append-stream-pos st)
+                       (pvector-append-stream-len st))
+          (stream-empty? (pvector-append-stream-tail st))))
+   (lambda (st)
+     (if (unsafe-fx< (pvector-append-stream-pos st)
+                     (pvector-append-stream-len st))
+         ((vector-ref (pvector-append-stream-procs st) 15)
+          (pvector-append-stream-s st)
+          (pvector-append-stream-pos st))
+         (stream-first (pvector-append-stream-tail st))))
+   (lambda (st)
+     (cond
+       [(unsafe-fx< (pvector-append-stream-pos st)
+                    (unsafe-fx- (pvector-append-stream-len st) 1))
+        (pvector-append-stream (pvector-append-stream-s st)
+                               (unsafe-fx+ (pvector-append-stream-pos st) 1)
+                               (pvector-append-stream-len st)
+                               (pvector-append-stream-tail st)
+                               (pvector-append-stream-procs st))]
+       [(unsafe-fx< (pvector-append-stream-pos st)
+                    (pvector-append-stream-len st))
+        (pvector-append-stream (pvector-append-stream-s st)
+                               (pvector-append-stream-len st)
+                               (pvector-append-stream-len st)
+                               (pvector-append-stream-tail st)
+                               (pvector-append-stream-procs st))]
+       [else (stream-rest (pvector-append-stream-tail st))]))))
+
+(define (pvector-stream-append-prefix l)
+  (let ([procs (load-pvector-stream-procs)])
+    (and procs
+         (pair? l)
+         ((vector-ref procs 0) (car l))
+         (let* ([s (car l)]
+                [len ((vector-ref procs 14) s)]
+                [tail (apply stream-append (cdr l))])
+           (if (unsafe-fx= len 0)
+               tail
+               (pvector-append-stream s 0 len tail procs))))))
+
+(define (pvector-append-stream-prefix-length st)
+  (unsafe-fx- (pvector-append-stream-len st)
+              (pvector-append-stream-pos st)))
+
+(define (pvector-append-stream-length st)
+  (+ (pvector-append-stream-prefix-length st)
+     (stream-length (pvector-append-stream-tail st))))
+
+(define (pvector-append-stream-ref st i)
+  (let ([prefix-len (pvector-append-stream-prefix-length st)])
+    (cond
+      [(< i prefix-len)
+       ((vector-ref (pvector-append-stream-procs st) 15)
+        (pvector-append-stream-s st)
+        (unsafe-fx+ (pvector-append-stream-pos st) i))]
+      [else
+       (stream-ref (pvector-append-stream-tail st)
+                   (- i prefix-len))])))
+
+(define (pvector-append-stream-tail-at st i)
+  (let ([prefix-len (pvector-append-stream-prefix-length st)])
+    (cond
+      [(< i prefix-len)
+       (pvector-append-stream
+        (pvector-append-stream-s st)
+        (unsafe-fx+ (pvector-append-stream-pos st) i)
+        (pvector-append-stream-len st)
+        (pvector-append-stream-tail st)
+        (pvector-append-stream-procs st))]
+      [(= i prefix-len)
+       (pvector-append-stream-tail st)]
+      [else
+       (stream-tail (pvector-append-stream-tail st)
+                    (- i prefix-len))])))
+
+(define (pvector-append-stream-take st i)
+  (let ([prefix-len (pvector-append-stream-prefix-length st)])
+    (if (<= i prefix-len)
+        (pvector-append-stream
+         (pvector-append-stream-s st)
+         (pvector-append-stream-pos st)
+         (+ (pvector-append-stream-pos st) i)
+         empty-stream
+         (pvector-append-stream-procs st))
+        (stream-take/slow st i))))
+
+(define (pvector-append-stream->list st)
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [tail (pvector-append-stream-tail st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos] [acc null])
+      (if (unsafe-fx>= index len)
+          (reverse-onto acc (stream->list tail))
+          (loop (unsafe-fx+ index 1)
+                (cons (ref s index) acc))))))
+
+(define (pvector-append-stream-count f st)
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (+ (let loop ([index pos] [count 0])
+         (if (unsafe-fx>= index len)
+             count
+             (loop (unsafe-fx+ index 1)
+                   (if (f (ref s index))
+                       (unsafe-fx+ count 1)
+                       count))))
+       (stream-count f (pvector-append-stream-tail st)))))
+
+(define (pvector-append-stream-for-each f st)
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos])
+      (cond
+        [(unsafe-fx>= index len)
+         (stream-for-each f (pvector-append-stream-tail st))]
+        [else
+         (f (ref s index))
+         (loop (unsafe-fx+ index 1))]))))
+
+(define (pvector-append-stream-fold f init st)
+  (let ([s (pvector-append-stream-s st)]
+        [pos (pvector-append-stream-pos st)]
+        [len (pvector-append-stream-len st)]
+        [ref (vector-ref (pvector-append-stream-procs st) 15)])
+    (let loop ([index pos] [acc init])
+      (if (unsafe-fx>= index len)
+          (stream-fold f acc (pvector-append-stream-tail st))
+          (loop (unsafe-fx+ index 1)
+                (f acc (ref s index)))))))
+
 (define (stream-append . l)
   (for ([s (in-list l)])
     (unless (stream? s) (raise-argument-error 'stream-append "stream?" s)))
-  (stream-lazy (streams-append l)))
+  (or (and (pair? l)
+           (pvector-stream-append l))
+      (and (pair? l)
+           (pvector-stream-append-prefix l))
+      (stream-lazy (streams-append l))))
 
 (define (streams-append l)
   (cond
@@ -191,70 +478,944 @@
     (stream-cons (stream-first (car l))
                  (streams-append (cons (stream-rest (car l)) (cdr l))))]))
 
+(define (pvector-stream-map f s procs)
+  (cond
+    [(eq? f values) s]
+    [else
+     (let ([len ((vector-ref procs 14) s)])
+       (if (unsafe-fx= len 0)
+           ((vector-ref procs 6))
+           ((vector-ref procs 13) len (void))))]))
+
+(struct pvector-map-stream (f s pos len procs)
+  #:property prop:stream
+  (vector
+   (lambda (st)
+     (unsafe-fx>= (pvector-map-stream-pos st)
+                  (pvector-map-stream-len st)))
+   (lambda (st)
+     ((pvector-map-stream-f st)
+      ((vector-ref (pvector-map-stream-procs st) 15)
+       (pvector-map-stream-s st)
+       (pvector-map-stream-pos st))))
+   (lambda (st)
+     (let ([pos (unsafe-fx+ (pvector-map-stream-pos st) 1)]
+           [len (pvector-map-stream-len st)])
+       (if (unsafe-fx>= pos len)
+           empty-stream
+           (pvector-map-stream (pvector-map-stream-f st)
+                               (pvector-map-stream-s st)
+                               pos
+                               len
+                               (pvector-map-stream-procs st)))))))
+
+(define (pvector-stream-map/lazy f s procs)
+  (let ([len ((vector-ref procs 14) s)])
+    (if (unsafe-fx= len 0)
+        empty-stream
+        (pvector-map-stream f s 0 len procs))))
+
+(define (pvector-map-stream-length st)
+  (unsafe-fx- (pvector-map-stream-len st)
+              (pvector-map-stream-pos st)))
+
+(define (pvector-map-stream-ref st i)
+  (let ([len (pvector-map-stream-length st)])
+    (if (< i len)
+        ((pvector-map-stream-f st)
+         ((vector-ref (pvector-map-stream-procs st) 15)
+          (pvector-map-stream-s st)
+          (unsafe-fx+ (pvector-map-stream-pos st) i)))
+        (raise-stream-ended-before-index 'stream-ref i))))
+
+(define (pvector-map-stream-tail st i)
+  (let ([len (pvector-map-stream-length st)])
+    (cond
+      [(< i len)
+       (pvector-map-stream
+        (pvector-map-stream-f st)
+        (pvector-map-stream-s st)
+        (unsafe-fx+ (pvector-map-stream-pos st) i)
+        (pvector-map-stream-len st)
+        (pvector-map-stream-procs st))]
+      [(= i len) empty-stream]
+      [else (raise-stream-ended-before-index 'stream-tail i)])))
+
+(define (pvector-map-stream-take st i)
+  (let ([len (pvector-map-stream-length st)])
+    (if (<= i len)
+        (pvector-map-stream
+         (pvector-map-stream-f st)
+         (pvector-map-stream-s st)
+         (pvector-map-stream-pos st)
+         (+ (pvector-map-stream-pos st) i)
+         (pvector-map-stream-procs st))
+        (stream-take/slow st i))))
+
+(define (pvector-map-stream->list st)
+  (let ([f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
+        [len (pvector-map-stream-len st)]
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [acc null])
+      (if (unsafe-fx>= index len)
+          (reverse acc)
+          (loop (unsafe-fx+ index 1)
+                (cons (f (ref s index)) acc))))))
+
+(define (pvector-map-stream-count f st)
+  (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
+        [len (pvector-map-stream-len st)]
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [count 0])
+      (if (unsafe-fx>= index len)
+          count
+          (loop (unsafe-fx+ index 1)
+                (if (call-with-values
+                        (lambda () (map-f (ref s index)))
+                      f)
+                    (unsafe-fx+ count 1)
+                    count))))))
+
+(define (pvector-map-stream-for-each f st)
+  (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
+        [len (pvector-map-stream-len st)]
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos])
+      (unless (unsafe-fx>= index len)
+        (call-with-values
+         (lambda () (map-f (ref s index)))
+         (case-lambda
+           [(v) (f v)]
+           [vs (apply f vs)]))
+        (loop (unsafe-fx+ index 1))))))
+
+(define (pvector-map-stream-fold f init st)
+  (let ([map-f (pvector-map-stream-f st)]
+        [s (pvector-map-stream-s st)]
+        [pos (pvector-map-stream-pos st)]
+        [len (pvector-map-stream-len st)]
+        [ref (vector-ref (pvector-map-stream-procs st) 15)])
+    (let loop ([index pos] [acc init])
+      (if (unsafe-fx>= index len)
+          acc
+          (loop (unsafe-fx+ index 1)
+                (call-with-values
+                 (lambda () (map-f (ref s index)))
+                 (case-lambda
+                   [(v) (f acc v)]
+                   [vs (apply f acc vs)])))))))
+
+(struct pvector-filter-stream (f s pos len procs state)
+  #:property prop:stream
+  (vector
+   (lambda (st)
+     (not (pvector-filter-stream-force! st)))
+   (lambda (st)
+     (let ([pos (pvector-filter-stream-force! st)])
+       ((vector-ref (pvector-filter-stream-procs st) 15)
+        (pvector-filter-stream-s st)
+        pos)))
+   (lambda (st)
+     (let ([pos (pvector-filter-stream-force! st)])
+       (if pos
+           (let ([next-pos (unsafe-fx+ pos 1)]
+                 [len (pvector-filter-stream-len st)])
+             (if (unsafe-fx>= next-pos len)
+                 empty-stream
+                 (pvector-filter-stream
+                  (pvector-filter-stream-f st)
+                  (pvector-filter-stream-s st)
+                  next-pos
+                  len
+                  (pvector-filter-stream-procs st)
+                  (vector 0 #f))))
+           empty-stream)))))
+
+(define (pvector-filter-stream-force! st)
+  (let ([state (pvector-filter-stream-state st)])
+    (cond
+      [(unsafe-fx= (unsafe-vector-ref state 0) 1)
+       (unsafe-vector-ref state 1)]
+      [(unsafe-fx= (unsafe-vector-ref state 0) 2)
+       #f]
+      [else
+       (let ([f (pvector-filter-stream-f st)]
+             [s (pvector-filter-stream-s st)]
+             [len (pvector-filter-stream-len st)]
+             [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+         (let loop ([pos (pvector-filter-stream-pos st)])
+           (cond
+             [(unsafe-fx>= pos len)
+              (unsafe-vector-set! state 0 2)
+              #f]
+             [(f (ref s pos))
+              (unsafe-vector-set! state 0 1)
+              (unsafe-vector-set! state 1 pos)
+              pos]
+             [else
+              (loop (unsafe-fx+ pos 1))])))])))
+
+(define (pvector-stream-filter/lazy f s procs)
+  (let ([len ((vector-ref procs 14) s)])
+    (if (unsafe-fx= len 0)
+        empty-stream
+        (pvector-filter-stream f s 0 len procs (vector 0 #f)))))
+
+(define (pvector-filter-stream-rest-after st pos)
+  (let ([next-pos (unsafe-fx+ pos 1)]
+        [len (pvector-filter-stream-len st)])
+    (if (unsafe-fx>= next-pos len)
+        empty-stream
+        (pvector-filter-stream
+         (pvector-filter-stream-f st)
+         (pvector-filter-stream-s st)
+         next-pos
+         len
+         (pvector-filter-stream-procs st)
+         (vector 0 #f)))))
+
+(define (pvector-filter-stream-length st)
+  (let ([pos (pvector-filter-stream-force! st)])
+    (if pos
+        (let ([f (pvector-filter-stream-f st)]
+              [s (pvector-filter-stream-s st)]
+              [len (pvector-filter-stream-len st)]
+              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+          (let loop ([index (unsafe-fx+ pos 1)] [count 1])
+            (if (unsafe-fx>= index len)
+                count
+                (loop (unsafe-fx+ index 1)
+                      (if (f (ref s index))
+                          (unsafe-fx+ count 1)
+                          count)))))
+        0)))
+
+(define (pvector-filter-stream-ref st i)
+  (let ((pos (pvector-filter-stream-force! st)))
+    (cond
+      ((not pos)
+       (raise-stream-ended-before-index 'stream-ref i))
+      ((zero? i)
+       ((vector-ref (pvector-filter-stream-procs st) 15)
+        (pvector-filter-stream-s st)
+        pos))
+      (else
+       (let* ((f (pvector-filter-stream-f st))
+              (s (pvector-filter-stream-s st))
+              (len (pvector-filter-stream-len st))
+              (ref (vector-ref (pvector-filter-stream-procs st) 15))
+              (start (unsafe-fx+ pos 1))
+              (remaining i))
+         (let/ec return
+           (let loop ([index start] [remaining remaining])
+             (unless (unsafe-fx>= index len)
+               (let ([v (ref s index)])
+                 (cond
+                   [(f v)
+                    (if (= remaining 1)
+                        (return v)
+                        (loop (unsafe-fx+ index 1) (sub1 remaining)))]
+                   [else
+                    (loop (unsafe-fx+ index 1) remaining)]))))
+           (raise-stream-ended-before-index 'stream-ref i)))))))
+
+(define (pvector-filter-stream-tail-at st i)
+  (let ((pos (pvector-filter-stream-force! st)))
+    (cond
+      ((not pos)
+       (raise-stream-ended-before-index 'stream-tail i))
+      ((= i 1)
+       (pvector-filter-stream-rest-after st pos))
+      (else
+       (let* ((f (pvector-filter-stream-f st))
+              (s (pvector-filter-stream-s st))
+              (len (pvector-filter-stream-len st))
+              (ref (vector-ref (pvector-filter-stream-procs st) 15))
+              (start (unsafe-fx+ pos 1))
+              (remaining (sub1 i)))
+         (let/ec return
+           (let loop ([index start] [remaining remaining])
+             (unless (unsafe-fx>= index len)
+               (let ([v (ref s index)])
+                 (cond
+                   [(f v)
+                    (if (= remaining 1)
+                        (return (pvector-filter-stream-rest-after st index))
+                        (loop (unsafe-fx+ index 1) (sub1 remaining)))]
+                   [else
+                    (loop (unsafe-fx+ index 1) remaining)]))))
+           (raise-stream-ended-before-index 'stream-tail i)))))))
+
+(define (pvector-filter-stream-take st i)
+  (cond
+    [(zero? i) empty-stream]
+    [(fixnum? i) (pvector-filter-take-stream st i i)]
+    [else (stream-take/slow st i)]))
+
+(struct pvector-filter-take-stream (s remaining index)
+  #:property prop:stream
+  (vector
+   (lambda (st)
+     (cond
+       [(unsafe-fx= (pvector-filter-take-stream-remaining st) 0) #t]
+       [(stream-empty? (pvector-filter-take-stream-s st))
+        (raise-stream-ended-before-index
+         'stream-take
+         (pvector-filter-take-stream-index st))]
+       [else #f]))
+   (lambda (st)
+     (stream-first (pvector-filter-take-stream-s st)))
+   (lambda (st)
+     (let ([remaining (unsafe-fx- (pvector-filter-take-stream-remaining st) 1)])
+       (if (unsafe-fx= remaining 0)
+           empty-stream
+           (pvector-filter-take-stream
+            (stream-rest (pvector-filter-take-stream-s st))
+            remaining
+            (pvector-filter-take-stream-index st)))))))
+
+(define (pvector-filter-take-stream->list st)
+  (let ([s (pvector-filter-take-stream-s st)]
+        [remaining (pvector-filter-take-stream-remaining st)])
+    (cond
+      [(unsafe-fx= remaining 0) null]
+      [(pvector-filter-stream? s)
+       (let ([pos (pvector-filter-stream-force! s)])
+         (if pos
+             (let* ([f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [first (ref source pos)])
+               (if (unsafe-fx= remaining 1)
+                   (list first)
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [acc (list first)])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(f v)
+                                (if (unsafe-fx= remaining 1)
+                                    (return (reverse (cons v acc)))
+                                    (loop (unsafe-fx+ index 1)
+                                          (unsafe-fx- remaining 1)
+                                          (cons v acc)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      acc)])))))))
+             (raise-stream-ended-before-index
+              'stream-take
+              (pvector-filter-take-stream-index st))))]
+      [else
+       (let loop ([s s] [remaining remaining] [acc null])
+         (cond
+           [(unsafe-fx= remaining 0)
+            (reverse acc)]
+           [(stream-empty? s)
+            (raise-stream-ended-before-index
+             'stream-take
+             (pvector-filter-take-stream-index st))]
+           [else
+            (let ([v (stream-first s)])
+              (loop (stream-rest s)
+                    (unsafe-fx- remaining 1)
+                    (cons v acc)))]))])))
+
+(define (pvector-filter-stream-count f st)
+  (let ([pos (pvector-filter-stream-force! st)])
+	    (if pos
+	        (let ([filter-f (pvector-filter-stream-f st)]
+	              [s (pvector-filter-stream-s st)]
+	              [len (pvector-filter-stream-len st)]
+	              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	          (let ([first (ref s pos)])
+	            (let loop ([index (unsafe-fx+ pos 1)]
+	                       [count (if (f first) 1 0)])
+	              (if (unsafe-fx>= index len)
+	                  count
+	                  (let ([v (ref s index)])
+	                    (loop (unsafe-fx+ index 1)
+	                          (if (and (filter-f v) (f v))
+	                              (unsafe-fx+ count 1)
+	                              count)))))))
+	        0)))
+
+(define (pvector-filter-stream-for-each f st)
+  (let ([pos (pvector-filter-stream-force! st)])
+	    (when pos
+	      (let ([filter-f (pvector-filter-stream-f st)]
+	            [s (pvector-filter-stream-s st)]
+	            [len (pvector-filter-stream-len st)]
+	            [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	        (f (ref s pos))
+	        (let loop ([index (unsafe-fx+ pos 1)])
+	          (unless (unsafe-fx>= index len)
+	            (let ([v (ref s index)])
+	              (when (filter-f v) (f v)))
+	            (loop (unsafe-fx+ index 1))))))))
+
+(define (pvector-filter-stream-fold f init st)
+  (let ([pos (pvector-filter-stream-force! st)])
+	    (if pos
+	        (let ([filter-f (pvector-filter-stream-f st)]
+	              [s (pvector-filter-stream-s st)]
+	              [len (pvector-filter-stream-len st)]
+	              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+	          (let loop ([index (unsafe-fx+ pos 1)]
+	                     [acc (f init (ref s pos))])
+	            (if (unsafe-fx>= index len)
+	                acc
+	                (let ([v (ref s index)])
+	                  (loop (unsafe-fx+ index 1)
+	                        (if (filter-f v) (f acc v) acc))))))
+	        init)))
+
+(define (pvector-filter-take-stream-count f st)
+  (let ([s (pvector-filter-take-stream-s st)]
+        [remaining (pvector-filter-take-stream-remaining st)])
+    (cond
+      [(unsafe-fx= remaining 0) 0]
+      [(pvector-filter-stream? s)
+       (let ([pos (pvector-filter-stream-force! s)])
+         (if pos
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [first (ref source pos)]
+                    [count (if (f first) 1 0)])
+               (if (unsafe-fx= remaining 1)
+                   count
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [count count])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(filter-f v)
+                                (let ([count (if (f v)
+                                                 (unsafe-fx+ count 1)
+                                                 count)])
+                                  (if (unsafe-fx= remaining 1)
+                                      (return count)
+                                      (loop (unsafe-fx+ index 1)
+                                            (unsafe-fx- remaining 1)
+                                            count)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      count)])))))))
+             (raise-stream-ended-before-index
+              'stream-take
+              (pvector-filter-take-stream-index st))))]
+      [else
+       (let loop ([s s] [remaining remaining] [count 0])
+         (cond
+           [(unsafe-fx= remaining 0) count]
+           [(stream-empty? s)
+            (raise-stream-ended-before-index
+             'stream-take
+             (pvector-filter-take-stream-index st))]
+           [else
+            (loop (stream-rest s)
+                  (unsafe-fx- remaining 1)
+                  (if (call-with-values (lambda () (stream-first s)) f)
+                      (unsafe-fx+ count 1)
+                      count))]))])))
+
+(define (pvector-filter-take-stream-for-each f st)
+  (let ([s (pvector-filter-take-stream-s st)]
+        [remaining (pvector-filter-take-stream-remaining st)])
+    (cond
+      [(unsafe-fx= remaining 0) (void)]
+      [(pvector-filter-stream? s)
+       (let ([pos (pvector-filter-stream-force! s)])
+         (if pos
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)])
+               (f (ref source pos))
+               (unless (unsafe-fx= remaining 1)
+                 (let/ec return
+                   (let loop ([index (unsafe-fx+ pos 1)]
+                              [remaining (unsafe-fx- remaining 1)])
+                     (if (unsafe-fx>= index len)
+                         (raise-stream-ended-before-index
+                          'stream-take
+                          (pvector-filter-take-stream-index st))
+                         (let ([v (ref source index)])
+                           (cond
+                             [(filter-f v)
+                              (f v)
+                              (if (unsafe-fx= remaining 1)
+                                  (return (void))
+                                  (loop (unsafe-fx+ index 1)
+                                        (unsafe-fx- remaining 1)))]
+                             [else
+                              (loop (unsafe-fx+ index 1) remaining)])))))))
+             (raise-stream-ended-before-index
+              'stream-take
+              (pvector-filter-take-stream-index st))))]
+      [else
+       (let loop ([s s] [remaining remaining])
+         (cond
+           [(unsafe-fx= remaining 0) (void)]
+           [(stream-empty? s)
+            (raise-stream-ended-before-index
+             'stream-take
+             (pvector-filter-take-stream-index st))]
+           [else
+            (f (stream-first s))
+            (loop (stream-rest s)
+                  (unsafe-fx- remaining 1))]))])))
+
+(define (pvector-filter-take-stream-fold f init st)
+  (let ([s (pvector-filter-take-stream-s st)]
+        [remaining (pvector-filter-take-stream-remaining st)])
+    (cond
+      [(unsafe-fx= remaining 0) init]
+      [(pvector-filter-stream? s)
+       (let ([pos (pvector-filter-stream-force! s)])
+         (if pos
+             (let* ([filter-f (pvector-filter-stream-f s)]
+                    [source (pvector-filter-stream-s s)]
+                    [len (pvector-filter-stream-len s)]
+                    [ref (vector-ref (pvector-filter-stream-procs s) 15)]
+                    [acc (f init (ref source pos))])
+               (if (unsafe-fx= remaining 1)
+                   acc
+                   (let/ec return
+                     (let loop ([index (unsafe-fx+ pos 1)]
+                                [remaining (unsafe-fx- remaining 1)]
+                                [acc acc])
+                       (if (unsafe-fx>= index len)
+                           (raise-stream-ended-before-index
+                            'stream-take
+                            (pvector-filter-take-stream-index st))
+                           (let ([v (ref source index)])
+                             (cond
+                               [(filter-f v)
+                                (let ([acc (f acc v)])
+                                  (if (unsafe-fx= remaining 1)
+                                      (return acc)
+                                      (loop (unsafe-fx+ index 1)
+                                            (unsafe-fx- remaining 1)
+                                            acc)))]
+                               [else
+                                (loop (unsafe-fx+ index 1)
+                                      remaining
+                                      acc)])))))))
+             (raise-stream-ended-before-index
+              'stream-take
+              (pvector-filter-take-stream-index st))))]
+      [else
+       (let loop ([s s] [remaining remaining] [acc init])
+         (cond
+           [(unsafe-fx= remaining 0) acc]
+           [(stream-empty? s)
+            (raise-stream-ended-before-index
+             'stream-take
+             (pvector-filter-take-stream-index st))]
+           [else
+            (loop (stream-rest s)
+                  (unsafe-fx- remaining 1)
+                  (call-with-values
+                   (lambda () (stream-first s))
+                   (case-lambda
+                     [(v) (f acc v)]
+                     [vs (apply f acc vs)])))]))])))
+
+(define (pvector-filter-stream->list st)
+  (let ([pos (pvector-filter-stream-force! st)])
+    (if pos
+        (let ([f (pvector-filter-stream-f st)]
+              [s (pvector-filter-stream-s st)]
+              [len (pvector-filter-stream-len st)]
+              [ref (vector-ref (pvector-filter-stream-procs st) 15)])
+          (let loop ([index (unsafe-fx+ pos 1)]
+                     [acc (list (ref s pos))])
+            (if (unsafe-fx>= index len)
+                (reverse acc)
+                (let ([v (ref s index)])
+                  (loop (unsafe-fx+ index 1)
+                        (if (f v)
+                            (cons v acc)
+                            acc))))))
+        null)))
+
 (define (stream-map f s)
   (unless (procedure? f) (raise-argument-error 'stream-map "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-map "stream?" s))
-  (stream-lazy
-   (let loop ([s s])
-     (cond
-       [(stream-empty? s) empty-stream]
-       [else (stream-cons (call-with-values (λ () (stream-first s)) f)
-                          (loop (stream-rest s)))]))))
+  (let ([procs (pvector-stream-procs-for s)])
+    (if (and procs
+             (or (eq? f values)
+                 (eq? f void)))
+        (pvector-stream-map f s procs)
+        (if procs
+            (pvector-stream-map/lazy f s procs)
+            (stream-lazy
+             (let loop ([s s])
+               (cond
+                 [(stream-empty? s) empty-stream]
+                 [else (stream-cons (call-with-values (λ () (stream-first s)) f)
+                                    (loop (stream-rest s)))])))))))
+
+(define (pvector-stream-andmap f s procs)
+  (let/ec return
+    (let ([last #t])
+      ((vector-ref procs 10)
+       s
+       (lambda (elem)
+         (let ([v (f elem)])
+           (if v
+               (set! last v)
+               (return #f)))))
+      last)))
+
+(define (pvector-stream-ormap f s procs)
+  (let/ec return
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (let ([v (f elem)])
+         (when v (return v)))))
+    #f))
+
+(define (pvector-stream-andmap-values s procs)
+  (let/ec return
+    (let ([last #t])
+      ((vector-ref procs 10)
+       s
+       (lambda (elem)
+         (if elem
+             (set! last elem)
+             (return #f))))
+      last)))
+
+(define (pvector-stream-ormap-values s procs)
+  (let/ec return
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when elem (return elem))))
+    #f))
+
+(define (pvector-stream-for-each/indexed f s procs)
+  (let ([len (pvector-stream-unsafe-length procs s)]
+        [ref (vector-ref procs 15)])
+    (let loop ([index 0])
+      (unless (unsafe-fx>= index len)
+        (f (ref s index))
+        (loop (unsafe-fx+ index 1))))))
+
+(define (pvector-stream-for-each f s procs)
+  (let ([len ((vector-ref procs 14) s)])
+    (cond
+      [(zero? len) (void)]
+      [(or (eq? f void)
+           (eq? f values))
+       (void)]
+      [(procedure-arity-includes? f 1)
+       ((vector-ref procs 10) s f)]
+      [else
+       (pvector-stream-for-each/indexed f s procs)])))
+
+(define (pvector-stream-fold f init s procs)
+  (let ([len (pvector-stream-unsafe-length procs s)])
+    (if (unsafe-fx= len 0)
+        init
+        (let ([acc init])
+          ((vector-ref procs 10)
+           s
+           (lambda (elem)
+             (set! acc (f acc elem))))
+          acc))))
+
+(define (pvector-stream-count f s procs)
+  (let ([count 0])
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when (f elem)
+         (set! count (unsafe-fx+ count 1)))))
+    count))
+
+(define (pvector-stream-count-values s procs)
+  (let ([count 0])
+    ((vector-ref procs 10)
+     s
+     (lambda (elem)
+       (when elem
+         (set! count (unsafe-fx+ count 1)))))
+    count))
+
+(define (pvector-backed-stream-andmap for-each f s)
+  (let/ec return
+    (let ([last #t])
+      (for-each
+       (case-lambda
+         [(v)
+          (let ([result (f v)])
+            (if result
+                (set! last result)
+                (return #f)))]
+         [vs
+          (let ([result (apply f vs)])
+            (if result
+                (set! last result)
+                (return #f)))])
+       s)
+      last)))
+
+(define (pvector-backed-stream-ormap for-each f s)
+  (let/ec return
+    (for-each
+     (case-lambda
+       [(v)
+        (let ([result (f v)])
+          (when result (return result)))]
+       [vs
+        (let ([result (apply f vs)])
+          (when result (return result)))])
+     s)
+    #f))
 
 (define (stream-andmap f s)
   (unless (procedure? f) (raise-argument-error 'stream-andmap "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-andmap "stream?" s))
-  (sequence-andmap f s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-backed-stream-andmap pvector-map-stream-for-each f s)]
+    [(pvector-filter-stream? s)
+     (pvector-backed-stream-andmap pvector-filter-stream-for-each f s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-backed-stream-andmap pvector-filter-take-stream-for-each f s)]
+    [(pvector-append-stream? s)
+     (pvector-backed-stream-andmap pvector-append-stream-for-each f s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (cond
+         [(and procs (eq? f void))
+          (if (zero? ((vector-ref procs 14) s)) #t (void))]
+         [(and procs (eq? f values))
+          (pvector-stream-andmap-values s procs)]
+         [procs
+          (pvector-stream-andmap f s procs)]
+         [else
+          (sequence-andmap f s)]))]))
 
 (define (stream-ormap f s)
   (unless (procedure? f) (raise-argument-error 'stream-ormap "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-ormap "stream?" s))
-  (sequence-ormap f s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-backed-stream-ormap pvector-map-stream-for-each f s)]
+    [(pvector-filter-stream? s)
+     (pvector-backed-stream-ormap pvector-filter-stream-for-each f s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-backed-stream-ormap pvector-filter-take-stream-for-each f s)]
+    [(pvector-append-stream? s)
+     (pvector-backed-stream-ormap pvector-append-stream-for-each f s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (cond
+         [(and procs (eq? f void))
+          (if (zero? ((vector-ref procs 14) s)) #f (void))]
+         [(and procs (eq? f values))
+          (pvector-stream-ormap-values s procs)]
+         [procs
+          (pvector-stream-ormap f s procs)]
+         [else
+          (sequence-ormap f s)]))]))
 
 (define (stream-for-each f s)
   (unless (procedure? f) (raise-argument-error 'stream-for-each "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-for-each "stream?" s))
-  (sequence-for-each f s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-map-stream-for-each f s)]
+    [(pvector-filter-stream? s)
+     (pvector-filter-stream-for-each f s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-filter-take-stream-for-each f s)]
+    [(pvector-append-stream? s)
+     (pvector-append-stream-for-each f s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (if procs
+           (pvector-stream-for-each f s procs)
+           (sequence-for-each f s)))]))
 
 (define (stream-fold f i s)
   (unless (procedure? f) (raise-argument-error 'stream-fold "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-fold "stream?" s))
-  (sequence-fold f i s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-map-stream-fold f i s)]
+    [(pvector-filter-stream? s)
+     (pvector-filter-stream-fold f i s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-filter-take-stream-fold f i s)]
+    [(pvector-append-stream? s)
+     (pvector-append-stream-fold f i s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (cond
+         [(and procs (eq? f void))
+          (if (zero? ((vector-ref procs 14) s)) i (void))]
+         [procs
+          (pvector-stream-fold f i s procs)]
+         [else
+          (sequence-fold f i s)]))]))
 
 (define (stream-count f s)
   (unless (procedure? f) (raise-argument-error 'stream-count "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-count "stream?" s))
-  (sequence-count f s))
+  (cond
+    [(pvector-map-stream? s)
+     (pvector-map-stream-count f s)]
+    [(pvector-filter-stream? s)
+     (pvector-filter-stream-count f s)]
+    [(pvector-filter-take-stream? s)
+     (pvector-filter-take-stream-count f s)]
+    [(pvector-append-stream? s)
+     (pvector-append-stream-count f s)]
+    [else
+     (let ([procs (pvector-stream-procs-for s)])
+       (cond
+         [(and procs (eq? f void))
+          ((vector-ref procs 14) s)]
+         [(and procs (eq? f values))
+          (pvector-stream-count-values s procs)]
+         [procs
+          (pvector-stream-count f s procs)]
+         [else
+          (sequence-count f s)]))]))
 
 (define (stream-filter f s)
   (unless (procedure? f) (raise-argument-error 'stream-filter "procedure?" f))
   (unless (stream? s) (raise-argument-error 'stream-filter "stream?" s))
-  (stream-lazy
-   (let loop ([s s])
-     (cond
-       [(stream-empty? s) empty-stream]
-       [(call-with-values (λ () (stream-first s)) f)
-        (define v (thunk->multivalue (λ () (stream-first s))))
-        (stream-cons (unpack-multivalue v)
-                     (loop (stream-rest s)))]
-       [else (loop (stream-rest s))]))))
+  (let ([procs (pvector-stream-procs-for s)])
+    (cond
+      [(and procs (eq? f void)) s]
+      [(and procs (eq? f values))
+       (pvector-stream-filter-values s procs)]
+      [procs
+       (pvector-stream-filter/lazy f s procs)]
+      [else
+       (stream-lazy
+        (let loop ([s s])
+          (cond
+            [(stream-empty? s) empty-stream]
+            [(call-with-values (λ () (stream-first s)) f)
+             (define v (thunk->multivalue (λ () (stream-first s))))
+             (stream-cons (unpack-multivalue v)
+                          (loop (stream-rest s)))]
+            [else (loop (stream-rest s))])))])))
+
+(define (pvector-stream-filter-values s procs)
+  (let ([len (pvector-stream-unsafe-length procs s)]
+        [ref (vector-ref procs 15)])
+    (define (copy-prefix! out stop-count)
+      (let loop ([index 0])
+        (unless (unsafe-fx= index stop-count)
+          (unsafe-vector-set! out index (ref s index))
+          (loop (unsafe-fx+ index 1)))))
+    (let loop ([index 0]
+               [count 0]
+               [seen-false? #f]
+               [out #f])
+      (if (unsafe-fx>= index len)
+          (cond
+            [(not seen-false?) s]
+            [(unsafe-fx= count 0) ((vector-ref procs 6))]
+            [out ((vector-ref procs 9) (vector-copy out 0 count))]
+            [else
+             (define out (make-vector count))
+             (copy-prefix! out count)
+             ((vector-ref procs 9) out)])
+          (let ([v (ref s index)])
+            (cond
+              [v
+               (cond
+                 [out
+                  (unsafe-vector-set! out count v)
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)]
+                 [seen-false?
+                  (define out (make-vector len))
+                  (copy-prefix! out count)
+                  (unsafe-vector-set! out count v)
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)]
+                 [else
+                  (loop (unsafe-fx+ index 1)
+                        (unsafe-fx+ count 1)
+                        seen-false?
+                        out)])]
+              [else
+               (loop (unsafe-fx+ index 1)
+                     count
+                     #t
+                     out)]))))))
+
+(define (pvector-stream-add-between s e procs)
+  (let* ([len (pvector-stream-unsafe-length procs s)]
+         [ref (vector-ref procs 15)]
+         [pvector-empty (vector-ref procs 6)])
+    (cond
+      [(unsafe-fx= len 0) (pvector-empty)]
+      [(unsafe-fx= len 1) s]
+      [else
+       (let* ([out-len (unsafe-fx- (unsafe-fx* len 2) 1)]
+              [out (make-vector out-len e)])
+         (let loop ([index 0] [out-pos 0])
+           (unless (unsafe-fx>= index len)
+             (unsafe-vector-set! out out-pos (ref s index))
+             (loop (unsafe-fx+ index 1)
+                   (unsafe-fx+ out-pos 2))))
+        ((vector-ref procs 9) (vector->immutable-vector out)))])))
 
 (define (stream-add-between s e)
   (unless (stream? s)
     (raise-argument-error 'stream-add-between "stream?" s))
-  (stream-lazy
-   (cond
-     [(stream-empty? s) empty-stream]
-     [else
-      (stream-cons
-       (stream-first s)
-       (let loop ([s (stream-rest s)])
+  (let ([procs (pvector-stream-procs-for s)])
+    (if procs
+        (pvector-stream-add-between s e procs)
+        (stream-lazy
          (cond
            [(stream-empty? s) empty-stream]
            [else
-            (stream-cons e
-                         (stream-cons (stream-first s)
-                                      (loop (stream-rest s))))])))])))
+            (stream-cons
+             (stream-first s)
+             (let loop ([s (stream-rest s)])
+               (cond
+                 [(stream-empty? s) empty-stream]
+                 [else
+                  (stream-cons e
+                               (stream-cons (stream-first s)
+                                            (loop (stream-rest s))))])))])))))
 
 ;; Impersonators and Chaperones ----------------------------------------------------------------------
 ;; (these are private because they would fail on lists, which satisfy `stream?`)

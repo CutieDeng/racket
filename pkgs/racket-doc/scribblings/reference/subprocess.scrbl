@@ -218,51 +218,80 @@ success. If the process terminated due to a fault or signal, the exit
 code is non-zero.}
 
 
-@defproc[(subprocess-kill [subproc subprocess?] [force? any/c]) void?]{
+@defproc[(subprocess-kill [subproc subprocess?]
+                          [signal-spec (or/c boolean?
+                                             'kill 'interrupt 'terminate 'hang-up 'quit
+                                             (integer-in 1 255))])
+         void?]{
 
-Terminates the subprocess represented by @racket[subproc]. The precise
-action depends on whether @racket[force?] is true, whether the process
-was created in its own group by setting the
-@racket[subprocess-group-enabled] parameter to a true value, and the
-current platform:
+Sends a signal to the subprocess represented by @racket[subproc]. The
+signal is selected by @racket[signal-spec]:
 
 @itemlist[
 
- @item{@racket[force?] is true, not a group, all platforms: Terminates
-       the process if the process still running.}
+ @item{@racket[#t] or @racket['kill] --- a kill signal: @tt{SIGKILL}
+       on Unix and Mac OS, @tt{TerminateProcess} on Windows. The
+       process cannot handle or ignore this signal.}
 
- @item{@racket[force?] is false, not a group, on Unix or Mac OS:
-       Sends the process an interrupt signal instead of a kill
-       signal.}
+ @item{@racket[#f] or @racket['interrupt] --- an interrupt signal:
+       @tt{SIGINT} on Unix and Mac OS. On Windows, all processes in
+       the group receive a CTRL-BREAK signal if @racket[subproc] was
+       created as a new group, otherwise no action is taken.}
 
- @item{@racket[force?] is false, not a group, on Windows: No action
-       is taken.}
+ @item{@racket['terminate] --- a termination request: @tt{SIGTERM} on
+       Unix and Mac OS, which by default terminates the process but
+       gives it a chance to clean up. On Windows, there is no direct
+       equivalent, and the signal is delivered best-effort: all
+       processes in the group receive a CTRL-BREAK signal if
+       @racket[subproc] was created as a new group, otherwise the
+       process is terminated as for @racket['kill].}
 
- @item{@racket[force?] is true, a group, on Unix or Mac OS:
-       Terminates all processes in the group, but only if
-       @racket[subprocess-status] has never produced a
-       non-@racket['running] result for the subprocess and only if
-       functions like @racket[subprocess-wait] and @racket[sync] have
-       not detected the subprocess's completion. Otherwise, no action
-       is taken (because the immediate process is known to have
-       terminated while the continued existence of the group is
-       unknown).}
+ @item{@racket['hang-up] --- @tt{SIGHUP} on Unix and Mac OS. On
+       Windows, the @exnraise[exn:fail].}
 
- @item{@racket[force?] is true, a group, on Windows: Terminates
-       the process if the process still running.}
+ @item{@racket['quit] --- @tt{SIGQUIT} on Unix and Mac OS. On
+       Windows, the @exnraise[exn:fail].}
 
- @item{@racket[force?] is false, a group, on Unix or Mac OS: The
-       same as when @racket[force?] is @racket[#t], but when the group
-       is sent a signal, it is an interrupt signal instead of a kill
-       signal.}
-
- @item{@racket[force?] is false, a group, on Windows: All processes
-       in the group receive a CTRL-BREAK signal (independent of
-       whether the immediate subprocess has terminated).}
+ @item{an exact integer --- the operating system's signal with that
+       number on Unix and Mac OS. On Windows, only @racket[2],
+       @racket[9], and @racket[15] are accepted, behaving as
+       @racket['interrupt], @racket['kill], and @racket['terminate],
+       respectively; for any other integer, the
+       @exnraise[exn:fail].}
 
 ]
 
-If an error occurs during termination, the @exnraise[exn:fail].}
+If the process was created in its own group by setting the
+@racket[subprocess-group-enabled] parameter to a true value (or with
+@racket['new] as the @racket[_group] argument to @racket[subprocess]),
+then on Unix and Mac OS the signal is sent to all processes in the
+group---but only if @racket[subprocess-status] has never produced a
+non-@racket['running] result for the subprocess and only if functions
+like @racket[subprocess-wait] and @racket[sync] have not detected the
+subprocess's completion. Otherwise, no action is taken (because the
+immediate process is known to have terminated while the continued
+existence of the group is unknown).
+
+Beware that an interrupt signal is not a reliable way to stop a
+process tree: POSIX shells start background jobs with @tt{SIGINT} (and
+@tt{SIGQUIT}) set to be ignored, and that disposition is inherited
+across @tt{exec}, so an entire subprocess tree can silently ignore
+@racket['interrupt] signals when the Racket process itself was started
+in the background. A @racket['terminate] signal is not affected by
+that default and still allows the target process to clean up, which
+makes it the usual choice for gracefully stopping a subprocess; a
+@racket['kill] signal is the non-graceful fallback. Alternatively, the
+@racket[current-subprocess-reset-signals] parameter can restore the
+default disposition of inherited-ignored signals when a subprocess is
+created.
+
+If an error occurs when sending the signal, the @exnraise[exn:fail].
+
+Note that a true or false value for @racket[signal-spec] selects the
+same behavior as in versions of Racket where only a boolean was
+accepted, but a value that is neither a boolean nor one of the
+specifiers listed above is now rejected, whereas it was previously
+treated the same as @racket[#t].}
 
 
 @defproc[(subprocess-pid [subproc subprocess?]) exact-nonnegative-integer?]{
@@ -278,19 +307,32 @@ Returns @racket[#t] if @racket[v] is a subprocess value, @racket[#f]
 otherwise.}
 
 
-@defparam[current-subprocess-custodian-mode mode (or/c #f 'kill 'interrupt)]{
+@defproc[(subprocess-group? [subproc subprocess?]) boolean?]{
+
+Returns @racket[#t] if @racket[subproc] was created as a new OS-level
+process group (see @racket[subprocess] and
+@racket[subprocess-group-enabled]), @racket[#f] otherwise. A signal
+sent via @racket[subprocess-kill] reaches all processes in the group
+only when the result is @racket[#t]; otherwise, it affects just the
+one process.}
+
+
+@defparam[current-subprocess-custodian-mode mode (or/c #f
+                                                       'kill 'interrupt 'terminate 'hang-up 'quit
+                                                       (integer-in 1 255))]{
 
 A @tech{parameter} that determines whether a subprocess (as created by
 @racket[subprocess] or wrappers like @racket[process]) is registered
 with the current @tech{custodian}. If the parameter value is
 @racket[#f], then the subprocess is not registered with the
-custodian---although any created ports are registered. If the
-parameter value is @racket['kill] or @racket['interrupt], then the
-subprocess is shut down through @racket[subprocess-kill], where
-@racket['kill] supplies a @racket[#t] value for the @racket[_force?]
-argument and @racket['interrupt] supplies a @racket[#f] value. The
-shutdown may occur either before or after ports created for the
-subprocess are closed.
+custodian---although any created ports are registered. For any other
+parameter value, the subprocess is shut down through
+@racket[subprocess-kill] with the parameter value as the
+@racket[_signal-spec] argument; for example, @racket['kill] forcibly
+terminates the subprocess, while @racket['terminate] sends a
+termination request (@tt{SIGTERM} on Unix and Mac OS). The shutdown
+may occur either before or after ports created for the subprocess are
+closed.
 
 Custodian-triggered shutdown is limited by details of process handling
 in the host system. For example, @racket[process] and @racket[system]
@@ -317,6 +359,30 @@ by @racket[subprocess] or wrappers like @racket[process]. See
 @racket[subprocess] for more information.
 
 @history[#:added "8.3.0.4"]}
+
+
+@defparam[current-subprocess-reset-signals signals (listof (or/c 'interrupt 'quit 'hang-up))]{
+
+A @tech{parameter} that determines which signals are reset to their
+default disposition in a subprocess as created by @racket[subprocess]
+or wrappers like @racket[process], before the new program is started
+in the subprocess. The default is @racket['()], which resets no
+signals.
+
+On Unix and Mac OS, a signal disposition of ``ignored'' is inherited
+across @tt{exec}: a shell starts background jobs with @tt{SIGINT}
+(@racket['interrupt]) and @tt{SIGQUIT} (@racket['quit]) ignored, and
+@exec{nohup} runs a program with @tt{SIGHUP} (@racket['hang-up])
+ignored, so when the Racket process itself was started in one of
+those ways, its subprocesses---and their subprocesses, and so
+on---ignore those signals, too. In particular, sending
+@racket['interrupt] through @racket[subprocess-kill] silently has no
+effect on such a subprocess. Resetting a signal via this parameter
+restores the subprocess's default disposition for the signal, making
+it receivable again.
+
+On Windows, this parameter has no effect, since there is no inherited
+signal disposition to reset.}
 
 
 @defproc[(shell-execute [verb (or/c string? #f)]

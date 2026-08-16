@@ -718,7 +718,11 @@ static Scheme_Object *utf16_pointer_to_ucs4_string(unsigned short *utf)
     FFI_TYPE_STRUCT, NULL					
   };
 }{
-  @DEFINE{ffi_type_slongdouble ffi_type_longdouble}
+  @@@IFDEF{MZ_LONG_DOUBLE}{
+    @DEFINE{ffi_type_slongdouble ffi_type_longdouble}
+  }{
+    @DEFINE{ffi_type_slongdouble ffi_type_double}
+  }
 }
 @@@IFDEF{MZ_LONG_DOUBLE}{
   @DEFINE{SCHEME_MAYBE_LONG_DBL_VAL(x) SCHEME_LONG_DBL_VAL(x)}

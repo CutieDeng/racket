@@ -22,6 +22,7 @@
                      config:info-domain-root
                      define-finder
                      get-config-table
+                     get-pkg-catalog-lookup-version
                      to-path)
          find-cross-dll-dir
          find-dll-dir

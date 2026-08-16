@@ -87,6 +87,13 @@ define_ts_iS_s(scheme_checked_fxvector_ref, FSRC_MARKS)
 define_ts_iS_s(scheme_checked_fxvector_set, FSRC_MARKS)
 define_ts_s_s(scheme_vector_length, FSRC_MARKS)
 define_ts_s_s(scheme_vector_star_length, FSRC_MARKS)
+define_ts_s_s(scheme_pvector_length, FSRC_MARKS)
+define_ts_ss_s(scheme_pvector_ref, FSRC_MARKS)
+define_ts_s_s(scheme_pvector_view_left, FSRC_MARKS)
+define_ts_s_s(scheme_pvector_view_right, FSRC_MARKS)
+define_ts_ss_s(scheme_pvector_cons_left, FSRC_MARKS)
+define_ts_ss_s(scheme_pvector_cons_right, FSRC_MARKS)
+define_ts_ss_s(scheme_unsafe_pvector_ref, FSRC_MARKS)
 define_ts_s_s(scheme_flvector_length, FSRC_MARKS)
 #ifdef MZ_LONG_DOUBLE
 define_ts_s_s(scheme_extflvector_length, FSRC_MARKS)
@@ -224,6 +231,13 @@ define_ts_s_s(scheme_box, FSRC_OTHER)
 # define ts_scheme_chaperone_get_immediate_cc_mark scheme_chaperone_get_immediate_cc_mark
 # define ts_scheme_vector_length scheme_vector_length
 # define ts_scheme_vector_star_length scheme_vector_star_length
+# define ts_scheme_pvector_length scheme_pvector_length
+# define ts_scheme_pvector_ref scheme_pvector_ref
+# define ts_scheme_pvector_view_left scheme_pvector_view_left
+# define ts_scheme_pvector_view_right scheme_pvector_view_right
+# define ts_scheme_pvector_cons_left scheme_pvector_cons_left
+# define ts_scheme_pvector_cons_right scheme_pvector_cons_right
+# define ts_scheme_unsafe_pvector_ref scheme_unsafe_pvector_ref
 # define ts_scheme_flvector_length scheme_flvector_length
 #ifdef MZ_LONG_DOUBLE
 # define ts_scheme_extflvector_length scheme_extflvector_length

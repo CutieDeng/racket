@@ -17,6 +17,53 @@
 (define (create-mutable-hash ht lock) (make-mutable-hash lock #f #t ht))
 (define (create-eq-mutable-hash ht) (make-eq-mutable-hash (make-nonscheduler-lock) #f #t ht))
 
+;; The strong variants of the built-in mutable hash tables are backed
+;; by a SwissTable (rumble/swisstable.ss) in strong-cell mode: entries
+;; are ordinary (key . value) pairs that behave like Chez hashtable
+;; cells, so the cells-snapshot iteration machinery below works
+;; unchanged. Weak and ephemeron variants stay on Chez hashtables,
+;; whose GC integration unlinks dead entries directly, and so do the
+;; unsafe scheduler/linklet tables, whose raw Chez table is exposed
+;; via `hash->eq-hashtable`. The lock discipline lives entirely in
+;; the `mutable-hash` wrapper (scheduler locks for equal/equal-always,
+;; CAS-based locks for eq/eqv), so concurrency behavior is inherited
+;; by construction.
+;;
+;; The default is #f: the built-in tables keep the Chez backend, and
+;; the SwissTable representation is offered as the separate
+;; `racket/swisstable` library (with a dict interface) instead, so
+;; existing code sees no change in performance characteristics.
+;; Setting this to #t switches every non-unsafe constructor to the
+;; SwissTable backend; that configuration bootstraps and passes the
+;; full test suite, and is kept for opt-in experiments.
+(define enable-swisstable-mutable-hash? #f)
+
+;; Dispatchers over the two backends; `t` is `(mutable-hash-ht ht)`
+(define (mh-ref t k none-v)
+  (if (core-swisstable? t)
+      (core-swisstable-ref t k none-v)
+      (hashtable-ref t k none-v)))
+(define (mh-set! t k v)
+  (if (core-swisstable? t)
+      (core-swisstable-set! t k v)
+      (hashtable-set! t k v)))
+(define (mh-delete! t k)
+  (if (core-swisstable? t)
+      (begin (core-swisstable-remove! t k) (void))
+      (hashtable-delete! t k)))
+(define (mh-clear! t)
+  (if (core-swisstable? t)
+      (core-swisstable-clear! t)
+      (hashtable-clear! t)))
+(define (mh-size t)
+  (if (core-swisstable? t)
+      (core-swisstable-count t)
+      (hashtable-size t)))
+(define (mh-cells t n)
+  (if (core-swisstable? t)
+      (swisstable-table-cells t n)
+      (hashtable-cells t n)))
+
 ;; without locks, so that they can be used from a scheduler
 (define (unsafe-make-hasheq) (make-eq-mutable-hash #f #f #t (make-eq-hashtable)))
 (define (unsafe-make-weak-hasheq) (make-eq-mutable-hash #f #f #t (make-weak-eq-hashtable)))
@@ -40,22 +87,33 @@
 
 (define/who make-hash
   (case-lambda
-   [() (create-mutable-hash (make-hashtable key-equal-hash-code key-equal?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 3 0)
+                                (make-hashtable key-equal-hash-code key-equal?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-hash) alist)]))
 
 (define/who make-weak-hash
   (case-lambda
-   [() (create-mutable-hash (make-weak-hashtable key-equal-hash-code key-equal?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 3 1)
+                                (make-weak-hashtable key-equal-hash-code key-equal?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-weak-hash) alist)]))
 
 (define/who make-ephemeron-hash
   (case-lambda
-   [() (create-mutable-hash (make-ephemeron-hashtable key-equal-hash-code key-equal?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 3 2)
+                                (make-ephemeron-hashtable key-equal-hash-code key-equal?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-ephemeron-hash) alist)]))
 
 (define/who make-hasheq
   (case-lambda
-   [() (create-eq-mutable-hash (make-eq-hashtable))]
+   [() (create-eq-mutable-hash (if enable-swisstable-mutable-hash?
+                                   (swisstable-make-hash-backend 0 0)
+                                   (make-eq-hashtable)))]
    [(alist) (fill-hash! who (make-hasheq) alist)]))
 
 (define (eq-hashtable->hash ht)
@@ -65,43 +123,65 @@
 
 (define/who make-weak-hasheq
   (case-lambda
-   [() (create-eq-mutable-hash (make-weak-eq-hashtable))]
+   [() (create-eq-mutable-hash (if enable-swisstable-mutable-hash?
+                                   (swisstable-make-hash-backend 0 1)
+                                   (make-weak-eq-hashtable)))]
    [(alist) (fill-hash! who (make-weak-hasheq) alist)]))
 
 (define/who make-ephemeron-hasheq
   (case-lambda
-   [() (create-eq-mutable-hash (make-ephemeron-eq-hashtable))]
+   [() (create-eq-mutable-hash (if enable-swisstable-mutable-hash?
+                                   (swisstable-make-hash-backend 0 2)
+                                   (make-ephemeron-eq-hashtable)))]
    [(alist) (fill-hash! who (make-ephemeron-hasheq) alist)]))
 
 (define/who make-hasheqv
   (case-lambda
-   [() (create-mutable-hash (make-eqv-hashtable) (make-nonscheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 1 0)
+                                (make-eqv-hashtable))
+                            (make-nonscheduler-lock))]
    [(alist) (fill-hash! who (make-hasheqv) alist)]))
 
 (define/who make-weak-hasheqv
   (case-lambda
-   [() (create-mutable-hash (make-weak-eqv-hashtable) (make-nonscheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 1 1)
+                                (make-weak-eqv-hashtable))
+                            (make-nonscheduler-lock))]
    [(alist) (fill-hash! who (make-weak-hasheqv) alist)]))
 
 (define/who make-ephemeron-hasheqv
   (case-lambda
-   [() (create-mutable-hash (make-ephemeron-eqv-hashtable) (make-nonscheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 1 2)
+                                (make-ephemeron-eqv-hashtable))
+                            (make-nonscheduler-lock))]
    [(alist) (fill-hash! who (make-ephemeron-hasheqv) alist)]))
 
 ;; hashalw is for equal ALWays, first 3 letters of "always" since "equal" is implicit
 (define/who make-hashalw
   (case-lambda
-   [() (create-mutable-hash (make-hashtable key-equal-always-hash-code key-equal-always?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 4 0)
+                                (make-hashtable key-equal-always-hash-code key-equal-always?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-hashalw) alist)]))
 
 (define/who make-weak-hashalw
   (case-lambda
-   [() (create-mutable-hash (make-weak-hashtable key-equal-always-hash-code key-equal-always?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 4 1)
+                                (make-weak-hashtable key-equal-always-hash-code key-equal-always?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-weak-hashalw) alist)]))
 
 (define/who make-ephemeron-hashalw
   (case-lambda
-   [() (create-mutable-hash (make-ephemeron-hashtable key-equal-always-hash-code key-equal-always?) (make-scheduler-lock))]
+   [() (create-mutable-hash (if enable-swisstable-mutable-hash?
+                                (swisstable-make-hash-backend 4 2)
+                                (make-ephemeron-hashtable key-equal-always-hash-code key-equal-always?))
+                            (make-scheduler-lock))]
    [(alist) (fill-hash! who (make-ephemeron-hashalw) alist)]))
 
 (define/who (fill-hash! who ht alist)
@@ -160,19 +240,32 @@
 
 (define (mutable-hash-set! ht k v)
   (lock-acquire (mutable-hash-lock ht))
-  (cond
-    [(locked-iterable-hash-cells ht)
-     ;; If `k` is already mapped, we're obliged to keep a cells vector that
-     ;; may be in progress, but if it's new, we can flush
-     (let ([p (hashtable-cell (mutable-hash-ht ht) k none2)])
-       (when (eq? (cdr p) none2)
-         ;; Flushing `cells` allows the vector to shrink if entries are removed
-         (set-locked-iterable-hash-cells! ht #f)
-         ;; Setting `hash-retry?` ensures that the vector is grown until it covers all entries
-         (set-locked-iterable-hash-retry?! ht #t))
-       (set-cdr! p v))]
-    [else
-     (hashtable-set! (mutable-hash-ht ht) k v)])
+  (let ([t (mutable-hash-ht ht)])
+    (cond
+      [(core-swisstable? t)
+       (let ([r (swisstable-table-set!* t k v)])
+         (cond
+           [(fx< r 0)
+            ;; new key: flush any snapshot, like the Chez backend
+            (when (locked-iterable-hash-cells ht)
+              (set-locked-iterable-hash-cells! ht #f)
+              (set-locked-iterable-hash-retry?! ht #t)
+              (swisstable-drop-snapshot! t))]
+           [else
+            ;; existing key: write through to the snapshot pair
+            (swisstable-snapshot-update! t r v)]))]
+      [(locked-iterable-hash-cells ht)
+       ;; If `k` is already mapped, we're obliged to keep a cells vector that
+       ;; may be in progress, but if it's new, we can flush
+       (let ([p (hashtable-cell t k none2)])
+         (when (eq? (cdr p) none2)
+           ;; Flushing `cells` allows the vector to shrink if entries are removed
+           (set-locked-iterable-hash-cells! ht #f)
+           ;; Setting `hash-retry?` ensures that the vector is grown until it covers all entries
+           (set-locked-iterable-hash-retry?! ht #t))
+         (set-cdr! p v))]
+      [else
+       (hashtable-set! t k v)]))
   (lock-release (mutable-hash-lock ht)))
 
 (define (hash-remove! ht k)
@@ -187,19 +280,29 @@
 
 (define (mutable-hash-remove! ht k)
   (lock-acquire (mutable-hash-lock ht))
-  (let ([cell (and (mutable-hash-cells ht)
-                   (hashtable-ref-cell (mutable-hash-ht ht) k))])
+  (let ([t (mutable-hash-ht ht)])
     (cond
-     [cell
-      (hashtable-delete! (mutable-hash-ht ht) k)
-      ;; Clear cell, because it may be in `(locked-iterable-hash-cells ht)`
-      (set-car! cell #!bwp)
-      (set-cdr! cell #!bwp)
-      ;; Setting `hash-retry?` allows an in-progress traversal to keep going,
-      ;; and it will pick up existing keys if they get reordered to earlier
-      (set-locked-iterable-hash-retry?! ht #t)]
-     [else
-      (hashtable-delete! (mutable-hash-ht ht) k)]))
+      [(core-swisstable? t)
+       ;; No cell to clear: the snapshot readers consult the table by
+       ;; key, so a removed key disappears from iteration on its own.
+       ;; Crucially, do not set `retry?`: a swisstable snapshot is
+       ;; complete when fetched, and re-fetching would produce pairs
+       ;; with fresh identities that `cells-merge` cannot deduplicate.
+       (core-swisstable-remove! t k)]
+      [else
+       (let ([cell (and (mutable-hash-cells ht)
+                        (hashtable-ref-cell t k))])
+         (cond
+          [cell
+           (hashtable-delete! t k)
+           ;; Clear cell, because it may be in `(locked-iterable-hash-cells ht)`
+           (set-car! cell #!bwp)
+           (set-cdr! cell #!bwp)
+           ;; Setting `hash-retry?` allows an in-progress traversal to keep going,
+           ;; and it will pick up existing keys if they get reordered to earlier
+           (set-locked-iterable-hash-retry?! ht #t)]
+          [else
+           (hashtable-delete! t k)]))]))
   (lock-release (mutable-hash-lock ht)))
 
 (define (hash-clear! ht)
@@ -223,7 +326,7 @@
   (lock-acquire (mutable-hash-lock ht))
   (set-locked-iterable-hash-cells! ht #f)
   (set-locked-iterable-hash-retry?! ht #t)
-  (hashtable-clear! (mutable-hash-ht ht))
+  (mh-clear! (mutable-hash-ht ht)) ; also drops any swisstable snapshot
   (lock-release (mutable-hash-lock ht)))
 
 (define (hash-copy ht)
@@ -249,12 +352,16 @@
 
 (define (mutable-hash-copy ht)
   (lock-acquire (mutable-hash-lock ht))
-  (let ([new-ht (if (eq-mutable-hash? ht)
-                    (create-eq-mutable-hash (hashtable-copy (mutable-hash-ht ht) #t))
-                    (create-mutable-hash (hashtable-copy (mutable-hash-ht ht) #t)
-                                         (cond
-                                           [(hash-eqv? ht) (make-nonscheduler-lock)]
-                                           [else (make-scheduler-lock)])))])
+  (let* ([t (mutable-hash-ht ht)]
+         [new-t (if (core-swisstable? t)
+                    (swisstable-table-copy t)
+                    (hashtable-copy t #t))]
+         [new-ht (if (eq-mutable-hash? ht)
+                     (create-eq-mutable-hash new-t)
+                     (create-mutable-hash new-t
+                                          (cond
+                                            [(hash-eqv? ht) (make-nonscheduler-lock)]
+                                            [else (make-scheduler-lock)])))])
     (lock-release (mutable-hash-lock ht))
     new-ht))
 
@@ -311,7 +418,10 @@
 (define/who (hash-eqv? ht)
   (cond
    [(mutable-hash? ht)
-    (eq? (hashtable-equivalence-function (mutable-hash-ht ht)) eqv?)]
+    (let ([t (mutable-hash-ht ht)])
+      (if (core-swisstable? t)
+          (fx= 1 (swisstable-kind-code t))
+          (eq? (hashtable-equivalence-function t) eqv?)))]
    [(intmap? ht)
     (intmap-eqv? ht)]
    [(and (impersonator? ht)
@@ -322,7 +432,10 @@
 (define/who (hash-equal? ht)
   (cond
    [(mutable-hash? ht)
-    (eq? (hashtable-equivalence-function (mutable-hash-ht ht)) key-equal?)]
+    (let ([t (mutable-hash-ht ht)])
+      (if (core-swisstable? t)
+          (fx= 3 (swisstable-kind-code t))
+          (eq? (hashtable-equivalence-function t) key-equal?)))]
    [(intmap? ht)
     (intmap-equal? ht)]
    [(and (impersonator? ht)
@@ -333,7 +446,10 @@
 (define/who (hash-equal-always? ht)
   (cond
    [(mutable-hash? ht)
-    (eq? (hashtable-equivalence-function (mutable-hash-ht ht)) key-equal-always?)]
+    (let ([t (mutable-hash-ht ht)])
+      (if (core-swisstable? t)
+          (fx= 4 (swisstable-kind-code t))
+          (eq? (hashtable-equivalence-function t) key-equal-always?)))]
    [(intmap? ht)
     (intmap-equal-always? ht)]
    [(and (impersonator? ht)
@@ -345,8 +461,10 @@
   (cond
     [(mutable-hash? ht)
      (let ([t (mutable-hash-ht ht)])
-       (not (or (hashtable-weak? t)
-                (hashtable-ephemeron? t))))]
+       (if (core-swisstable? t)
+           (fx= 0 (swisstable-weakness-code t))
+           (not (or (hashtable-weak? t)
+                    (hashtable-ephemeron? t)))))]
     [(intmap? ht) #t]
     [(and (impersonator? ht)
           (authentic-hash? (impersonator-val ht)))
@@ -356,7 +474,10 @@
 (define/who (hash-weak? ht)
   (cond
    [(mutable-hash? ht)
-    (hashtable-weak? (mutable-hash-ht ht))]
+    (let ([t (mutable-hash-ht ht)])
+      (if (core-swisstable? t)
+          (fx= 1 (swisstable-weakness-code t))
+          (hashtable-weak? t)))]
    [(intmap? ht) #f]
    [(and (impersonator? ht)
          (authentic-hash? (impersonator-val ht)))
@@ -366,7 +487,10 @@
 (define/who (hash-ephemeron? ht)
   (cond
    [(mutable-hash? ht)
-    (hashtable-ephemeron? (mutable-hash-ht ht))]
+    (let ([t (mutable-hash-ht ht)])
+      (if (core-swisstable? t)
+          (fx= 2 (swisstable-weakness-code t))
+          (hashtable-ephemeron? t)))]
    [(intmap? ht) #f]
    [(and (impersonator? ht)
          (authentic-hash? (impersonator-val ht)))
@@ -395,12 +519,15 @@
     (cond
      [(eq-mutable-hash? ht)
       (lock-acquire/a (mutable-hash-lock ht))
-      (let ([v (eq-hashtable-ref (mutable-hash-ht ht) k none)])
+      (let ([v (let ([t (mutable-hash-ht ht)])
+                 (if (core-swisstable? t)
+                     (core-swisstable-ref t k none)
+                     (eq-hashtable-ref t k none)))])
         (lock-release/a (mutable-hash-lock ht))
         v)]
      [else
       (lock-acquire (mutable-hash-lock ht))
-      (let ([v (hashtable-ref (mutable-hash-ht ht) k none)])
+      (let ([v (mh-ref (mutable-hash-ht ht) k none)])
         (lock-release (mutable-hash-lock ht))
         v)])]
    [(intmap? ht)
@@ -441,8 +568,11 @@
 
 (define (mutable-hash-ref-key/none ht k)
   (lock-acquire (mutable-hash-lock ht))
-  (let* ([pair (hashtable-ref-cell (mutable-hash-ht ht) k)]
-         [v (if pair (car pair) none)])
+  (let* ([t (mutable-hash-ht ht)]
+         [v (if (core-swisstable? t)
+                (swisstable-table-ref-key t k none)
+                (let ([pair (hashtable-ref-cell t k)])
+                  (if pair (car pair) none)))])
     (lock-release (mutable-hash-lock ht))
     v))
 
@@ -598,7 +728,7 @@
   (cond
    [(mutable-hash? ht)
     (lock-acquire (mutable-hash-lock ht))
-    (let ([sz (hashtable-size (mutable-hash-ht ht))])
+    (let ([sz (mh-size (mutable-hash-ht ht))])
       (lock-release (mutable-hash-lock ht))
       sz)]
    [(intmap? ht) (intmap-count ht)]
@@ -754,7 +884,7 @@
                                  0)
                              32))])
         (let ([len (#%vector-length new-vec)])
-          (when (fx= len (hashtable-size (mutable-hash-ht ht)))
+          (when (fx= len (mh-size (mutable-hash-ht ht)))
             (set-locked-iterable-hash-retry?! ht #f)))
         (let ([vec (cells-merge vec new-vec)])
           (set-locked-iterable-hash-cells! ht vec)
@@ -762,7 +892,9 @@
           vec))])))
 
 (define (get-locked-iterable-hash-cells ht n)
-  (let* ([vec (hashtable-cells (mutable-hash-ht ht) n)]
+  ;; v9.3 的 weak-cell 间接层,内层改用 fork 的 mh-cells (dispatch swisstable/hashtable);
+  ;; weak 包裹仅在 cells 为 weak-pair 时生效, 对 swisstable cells 是 no-op。
+  (let* ([vec (mh-cells (mutable-hash-ht ht) n)]
          [len (#%vector-length vec)])
     (when (and (fx> len 0)
                (weak-pair? (#%vector-ref vec 0)))

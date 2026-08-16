@@ -27,6 +27,7 @@
          (struct-out fd-output-port)
          open-output-fd
          finish-fd-output-port
+         fd-output-port-write-bytes-list!
          terminal-port?
          port-waiting-peer?
          fd-port-fd
@@ -194,6 +195,46 @@
   [raise-write-error
    (lambda (n)
      (raise-filesystem-error #f n "error writing to stream port"))]
+
+  ;; Blocking scatter/gather write of a list of byte strings. Called with
+  ;; the port lock held (via `with-lock`); flushes the pending buffer first
+  ;; to preserve order, then writes all slices with a single `rktio_writev`
+  ;; per attempt (zero-copy: slices are pinned, not concatenated), resuming
+  ;; byte-granularly across partial writes and waiting on the write-ready
+  ;; event when it would block. Mirrors `flush-buffer-fully`'s lock discipline:
+  ;; may temporarily release the lock, and unlocks itself before escaping on
+  ;; error (since `with-lock` uses `begin0`, not `dynamic-wind`).
+  [write-bytes-list-fully
+   (lambda (bstrs)
+     (slow-mode!)
+     (flush-buffer-fully #f)
+     (let loop ([rem (for/list ([b (in-list bstrs)]
+                                #:unless (fx= 0 (bytes-length b)))
+                       (vector b 0 (bytes-length b)))])
+       (cond
+         [(null? rem)
+          ;; account for the written bytes: advance the port's offset and,
+          ;; if line counting is on, update line/column from each slice.
+          (for ([b (in-list bstrs)] #:unless (fx= 0 (bytes-length b)))
+            (port-count! this (bytes-length b) b 0))]
+         [(not bstr) (void)]           ; closed while lock was released
+         [else
+          (define n (rktio_writev_pinned
+                     rktio fd
+                     (list->vector (map (lambda (t) (vector-ref t 0)) rem))
+                     (list->vector (map (lambda (t) (vector-ref t 1)) rem))
+                     (list->vector (map (lambda (t) (vector-ref t 2)) rem))))
+          (cond
+            [(rktio-error? n)
+             (port-unlock this)
+             (send fd-output-port this raise-write-error n)]
+            [(eqv? n 0)
+             ;; would block: release lock, wait for write-ready, retry
+             (port-unlock this)
+             (sync evt)
+             (port-lock this)
+             (loop rem)]
+            [else (loop (advance-slices rem n))])])))]
 
   #:private
   ;; lock held
@@ -405,6 +446,27 @@
              buffer-mode)])
    #:plumber plumber
    #:custodian cust))
+
+;; Advance a remaining-slices list past `n` written bytes (byte-granular):
+;; drop whole slices whose length is <= remaining, and advance the start of
+;; the slice that straddles the boundary. Each slice is a (vector bstr start end).
+(define (advance-slices rem n)
+  (cond
+    [(eqv? n 0) rem]
+    [(null? rem) '()]
+    [else
+     (define t (car rem))
+     (define len (fx- (vector-ref t 2) (vector-ref t 1)))
+     (if (fx>= n len)
+         (advance-slices (cdr rem) (fx- n len))
+         (cons (vector (vector-ref t 0) (fx+ (vector-ref t 1) n) (vector-ref t 2))
+               (cdr rem)))]))
+
+;; Public entry: scatter/gather write `bstrs` (a list of byte strings) to an
+;; fd-output-port, taking the port lock for the duration.
+(define (fd-output-port-write-bytes-list! out bstrs)
+  (with-lock out
+    (send fd-output-port out write-bytes-list-fully bstrs)))
 
 ;; in atomic mode or with custodian lock
 ;; current custodian must not be shut down

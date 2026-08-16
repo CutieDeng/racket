@@ -405,13 +405,121 @@
           vector->immutable-vector
           vector->list
 	  vector-extend
+
+          ;; pvector runtime candidate
+          core-pvector?
+          core-pvector-empty
+          core-pvector-empty?
+          core-pvector-length
+          core-pvector-shape-stats
+          core-vector->pvector
+          core-immutable-vector->pvector
+          core-fresh-vector->pvector
+          core-list->pvector
+          core-make-single-pvector
+          core-make-deep2-pvector
+          core-make-deep3-pvector
+          core-make-deep4-pvector
+          core-make-pvector
+          core-pvector->vector
+          core-pvector->list
+          core-pvector-ref
+          core-unsafe-pvector-length
+          core-unsafe-pvector-ref
+          core-unsafe-pvector-view-left
+          core-unsafe-pvector-view-right
+          core-unsafe-pvector-first
+          core-unsafe-pvector-last
+          core-pvector-cursor-start
+          core-pvector-cursor-value
+          core-pvector-cursor-next
+          core-pvector-cursor-value+next
+          core-pvector-view-left
+          core-pvector-view-right
+          core-pvector-set
+          core-pvector-cons-left
+          core-pvector-cons-right
+          core-pvector-pop-left
+          core-pvector-pop-right
+          core-pvector-append
+          core-pvector-map
+          core-pvector-for-each
+          core-pvector-fold-left
+          core-unsafe-pvector-for-each
+          core-unsafe-pvector-fold-left
+          core-pvector-split-at
+          core-pvector-split-at-right
+          core-pvector-split
+          core-pvector-insert
+          core-pvector-delete
+          core-pvector-take
+          core-pvector-drop
+          core-pvector-take-right
+          core-pvector-drop-right
+          core-pvector-copy
+          core-pvector-install-struct-property!
+          core-pvector-literal-emit!
+          core-pvector-literal->pvector
+
+          ;; ordered integer map runtime candidate
+          core-intmap?
+          core-intmap-empty
+          core-intmap-empty?
+          core-intmap-count
+          core-intmap-ref
+          core-intmap-has-key?
+          core-intmap-set
+          core-intmap-update
+          core-intmap-replace
+          core-intmap-set/absent
+          core-intmap-remove
+          core-intmap-remove/eq
+          core-intmap-remove/equal
+          core-intmap-replace/eq
+          core-intmap-replace/equal
+          core-intmap-entry<
+          core-intmap-entry<=
+          core-intmap-entry>
+          core-intmap-entry>=
+          core-intmap-min-entry
+          core-intmap-max-entry
+          core-intmap-range->list
+          core-sorted-vector->intmap
+          core-intmap-literal->intmap
+          core-intmap-cursor-start
+          core-intmap-cursor-key
+          core-intmap-cursor-value
+          core-intmap-cursor-next
+          core-intmap-cursor-key+value+next
+          core-intmap-shape-stats
+          core-intmap-install-struct-property!
+
+          ;; SwissTable mutable hash table runtime candidate
+          core-swisstable?
+          core-make-swisstable
+          core-swisstable-kind
+          core-swisstable-weakness
+          core-swisstable-count
+          core-swisstable-ref
+          core-swisstable-has-key?
+          core-swisstable-set!
+          core-swisstable-remove!
+          core-swisstable-clear!
+          core-swisstable-stats
+          core-swisstable-iterate-first
+          core-swisstable-iterate-next
+          core-swisstable-iterate-key
+          core-swisstable-iterate-value
+          core-swisstable-iterate-key+value
+          core-swisstable-install-struct-property!
+
           vector*-length
           vector*-ref
           vector*-set!
           vector*-copy
           vector*-append
           vector*-set/copy
-	  vector*-extend
+	        vector*-extend
 
           impersonate-vector
           impersonate-vector*
@@ -924,6 +1032,9 @@
   (include "rumble/char-range.ss")
   (include "rumble/list.ss")
   (include "rumble/vector.ss")
+  (include "rumble/pvector.ss")
+  (include "rumble/intmap-ordered.ss")
+  (include "rumble/swisstable.ss")
   (include "rumble/box.ss")
   (include "rumble/immutable.ss")
   (include "rumble/keyword.ss")
@@ -969,6 +1080,8 @@
   (set-impersonator-applicables!)
   (set-mpair-hash!)
   (set-hash-hash!)
+  (set-core-pvector-record-properties!)
+  (set-core-intmap-record-properties!)
   (set-extflonum-print!)
   (set-impersonator-hash!)
   (set-procedure-impersonator-hash!)

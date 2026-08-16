@@ -614,6 +614,51 @@ vector_obj {
 		    + ((vec->size - mzFLEX_DELTA) * sizeof(Scheme_Object *))));
 }
 
+pvector_obj {
+  Scheme_PVector *pv = (Scheme_PVector *)p;
+
+ mark:
+  if (pv->shape == SCHEME_PVECTOR_SINGLE) {
+    gcMARK2(pv->a, gc);
+  } else if (pv->shape == SCHEME_PVECTOR_DEEP) {
+    gcMARK2(pv->a, gc);
+    gcMARK2(pv->b, gc);
+    gcMARK2(pv->c, gc);
+  }
+
+ size:
+  gcBYTES_TO_WORDS(sizeof(Scheme_PVector));
+}
+
+pvector_node_obj {
+ mark:
+  if (SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT) {
+    Scheme_PVector_Digit *digit = (Scheme_PVector_Digit *)p;
+    int i;
+    for (i = digit->count; i--; )
+      gcMARK2(digit->els[i], gc);
+  } else if (SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE) {
+    Scheme_PVector_Node *node = (Scheme_PVector_Node *)p;
+    gcMARK2(node->a, gc);
+    gcMARK2(node->b, gc);
+    if (node->arity == 3)
+      gcMARK2(node->c, gc);
+  } else {
+    Scheme_PVector_Cursor *cursor = (Scheme_PVector_Cursor *)p;
+    gcMARK2(cursor->pv, gc);
+    gcMARK2(cursor->leaf, gc);
+    gcMARK2(cursor->stack, gc);
+    gcMARK2(cursor->stack_indexes, gc);
+  }
+
+ size:
+  ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_DIGIT)
+   ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Digit))
+   : ((SCHEME_PVECTOR_NODE_KIND(p) == SCHEME_PVECTOR_NODE_TREE)
+      ? gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Node))
+      : gcBYTES_TO_WORDS(sizeof(Scheme_PVector_Cursor))));
+}
+
 fxvector_obj {
  mark:
  size:

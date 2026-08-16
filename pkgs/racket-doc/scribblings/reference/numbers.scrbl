@@ -1059,9 +1059,11 @@ Provides an interface to randomness from the underlying operating system. Use
 @racket[crypto-random-bytes] instead of @racket[random] wherever security is a
 concern.
 
-Returns @racket[n] random bytes. On Unix systems, the bytes are
-obtained from @filepath{/dev/urandom}, while Windows uses
-the @tt{RtlGenRand} system function.
+Returns @racket[n] random bytes from the built-in @tech{rktcrypto}
+subsystem, which prefers the @tt{getentropy}, @tt{getrandom}, or
+@tt{BCryptGenRandom} system interface and falls back to
+@filepath{/dev/urandom}. See also @racketmodname[racket/crypto/random]
+for a filling variant.
 
 @examples[
  (eval:alts (crypto-random-bytes 14) #"\0\1\1\2\3\5\b\r\25\"7Y\220\351")

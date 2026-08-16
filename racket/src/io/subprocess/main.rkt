@@ -25,9 +25,11 @@
          subprocess-status
          subprocess-kill
          subprocess-pid
+         subprocess-group?
          current-subprocess-custodian-mode
          subprocess-group-enabled
          current-subprocess-keep-file-descriptors
+         current-subprocess-reset-signals
          shell-execute)
 
 (struct subprocess ([process #:mutable] ; locked by atomic mode
@@ -136,7 +138,11 @@
              [flags (case (current-subprocess-keep-file-descriptors)
                       [(all) (bitwise-ior flags RKTIO_PROCESS_NO_CLOSE_FDS)]
                       [(inherited) flags]
-                      [else (bitwise-ior flags RKTIO_PROCESS_NO_INHERIT_FDS)])])
+                      [else (bitwise-ior flags RKTIO_PROCESS_NO_INHERIT_FDS)])]
+             [flags (bitwise-ior flags
+                                 (bitwise-and
+                                  (reset-signals->flags (current-subprocess-reset-signals))
+                                  (rktio_process_allowed_flags rktio)))])
         
         (define command-bstr (->host (->path command) who '(execute)))
 
@@ -203,7 +209,11 @@
 
         (register-subprocess-finalizer sp)
         (when cust-mode
-          (let ([close (if (eq? cust-mode 'kill) kill-subprocess interrupt-subprocess)])
+          (let ([close (case cust-mode
+                         [(kill) kill-subprocess]
+                         [(interrupt) interrupt-subprocess]
+                         [else (let ([sig (signal-spec->signal cust-mode)])
+                                 (lambda (sp) (signal-subprocess sp sig)))])])
             (set-subprocess-cust-ref! sp (unsafe-custodian-register (current-custodian) sp close #t #f))))
 
         (rktio_free r)
@@ -249,6 +259,10 @@
   (rktioly
    (rktio_process_pid rktio (subprocess-process sp))))
 
+(define/who (subprocess-group? sp)
+  (check who subprocess? sp)
+  (subprocess-is-group? sp))
+
 ;; ----------------------------------------
 
 ;; in rktio mode
@@ -263,11 +277,39 @@
   (and p
        (rktio_process_interrupt rktio p)))
 
+;; in rktio mode
+(define (signal-subprocess sp sig)
+  (define p (subprocess-process sp))
+  (and p
+       (rktio_process_signal rktio p sig)))
+
+;; Maps a portable signal symbol or positive signal number to the
+;; `rktio_process_signal` encoding, returning #f for anything else
+(define (signal-spec->signal spec)
+  (case spec
+    [(hang-up) RKTIO_SIGNAL_HANGUP]
+    [(interrupt) RKTIO_SIGNAL_INTERRUPT]
+    [(quit) RKTIO_SIGNAL_QUIT]
+    [(kill) RKTIO_SIGNAL_KILL]
+    [(terminate) RKTIO_SIGNAL_TERMINATE]
+    [else (and (exact-integer? spec)
+               (<= 1 spec 255)
+               spec)]))
+
+(define signal-spec-contract
+  "(or/c boolean? 'kill 'interrupt 'terminate 'hang-up 'quit (integer-in 1 255))")
+
 (define/who (subprocess-kill sp force?)
   (check who subprocess? sp)
-  (define r (rktioly (if force?
-                         (kill-subprocess sp)
-                         (interrupt-subprocess sp))))
+  (define sig (and (not (boolean? force?))
+                   (let ([sig (signal-spec->signal force?)])
+                     (unless sig
+                       (raise-argument-error who signal-spec-contract force?))
+                     sig)))
+  (define r (rktioly (cond
+                       [sig (signal-subprocess sp sig)]
+                       [force? (kill-subprocess sp)]
+                       [else (interrupt-subprocess sp)])))
   (when (rktio-error? r)
     (raise-rktio-error who r "operation failed")))
 
@@ -303,8 +345,11 @@
 
 (define/who current-subprocess-custodian-mode
   (make-parameter #f (lambda (v)
-                       (unless (or (not v) (eq? v 'kill) (eq? v 'interrupt))
-                         (raise-argument-error who "(or/c #f 'kill 'interrupt)" v))
+                       (unless (or (not v) (signal-spec->signal v))
+                         (raise-argument-error
+                          who
+                          "(or/c #f 'kill 'interrupt 'terminate 'hang-up 'quit (integer-in 1 255))"
+                          v))
                        v)
                   'current-subprocess-custodian-mode))
 
@@ -318,6 +363,23 @@
                       (raise-argument-error who "(or/c '() 'uninherited 'all)" v))
                     v)
                   'current-subprocess-keep-file-descriptors))
+
+(define (reset-signals->flags l)
+  (for/fold ([flags 0]) ([s (in-list l)])
+    (bitwise-ior flags
+                 (case s
+                   [(interrupt) RKTIO_PROCESS_RESET_SIGINT]
+                   [(quit) RKTIO_PROCESS_RESET_SIGQUIT]
+                   [else RKTIO_PROCESS_RESET_SIGHUP]))))
+
+(define/who current-subprocess-reset-signals
+  (make-parameter '()
+                  (lambda (v)
+                    (unless (and (list? v)
+                                 (andmap (lambda (s) (memq s '(interrupt quit hang-up))) v))
+                      (raise-argument-error who "(listof (or/c 'interrupt 'quit 'hang-up))" v))
+                    v)
+                  'current-subprocess-reset-signals))
 
 ;; ----------------------------------------
 

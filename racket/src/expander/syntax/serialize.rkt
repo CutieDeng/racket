@@ -3,6 +3,7 @@
          "../syntax/syntax.rkt"
          "../syntax/binding.rkt"
          "../compile/serialize.rkt"
+         "../compile/version-bytes.rkt"
          "../common/module-path.rkt"
          "../namespace/namespace.rkt"
          "../namespace/module.rkt"
@@ -88,7 +89,7 @@
      (check who module-path-index? #:or-false base-mpi)
      (unless (serialized-syntax? data)
        (raise-arguments-error who "invalid serialized form" "value" data))
-     (unless (equal? (version) (serialized-syntax-version data))
+     (unless (version-string-compatible? (serialized-syntax-version data))
        (raise-arguments-error who
                               "version mismatch"
                               "expected" (version)

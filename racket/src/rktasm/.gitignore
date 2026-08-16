@@ -1,0 +1,16 @@
+compiled/
+
+*.s
+*.o
+*.exe
+
+*.txt
+*.datum
+
+research/deflate-optimization/runs/
+
+# regen-only AARCHMRS data (extracted by data/aarchmrs/prepare-aarchmrs.sh, never committed)
+data/aarchmrs/cache/
+
+# m3 ABI smoke-test binary is built by test/m3/run.sh, never committed
+test/m3/m3test

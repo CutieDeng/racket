@@ -1,0 +1,4 @@
+# Build outputs
+*.o
+
+# Keep common.h (it's a header-only library)

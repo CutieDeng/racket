@@ -140,6 +140,22 @@
   (define librktio.a (list-ref librktio.a+rktio_config.h 0))
   (define rktio_config.h (list-ref librktio.a+rktio_config.h 1))
 
+  ;; librktcrypto is not part of Windows builds (its C sources need a
+  ;; 128-bit integer type and other non-MSVC compiler features); the io
+  ;; layer detects the missing entries and the TLS/crypto surface reports
+  ;; itself unavailable, with net/http-client falling back to win32-ssl.
+  (define rktcrypto? (not windows?))
+  (define rktcrypto-dir (at-dir "rktcrypto"))
+  (define librktcrypto.a (and rktcrypto?
+                              (setup-rktcrypto (at-source "../../crypto") rktcrypto-dir config)))
+
+  ;; librktrandom follows the librktcrypto platform policy for now
+  ;; (its C is MSVC-compatible, but Windows builds are untested).
+  (define rktrandom? (not windows?))
+  (define rktrandom-dir (at-dir "rktrandom"))
+  (define librktrandom.a (and rktrandom?
+                              (setup-rktrandom (at-source "../../random") rktrandom-dir config)))
+
   (define main-deps
     (append
      (list (at-source "main.c")
@@ -190,6 +206,8 @@
                             (at-dir CS m "lz4/lib/liblz4.a")))
                   '()))
             (list librktio.a)
+            (if rktcrypto? (list librktcrypto.a) '())
+            (if rktrandom? (list librktrandom.a) '())
             pbchunk-objs))
 
   (define MemoryModule.o (at-dir (.c->.o "MemoryModule.c")))
@@ -642,6 +660,8 @@
                    (c-compile libracketcsxxx_RAW.dll
                               (append (map target->path boot-objs)
                                       (list libres.o (target->path librktio.a))
+                                      (if rktcrypto? (list (target->path librktcrypto.a)) '())
+                                      (if rktrandom? (list (target->path librktrandom.a)) '())
                                       (if msvc?
                                           windows-libs
                                           (make-mingw-to-ms-link-libraries m (at-dir) config)))
@@ -668,6 +688,8 @@
 
        [:target ,boot.o (,(at-source "boot.c")
                          ,(at-source "../../rktio/rktio.inc")
+                         ,(at-source "../../crypto/rktcrypto.inc")
+                         ,(at-source "../../random/rktrandom.inc")
                          ,(at-source "../../start/self_exe.inc")
                          ,(at-source "../../ChezScheme/c/self-exe.c")
                          ,(at-source "path_replace.inc")
@@ -682,6 +704,8 @@
                                      [config (config-include config
                                                              (at-dir CS m "boot" m)
                                                              (at-source "../../rktio")
+                                                             (at-source "../../crypto")
+                                                             (at-source "../../random")
                                                              rktio-dir)])
                                 config)))]
 
@@ -995,6 +1019,10 @@
          (when (equal? (lookup 'LZ4_LIB) "")
            (unpack-lib (at-dir CS m "lz4/lib/liblz4.a")))
          (unpack-lib (target->path librktio.a))
+         (when rktcrypto?
+           (unpack-lib (target->path librktcrypto.a)))
+         (when rktrandom?
+           (unpack-lib (target->path librktrandom.a)))
          (unpack-lib (at-dir CS m "boot" m "libkernel.a"))
          (shell/wait (lookup 'AR) (lookup 'ARFLAGS) libracketcs.a
                      (filter (glob->matcher "*.o") (ls* repack-dir))

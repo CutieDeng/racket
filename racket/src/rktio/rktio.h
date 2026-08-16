@@ -561,6 +561,22 @@ RKTIO_EXTERN void rktio_create_console(void);
  */
 RKTIO_EXTERN_ERR(RKTIO_READ_ERROR) intptr_t rktio_read(rktio_t *rktio, rktio_fd_t *rfd, char *buffer, intptr_t len);
 
+typedef struct rktio_iovec_t {
+  const char *base;
+  intptr_t len;
+} rktio_iovec_t;
+
+RKTIO_EXTERN_ERR(RKTIO_WRITE_ERROR)
+intptr_t rktio_writev(rktio_t *rktio, rktio_fd_t *fd, rktio_iovec_t *iov, intptr_t iovcnt);
+/* Scatter/gather write: writes the concatenation of the `iovcnt` slices
+   `iov[0..iovcnt)` in order, in a single `writev(2)` on POSIX file/pipe
+   fds. Returns the number of bytes written across all slices, possibly 0
+   (would block) and possibly a partial write ending in the middle of some
+   slice; the caller resumes by advancing past the written prefix.
+   `RKTIO_WRITE_ERROR` on error. Falls back to sequential per-slice writes
+   for sockets, pending opens, and on Windows, so semantics match
+   `rktio_write` for those cases. Empty slices (len 0) are skipped. */
+
 /**
  * Writes up to `len` bytes from `buffer` to `rfd`.
  *
@@ -1228,6 +1244,15 @@ typedef struct rktio_process_result_t {
 #define RKTIO_PROCESS_WINDOWS_CHAIN_TERMINATION (1<<3)
 #define RKTIO_PROCESS_NO_CLOSE_FDS              (1<<4)
 #define RKTIO_PROCESS_NO_INHERIT_FDS            (1<<5)
+#define RKTIO_PROCESS_RESET_SIGINT              (1<<6)
+#define RKTIO_PROCESS_RESET_SIGQUIT             (1<<7)
+#define RKTIO_PROCESS_RESET_SIGHUP              (1<<8)
+/* The `RKTIO_PROCESS_RESET_...` flags reset the corresponding signal
+   to its default disposition in the new child process before `exec`
+   on Unix, which is relevant when the signal was inherited as
+   ignored (e.g., SIGINT and SIGQUIT for a shell background job, or
+   SIGHUP under `nohup`, since an ignored disposition survives
+   `exec`). On Windows, these flags have no effect. */
 
 /**
  * Creates a new process running `command` with arguments `argv`,
@@ -1272,6 +1297,24 @@ RKTIO_EXTERN rktio_ok_t rktio_process_kill(rktio_t *rktio, rktio_process_t *sp);
  * record.
  */
 RKTIO_EXTERN rktio_ok_t rktio_process_interrupt(rktio_t *rktio, rktio_process_t *sp);
+
+RKTIO_EXTERN rktio_ok_t rktio_process_signal(rktio_t *rktio, rktio_process_t *sp, int sig);
+/* Sends a signal to a process; does not deallocate the process
+   record. If the process was created as a group, the signal goes to
+   the whole group. The portable `RKTIO_SIGNAL_...` values below are
+   translated to the corresponding OS signal; on Unix, any other
+   positive `sig` is passed on to kill()/killpg() as-is, while on
+   Windows, any other value reports `RKTIO_ERROR_UNSUPPORTED`. On
+   Windows, `RKTIO_SIGNAL_KILL` terminates the process,
+   `RKTIO_SIGNAL_INTERRUPT` sends a Ctrl-Break event to a group (and
+   does nothing for a non-group process), and
+   `RKTIO_SIGNAL_TERMINATE` is best-effort: it sends Ctrl-Break to a
+   group and terminates a non-group process. */
+#define RKTIO_SIGNAL_HANGUP    1
+#define RKTIO_SIGNAL_INTERRUPT 2
+#define RKTIO_SIGNAL_QUIT      3
+#define RKTIO_SIGNAL_KILL      9
+#define RKTIO_SIGNAL_TERMINATE 15
 
 /**
  * Deallocates a process record, whether or not the process has

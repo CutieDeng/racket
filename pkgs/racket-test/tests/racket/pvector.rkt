@@ -1,0 +1,2537 @@
+#lang racket/base
+
+(require racket/list
+         racket/match
+         racket/place
+         racket/pvector
+         (prefix-in raw: racket/private/pvector-runtime-adapter)
+         (prefix-in unsafe: (submod racket/pvector unsafe))
+         racket/serialize
+         racket/stream
+         rackunit)
+
+(define (check-pvector-model pv xs)
+  (check-true (pvector? pv))
+  (check-equal? (pvector-length pv) (length xs))
+  (check-equal? (pvector->list pv) xs)
+  (check-equal? (vector->list (pvector->vector pv)) xs)
+  (for ([x (in-list xs)]
+        [i (in-naturals)])
+    (check-equal? (pvector-ref pv i) x)))
+
+(define range-64-list (range 64))
+(define range-128-list (range 128))
+
+(define (list-set xs i v)
+  (append (take xs i) (list v) (drop xs (add1 i))))
+
+(define (list-insert xs i v)
+  (append (take xs i) (list v) (drop xs i)))
+
+(define (list-delete xs i)
+  (values (append (take xs i) (drop xs (add1 i)))
+          (list-ref xs i)))
+
+(define (bc-native-public-pvector?)
+  (and (raw:pvector-runtime-adapter-core-available?)
+       (eq? (system-type 'vm) 'racket)))
+
+(define (kernel-procedure? name)
+  (with-handlers ([exn:fail? (lambda (_) #f)])
+    (procedure? (dynamic-require ''#%kernel name))))
+
+(define (datum-contains-symbol? v sym)
+  (cond
+    [(eq? v sym) #t]
+    [(pair? v)
+     (or (datum-contains-symbol? (car v) sym)
+         (datum-contains-symbol? (cdr v) sym))]
+    [(vector? v)
+     (for/or ([elem (in-vector v)])
+       (datum-contains-symbol? elem sym))]
+    [else #f]))
+
+(define-namespace-anchor pvector-test-namespace-anchor)
+
+(define (public-pvector-jit-score jit-enabled?)
+  (parameterize ([eval-jit-enabled jit-enabled?])
+    (eval
+     '(let ()
+        (local-require racket/list
+                       racket/pvector
+                       (prefix-in unsafe: (submod racket/pvector unsafe)))
+        (let loop ([i 0] [acc 0])
+          (if (= i 40)
+              acc
+              (let* ([empty0 (pvector-empty)]
+                     [empty1 (pvector)]
+                     [single (pvector 23)]
+                     [deep2 (pvector 24 25)]
+                     [deep3 (pvector 26 27 28)]
+                     [deep4 (pvector 29 30 31 32)]
+                     [pv (list->pvector (range 17))]
+                     [wide-left
+                      (pvector-cons-left
+                       (pvector-cons-left
+                        (pvector-cons-left
+                         (pvector-cons-left deep4 28)
+                         27)
+                        26)
+                       25)]
+                     [wide-right
+                      (pvector-cons-right
+                       (pvector-cons-right
+                        (pvector-cons-right
+                         (pvector-cons-right deep4 33)
+                         34)
+                        35)
+                       36)]
+                     [idx (modulo i 17)])
+                (unless (eq? empty0 empty1)
+                  (error 'public-pvector-jit-score
+                         "empty pvector is not a singleton"))
+                (loop
+                 (add1 i)
+                 (+ acc
+                    (if (pvector? empty0) 1 0)
+                    (if (pvector? '(not a pvector)) 100 0)
+                    (if (pvector-empty? empty0) 2 0)
+                    (if (pvector-empty? single) 200 0)
+                    (pvector-length single)
+                    (pvector-length deep2)
+                    (pvector-length deep3)
+                    (pvector-length deep4)
+                    (unsafe:unsafe-pvector-length pv)
+                    (pvector-ref single 0)
+                    (pvector-ref deep2 1)
+                    (pvector-ref deep3 2)
+                    (pvector-ref deep4 3)
+                    (pvector-ref pv 0)
+                    (pvector-ref pv 8)
+                    (pvector-ref pv 16)
+                    (pvector-ref pv idx)
+                    (unsafe:unsafe-pvector-ref pv 0)
+                    (unsafe:unsafe-pvector-ref pv 8)
+                    (unsafe:unsafe-pvector-ref pv 16)
+                    (unsafe:unsafe-pvector-ref pv idx)
+                    (pvector-first wide-left)
+                    (pvector-last wide-left)
+                    (pvector-first wide-right)
+                    (pvector-last wide-right)
+                    (unsafe:unsafe-pvector-first wide-left)
+                    (unsafe:unsafe-pvector-last wide-left)
+                    (unsafe:unsafe-pvector-first wide-right)
+                    (unsafe:unsafe-pvector-last wide-right)))))))
+     (namespace-anchor->namespace pvector-test-namespace-anchor))))
+
+(define (public-pvector-jit-error-signatures jit-enabled?)
+  (parameterize ([eval-jit-enabled jit-enabled?])
+    (eval
+     '(let ()
+        (local-require racket/pvector)
+        (define (capture name expected thunk)
+          (with-handlers ([exn:fail?
+                           (lambda (exn)
+                             (list name
+                                   'exn
+                                   (and (regexp-match? expected
+                                                       (exn-message exn))
+                                        #t)))])
+            (thunk)
+            (list name 'value #f)))
+        (define pv (pvector 1))
+        (define cases
+          (list
+           (list 'length-type #rx"expected: pvector\\?"
+                 (lambda () (pvector-length 'bad)))
+           (list 'ref-type #rx"expected: pvector\\?"
+                 (lambda () (pvector-ref 'bad 0)))
+           (list 'ref-index-order #rx"expected: exact-nonnegative-integer\\?"
+                 (lambda () (pvector-ref 'bad -1)))
+           (list 'ref-oob #rx"index is out of range"
+                 (lambda () (pvector-ref pv 1)))
+           (list 'first-empty #rx"empty pvector"
+                 (lambda () (pvector-first (pvector-empty))))
+           (list 'last-empty #rx"empty pvector"
+                 (lambda () (pvector-last (pvector-empty))))
+           (list 'cons-left-type #rx"expected: pvector\\?"
+                 (lambda () (pvector-cons-left 'bad 1)))
+           (list 'cons-right-type #rx"expected: pvector\\?"
+                 (lambda () (pvector-cons-right 'bad 1)))))
+        (for/list ([case (in-list cases)])
+          (capture (car case) (cadr case) (caddr case))))
+     (namespace-anchor->namespace pvector-test-namespace-anchor))))
+
+(test-case "construction and conversion"
+  (check-pvector-model (pvector-empty) '())
+  (check-pred pvector-empty? (pvector-empty))
+  (check-false (pvector-empty? '(not a pvector)))
+  (check-true (procedure? pvector))
+  (when (bc-native-public-pvector?)
+    (check-true (raw:pvector-runtime-adapter-cursor-available?))
+    (for ([pv (in-list (list (pvector-empty)
+                             (pvector 1 2 3)
+                             (make-pvector 4 'x)
+                             (list->pvector '(1 2 3))
+                             (vector->pvector #(1 2 3))
+                             (sequence->pvector '(1 2 3))
+                             (for/pvector ([x (in-range 3)]) x)))])
+      (check-true (raw:pvector? pv))))
+  (check-true (eq? (pvector-empty) (pvector)))
+  (check-true (eq? (pvector-empty) (list->pvector null)))
+  (check-true (eq? (pvector-empty) (vector->pvector #())))
+  (check-pvector-model (pvector 1 2 3) '(1 2 3))
+  (check-pvector-model (pvector 1 2 3 4) '(1 2 3 4))
+  (check-pvector-model (pvector 0 1 2 3 4 5 6 7
+                                8 9 10 11 12 13 14 15
+                                16 17 18 19 20 21 22 23
+                                24 25 26 27 28 29 30 31
+                                32 33 34 35 36 37 38 39
+                                40 41 42 43 44 45 46 47
+                                48 49 50 51 52 53 54 55
+                                56 57 58 59 60 61 62 63
+                                64)
+                       (range 65))
+  (check-pvector-model (apply pvector '(1 2 3)) '(1 2 3))
+  (check-pvector-model (apply pvector '(1 2 3 4)) '(1 2 3 4))
+  (check-pvector-model (apply pvector (range 18)) (range 18))
+  (check-pvector-model (apply pvector range-64-list) range-64-list)
+  (check-pvector-model (apply pvector (range 65)) (range 65))
+  (check-pvector-model (apply pvector (range 96)) (range 96))
+  (check-pvector-model (apply pvector (range 112)) (range 112))
+  (check-pvector-model (apply pvector range-128-list) range-128-list)
+  (check-pvector-model (make-pvector 1 'x) '(x))
+  (check-pvector-model (make-pvector 2 'x) '(x x))
+  (check-pvector-model (make-pvector 8 'x) '(x x x x x x x x))
+  (check-pvector-model (make-pvector 16 'x)
+                       '(x x x x x x x x x x x x x x x x))
+  (check-pvector-model (make-pvector 17 'x)
+                       '(x x x x x x x x x x x x x x x x x))
+  (check-pvector-model (make-pvector 32 'x)
+                       '(x x x x x x x x x x x x x x x x
+                         x x x x x x x x x x x x x x x x))
+  (check-pvector-model (make-pvector 64 'x) (make-list 64 'x))
+  (check-pvector-model (make-pvector 4 'x) '(x x x x))
+  (let* ([elem (box 'x)]
+         [pv (make-pvector 130 elem)]
+         [pv* (pvector-set pv 64 'changed)]
+         [pv-mid (pvector-subvector pv 1 129)]
+         [pv*-mid (pvector-subvector pv* 1 129)]
+         [pv-prefix (pvector-subvector pv 0 100)]
+         [pv-suffix (pvector-subvector pv 30 130)]
+         [pv*-prefix (pvector-subvector pv* 0 100)]
+         [pv*-suffix (pvector-subvector pv* 30 130)]
+         [pv-append (pvector-append pv pv)]
+         [pv*-append (pvector-append pv* pv)]
+         [pv-diff-append (pvector-append pv (make-pvector 130 'other))]
+         [pv-cons-left (pvector-cons-left pv elem)]
+         [pv-cons-right (pvector-cons-right pv elem)]
+         [pv-cons-diff (pvector-cons-left pv 'other)]
+         [pv-insert-same (pvector-insert pv 65 elem)]
+         [pv-insert-diff (pvector-insert pv 65 'other)])
+    (check-pvector-model pv (make-list 130 elem))
+    (check-eq? (pvector-ref pv 0) elem)
+    (check-eq? (pvector-ref pv 64) elem)
+    (check-eq? (pvector-ref pv 129) elem)
+    (check-eq? (pvector-ref pv* 0) elem)
+    (check-equal? (pvector-ref pv* 64) 'changed)
+    (check-eq? (pvector-ref pv* 129) elem)
+    (check-eq? (vector-ref (pvector->vector pv) 64) elem)
+    (check-eq? (vector-ref (pvector->vector pv*) 0) elem)
+    (check-equal? (vector-ref (pvector->vector pv*) 64) 'changed)
+    (check-eq? (vector-ref (pvector->vector pv*) 129) elem)
+    (check-eq? (list-ref (pvector->list pv) 64) elem)
+    (check-eq? (list-ref (pvector->list pv*) 0) elem)
+    (check-equal? (list-ref (pvector->list pv*) 64) 'changed)
+    (check-eq? (list-ref (pvector->list pv*) 129) elem)
+    (check-eq? (vector-ref (pvector->vector pv-mid) 63) elem)
+    (check-eq? (list-ref (pvector->list pv-mid) 63) elem)
+    (check-eq? (vector-ref (pvector->vector pv*-mid) 0) elem)
+    (check-equal? (vector-ref (pvector->vector pv*-mid) 63) 'changed)
+    (check-eq? (list-ref (pvector->list pv*-mid) 127) elem)
+    (check-eq? (vector-ref (pvector->vector pv-prefix) 99) elem)
+    (check-eq? (list-ref (pvector->list pv-suffix) 0) elem)
+    (check-eq? (vector-ref (pvector->vector pv-suffix) 99) elem)
+    (check-equal? (vector-ref (pvector->vector pv*-prefix) 64) 'changed)
+    (check-equal? (list-ref (pvector->list pv*-suffix) 34) 'changed)
+    (check-eq? (vector-ref (pvector->vector pv-append) 129) elem)
+    (check-eq? (vector-ref (pvector->vector pv-append) 130) elem)
+    (check-eq? (list-ref (pvector->list pv-append) 259) elem)
+    (check-equal? (vector-ref (pvector->vector pv*-append) 64) 'changed)
+    (check-eq? (list-ref (pvector->list pv*-append) 130) elem)
+    (check-eq? (vector-ref (pvector->vector pv-diff-append) 129) elem)
+    (check-equal? (list-ref (pvector->list pv-diff-append) 130) 'other)
+    (check-eq? (vector-ref (pvector->vector pv-cons-left) 0) elem)
+    (check-eq? (vector-ref (pvector->vector pv-cons-left) 130) elem)
+    (check-eq? (vector-ref (pvector->vector pv-cons-right) 130) elem)
+    (check-equal? (vector-ref (pvector->vector pv-cons-diff) 0) 'other)
+    (check-eq? (list-ref (pvector->list pv-cons-diff) 1) elem)
+    (check-eq? (vector-ref (pvector->vector pv-insert-same) 65) elem)
+    (check-eq? (vector-ref (pvector->vector pv-insert-same) 130) elem)
+    (check-eq? (list-ref (pvector->list pv-insert-same) 66) elem)
+    (check-equal? (vector-ref (pvector->vector pv-insert-diff) 65) 'other)
+    (check-eq? (vector-ref (pvector->vector pv-insert-diff) 66) elem)
+    (let ([count 0])
+      (define mapped
+        (pvector-map pv
+                     (lambda (value)
+                       (set! count (add1 count))
+                       value)))
+      (check-equal? count 130)
+      (check-eq? (vector-ref (pvector->vector mapped) 64) elem)
+      (check-eq? (list-ref (pvector->list mapped) 129) elem))
+    (let ([count 0])
+      (define mapped
+        (pvector-map pv
+                     (lambda (value)
+                       (set! count (add1 count))
+                       (if (= count 66) 'other value))))
+      (check-equal? count 130)
+      (check-eq? (vector-ref (pvector->vector mapped) 64) elem)
+      (check-equal? (vector-ref (pvector->vector mapped) 65) 'other)
+      (check-eq? (list-ref (pvector->list mapped) 66) elem))
+    (let-values ([(value rest) (pvector-pop-left pv)])
+      (check-eq? value elem)
+      (check-eq? (vector-ref (pvector->vector rest) 0) elem)
+      (check-eq? (list-ref (pvector->list rest) 128) elem))
+    (let-values ([(value rest) (pvector-pop-right pv)])
+      (check-eq? value elem)
+      (check-eq? (vector-ref (pvector->vector rest) 0) elem)
+      (check-eq? (list-ref (pvector->list rest) 128) elem))
+    (let-values ([(value rest) (pvector-pop-left pv*)])
+      (check-eq? value elem)
+      (check-equal? (vector-ref (pvector->vector rest) 63) 'changed))
+    (let-values ([(rest value) (pvector-delete pv 65)])
+      (check-eq? value elem)
+      (check-eq? (vector-ref (pvector->vector rest) 64) elem)
+      (check-eq? (vector-ref (pvector->vector rest) 65) elem)
+      (check-eq? (list-ref (pvector->list rest) 128) elem))
+    (let-values ([(rest value) (pvector-delete pv* 64)])
+      (check-equal? value 'changed)
+      (check-eq? (vector-ref (pvector->vector rest) 64) elem))
+    (let-values ([(left right) (pvector-split-at pv 65)])
+      (check-eq? (vector-ref (pvector->vector left) 64) elem)
+      (check-eq? (vector-ref (pvector->vector right) 0) elem)
+      (check-eq? (list-ref (pvector->list right) 64) elem))
+    (let-values ([(left right) (pvector-split-at pv* 65)])
+      (check-equal? (vector-ref (pvector->vector left) 64) 'changed)
+      (check-eq? (vector-ref (pvector->vector right) 0) elem)))
+  (check-pvector-model (list->pvector '(a)) '(a))
+  (check-pvector-model (list->pvector '(a b)) '(a b))
+  (check-pvector-model (list->pvector '(a b c)) '(a b c))
+  (check-pvector-model (list->pvector '(a b c d)) '(a b c d))
+  (check-exn exn:fail:contract?
+             (lambda () (list->pvector (cons 'a 'b))))
+  (check-exn exn:fail:contract?
+             (lambda () (list->pvector (list* 'a 'b 'c 'bad))))
+  (check-exn exn:fail:contract?
+             (lambda () (list->pvector (list* 'a 'b 'c 'd 'bad))))
+  (check-pvector-model (list->pvector '(a b c d e f g h))
+                       '(a b c d e f g h))
+  (let* ([elem (box 'uniform-list)]
+         [uniform-list (make-list 130 elem)]
+         [pv (list->pvector uniform-list)])
+    (check-pvector-model pv uniform-list)
+    (check-eq? (vector-ref (pvector->vector pv) 64) elem)
+    (check-eq? (list-ref (pvector->list pv) 129) elem))
+  (let* ([elem (box 'mixed-list)]
+         [mixed-list (cons elem (cons 'other (make-list 128 elem)))]
+         [pv (list->pvector mixed-list)])
+    (check-pvector-model pv mixed-list)
+    (check-eq? (vector-ref (pvector->vector pv) 0) elem)
+    (check-equal? (vector-ref (pvector->vector pv) 1) 'other)
+    (check-eq? (list-ref (pvector->list pv) 129) elem))
+  (check-pvector-model (list->pvector '(0 1 2 3 4 5 6 7
+                                         8 9 10 11 12 13 14 15))
+                       '(0 1 2 3 4 5 6 7
+                         8 9 10 11 12 13 14 15))
+  (check-pvector-model (list->pvector '(0 1 2 3 4 5 6 7
+                                         8 9 10 11 12 13 14 15 16))
+                       '(0 1 2 3 4 5 6 7
+                         8 9 10 11 12 13 14 15 16))
+  (let* ([src (vector 'a)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv '(a)))
+  (let* ([src (vector 'a 'b)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv '(a b))
+    (let ([out (pvector->vector pv)])
+      (check-equal? (vector->list out) '(a b))
+      (vector-set! out 0 'changed)
+      (check-pvector-model pv '(a b))))
+  (check-pvector-model (vector->pvector #(a b c)) '(a b c))
+  (let* ([src (vector 'a 'b 'c)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv '(a b c)))
+  (let* ([src (build-vector 16 values)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 16)))
+  (let* ([src (build-vector 17 values)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (let* ([src (build-vector 18 values)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 18)))
+  (let* ([src (build-vector 32 values)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 32)))
+  (let* ([src (build-vector 64 values)]
+         [pv (vector->pvector src)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv range-64-list))
+  (let* ([elem (box 'uniform-vector)]
+         [src (make-vector 130 elem)]
+         [pv (vector->pvector src)])
+    (vector-set! src 64 'changed)
+    (check-pvector-model pv (make-list 130 elem))
+    (check-eq? (vector-ref (pvector->vector pv) 64) elem)
+    (check-eq? (list-ref (pvector->list pv) 129) elem))
+  (let* ([xs (range 130)]
+         [src (vector->immutable-vector (list->vector xs))]
+         [pv (vector->pvector src)])
+    (check-pvector-model pv xs)
+    (check-equal? (for/list ([x (in-pvector pv)]) x) xs)
+    (check-equal? (for/list ([x (in-pvector-reverse pv)]) x) (reverse xs))
+    (check-pvector-model (pvector-map pv add1) (map add1 xs))
+    (let ([seen null])
+      (pvector-for-each pv (lambda (x) (set! seen (cons x seen))))
+      (check-equal? (reverse seen) xs))
+    (check-equal? (stream->list (pvector-take pv 3)) '(0 1 2)))
+  (check-pvector-model (sequence->pvector (in-range 5)) '(0 1 2 3 4))
+  (check-pvector-model (sequence->pvector (in-range 0 5 1)) '(0 1 2 3 4))
+  (check-pvector-model (sequence->pvector (in-range 1 5)) '(1 2 3 4))
+  (check-pvector-model (sequence->pvector (in-range 0 8 2)) '(0 2 4 6))
+  (check-pvector-model (sequence->pvector (in-range 1 18)) (range 1 18))
+  (check-pvector-model (sequence->pvector (in-range 1 19)) (range 1 19))
+  (check-pvector-model (sequence->pvector (in-range 1 33)) (range 1 33))
+  (check-pvector-model (sequence->pvector (in-range 64)) range-64-list)
+  (check-pvector-model (sequence->pvector (in-range 1 65)) (range 1 65))
+  (check-pvector-model (sequence->pvector (in-range 0 34 2))
+                       '(0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32))
+  (check-pvector-model (sequence->pvector (in-range 0 36 2))
+                       '(0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30 32 34))
+  (check-pvector-model (sequence->pvector (in-range 0 64 2))
+                       '(0 2 4 6 8 10 12 14 16 18 20 22 24 26 28 30
+                         32 34 36 38 40 42 44 46 48 50 52 54 56 58 60 62))
+  (check-pvector-model (sequence->pvector (in-range 0 128 2))
+                       (for/list ([i (in-range 0 128 2)]) i))
+  (check-pvector-model (sequence->pvector (in-range 8 0 -2)) '(8 6 4 2))
+  (check-pvector-model (sequence->pvector (in-range 18 0 -1))
+                       '(18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1))
+  (check-pvector-model (sequence->pvector (in-range 32 0 -1))
+                       '(32 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17
+                         16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1))
+  (check-pvector-model (sequence->pvector (in-range 64 0 -1)) (range 64 0 -1))
+  (check-pvector-model (sequence->pvector (in-range 5 1)) '())
+  (check-pvector-model (sequence->pvector 5) '(0 1 2 3 4))
+  (check-pvector-model (sequence->pvector 17) (range 17))
+  (check-pvector-model (sequence->pvector 18) (range 18))
+  (check-pvector-model (sequence->pvector 32) (range 32))
+  (check-pvector-model (sequence->pvector 64) range-64-list)
+  (check-pvector-model (sequence->pvector (in-range 17)) (range 17))
+  (check-pvector-model (sequence->pvector (in-range 18)) (range 18))
+  (check-pvector-model (sequence->pvector (in-range 32)) (range 32))
+  (let ([pv (list->pvector (range 130))])
+    (check-true (eq? (sequence->pvector (in-pvector pv)) pv)))
+  (check-pvector-model
+   (sequence->pvector (in-pvector-reverse (list->pvector (range 130))))
+   (reverse (range 130)))
+  (check-pvector-model (sequence->pvector (in-list (range 130)))
+                       (range 130))
+  (let* ([src (list->vector (range 130))]
+         [pv (sequence->pvector (in-vector src))])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 130)))
+  (check-true (procedure? sequence->pvector))
+  (check-equal? (object-name sequence->pvector) 'sequence->pvector)
+  (let ([seq->pv sequence->pvector])
+    (check-pvector-model (seq->pv (in-range 4)) '(0 1 2 3)))
+  (let ([count 0])
+    (define (end)
+      (set! count (add1 count))
+      4)
+    (check-pvector-model (sequence->pvector (in-range (end))) '(0 1 2 3))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define (get-list)
+      (set! count (add1 count))
+      (range 17))
+    (check-pvector-model (sequence->pvector (in-list (get-list)))
+                         (range 17))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define (get-vector)
+      (set! count (add1 count))
+      (list->vector (range 17)))
+    (check-pvector-model (sequence->pvector (in-vector (get-vector)))
+                         (range 17))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define pv (list->pvector (range 17)))
+    (define (get-pvector)
+      (set! count (add1 count))
+      pv)
+    (check-true (eq? (sequence->pvector (in-pvector (get-pvector))) pv))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define pv (list->pvector (range 17)))
+    (define (get-pvector)
+      (set! count (add1 count))
+      pv)
+    (check-pvector-model (sequence->pvector
+                          (in-pvector-reverse (get-pvector)))
+                         (reverse (range 17)))
+    (check-equal? count 1))
+  (check-exn exn:fail:contract?
+             (lambda () (sequence->pvector -1))))
+
+(test-case "empty canonicalization"
+  (define empty (pvector-empty))
+  (check-true (eq? empty (make-pvector 0)))
+  (check-true (eq? empty (list->pvector null)))
+  (check-true (eq? empty (vector->pvector #())))
+  (check-equal? (vector-length (pvector->vector empty)) 0)
+  (check-true (eq? empty (sequence->pvector (in-range 0))))
+  (check-true (eq? empty (sequence->pvector 0)))
+  (check-true (eq? empty (for/pvector ([x (in-range 0)]) x)))
+  (check-true (eq? empty (for*/pvector ([x (in-range 0)]) x)))
+  (check-true (eq? empty (for/pvector #:length 0 ([x (in-range 0)]) x)))
+  (check-true (eq? empty (for*/pvector #:length 0 ([x (in-range 0)]) x)))
+  (check-true (eq? empty (pvector-take (pvector 'x) 0)))
+  (check-true (eq? empty (pvector-drop (pvector 'x) 1)))
+  (define-values (left-value left-rest) (pvector-pop-left (pvector 'x)))
+  (define-values (right-value right-rest) (pvector-pop-right (pvector 'x)))
+  (check-equal? left-value 'x)
+  (check-equal? right-value 'x)
+  (check-true (eq? empty left-rest))
+  (check-true (eq? empty right-rest))
+  (define-values (split-left split-value split-right) (pvector-split (pvector 'x) 0))
+  (check-equal? split-value 'x)
+  (check-true (eq? empty split-left))
+  (check-true (eq? empty split-right)))
+
+(test-case "equal and hash"
+  (define pv (list->pvector (range 96)))
+  (define same (pvector-append (list->pvector (range 32))
+                               (list->pvector (range 32 96))))
+  (define different-prefix (pvector-set same 0 'x))
+  (define different-suffix (pvector-set same 95 'x))
+  (define nested-a (pvector (pvector 'a 'b) (list->pvector (range 4))))
+  (define nested-b (pvector (pvector 'a 'b) (list->pvector (range 4))))
+  (check-equal? pv same)
+  (check-not-equal? pv different-prefix)
+  (check-not-equal? pv different-suffix)
+  (check-equal? nested-a nested-b)
+  (check-equal? (equal-hash-code pv) (equal-hash-code same))
+  (check-equal? (equal-secondary-hash-code pv)
+                (equal-secondary-hash-code same))
+  (define table (hash same 'found nested-a 'nested))
+  (check-equal? (hash-ref table pv) 'found)
+  (check-equal? (hash-ref table nested-b) 'nested))
+
+(test-case "ref and set"
+  (define pv (pvector 'a 'b 'c 'd))
+  (check-equal? (pvector-ref pv 0) 'a)
+  (check-equal? (pvector-ref pv 2) 'c)
+  (check-equal? (pvector-ref pv 3) 'd)
+  (define pv* (pvector-set pv 2 'x))
+  (check-pvector-model pv '(a b c d))
+  (check-pvector-model pv* '(a b x d))
+  (check-pvector-model (pvector-set pv 0 'z) '(z b c d))
+  (check-pvector-model (pvector-set pv 3 'z) '(a b c z))
+  (define pv2 (pvector 'left 'right))
+  (check-pvector-model (pvector-set pv2 0 'x) '(x right))
+  (check-pvector-model (pvector-set pv2 1 'y) '(left y))
+  (check-true (eq? pv2 (pvector-set pv2 0 'left)))
+  (check-true (eq? pv2 (pvector-set pv2 1 'right)))
+  (check-true (eq? pv (pvector-set pv 0 'a)))
+  (check-true (eq? pv (pvector-set pv 3 'd)))
+  (check-true (eq? pv (pvector-set pv 2 'c)))
+  (check-false (eq? pv pv*)))
+
+(test-case "left and right endpoints"
+  (define pv
+    (for/fold ([pv (pvector-empty)])
+              ([i (in-range 8)])
+      (pvector-cons-right pv i)))
+  (check-pvector-model pv '(0 1 2 3 4 5 6 7))
+  (check-equal? (pvector-first pv) 0)
+  (check-equal? (pvector-last pv) 7)
+  (define-values (left rest-left) (pvector-pop-left pv))
+  (check-equal? left 0)
+  (check-pvector-model rest-left '(1 2 3 4 5 6 7))
+  (define-values (right rest-right) (pvector-pop-right pv))
+  (check-equal? right 7)
+  (check-pvector-model rest-right '(0 1 2 3 4 5 6))
+  (check-pvector-model (pvector-cons-left pv 'z) '(z 0 1 2 3 4 5 6 7))
+  (check-pvector-model (pvector-cons-right pv 'z) '(0 1 2 3 4 5 6 7 z)))
+
+(test-case "append, split, take, drop, and subvector"
+  (define pv (list->pvector (range 12)))
+  (check-pvector-model (pvector-append (pvector 0 1 2) (pvector 3 4))
+                       '(0 1 2 3 4))
+  (check-pvector-model (pvector-append (pvector 'left) pv)
+                       '(left 0 1 2 3 4 5 6 7 8 9 10 11))
+  (check-pvector-model (pvector-append (pvector 'left0 'left1) pv)
+                       '(left0 left1 0 1 2 3 4 5 6 7 8 9 10 11))
+  (check-pvector-model (pvector-append (pvector 'left0 'left1 'left2) pv)
+                       '(left0 left1 left2 0 1 2 3 4 5 6 7 8 9 10 11))
+  (check-pvector-model (pvector-append pv (pvector 'right))
+                       '(0 1 2 3 4 5 6 7 8 9 10 11 right))
+  (check-pvector-model (pvector-append pv (pvector 'a 'b 'c))
+                       '(0 1 2 3 4 5 6 7 8 9 10 11 a b c))
+  (check-true (eq? pv (pvector-append (pvector-empty) pv)))
+  (check-true (eq? pv (pvector-append pv (pvector-empty))))
+  (check-exn exn:fail? (lambda () (pvector-append (pvector-empty) 'bad)))
+  (check-exn exn:fail? (lambda () (pvector-append 'bad (pvector-empty))))
+  (check-true (eq? (pvector-empty) (pvector-map (pvector-empty) add1)))
+  (check-true (eq? pv (pvector-map pv values)))
+  (check-pvector-model (pvector-map (pvector 0) add1) '(1))
+  (check-pvector-model (pvector-map (pvector 0 1) add1) '(1 2))
+  (let ([seen null])
+    (check-pvector-model (pvector-map (pvector 'single)
+                                      (lambda (v)
+                                        (set! seen (append seen (list v)))
+                                        'mapped))
+                         '(mapped))
+    (check-equal? seen '(single)))
+  (check-pvector-model (pvector-map (pvector 0 1 2) add1)
+                       '(1 2 3))
+  (check-pvector-model (pvector-map (pvector 0 1 2 3) add1)
+                       '(1 2 3 4))
+  (let ([voids (pvector-map (pvector 0 1 2) void)])
+    (check-equal? (pvector-length voids) 3)
+    (for ([v (in-pvector voids)])
+      (check-equal? v (void))))
+  (let ([voids (pvector-map (pvector 0 1 2 3) void)])
+    (check-equal? (pvector-length voids) 4)
+    (for ([v (in-pvector voids)])
+      (check-equal? v (void))))
+  (let ([seen null])
+    (check-equal? (pvector-for-each (pvector 'single)
+                                    (lambda (v)
+                                      (set! seen (append seen (list v)))))
+                  (void))
+    (check-equal? seen '(single))
+    (check-equal? (pvector-for-each (pvector 'multi)
+                                    (lambda (v)
+                                      (values v 'ignored)))
+                  (void))
+    (set! seen null)
+    (check-equal? (pvector-for-each (pvector 'a 'b)
+                                    (lambda (v)
+                                      (set! seen (append seen (list v)))
+                                      (values v 'ignored)))
+                  (void))
+    (check-equal? seen '(a b))
+    (set! seen null)
+    (check-equal? (pvector-for-each (pvector 'a 'b 'c)
+                                    (lambda (v)
+                                      (set! seen (append seen (list v)))))
+                  (void))
+    (check-equal? seen '(a b c))
+    (set! seen null)
+    (check-equal? (pvector-for-each (pvector 'a 'b 'c 'd)
+                                    (lambda (v)
+                                      (set! seen (append seen (list v)))))
+                  (void))
+    (check-equal? seen '(a b c d)))
+  (let* ([xs (range 1000)]
+         [consed (for/fold ([pv (pvector-empty)])
+                           ([x (in-list xs)])
+                   (pvector-cons-right pv x))]
+         [seen null]
+         [sum 0])
+    (check-equal? (pvector-for-each
+                   consed
+                   (lambda (v)
+                     (set! seen (cons v seen))
+                     (set! sum (+ sum v))))
+                  (void))
+    (check-equal? (reverse seen) xs)
+    (check-equal? sum (apply + xs)))
+  (let ([called? #f])
+    (check-equal? (pvector-for-each (pvector-empty)
+                                    (lambda (v)
+                                      (set! called? #t)))
+                  (void))
+    (check-false called?))
+  (check-equal? (pvector-for-each pv void) (void))
+  (check-equal? (pvector-for-each pv values) (void))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map '(0 1 2) add1)))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map '(0 1 2) values)))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map (pvector 0)
+                                     (lambda (x) (values x x)))))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map (pvector 0 1 2) (lambda (x y) x))))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map (pvector 0 1 2 3)
+                                     (lambda (x) (values x x)))))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-map (pvector-empty) (lambda (x y) x))))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-for-each '(0 1 2) add1)))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-for-each '(0 1 2) void)))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-for-each '(0 1 2) values)))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-for-each (pvector 0 1 2) (lambda (x y) x))))
+  (check-exn exn:fail:contract?
+             (lambda () (pvector-for-each (pvector-empty) (lambda (x y) x))))
+  (for ([pos (in-range 13)])
+    (define-values (left right) (pvector-split-at pv pos))
+    (check-pvector-model left (take (range 12) pos))
+    (check-pvector-model right (drop (range 12) pos))
+    (check-pvector-model (pvector-take pv pos) (take (range 12) pos))
+    (check-pvector-model (pvector-drop pv pos) (drop (range 12) pos)))
+  (check-true (eq? pv (pvector-take pv 12)))
+  (check-true (eq? pv (pvector-drop pv 0)))
+  (check-true (eq? pv (pvector-take-right pv 12)))
+  (check-true (eq? pv (pvector-drop-right pv 0)))
+  (check-true (eq? (pvector-empty) (pvector-take pv 0)))
+  (check-true (eq? (pvector-empty) (pvector-drop pv 12)))
+  (check-true (eq? (pvector-empty) (pvector-take-right pv 0)))
+  (check-true (eq? (pvector-empty) (pvector-drop-right pv 12)))
+  (define-values (split-empty split-whole) (pvector-split-at pv 0))
+  (check-true (pvector-empty? split-empty))
+  (check-true (eq? (pvector-empty) split-empty))
+  (check-true (eq? pv split-whole))
+  (define-values (split-whole* split-empty*) (pvector-split-at pv 12))
+  (check-true (eq? pv split-whole*))
+  (check-true (pvector-empty? split-empty*))
+  (check-true (eq? (pvector-empty) split-empty*))
+  (define-values (left mid right) (pvector-split pv 6))
+  (check-pvector-model left '(0 1 2 3 4 5))
+  (check-equal? mid 6)
+  (check-pvector-model right '(7 8 9 10 11))
+  (define-values (split-left-empty split-first split-left-rest) (pvector-split pv 0))
+  (check-true (eq? (pvector-empty) split-left-empty))
+  (check-equal? split-first 0)
+  (check-pvector-model split-left-rest '(1 2 3 4 5 6 7 8 9 10 11))
+  (define-values (split-right-rest split-last split-right-empty) (pvector-split pv 11))
+  (check-pvector-model split-right-rest '(0 1 2 3 4 5 6 7 8 9 10))
+  (check-equal? split-last 11)
+  (check-true (eq? (pvector-empty) split-right-empty))
+  (check-pvector-model (pvector-take pv 0) '())
+  (check-pvector-model (pvector-take pv 4) '(0 1 2 3))
+  (check-pvector-model (pvector-drop pv 8) '(8 9 10 11))
+  (check-pvector-model (pvector-drop pv 12) '())
+  (check-pvector-model (pvector-take-right pv 3) '(9 10 11))
+  (check-pvector-model (pvector-drop-right pv 9) '(0 1 2))
+  (for* ([start (in-range 13)]
+         [end (in-range start 13)])
+    (check-pvector-model (pvector-subvector pv start end)
+                         (take (drop (range 12) start) (- end start)))))
+(test-case "subvector endpoints"
+  (define pv (list->pvector (range 12)))
+  (check-true (eq? pv (pvector-subvector pv 0)))
+  (check-true (eq? pv (pvector-subvector pv 0 12)))
+  (check-true (eq? (pvector-empty) (pvector-subvector pv 0 0)))
+  (check-pvector-model (pvector-subvector pv 0 1) '(0))
+  (check-pvector-model (pvector-subvector pv 11 12) '(11))
+  (check-pvector-model (pvector-subvector pv 0 2) '(0 1))
+  (check-pvector-model (pvector-subvector pv 10 12) '(10 11)))
+
+(test-case "large endpoint take and drop"
+  (define xs (range 130))
+  (define pv (list->pvector xs))
+  (for ([pos (in-list '(0 1 32 63 64 65 100 128 129 130))])
+    (check-pvector-model (pvector-take pv pos) (take xs pos))
+    (check-pvector-model (pvector-drop pv pos) (drop xs pos))
+    (check-pvector-model (pvector-take-right pv pos) (take-right xs pos))
+    (check-pvector-model (pvector-drop-right pv pos) (drop-right xs pos))))
+
+(test-case "insert and delete"
+  (define pv0 (list->pvector '(a b c d)))
+  (check-pvector-model (pvector-insert (pvector-empty) 0 'solo) '(solo))
+  (define pv1 (pvector-insert pv0 0 'z))
+  (check-pvector-model pv1 '(z a b c d))
+  (define pv2 (pvector-insert pv1 3 'x))
+  (check-pvector-model pv2 '(z a b x c d))
+  (define pv3 (pvector-insert pv2 (pvector-length pv2) 'end))
+  (check-pvector-model pv3 '(z a b x c d end))
+  (define-values (delete-left-rest delete-left-value) (pvector-delete pv3 0))
+  (check-equal? delete-left-value 'z)
+  (check-pvector-model delete-left-rest '(a b x c d end))
+  (define-values (delete-right-rest delete-right-value)
+    (pvector-delete pv3 (sub1 (pvector-length pv3))))
+  (check-equal? delete-right-value 'end)
+  (check-pvector-model delete-right-rest '(z a b x c d))
+  (define-values (pv4 deleted) (pvector-delete pv3 3))
+  (check-equal? deleted 'x)
+  (check-pvector-model pv4 '(z a b c d end))
+  (define-values (empty-after-delete only-value) (pvector-delete (pvector 'only) 0))
+  (check-equal? only-value 'only)
+  (check-true (eq? (pvector-empty) empty-after-delete))
+  (define-values (single-after-delete-left left-deleted)
+    (pvector-delete (pvector 'left 'right) 0))
+  (check-equal? left-deleted 'left)
+  (check-pvector-model single-after-delete-left '(right))
+  (define-values (single-after-delete-right right-deleted)
+    (pvector-delete (pvector 'left 'right) 1))
+  (check-equal? right-deleted 'right)
+  (check-pvector-model single-after-delete-right '(left)))
+
+(test-case "large middle operations"
+  (define xs (range 10000))
+  (define pv (list->pvector xs))
+  (for ([pos (in-list '(4 5 7 4096 4097 4992 4993 5000
+                          5024 5055 8185 8186 9995))])
+    (define-values (left split-value right) (pvector-split pv pos))
+    (check-pvector-model left (take xs pos))
+    (check-equal? split-value (list-ref xs pos))
+    (check-pvector-model right (drop xs (add1 pos)))
+    (define window-start (max 0 (- pos 3)))
+    (define window-end (min (length xs) (+ pos 4)))
+    (check-pvector-model (pvector-subvector pv window-start window-end)
+                         (take (drop xs window-start)
+                               (- window-end window-start)))
+    (define inserted (pvector-insert pv pos 'x))
+    (check-pvector-model inserted
+                         (list-insert xs pos 'x))
+    (define-values (deleted deleted-value) (pvector-delete inserted pos))
+    (check-equal? deleted-value 'x)
+    (check-pvector-model deleted xs)))
+
+(test-case "large append composition operations"
+  (define left-xs (range 0 257))
+  (define middle-xs (range 257 4354))
+  (define right-xs (range 4354 4867))
+  (define xs (append left-xs middle-xs right-xs))
+  (define left-pv (list->pvector left-xs))
+  (define middle-pv (list->pvector middle-xs))
+  (define right-pv (list->pvector right-xs))
+  (define left-associated
+    (pvector-append (pvector-append left-pv middle-pv) right-pv))
+  (define right-associated
+    (pvector-append left-pv (pvector-append middle-pv right-pv)))
+  (for ([pv (in-list (list left-associated right-associated))])
+    (check-pvector-model pv xs)
+    (for ([pos (in-list '(0 1 256 257 258 4353 4354 4355 4865 4866))])
+      (define-values (left split-value right) (pvector-split pv pos))
+      (check-pvector-model left (take xs pos))
+      (check-equal? split-value (list-ref xs pos))
+      (check-pvector-model right (drop xs (add1 pos)))
+      (define window-start (max 0 (- pos 5)))
+      (define window-end (min (length xs) (+ pos 6)))
+      (check-pvector-model (pvector-subvector pv window-start window-end)
+                           (take (drop xs window-start)
+                                 (- window-end window-start)))
+      (define inserted (pvector-insert pv pos 'marker))
+      (check-pvector-model inserted (list-insert xs pos 'marker))
+      (define-values (deleted deleted-value) (pvector-delete inserted pos))
+      (check-equal? deleted-value 'marker)
+      (check-pvector-model deleted xs))
+    (for ([pos (in-list '(0 257 4354 4867))])
+      (define-values (prefix suffix) (pvector-split-at pv pos))
+      (check-pvector-model prefix (take xs pos))
+      (check-pvector-model suffix (drop xs pos))
+      (check-pvector-model (pvector-take pv pos) (take xs pos))
+      (check-pvector-model (pvector-drop pv pos) (drop xs pos)))))
+
+(test-case "sequence, comprehensions, equality, and printing"
+  (define pv (pvector 1 2 3))
+  (check-equal? (for/list ([x pv]) x) '(1 2 3))
+  (check-equal? (for/list ([x pv]) x) '(1 2 3))
+  (check-equal? (for/list ([x pv] [y pv]) (list x y))
+                '((1 1) (2 2) (3 3)))
+  (check-equal? (for/list ([x (in-pvector-reverse pv)]) x) '(3 2 1))
+  (define-values (more? next) (sequence-generate pv))
+  (check-true (more?))
+  (check-equal? (next) 1)
+  (check-equal? (next) 2)
+  (check-equal? (next) 3)
+  (check-false (more?))
+  (when (bc-native-public-pvector?)
+    (define large-pv (list->pvector (range 130)))
+    (define-values (large-more? large-next) (sequence-generate large-pv))
+    (define prefix
+      (for/list ([i (in-range 37)])
+        (check-true (large-more?))
+        (large-next)))
+    (collect-garbage)
+    (collect-garbage)
+    (define suffix
+      (for/list ([i (in-range (- 130 37))])
+        (check-true (large-more?))
+        (large-next)))
+    (check-equal? (append prefix suffix) (range 130))
+    (check-false (large-more?))
+    (define cursor-threshold-pv
+      (for/pvector #:length 40000 ([i (in-range 40000)]) i))
+    (define-values (cursor-more? cursor-next)
+      (sequence-generate cursor-threshold-pv))
+    (define cursor-prefix
+      (for/list ([i (in-range 8)])
+        (check-true (cursor-more?))
+        (cursor-next)))
+    (collect-garbage)
+    (collect-garbage)
+    (check-equal? cursor-prefix (range 8))
+    (check-equal? (for/fold ([last #f]) ([x cursor-threshold-pv]) x)
+                  39999)
+    (check-equal? (for/fold ([last #f]) ([x (in-pvector cursor-threshold-pv)]) x)
+                  39999)
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector cursor-threshold-pv)]
+                                       #:break (= x 100))
+                    (+ sum x))
+                  (apply + (range 100)))
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector cursor-threshold-pv)]
+                                       #:final (= x 100))
+                    (+ sum x))
+                  (apply + (range 101))))
+  (define sliced (pvector-drop (list->pvector (range 130)) 3))
+  (check-equal? (for/list ([x sliced]) x) (range 3 130))
+  (check-equal? (for/list ([x (in-pvector sliced)]) x) (range 3 130))
+  (check-equal? (for/fold ([sum 0]) ([x (in-pvector sliced)])
+                  (+ sum x))
+                (apply + (range 3 130)))
+  (check-equal? (call-with-values
+                 (lambda ()
+                   (for/fold ([sum 0] [count 0]) ([x (in-pvector sliced)])
+                     (values (+ sum x) (add1 count))))
+                 list)
+                (list (apply + (range 3 130)) 127))
+  (check-equal? (for/fold ([sum 0]) ([x (in-pvector sliced)]
+                                     #:when (odd? x))
+                  (+ sum x))
+                (apply + (filter odd? (range 3 130))))
+  (check-equal? (for/fold ([sum 0]) ([x (in-pvector sliced)]
+                                     #:unless (odd? x))
+                  (+ sum x))
+                (apply + (filter even? (range 3 130))))
+  (let ([do-count 0])
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector pv)]
+                                       #:do [(set! do-count (add1 do-count))
+                                             (define doubled (* x 2))]
+                                       #:when (odd? x))
+                    (+ sum doubled))
+                  8)
+    (check-equal? do-count 3))
+  (let ([seen null])
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector sliced)]
+                                       #:break (> x 9))
+                    (set! seen (cons x seen))
+                    (+ sum x))
+                  (apply + (range 3 10)))
+    (check-equal? seen (reverse (range 3 10))))
+  (let ([seen null])
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector sliced)]
+                                       #:final (> x 9))
+                    (set! seen (cons x seen))
+                    (+ sum x))
+                  (apply + (range 3 11)))
+    (check-equal? seen (reverse (range 3 11))))
+  (check-equal? (for/list ([x (in-pvector sliced)]
+                           #:when (zero? (remainder x 10)))
+                  x)
+                '(10 20 30 40 50 60 70 80 90 100 110 120))
+  (check-equal? (for/sum ([x (in-pvector sliced)]
+                          #:when (odd? x))
+                  x)
+                (apply + (filter odd? (range 3 130))))
+  (check-equal? (for/vector ([x (in-pvector pv)])
+                  (* x 10))
+                '#(10 20 30))
+  (check-equal? (for/hash ([x (in-pvector pv)])
+                  (values x (add1 x)))
+                (hash 1 2 2 3 3 4))
+  (check-true (for/and ([x (in-pvector pv)])
+                (< x 4)))
+  (check-false (for/and ([x (in-pvector sliced)])
+                 (< x 10)))
+  (check-equal? (for/or ([x (in-pvector sliced)]
+                         #:when (> x 10))
+                  x)
+                11)
+  (let ([count 0])
+    (define (get-sliced)
+      (set! count (add1 count))
+      sliced)
+    (check-equal? (for/fold ([sum 0]) ([x (in-pvector (get-sliced))])
+                    (+ sum x))
+                  (apply + (range 3 130)))
+    (check-equal? count 1))
+  (let ([seen null])
+    (check-equal? (for ([x (in-pvector pv)])
+                    (set! seen (cons x seen))
+                    x)
+                  (void))
+    (check-equal? seen '(3 2 1)))
+  (check-equal? (for/list ([x (in-pvector-reverse sliced)]) x)
+                (reverse (range 3 130)))
+  (define sliced-seq (in-pvector sliced))
+  (check-equal? (for/list ([x sliced-seq]) x) (range 3 130))
+  (check-equal? (for/list ([x sliced-seq] [y sliced-seq]) (list x y))
+                (for/list ([x (in-range 3 130)]) (list x x)))
+  (define sliced-rseq (in-pvector-reverse sliced))
+  (check-equal? (for/list ([x sliced-rseq]) x) (reverse (range 3 130)))
+  (check-equal? (for/list ([x sliced-rseq] [y sliced-rseq]) (list x y))
+                (for/list ([x (in-list (reverse (range 3 130)))])
+                  (list x x)))
+  (let ([count 0])
+    (define (get-sliced)
+      (set! count (add1 count))
+      sliced)
+    (check-equal? (for/list ([x (in-pvector (get-sliced))]) x)
+                  (range 3 130))
+    (check-equal? count 1)
+    (check-equal? (for/list ([x (in-pvector-reverse (get-sliced))]) x)
+                  (reverse (range 3 130)))
+    (check-equal? count 2))
+  (define seq (in-pvector pv))
+  (check-equal? (for/list ([x seq]) x) '(1 2 3))
+  (check-equal? (for/list ([x seq]) x) '(1 2 3))
+  (check-equal? (for/list ([x seq] [y seq]) (list x y))
+                '((1 1) (2 2) (3 3)))
+  (define rseq (in-pvector-reverse pv))
+  (check-equal? (for/list ([x rseq]) x) '(3 2 1))
+  (check-equal? (for/list ([x rseq]) x) '(3 2 1))
+  (check-equal? (for/list ([x rseq] [y rseq]) (list x y))
+                '((3 3) (2 2) (1 1)))
+  (define same-elems (list->pvector (range 130)))
+  (define shifted-chunks (pvector-cons-left (pvector-drop same-elems 1) 0))
+  (check-equal? same-elems shifted-chunks)
+  (check-equal? (equal-hash-code same-elems)
+                (equal-hash-code shifted-chunks))
+  (check-pvector-model (for/pvector ([x (in-range 4)]) (* x x))
+                       '(0 1 4 9))
+  (check-pvector-model (for/pvector ([x (in-range 4)]) x)
+                       '(0 1 2 3))
+  (check-pvector-model (for/pvector ([x (in-range 1 5)]) x)
+                       '(1 2 3 4))
+  (check-pvector-model (for/pvector ([x (in-range 0 8 2)]) x)
+                       '(0 2 4 6))
+  (check-pvector-model (for/pvector ([x (in-range 5)]) x)
+                       '(0 1 2 3 4))
+  (check-pvector-model (for/pvector ([x (in-range 64)]) x)
+                       range-64-list)
+  (check-pvector-model (for/pvector ([x (in-range 1 65)]) x)
+                       (range 1 65))
+  (check-pvector-model (for/pvector ([x (in-range 0 128 2)]) x)
+                       (for/list ([x (in-range 0 128 2)]) x))
+  (check-pvector-model (for/pvector ([x (in-range 64 0 -1)]) x)
+                       (range 64 0 -1))
+  (check-pvector-model (for/pvector ([x (in-range -1)]) x)
+                       '())
+  (check-pvector-model (for/pvector ([x (in-list (range 17))]) x)
+                       (range 17))
+  (check-pvector-model (for/pvector ([x (in-list (range 17))]) (* x x))
+                       (map (lambda (x) (* x x)) (range 17)))
+  (let* ([src (list->vector (range 17))]
+         [pv (for/pvector ([x (in-vector src)]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (check-pvector-model (for/pvector ([x (in-vector (list->vector (range 17)))])
+                         (* x x))
+                       (map (lambda (x) (* x x)) (range 17)))
+  (let ([value (box 'builder-uniform)]
+        [count 0])
+    (define pv
+      (for/pvector ([x (in-range 130)])
+        (set! count (add1 count))
+        value))
+    (check-equal? count 130)
+    (check-pvector-model pv (make-list 130 value))
+    (check-eq? (vector-ref (pvector->vector pv) 64) value)
+    (check-eq? (list-ref (pvector->list pv) 129) value))
+  (let ([value (box 'builder-mixed)]
+        [count 0])
+    (define pv
+      (for/pvector ([x (in-range 130)])
+        (set! count (add1 count))
+        (if (= x 64) 'other value)))
+    (check-equal? count 130)
+    (check-pvector-model pv
+                         (append (make-list 64 value)
+                                 '(other)
+                                 (make-list 65 value)))
+    (check-eq? (vector-ref (pvector->vector pv) 63) value)
+    (check-equal? (vector-ref (pvector->vector pv) 64) 'other)
+    (check-eq? (list-ref (pvector->list pv) 129) value))
+  (let ([count 0])
+    (define (get-list)
+      (set! count (add1 count))
+      (range 17))
+    (check-pvector-model (for/pvector ([x (in-list (get-list))]) x)
+                         (range 17))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define (get-vector)
+      (set! count (add1 count))
+      (list->vector (range 17)))
+    (check-pvector-model (for/pvector ([x (in-vector (get-vector))]) x)
+                         (range 17))
+    (check-equal? count 1))
+  (let* ([src (list->vector (range 17))]
+         [pv (for/pvector #:length 17 ([x (in-vector src)]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (let* ([src (list->vector (range 17))]
+         [pv (for/pvector #:length (vector-length src) ([x src]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (check-pvector-model (for/pvector #:length 3
+                         ([x (in-vector (list->vector (range 17)))])
+                         x)
+                       (range 3))
+  (check-pvector-model (for/pvector #:length 20
+                         ([x (list->vector (range 17))])
+                         x)
+                       (append (range 17) '(0 0 0)))
+  (let ([len-count 0]
+        [vec-count 0])
+    (define (get-len)
+      (set! len-count (add1 len-count))
+      17)
+    (define (get-vector)
+      (set! vec-count (add1 vec-count))
+      (list->vector (range 17)))
+    (check-pvector-model (for/pvector #:length (get-len)
+                           ([x (in-vector (get-vector))])
+                           x)
+                         (range 17))
+    (check-equal? len-count 1)
+    (check-equal? vec-count 1))
+  (let ([pv (list->pvector (range 17))])
+    (check-true (eq? (for/pvector ([x (in-pvector pv)]) x) pv))
+    (check-true (eq? (for/pvector ([x pv]) x) pv))
+    (check-true (eq? (for/pvector #:length 17
+                       ([x (in-pvector pv)])
+                       x)
+                     pv))
+    (check-true (eq? (for/pvector #:length (pvector-length pv)
+                       ([x pv])
+                       x)
+                     pv))
+    (check-pvector-model (for/pvector ([x (in-pvector-reverse pv)]) x)
+                         (reverse (range 17)))
+    (check-pvector-model (for/pvector #:length 3
+                           ([x (in-pvector pv)])
+                           x)
+                         (range 3))
+    (check-pvector-model (for/pvector #:length 20
+                           ([x pv])
+                           x)
+                         (append (range 17) '(0 0 0)))
+    (check-pvector-model (for/pvector ([x (in-pvector pv)]) (* x x))
+                         (map (lambda (x) (* x x)) (range 17)))
+    (check-pvector-model (for/pvector ([x pv]) (* x x))
+                         (map (lambda (x) (* x x)) (range 17))))
+  (let ([count 0])
+    (define pv (list->pvector (range 17)))
+    (define (get-pvector)
+      (set! count (add1 count))
+      pv)
+    (check-true (eq? (for/pvector ([x (in-pvector (get-pvector))]) x)
+                     pv))
+    (check-equal? count 1))
+  (let ([count 0])
+    (define pv (list->pvector (range 17)))
+    (define (get-pvector)
+      (set! count (add1 count))
+      pv)
+    (check-pvector-model (for/pvector ([x (in-pvector-reverse
+                                           (get-pvector))])
+                           x)
+                         (reverse (range 17)))
+    (check-equal? count 1))
+  (let ([len-count 0]
+        [pv-count 0])
+    (define pv (list->pvector (range 17)))
+    (define (get-len)
+      (set! len-count (add1 len-count))
+      17)
+    (define (get-pvector)
+      (set! pv-count (add1 pv-count))
+      pv)
+    (check-true (eq? (for/pvector #:length (get-len)
+                       ([x (in-pvector (get-pvector))])
+                       x)
+                     pv))
+    (check-equal? len-count 1)
+    (check-equal? pv-count 1))
+  (check-pvector-model (for/pvector #:length 4 ([x (in-range 4)]) (* x x))
+                       '(0 1 4 9))
+  (check-pvector-model (for/pvector #:length 5 ([x (in-range 5)]) x)
+                       '(0 1 2 3 4))
+  (let ([n 5])
+    (check-pvector-model (for/pvector #:length n ([x (in-range 0 n)]) x)
+                         '(0 1 2 3 4)))
+  (let ([n 5])
+    (check-pvector-model (for/pvector #:length n ([x (in-range 0 n 1)]) x)
+                         '(0 1 2 3 4)))
+  (let ([n 5])
+    (check-pvector-model (for/pvector #:length n
+                         ([x (in-range 0 n)])
+                         (* x x))
+                       '(0 1 4 9 16)))
+  (let ([n 5])
+    (check-pvector-model (for/pvector #:length n
+                         ([x (in-range 0 n 1)])
+                         (* x x))
+                       '(0 1 4 9 16)))
+  (check-pvector-model (for/pvector #:length 64 ([x (in-range 64)]) x)
+                       range-64-list)
+  (check-pvector-model (for/pvector #:length 64 ([x (in-range 1 65)]) x)
+                       (range 1 65))
+  (check-pvector-model (for/pvector #:length 64 ([x (in-range 0 128 2)]) x)
+                       (for/list ([x (in-range 0 128 2)]) x))
+  (check-pvector-model (for/pvector #:length 64 ([x (in-range 64 0 -1)]) x)
+                       (range 64 0 -1))
+  (let ([n 64])
+    (check-pvector-model (for/pvector #:length n ([x (in-range n)]) x)
+                         range-64-list))
+  (check-pvector-model (for/pvector #:length 3 ([x (in-range 5)]) x)
+                       '(0 1 2))
+  (check-pvector-model (for/pvector #:length 3 ([x (in-range 1 6)]) x)
+                       '(1 2 3))
+  (check-pvector-model (for/pvector #:length 5 ([x (in-range 3)]) x)
+                       '(0 1 2 0 0))
+  (check-pvector-model (for/pvector #:length 5 ([x (in-range 1 4)]) x)
+                       '(1 2 3 0 0))
+  (check-exn exn:fail:contract?
+             (lambda ()
+               (for/pvector #:length -1 ([x (in-range -1)]) x)))
+  (check-pvector-model (for/pvector #:length 5 #:fill 'missing
+                         ([x (in-range 3)])
+                         x)
+                       '(0 1 2 missing missing))
+  (let ([value (box 'length-builder-uniform)]
+        [count 0])
+    (define pv
+      (for/pvector #:length 130 ([x (in-range 130)])
+        (set! count (add1 count))
+        value))
+    (check-equal? count 130)
+    (check-pvector-model pv (make-list 130 value))
+    (check-eq? (vector-ref (pvector->vector pv) 64) value)
+    (check-eq? (list-ref (pvector->list pv) 129) value))
+  (check-pvector-model (for*/pvector ([x (in-range 2)] [y (in-range 2)])
+                         (list x y))
+                       '((0 0) (0 1) (1 0) (1 1)))
+  (check-pvector-model (for*/pvector ([x (in-range 4)]) (* x x))
+                       '(0 1 4 9))
+  (check-pvector-model (for*/pvector ([x (in-range 4)]) x)
+                       '(0 1 2 3))
+  (check-pvector-model (for*/pvector ([x (in-range 1 5)]) x)
+                       '(1 2 3 4))
+  (check-pvector-model (for*/pvector ([x (in-range 0 8 2)]) x)
+                       '(0 2 4 6))
+  (check-pvector-model (for*/pvector ([x (in-range 64)]) x)
+                       range-64-list)
+  (check-pvector-model (for*/pvector ([x (in-range 1 65)]) x)
+                       (range 1 65))
+  (check-pvector-model (for*/pvector ([x (in-range 0 128 2)]) x)
+                       (for/list ([x (in-range 0 128 2)]) x))
+  (check-pvector-model (for*/pvector ([x (in-range 64 0 -1)]) x)
+                       (range 64 0 -1))
+  (check-pvector-model (for*/pvector ([x (in-list (range 17))]) x)
+                       (range 17))
+  (let* ([src (list->vector (range 17))]
+         [pv (for*/pvector ([x (in-vector src)]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (check-pvector-model (for*/pvector ([x (in-list (range 17))])
+                         (* x x))
+                       (map (lambda (x) (* x x)) (range 17)))
+  (check-pvector-model (for*/pvector ([x (in-vector (list->vector (range 17)))])
+                         (* x x))
+                       (map (lambda (x) (* x x)) (range 17)))
+  (let ([value (box 'builder-uniform)]
+        [count 0])
+    (define pv
+      (for*/pvector ([x (in-range 13)] [y (in-range 10)])
+        (set! count (add1 count))
+        value))
+    (check-equal? count 130)
+    (check-pvector-model pv (make-list 130 value))
+    (check-eq? (vector-ref (pvector->vector pv) 64) value)
+    (check-eq? (list-ref (pvector->list pv) 129) value))
+  (let* ([src (list->vector (range 17))]
+         [pv (for*/pvector #:length 17 ([x (in-vector src)]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (let* ([src (list->vector (range 17))]
+         [pv (for*/pvector #:length (vector-length src) ([x src]) x)])
+    (vector-set! src 0 'changed)
+    (check-pvector-model pv (range 17)))
+  (check-pvector-model (for*/pvector #:length 3
+                         ([x (in-vector (list->vector (range 17)))])
+                         x)
+                       (range 3))
+  (check-pvector-model (for*/pvector #:length 20
+                         ([x (list->vector (range 17))])
+                         x)
+                       (append (range 17) '(0 0 0)))
+  (let ([pv (list->pvector (range 17))])
+    (check-true (eq? (for*/pvector ([x (in-pvector pv)]) x) pv))
+    (check-true (eq? (for*/pvector ([x pv]) x) pv))
+    (check-true (eq? (for*/pvector #:length 17
+                       ([x (in-pvector pv)])
+                       x)
+                     pv))
+    (check-true (eq? (for*/pvector #:length (pvector-length pv)
+                       ([x pv])
+                       x)
+                     pv))
+    (check-pvector-model (for*/pvector ([x (in-pvector-reverse pv)]) x)
+                         (reverse (range 17)))
+    (check-pvector-model (for*/pvector #:length 3
+                           ([x (in-pvector pv)])
+                           x)
+                         (range 3))
+    (check-pvector-model (for*/pvector #:length 20
+                           ([x pv])
+                           x)
+                         (append (range 17) '(0 0 0)))
+    (check-pvector-model (for*/pvector ([x (in-pvector pv)]) (* x x))
+                         (map (lambda (x) (* x x)) (range 17)))
+    (check-pvector-model (for*/pvector ([x pv]) (* x x))
+                         (map (lambda (x) (* x x)) (range 17))))
+  (check-pvector-model (for*/pvector #:length 4
+                         ([x (in-range 2)] [y (in-range 2)])
+                         (list x y))
+                       '((0 0) (0 1) (1 0) (1 1)))
+  (check-pvector-model (for*/pvector #:length 64 ([x (in-range 64)]) x)
+                       range-64-list)
+  (let ([n 5])
+    (check-pvector-model (for*/pvector #:length n ([x (in-range 0 n)]) x)
+                         '(0 1 2 3 4)))
+  (let ([n 5])
+    (check-pvector-model (for*/pvector #:length n ([x (in-range 0 n 1)]) x)
+                         '(0 1 2 3 4)))
+  (let ([n 5])
+    (check-pvector-model (for*/pvector #:length n
+                         ([x (in-range 0 n)])
+                         (* x x))
+                       '(0 1 4 9 16)))
+  (let ([n 5])
+    (check-pvector-model (for*/pvector #:length n
+                         ([x (in-range 0 n 1)])
+                         (* x x))
+                       '(0 1 4 9 16)))
+  (check-pvector-model (for*/pvector #:length 64 ([x (in-range 1 65)]) x)
+                       (range 1 65))
+  (check-pvector-model (for*/pvector #:length 64 ([x (in-range 0 128 2)]) x)
+                       (for/list ([x (in-range 0 128 2)]) x))
+  (check-pvector-model (for*/pvector #:length 64 ([x (in-range 64 0 -1)]) x)
+                       (range 64 0 -1))
+  (let ([n 64])
+    (check-pvector-model (for*/pvector #:length n ([x (in-range n)]) x)
+                         range-64-list))
+  (check-pvector-model (for*/pvector #:length 5 ([x (in-range 3)]) x)
+                       '(0 1 2 0 0))
+  (check-exn exn:fail:contract?
+             (lambda ()
+               (for*/pvector #:length -1 ([x (in-range -1)]) x)))
+  (check-pvector-model (pvector 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+                       (range 17))
+  (check-pvector-model (pvector 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)
+                       (range 18))
+  (check-pvector-model (apply pvector (range 17))
+                       (range 17))
+  (check-pvector-model (apply pvector (range 32))
+                       (range 32))
+  (check-pvector-model (apply pvector (range 65))
+                       (range 65))
+  (check-pvector-model (apply pvector (range 96))
+                       (range 96))
+  (check-pvector-model (apply pvector (range 112))
+                       (range 112))
+  (check-pvector-model (apply pvector (range 128))
+                       (range 128))
+  (check-pvector-model (list->pvector (range 32))
+                       (range 32))
+  (let ([seen null])
+    (define (mark v)
+      (set! seen (append seen (list v)))
+      v)
+    (check-pvector-model
+     (pvector (mark 0) (mark 1) (mark 2) (mark 3) (mark 4) (mark 5)
+              (mark 6) (mark 7) (mark 8) (mark 9) (mark 10) (mark 11)
+              (mark 12) (mark 13) (mark 14) (mark 15) (mark 16))
+     (range 17))
+    (check-equal? seen (range 17)))
+  (check-equal? (pvector 1 2 3) (list->pvector '(1 2 3)))
+  (check-not-equal? (pvector 1 2 3) '(1 2 3))
+  (define str-a (string-copy "same"))
+  (define str-b (string-copy "same"))
+  (check-false (eq? str-a str-b))
+  (check-equal? (pvector str-a) (pvector str-b))
+  (check-equal? (equal-hash-code (pvector 1 2 3))
+                (equal-hash-code (list->pvector '(1 2 3))))
+  (define mutable-elem (box 1))
+  (define mutable-pv (pvector mutable-elem))
+  (define mutable-hash-before (equal-hash-code mutable-pv))
+  (set-box! mutable-elem 2)
+  (check-not-equal? mutable-hash-before (equal-hash-code mutable-pv))
+  (define long-mutable-elem (box 1))
+  (define long-mutable-pv
+    (list->pvector
+     (append (range 16)
+             (list long-mutable-elem)
+             (range 17 130))))
+  (define long-mutable-hash-before (equal-hash-code long-mutable-pv))
+  (set-box! long-mutable-elem 2)
+  (check-not-equal? long-mutable-hash-before
+                    (equal-hash-code long-mutable-pv))
+  (if (bc-native-public-pvector?)
+      (begin
+        (check-equal? (format "~s" pv) "#<pvector:3>")
+        (check-equal? (format "~a" (pvector "x" "y")) "#<pvector:2>")
+        (check-equal? (format "~s" (pvector "x" "y")) "#<pvector:2>")
+        (check-equal? (format "~v" (pvector "x" "y")) "#<pvector:2>")
+        (check-equal? (format "~s" (list->pvector (range 40)))
+                      "#<pvector:40>"))
+      (begin
+        (check-equal? (format "~s" pv) "(pvector 1 2 3)")
+        (check-equal? (format "~a" (pvector "x" "y")) "(pvector x y)")
+        (check-equal? (format "~s" (pvector "x" "y")) "(pvector \"x\" \"y\")")
+        (check-equal? (format "~v" (pvector "x" "y")) "(pvector \"x\" \"y\")")
+        (check-equal? (format "~s" (list->pvector (range 40)))
+                      (string-append
+                       "(pvector 0 1 2 3 4 5 6 7 8 9 "
+                       "10 11 12 13 14 15 16 17 18 19 "
+                       "20 21 22 23 24 25 26 27 28 29 "
+                       "30 31 32 33 34 35 36 37 38 39)")))))
+
+(test-case "pvector direct for/fold expansion shape"
+  (define (expanded-datum form)
+    (syntax->datum (expand form)))
+  (when (kernel-procedure? 'core-unsafe-pvector-fold-left)
+    (define simple-fold
+      (expanded-datum
+       #'(lambda (pv)
+           (for/fold ([sum 0]) ([x (in-pvector pv)])
+             (+ sum x)))))
+    (define filtered-fold
+      (expanded-datum
+       #'(lambda (pv)
+           (for/fold ([sum 0]) ([x (in-pvector pv)]
+                                #:when (odd? x))
+             (+ sum x)))))
+    (check-true
+     (datum-contains-symbol? simple-fold 'core-unsafe-pvector-fold-left))
+    (check-false
+     (datum-contains-symbol? filtered-fold 'core-unsafe-pvector-fold-left)))
+  (when (kernel-procedure? 'core-unsafe-pvector-for-each)
+    (define simple-for
+      (expanded-datum
+       #'(lambda (pv)
+           (for ([x (in-pvector pv)])
+             (void x)))))
+    (define filtered-for
+      (expanded-datum
+       #'(lambda (pv)
+           (for ([x (in-pvector pv)]
+                 #:when (odd? x))
+             (void x)))))
+    (check-true
+     (datum-contains-symbol? simple-for 'core-unsafe-pvector-for-each))
+    (check-true
+     (datum-contains-symbol? filtered-for 'core-unsafe-pvector-for-each))))
+
+(test-case "pvector direct for ignores body values"
+  (define sum 0)
+  (define result
+    (for ([x (in-pvector (pvector 1 2 3))])
+      (set! sum (+ sum x))
+      (values x x)))
+  (check-equal? sum 6)
+  (check-true (void? result)))
+
+(test-case "stream"
+  (define pv (pvector 1 2 3))
+  (check-true (stream? pv))
+  (check-false (stream-empty? pv))
+  (check-true (stream-empty? (pvector-empty)))
+  (check-equal? (stream-first pv) 1)
+  (check-true (pvector? (stream-rest pv)))
+  (check-equal? (stream-first (stream-rest pv)) 2)
+  (check-true (pvector? (stream-rest (pvector 'only))))
+  (check-true (eq? (pvector-empty) (stream-rest (pvector 'only))))
+  (check-equal? (stream->list pv) '(1 2 3))
+  (check-equal? (stream-length pv) 3)
+  (check-equal? (stream-ref pv 2) 3)
+  (check-true (pvector? (stream-tail pv 1)))
+  (check-equal? (stream->list (stream-tail pv 1)) '(2 3))
+  (check-true (pvector? (stream-take pv 2)))
+  (check-equal? (stream->list (stream-take pv 2)) '(1 2))
+  (check-true (pvector? (stream-append pv (pvector 4 5))))
+  (check-equal? (stream->list (stream-append pv (pvector 4 5)))
+                '(1 2 3 4 5))
+  (check-false (pvector? (stream-append pv '(4 5))))
+  (check-equal? (stream->list (stream-append pv '(4 5)))
+                '(1 2 3 4 5))
+  (check-equal? (stream->list (stream-rest (stream-append pv '(4 5))))
+                '(2 3 4 5))
+  (check-equal? (stream-length (stream-append pv '(4 5))) 5)
+  (check-equal? (stream-ref (stream-append pv '(4 5)) 2) 3)
+  (check-equal? (stream-ref (stream-append pv '(4 5)) 3) 4)
+  (check-equal? (stream->list (stream-tail (stream-append pv '(4 5)) 3))
+                '(4 5))
+  (check-false (pvector? (stream-take (stream-append pv '(4 5)) 2)))
+  (check-equal? (stream->list (stream-take (stream-append pv '(4 5)) 2))
+                '(1 2))
+  (check-true (pvector? (stream-add-between pv 'x)))
+  (check-equal? (stream->list (stream-add-between pv 'x))
+                '(1 x 2 x 3))
+  (check-true (pvector? (stream-add-between (pvector-empty) 'x)))
+  (check-true (stream-empty? (stream-add-between (pvector-empty) 'x)))
+  (let ([singleton (pvector 'only)])
+    (check-true (eq? singleton (stream-add-between singleton 'x))))
+  (check-false (pvector? (stream-add-between '(1 2 3) 'x)))
+  (check-equal? (stream->list (stream-add-between '(1 2 3) 'x))
+                '(1 x 2 x 3))
+  (check-true (eq? pv (stream-map values pv)))
+  (check-true (eq? (pvector-empty) (stream-map void (pvector-empty))))
+  (check-true (pvector? (stream-map void pv)))
+  (check-equal? (pvector-length (stream-map void pv)) 3)
+  (for ([v (in-pvector (stream-map void pv))])
+    (check-equal? v (void)))
+  (check-false (pvector? (stream-map values '(1 2 3))))
+  (check-equal? (stream->list (stream-map values '(1 2 3)))
+                '(1 2 3))
+  (check-false (pvector? (stream-map add1 pv)))
+  (check-equal? (stream->list (stream-map add1 pv)) '(2 3 4))
+  (check-equal? (stream->list (stream-rest (stream-map add1 pv))) '(3 4))
+  (check-equal? (stream->list (stream-take (stream-map add1 pv) 2))
+                '(2 3))
+  (let* ([count 0]
+         [mapped (stream-map (lambda (v)
+                               (set! count (add1 count))
+                               (add1 v))
+                             pv)])
+    (check-equal? (stream-length mapped) 3)
+    (check-equal? count 0)
+    (check-equal? (stream->list (stream-tail mapped 2)) '(4))
+    (check-equal? count 1)
+    (check-equal? (stream-ref mapped 1) 3)
+    (check-equal? count 2))
+  (let* ([count 0]
+         [mapped (stream-map (lambda (v)
+                               (set! count (add1 count))
+                               (add1 v))
+                             pv)]
+         [taken (stream-take mapped 2)])
+    (check-equal? count 0)
+    (check-equal? (stream->list taken) '(2 3))
+    (check-equal? count 2))
+  (let ([too-long (stream-take (stream-map add1 pv) 4)])
+    (check-true (stream? too-long))
+    (check-exn exn:fail?
+               (lambda () (stream->list too-long))))
+  (check-exn exn:fail?
+             (lambda () (stream-ref (stream-map add1 pv) 3)))
+  (check-exn exn:fail?
+             (lambda () (stream-tail (stream-map add1 pv) 4)))
+  (let ([seen null])
+    (check-equal? (stream->list
+                   (stream-map (lambda (v)
+                                 (set! seen (append seen (list v)))
+                                 (add1 v))
+                               pv))
+                  '(2 3 4))
+    (check-equal? seen '(1 2 3)))
+  (check-exn exn:fail?
+             (lambda ()
+               (stream->list
+                (stream-map (lambda (v) (values v (add1 v))) pv))))
+  (check-equal? (call-with-values
+                    (lambda ()
+                      (stream-first
+                       (stream-map (lambda (v) (values v (add1 v))) pv)))
+                  list)
+                '(1 2))
+  (let* ([count 0]
+         [mapped (stream-map (lambda (v)
+                               (set! count (add1 count))
+                               (if (= v 2) (error 'stream-map-pvector) v))
+                             pv)])
+    (check-equal? count 0)
+    (check-equal? (stream-first mapped) 1)
+    (check-equal? count 1)
+    (check-exn exn:fail?
+               (lambda () (stream-first (stream-rest mapped))))
+    (check-equal? count 2))
+  (define pv/false (pvector 1 #f 2 #f 3))
+  (check-true (eq? pv (stream-filter values pv)))
+  (check-true (eq? pv/false (stream-filter void pv/false)))
+  (check-true (pvector? (stream-filter values pv/false)))
+  (check-equal? (stream->list (stream-filter values pv/false))
+                '(1 2 3))
+  (check-false (pvector? (stream-filter odd? pv)))
+  (check-equal? (stream->list (stream-filter odd? pv)) '(1 3))
+  (check-equal? (stream->list (stream-rest (stream-filter odd? pv))) '(3))
+  (let* ([count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv)])
+    (check-equal? count 0)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 1)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 1)
+    (check-equal? (stream-first (stream-rest filtered)) 3)
+    (check-equal? count 3))
+  (let* ([seen null]
+         [filtered (stream-filter (lambda (v)
+                                    (set! seen (append seen (list v)))
+                                    (odd? v))
+                                  pv)])
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? seen '(1))
+    (check-equal? (stream->list filtered) '(1 3))
+    (check-equal? seen '(1 2 3)))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream-length filtered) 2)
+    (check-equal? count 4)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 4))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream-ref filtered 1) 3)
+    (check-equal? count 3)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 3)
+    (check-exn exn:fail?
+               (lambda () (stream-ref filtered 2)))
+    (check-equal? count 6))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (define tail (stream-tail filtered 1))
+    (check-equal? count 1)
+    (check-equal? (stream->list tail) '(3))
+    (check-equal? count 4))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream->list (stream-tail filtered 2)) null)
+    (check-equal? count 4)
+    (check-exn exn:fail?
+               (lambda () (stream-tail filtered 3)))
+    (check-equal? count 7))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-true (stream-empty? (stream-take filtered 0)))
+    (check-equal? count 0))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 1)])
+    (check-equal? count 0)
+    (check-equal? (stream->list taken) '(1))
+    (check-equal? count 1))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 2)])
+    (check-equal? count 0)
+    (check-equal? (stream->list taken) '(1 3))
+    (check-equal? count 3))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 3)])
+    (check-true (stream? taken))
+    (check-equal? count 0)
+    (check-exn exn:fail?
+               (lambda () (stream->list taken)))
+    (check-equal? count 4))
+  (let* ([count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    #f)
+                                  pv)])
+    (check-true (stream-empty? filtered))
+    (check-equal? count 3)
+    (check-true (stream-empty? filtered))
+    (check-equal? count 3))
+  (check-true (pvector? (stream-filter values (pvector #f #f))))
+  (check-true (stream-empty? (stream-filter values (pvector #f #f))))
+  (check-false (pvector? (stream-filter values '(1 #f 2))))
+  (check-equal? (stream->list (stream-filter values '(1 #f 2)))
+                '(1 2))
+  (let ([sum 0])
+    (check-equal? (stream-for-each (lambda (v) (set! sum (+ sum v))) pv)
+                  (void))
+    (check-equal? sum 6))
+  (check-equal? (stream-for-each void pv) (void))
+  (check-equal? (stream-for-each values pv) (void))
+  (check-equal? (stream-fold + 0 pv) 6)
+  (check-equal? (stream-fold void 'init pv) (void))
+  (check-equal? (stream-fold void 'init (pvector-empty)) 'init)
+  (let* ([pv* (pvector 1 2 3)]
+         [count 0]
+         [mapped (stream-map (lambda (v)
+                               (set! count (add1 count))
+                               (add1 v))
+                             pv*)])
+    (check-equal? (stream-fold + 0 mapped) 9)
+    (check-equal? count 3))
+  (check-equal? (stream-fold (lambda (acc x y) (+ acc x y))
+                             0
+                             (stream-map (lambda (v)
+                                           (values v (add1 v)))
+                                         pv))
+                15)
+  (let ([seen null])
+    (stream-for-each (lambda (x y)
+                       (set! seen (cons (list x y) seen)))
+                     (stream-map (lambda (v)
+                                   (values v (add1 v)))
+                                 pv))
+    (check-equal? (reverse seen) '((1 2) (2 3) (3 4))))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream-fold + 0 filtered) 4)
+    (check-equal? count 4)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 4))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 2)]
+         [seen null])
+    (stream-for-each (lambda (v) (set! seen (cons v seen))) taken)
+    (check-equal? (reverse seen) '(1 3))
+    (check-equal? count 3))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [filtered (stream-filter odd? pv*)]
+         [taken (stream-take filtered 3)])
+    (check-exn exn:fail?
+               (lambda () (stream-fold + 0 taken)))
+    (check-exn exn:fail?
+               (lambda () (stream-for-each void taken))))
+  (let ([seen null])
+    (stream-for-each (lambda (v) (set! seen (cons v seen)))
+                     (stream-append pv '(4 5)))
+    (check-equal? (reverse seen) '(1 2 3 4 5)))
+  (check-equal? (stream-fold + 0 (stream-append pv '(4 5))) 15)
+  (check-equal? (stream-count odd? pv) 2)
+  (check-equal? (stream-count values pv) 3)
+  (check-equal? (stream-count values pv/false) 3)
+  (check-equal? (stream-count values (pvector-empty)) 0)
+  (check-equal? (stream-count void pv/false) 5)
+  (check-equal? (stream-count void (pvector-empty)) 0)
+  (check-equal? (stream-count values '(1 #f 2)) 2)
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [mapped (stream-map (lambda (v)
+                               (set! count (add1 count))
+                               (add1 v))
+                             pv*)])
+    (check-equal? (stream-count even? mapped) 2)
+    (check-equal? count 4))
+  (check-equal? (stream-count (lambda (x y) #t)
+                              (stream-map (lambda (v)
+                                            (values v (add1 v)))
+                                          pv))
+                3)
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream-count values filtered) 2)
+    (check-equal? count 4)
+    (check-equal? (stream-first filtered) 1)
+    (check-equal? count 4))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 2)])
+    (check-equal? (stream-count values taken) 2)
+    (check-equal? count 3))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 3)])
+    (check-exn exn:fail?
+               (lambda () (stream-count values taken)))
+    (check-equal? count 4))
+  (check-exn
+   (lambda (e)
+     (and (exn:fail? e)
+          (regexp-match? #rx"stream-take: stream ended before index"
+                         (exn-message e))))
+   (lambda ()
+     (stream-empty? (stream-take (stream-filter odd? (pvector 2)) 1))))
+  (check-equal? (stream-count odd? (stream-append pv '(4 5))) 3)
+  (check-equal? (stream-andmap (lambda (v) v) pv) 3)
+  (check-equal? (stream-ormap (lambda (v) (and (> v 1) v)) pv) 2)
+  (let ([count 0])
+    (check-equal? (stream-andmap void
+                                 (stream-map (lambda (v)
+                                               (set! count (add1 count))
+                                               v)
+                                             pv))
+                  (void))
+    (check-equal? count 3))
+  (let ([count 0])
+    (check-equal? (stream-ormap void
+                                (stream-map (lambda (v)
+                                              (set! count (add1 count))
+                                              v)
+                                            pv))
+                  (void))
+    (check-equal? count 1))
+  (check-equal? (stream-andmap (lambda (x y) (+ x y))
+                               (stream-map (lambda (v)
+                                             (values v (add1 v)))
+                                           pv))
+                7)
+  (check-equal? (stream-ormap (lambda (x y) (and (> x 1) (+ x y)))
+                              (stream-map (lambda (v)
+                                            (values v (add1 v)))
+                                          pv))
+                5)
+  (let ([seen null])
+    (check-equal? (stream-andmap (lambda (v)
+                                   (set! seen (cons v seen))
+                                   v)
+                                 pv/false)
+                  #f)
+    (check-equal? (reverse seen) '(1 #f)))
+  (let ([seen null])
+    (check-equal? (stream-ormap (lambda (v)
+                                  (set! seen (cons v seen))
+                                  (and (> v 1) v))
+                                pv)
+                  2)
+    (check-equal? (reverse seen) '(1 2)))
+  (let ([count 0]
+        [large-pv (list->pvector (range 130))])
+    (check-equal? (stream-andmap (lambda (v)
+                                   (set! count (add1 count))
+                                   (< v 5))
+                                 large-pv)
+                  #f)
+    (check-equal? count 6))
+  (let ([count 0]
+        [large-pv (list->pvector (range 130))])
+    (check-equal? (stream-ormap (lambda (v)
+                                  (set! count (add1 count))
+                                  (and (= v 7) 'hit))
+                                large-pv)
+                  'hit)
+    (check-equal? count 8))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)])
+    (check-equal? (stream-andmap (lambda (v) (= v 1)) filtered) #f)
+    (check-equal? count 3))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 3)])
+    (check-equal? (stream-andmap (lambda (v) #f) taken) #f)
+    (check-equal? count 1))
+  (let* ([pv* (pvector 1 2 3 4)]
+         [count 0]
+         [filtered (stream-filter (lambda (v)
+                                    (set! count (add1 count))
+                                    (odd? v))
+                                  pv*)]
+         [taken (stream-take filtered 3)])
+    (check-equal? (stream-ormap values taken) 1)
+    (check-equal? count 1))
+  (check-exn exn:fail?
+             (lambda ()
+               (stream-andmap values
+                              (stream-take (stream-filter odd?
+                                                          (pvector 1 2))
+                                           2))))
+  (check-exn exn:fail?
+             (lambda ()
+               (stream-ormap (lambda (v) #f)
+                             (stream-take (stream-filter odd?
+                                                         (pvector 1 2))
+                                          2))))
+  (let ([seen null])
+    (check-equal? (stream-andmap (lambda (v)
+                                   (set! seen (cons v seen))
+                                   v)
+                                 (stream-append pv '(4 5)))
+                  5)
+    (check-equal? (reverse seen) '(1 2 3 4 5)))
+  (let ([seen null])
+    (check-equal? (stream-ormap (lambda (v)
+                                  (set! seen (cons v seen))
+                                  (and (= v 4) v))
+                                (stream-append pv '(4 5)))
+                  4)
+    (check-equal? (reverse seen) '(1 2 3 4)))
+  (check-equal? (stream-andmap values pv) 3)
+  (check-equal? (stream-andmap values pv/false) #f)
+  (check-equal? (stream-andmap values (pvector-empty)) #t)
+  (check-equal? (stream-andmap void pv) (void))
+  (check-equal? (stream-andmap void (pvector-empty)) #t)
+  (check-equal? (stream-ormap values pv/false) 1)
+  (check-equal? (stream-ormap values (pvector #f 0 3)) 0)
+  (check-equal? (stream-ormap values (pvector #f #f)) #f)
+  (check-equal? (stream-ormap values (pvector-empty)) #f)
+  (check-equal? (stream-ormap void pv) (void))
+  (check-equal? (stream-ormap void (pvector-empty)) #f)
+  (check-equal? (stream-for-each (lambda (x y) x) (pvector-empty))
+                (void))
+  (check-exn exn:fail:contract?
+             (lambda () (stream-for-each (lambda (x y) x) pv)))
+  (check-equal? (stream-count (lambda (x y) x) (pvector-empty)) 0)
+  (check-equal? (stream-fold (lambda (x y z) x) 'init (pvector-empty))
+                'init)
+  (check-equal? (stream-andmap (lambda (x y) x) (pvector-empty)) #t)
+  (check-equal? (stream-ormap (lambda (x y) x) (pvector-empty)) #f)
+  (check-exn exn:fail?
+             (lambda () (stream-ref pv 99)))
+  (check-exn exn:fail?
+             (lambda () (stream-tail pv 99)))
+  (check-exn exn:fail?
+             (lambda () (stream->list (stream-take pv 99)))))
+
+(test-case "match expanders"
+  (check-equal? (match (pvector 1 2 3)
+                  [(pvector a b c) (list a b c)]
+                  [_ #f])
+                '(1 2 3))
+  (check-true (match (pvector 1 1)
+                [(pvector x x) #t]
+                [_ #f]))
+  (check-false (match (pvector 1 2)
+                 [(pvector x x) #t]
+                 [_ #f]))
+  (check-equal? (match (pvector 1 2 3 4)
+                  [(pvector 1 xs ..2) xs]
+                  [_ #f])
+                '(2 3 4))
+  (check-false (match (pvector 1 2)
+                 [(pvector 1 xs ..2) #t]
+                 [_ #f]))
+  (check-equal? (match (pvector 1 2 3)
+                  [(pvector xs ...) xs]
+                  [_ #f])
+                '(1 2 3))
+  (check-equal? (match (pvector 1 2 3)
+                  [(pvector x xs ...) (list x xs)]
+                  [_ #f])
+                '(1 (2 3)))
+  (check-equal? (match (pvector 1 2 3 4 5)
+                  [(pvector xs ..2 4 5) xs]
+                  [_ #f])
+                '(1 2 3))
+  (check-equal? (match (pvector 1 2 3 4 5)
+                  [(pvector 1 xs ..2 5) xs]
+                  [_ #f])
+                '(2 3 4))
+  (check-equal? (match (pvector 1 2 3 4 5)
+                  [(pvector 1 xs ___ 5) xs]
+                  [_ #f])
+                '(2 3 4))
+  (check-false (match (pvector 1 2 3)
+                 [(pvector xs ..2 2 3) #t]
+                 [_ #f]))
+  (check-equal? (match (pvector-empty)
+                  [(pvector xs ...) xs]
+                  [_ #f])
+                null)
+  (check-true (match (pvector-empty)
+                [(pvector) #t]
+                [_ #f]))
+  (check-false (match (pvector 1 2)
+                 [(pvector 1 2 3) #t]
+                 [_ #f]))
+  (check-false (match '(1 2 3)
+                 [(pvector _ _ _) #t]
+                 [_ #f]))
+  (define pv (pvector 'a 'b 'c 'd 'e))
+  (check-equal? (match pv
+                  [(pvector* 'a #:rest mid 'e)
+                   (pvector->list mid)]
+                  [_ #f])
+                '(b c d))
+  (check-equal? (match pv
+                  [(pvector* #:span 2 left 'c #:span 2 right)
+                   (list (pvector->list left) (pvector->list right))]
+                  [_ #f])
+                '((a b) (d e)))
+  (check-equal? (match pv
+                  [(pvector* #:rest left 'd 'e)
+                   (pvector->list left)]
+                  [_ #f])
+                '(a b c))
+  (check-equal? (match pv
+                  [(pvector* 'a 'b #:rest right)
+                   (pvector->list right)]
+                  [_ #f])
+                '(c d e))
+  (let ([n 2])
+    (check-equal? (match pv
+                    [(pvector* #:span n left 'c #:rest right)
+                     (list (pvector->list left) (pvector->list right))]
+                    [_ #f])
+                  '((a b) (d e))))
+  (check-equal? (match pv
+                  [(pvector* 'a 'b . right)
+                   (pvector->list right)]
+                  [_ #f])
+                '(c d e))
+  (check-true (match pv
+                [(pvector* #:rest whole) (eq? whole pv)]
+                [_ #f]))
+  (check-true (match pv
+                [(pvector* #:span 5 whole) (eq? whole pv)]
+                [_ #f]))
+  (check-equal? (match (pvector (pvector 'x 'y) 'z)
+                  [(pvector* (pvector x y) 'z) (list x y)]
+                  [_ #f])
+                '(x y))
+  (check-false (match pv
+                 [(pvector* #:span 3 _ 'e #:span 3 _) #t]
+                 [_ #f]))
+  (check-false (match pv
+                 [(pvector* #:span #f _ #:rest _) #t]
+                 [_ #f]))
+  (check-false (match pv
+                 [(pvector* #:span -1 _ #:rest _) #t]
+                 [_ #f]))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:rest left #:rest right) #t]
+            [_ #f])))))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector (list x) x (... ...)) #t]
+            [_ #f])))))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:span 2) #t]
+            [_ #f])))))
+  (check-exn
+   exn:fail:syntax?
+   (lambda ()
+     (expand
+      #'(lambda (pv)
+          (match pv
+            [(pvector* #:rest) #t]
+            [_ #f])))))
+  )
+
+(test-case "serialization"
+  (define pv (pvector 'a "b" 3))
+  (check-false (pvector? '(not a pvector)))
+  (if (bc-native-public-pvector?)
+      (check-exn #rx"expected: serializable\\?"
+                 (lambda () (serialize pv)))
+      (let ([pv* (deserialize (serialize pv))])
+        (check-true (pvector? pv*))
+        (check-equal? pv* pv)
+        (check-equal? (pvector->list pv*) '(a "b" 3)))))
+
+(test-case "place message boundary"
+  (define pv (pvector 'a "b" 3))
+  (check-false (place-message-allowed? pv))
+  (define-values (in out) (place-channel))
+  (check-exn #rx"(cannot transmit|place-message-allowed\\?)"
+             (lambda () (place-channel-put in pv))))
+
+(test-case "default racket language bindings"
+  (for ([module-path (in-list '(racket racket/init))])
+    (define ns (make-base-empty-namespace))
+    (parameterize ([current-namespace ns])
+      (namespace-require module-path)
+      (check-equal? (eval '(pvector->list (pvector 1 2 3)))
+                    '(1 2 3))
+      (check-true (eval '(pvector? (pvector-empty)))))))
+
+(test-case "JIT on/off public hot paths"
+  (when (bc-native-public-pvector?)
+    (define jit-off-score (public-pvector-jit-score #f))
+    (define jit-on-score (public-pvector-jit-score #t))
+    (check-true (positive? jit-off-score))
+    (check-equal? jit-on-score jit-off-score)
+    (define jit-off-errors (public-pvector-jit-error-signatures #f))
+    (define jit-on-errors (public-pvector-jit-error-signatures #t))
+    (check-equal? jit-on-errors jit-off-errors)
+    (for ([sig (in-list jit-on-errors)])
+      (check-equal? (cadr sig) 'exn)
+      (check-true (caddr sig)))))
+
+(test-case "GC stress keeps pvector elements reachable"
+  (define len 4096)
+  (define boxes (for/list ([i (in-range len)]) (box i)))
+  (define weak-boxes (list->vector (map make-weak-box boxes)))
+  (define pv (list->pvector boxes))
+  (set! boxes #f)
+  (collect-garbage)
+  (collect-garbage)
+  (collect-garbage)
+  (check-equal? (pvector-length pv) len)
+  (for ([i (in-list '(0 1 2 3 4 5 8 9 16 31 32 33 64
+                        255 256 257 1024 2047 4095))])
+    (define elem (pvector-ref pv i))
+    (check-equal? (unbox elem) i)
+    (check-eq? elem (weak-box-value (vector-ref weak-boxes i))))
+  (for ([i (in-range 0 len 257)])
+    (check-equal? (unbox (pvector-ref pv i)) i)))
+
+(test-case "unsafe submodule"
+  (define pv (list->pvector (range 6)))
+  (check-exn exn:fail?
+             (lambda ()
+               (dynamic-require '(submod racket/pvector unsafe)
+                                'unsafe-pvector->chunk-vector)))
+  (when (bc-native-public-pvector?)
+    (check-equal? (map object-name
+                       (list unsafe:unsafe-pvector-length
+                             unsafe:unsafe-pvector->list
+                             unsafe:unsafe-pvector->vector
+                             unsafe:unsafe-pvector-ref
+                             unsafe:unsafe-pvector-set
+                             unsafe:unsafe-pvector-first
+                             unsafe:unsafe-pvector-last
+                             unsafe:unsafe-pvector-cons-left
+                             unsafe:unsafe-pvector-cons-right
+                             unsafe:unsafe-pvector-pop-left
+                             unsafe:unsafe-pvector-pop-right
+                             unsafe:unsafe-pvector-append
+                             unsafe:unsafe-pvector-insert
+                             unsafe:unsafe-pvector-delete
+                             unsafe:unsafe-pvector-take
+                             unsafe:unsafe-pvector-drop
+                             unsafe:unsafe-pvector-take-right
+                             unsafe:unsafe-pvector-drop-right
+                             unsafe:unsafe-pvector-subvector
+                             unsafe:unsafe-pvector-split
+                             unsafe:unsafe-pvector-split-at))
+                  '(core-unsafe-pvector-length
+                    core-pvector->list
+                    core-pvector->vector
+                    core-unsafe-pvector-ref
+                    core-pvector-set
+                    core-unsafe-pvector-view-left
+                    core-unsafe-pvector-view-right
+                    core-pvector-cons-left
+                    core-pvector-cons-right
+                    core-pvector-pop-left
+                    core-pvector-pop-right
+                    core-pvector-append
+                    core-pvector-insert
+                    core-pvector-delete
+                    core-pvector-take
+                    core-pvector-drop
+                    core-pvector-take-right
+                    core-pvector-drop-right
+                    core-pvector-copy
+                    core-pvector-split
+                    core-pvector-split-at)))
+  (check-equal? (unsafe:unsafe-pvector-length pv) 6)
+  (check-eq? (unsafe:unsafe-pvector->list (pvector-empty)) null)
+  (check-equal? (unsafe:unsafe-pvector->list pv) '(0 1 2 3 4 5))
+  (check-equal? (vector->list (unsafe:unsafe-pvector->vector pv))
+                '(0 1 2 3 4 5))
+  (let ([short (pvector 'a 'b)])
+    (check-equal? (unsafe:unsafe-pvector->list short) '(a b))
+    (let ([out (unsafe:unsafe-pvector->vector short)])
+      (check-equal? (vector->list out) '(a b))
+      (vector-set! out 0 'changed)
+      (check-equal? (unsafe:unsafe-pvector->list short) '(a b))))
+  (let ([short (pvector 'a 'b 'c)])
+    (check-equal? (unsafe:unsafe-pvector->list short) '(a b c))
+    (let ([out (unsafe:unsafe-pvector->vector short)])
+      (check-equal? (vector->list out) '(a b c))
+      (vector-set! out 1 'changed)
+      (check-equal? (unsafe:unsafe-pvector->list short) '(a b c))))
+  (let ([short (pvector 'a 'b 'c 'd)])
+    (check-equal? (unsafe:unsafe-pvector->list short) '(a b c d))
+    (let ([out (unsafe:unsafe-pvector->vector short)])
+      (check-equal? (vector->list out) '(a b c d))
+      (vector-set! out 2 'changed)
+      (check-equal? (unsafe:unsafe-pvector->list short) '(a b c d))))
+  (check-equal? (unsafe:unsafe-pvector-ref pv 4) 4)
+  (check-pvector-model (unsafe:unsafe-pvector-set pv 2 'x)
+                       '(0 1 x 3 4 5))
+  (check-true (eq? pv (unsafe:unsafe-pvector-set pv 2 2)))
+  (check-false (eq? pv (unsafe:unsafe-pvector-set pv 2 'x)))
+  (check-pvector-model (unsafe:unsafe-pvector-append (pvector 'left) pv)
+                       '(left 0 1 2 3 4 5))
+  (check-pvector-model (unsafe:unsafe-pvector-append (pvector 'left0 'left1) pv)
+                       '(left0 left1 0 1 2 3 4 5))
+  (check-pvector-model (unsafe:unsafe-pvector-append (pvector 'left0 'left1 'left2) pv)
+                       '(left0 left1 left2 0 1 2 3 4 5))
+  (check-pvector-model (unsafe:unsafe-pvector-append pv (pvector 'right))
+                       '(0 1 2 3 4 5 right))
+  (check-pvector-model (unsafe:unsafe-pvector-append pv (pvector 'a 'b))
+                       '(0 1 2 3 4 5 a b))
+  (check-pvector-model (unsafe:unsafe-pvector-append pv (pvector 'a 'b 'c))
+                       '(0 1 2 3 4 5 a b c))
+  (check-true (eq? pv (unsafe:unsafe-pvector-append (pvector-empty) pv)))
+  (check-true (eq? pv (unsafe:unsafe-pvector-append pv (pvector-empty))))
+  (check-true (eq? pv (unsafe:unsafe-pvector-take pv 6)))
+  (check-true (eq? pv (unsafe:unsafe-pvector-drop pv 0)))
+  (check-true (eq? pv (unsafe:unsafe-pvector-take-right pv 6)))
+  (check-true (eq? pv (unsafe:unsafe-pvector-drop-right pv 0)))
+  (check-true (eq? (pvector-empty) (unsafe:unsafe-pvector-take pv 0)))
+  (check-true (eq? (pvector-empty) (unsafe:unsafe-pvector-drop pv 6)))
+  (check-true (eq? (pvector-empty) (unsafe:unsafe-pvector-take-right pv 0)))
+  (check-true (eq? (pvector-empty) (unsafe:unsafe-pvector-drop-right pv 6)))
+  (check-true (eq? (pvector-empty) (unsafe:unsafe-pvector-subvector pv 3 3)))
+  (check-true (eq? pv (unsafe:unsafe-pvector-subvector pv 0 6)))
+  (check-pvector-model (unsafe:unsafe-pvector-subvector pv 0 3)
+                       '(0 1 2))
+  (check-pvector-model (unsafe:unsafe-pvector-subvector pv 3 6)
+                       '(3 4 5))
+  (define-values (left-value left-rest) (unsafe:unsafe-pvector-pop-left (pvector 'x)))
+  (define-values (right-value right-rest) (unsafe:unsafe-pvector-pop-right (pvector 'x)))
+  (check-equal? left-value 'x)
+  (check-equal? right-value 'x)
+  (check-true (eq? (pvector-empty) left-rest))
+  (check-true (eq? (pvector-empty) right-rest))
+  (define-values (empty-after-delete only-value)
+    (unsafe:unsafe-pvector-delete (pvector 'only) 0))
+  (check-equal? only-value 'only)
+  (check-true (eq? (pvector-empty) empty-after-delete))
+  (define-values (unsafe-delete-left-rest unsafe-delete-left-value)
+    (unsafe:unsafe-pvector-delete pv 0))
+  (check-equal? unsafe-delete-left-value 0)
+  (check-pvector-model unsafe-delete-left-rest '(1 2 3 4 5))
+  (define-values (unsafe-delete-right-rest unsafe-delete-right-value)
+    (unsafe:unsafe-pvector-delete pv 5))
+  (check-equal? unsafe-delete-right-value 5)
+  (check-pvector-model unsafe-delete-right-rest '(0 1 2 3 4))
+  (define-values (split-left split-value split-right)
+    (unsafe:unsafe-pvector-split (pvector 'x) 0))
+  (check-equal? split-value 'x)
+  (check-true (eq? (pvector-empty) split-left))
+  (check-true (eq? (pvector-empty) split-right))
+  (define-values (left right) (unsafe:unsafe-pvector-split-at pv 3))
+  (check-pvector-model left '(0 1 2))
+  (check-pvector-model right '(3 4 5))
+  (define-values (unsafe-split-left-empty unsafe-split-first unsafe-split-left-rest)
+    (unsafe:unsafe-pvector-split pv 0))
+  (check-true (eq? (pvector-empty) unsafe-split-left-empty))
+  (check-equal? unsafe-split-first 0)
+  (check-pvector-model unsafe-split-left-rest '(1 2 3 4 5))
+  (define-values (unsafe-split-right-rest unsafe-split-last unsafe-split-right-empty)
+    (unsafe:unsafe-pvector-split pv 5))
+  (check-pvector-model unsafe-split-right-rest '(0 1 2 3 4))
+  (check-equal? unsafe-split-last 5)
+  (check-true (eq? (pvector-empty) unsafe-split-right-empty))
+  (define-values (split-empty split-whole) (unsafe:unsafe-pvector-split-at pv 0))
+  (check-true (pvector-empty? split-empty))
+  (check-true (eq? (pvector-empty) split-empty))
+  (check-true (eq? pv split-whole))
+  (define-values (split-whole* split-empty*) (unsafe:unsafe-pvector-split-at pv 6))
+  (check-true (eq? pv split-whole*))
+  (check-true (pvector-empty? split-empty*))
+  (check-true (eq? (pvector-empty) split-empty*))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector pv)]) x)
+                '(0 1 2 3 4 5))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector-reverse pv)]) x)
+                '(5 4 3 2 1 0))
+  (define unsafe-sliced (pvector-drop (list->pvector (range 130)) 3))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector unsafe-sliced)]) x)
+                (range 3 130))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector-reverse unsafe-sliced)]) x)
+                (reverse (range 3 130)))
+  (define unsafe-sliced-seq (unsafe:unsafe-in-pvector unsafe-sliced))
+  (check-equal? (for/list ([x unsafe-sliced-seq]) x) (range 3 130))
+  (check-equal? (for/list ([x unsafe-sliced-seq]
+                           [y unsafe-sliced-seq])
+                  (list x y))
+                (for/list ([x (in-range 3 130)]) (list x x)))
+  (define unsafe-sliced-rseq
+    (unsafe:unsafe-in-pvector-reverse unsafe-sliced))
+  (check-equal? (for/list ([x unsafe-sliced-rseq]) x)
+                (reverse (range 3 130)))
+  (check-equal? (for/list ([x unsafe-sliced-rseq]
+                           [y unsafe-sliced-rseq])
+                  (list x y))
+                (for/list ([x (in-list (reverse (range 3 130)))])
+                  (list x x)))
+  (define unsafe-immutable
+    (vector->pvector (vector->immutable-vector
+                      (list->vector (range 130)))))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector unsafe-immutable)]) x)
+                (range 130))
+  (check-equal? (for/list ([x (unsafe:unsafe-in-pvector-reverse unsafe-immutable)]) x)
+                (reverse (range 130)))
+  (let ([count 0])
+    (define (get-unsafe-sliced)
+      (set! count (add1 count))
+      unsafe-sliced)
+    (check-equal? (for/list ([x (unsafe:unsafe-in-pvector
+                                 (get-unsafe-sliced))]) x)
+                  (range 3 130))
+    (check-equal? count 1)
+    (check-equal? (for/list ([x (unsafe:unsafe-in-pvector-reverse
+                                 (get-unsafe-sliced))]) x)
+                  (reverse (range 3 130)))
+    (check-equal? count 2))
+  (define seq (unsafe:unsafe-in-pvector pv))
+  (check-equal? (for/list ([x seq]) x) '(0 1 2 3 4 5))
+  (check-equal? (for/list ([x seq]) x) '(0 1 2 3 4 5))
+  (check-equal? (for/list ([x seq] [y seq]) (list x y))
+                '((0 0) (1 1) (2 2) (3 3) (4 4) (5 5)))
+  (define rseq (unsafe:unsafe-in-pvector-reverse pv))
+  (check-equal? (for/list ([x rseq]) x) '(5 4 3 2 1 0))
+  (check-equal? (for/list ([x rseq]) x) '(5 4 3 2 1 0))
+  (check-equal? (for/list ([x rseq] [y rseq]) (list x y))
+                '((5 5) (4 4) (3 3) (2 2) (1 1) (0 0))))
+
+(test-case "errors"
+  (define (exact-nonnegative-error? e)
+    (and (exn:fail:contract? e)
+         (regexp-match? #rx"exact-nonnegative-integer" (exn-message e))))
+  (define (pvector-contract-error? e)
+    (and (exn:fail:contract? e)
+         (regexp-match? #rx"pvector[?]" (exn-message e))))
+  (check-exn exn:fail? (lambda () (pvector-length '(not a pvector))))
+  (check-exn exn:fail? (lambda () (list->pvector '#(not a list))))
+  (check-exn exn:fail? (lambda () (vector->pvector '(not a vector))))
+  (check-exn exn:fail? (lambda () (sequence->pvector values)))
+  (check-exn exn:fail:contract?
+             (lambda () (sequence->pvector (in-list #f))))
+  (check-exn exn:fail:contract?
+             (lambda () (sequence->pvector (in-vector #f))))
+  (check-exn exn:fail:contract?
+             (lambda () (sequence->pvector (in-pvector #f))))
+  (check-exn exn:fail:contract?
+             (lambda () (sequence->pvector (in-pvector-reverse #f))))
+  (check-exn exn:fail:contract?
+             (lambda () (for/pvector ([x (in-list #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for/pvector ([x (in-vector #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for*/pvector ([x (in-list #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for*/pvector ([x (in-vector #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for/pvector ([x (in-pvector #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for/pvector ([x (in-pvector-reverse #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for*/pvector ([x (in-pvector #f)]) x)))
+  (check-exn exn:fail:contract?
+             (lambda () (for*/pvector ([x (in-pvector-reverse #f)]) x)))
+  (check-exn exn:fail? (lambda () (pvector-ref (pvector 1) 1)))
+  (check-exn exn:fail? (lambda () (pvector-ref (pvector 1) -1)))
+  (check-exn exn:fail? (lambda () (pvector-ref (pvector-empty) 0)))
+  (check-exn exact-nonnegative-error?
+             (lambda () (pvector-ref '(not a pvector) -1)))
+  (check-exn #rx"expected: list[?]"
+             (lambda () (apply + (pvector 1 2 3))))
+  (check-exn exn:fail? (lambda () (pvector->list 'bad)))
+  (check-exn exn:fail? (lambda () (pvector->vector 'bad)))
+  (check-exn exn:fail? (lambda () (pvector-set (pvector 1) 1 'x)))
+  (check-exn exact-nonnegative-error?
+             (lambda () (pvector-set '(not a pvector) -1 'x)))
+  (check-exn exn:fail? (lambda () (pvector-first (pvector-empty))))
+  (check-exn exn:fail? (lambda () (pvector-last (pvector-empty))))
+  (check-exn exn:fail? (lambda () (pvector-pop-left (pvector-empty))))
+  (check-exn exn:fail? (lambda () (pvector-pop-right (pvector-empty))))
+  (check-exn exn:fail? (lambda () (pvector-insert (pvector 1) 2 'x)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-insert 'bad 0 'x)))
+  (check-exn exn:fail? (lambda () (pvector-delete (pvector 1) 1)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-delete 'bad 0)))
+  (check-exn exn:fail? (lambda () (pvector-delete (pvector-empty) 0)))
+  (check-exn exn:fail? (lambda () (pvector-split (pvector-empty) 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-split 'bad 0)))
+  (check-exn exn:fail? (lambda () (pvector-take (pvector 1) 2)))
+  (check-exn exn:fail? (lambda () (pvector-drop (pvector 1) 2)))
+  (check-exn exn:fail? (lambda () (pvector-split-at (pvector 1) 2)))
+  (check-exn exn:fail? (lambda () (pvector-take 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-take 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-drop 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-drop 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-take-right 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-take-right 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-drop-right 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-drop-right 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-split-at 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-split-at 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-subvector 'bad 0)))
+  (check-exn pvector-contract-error?
+             (lambda () (pvector-subvector 'bad 1)))
+  (check-exn exn:fail? (lambda () (pvector-subvector 'bad 0 0)))
+  (check-exn exn:fail? (lambda () (pvector-subvector (pvector 1) 2 2)))
+  (check-exn exn:fail? (lambda () (pvector-subvector (pvector 1 2) 2 1)))
+  (for ([thunk (in-list
+                (list (lambda () (pvector-insert '(not a pvector) -1 'x))
+                      (lambda () (pvector-delete '(not a pvector) -1))
+                      (lambda () (pvector-split '(not a pvector) -1))
+                      (lambda () (pvector-take '(not a pvector) -1))
+                      (lambda () (pvector-drop '(not a pvector) -1))
+                      (lambda () (pvector-take-right '(not a pvector) -1))
+                      (lambda () (pvector-drop-right '(not a pvector) -1))
+                      (lambda () (pvector-split-at '(not a pvector) -1))
+                      (lambda () (pvector-subvector '(not a pvector) -1 0))))])
+    (check-exn exact-nonnegative-error? thunk)))
+
+(test-case "list-model operation trace"
+  (define ops
+    '((cons-right 0)
+      (cons-right 1)
+      (cons-left z)
+      (insert 1 a)
+      (set 2 b)
+      (cons-right 4)
+      (delete 3)
+      (insert 4 end)
+      (set 0 start)
+      (delete 1)))
+  (let loop ([ops ops] [pv (pvector-empty)] [xs '()])
+    (check-pvector-model pv xs)
+    (match ops
+      ['() (void)]
+      [(cons op rest)
+       (define-values (pv* xs*)
+         (match op
+           [`(cons-right ,v)
+            (values (pvector-cons-right pv v) (append xs (list v)))]
+           [`(cons-left ,v)
+            (values (pvector-cons-left pv v) (cons v xs))]
+           [`(insert ,i ,v)
+            (values (pvector-insert pv i v) (list-insert xs i v))]
+           [`(set ,i ,v)
+            (values (pvector-set pv i v) (list-set xs i v))]
+           [`(delete ,i)
+            (define-values (pv-rest pv-deleted) (pvector-delete pv i))
+            (define-values (xs-rest xs-deleted) (list-delete xs i))
+            (check-equal? pv-deleted xs-deleted)
+            (values pv-rest xs-rest)]))
+       (loop rest pv* xs*)])))
+
+(test-case "seeded randomized list model"
+  (random-seed 20260611)
+  (let loop ([step 0] [pv (pvector-empty)] [xs '()])
+    (check-pvector-model pv xs)
+    (when (< step 250)
+      (define len (length xs))
+      (define op (if (zero? len) (random 2) (random 8)))
+      (define-values (pv* xs*)
+        (case op
+          [(0)
+           (define value (list 'r step))
+           (values (pvector-cons-right pv value)
+                   (append xs (list value)))]
+          [(1)
+           (define value (list 'l step))
+           (values (pvector-cons-left pv value)
+                   (cons value xs))]
+          [(2)
+           (define i (random len))
+           (define value (list 's step))
+           (values (pvector-set pv i value)
+                   (list-set xs i value))]
+          [(3)
+           (define i (random (add1 len)))
+           (define value (list 'i step))
+           (values (pvector-insert pv i value)
+                   (list-insert xs i value))]
+          [(4)
+           (define i (random len))
+           (define-values (pv-rest pv-deleted) (pvector-delete pv i))
+           (define-values (xs-rest xs-deleted) (list-delete xs i))
+           (check-equal? pv-deleted xs-deleted)
+           (values pv-rest xs-rest)]
+          [(5)
+           (define i (random (add1 len)))
+           (define-values (left right) (pvector-split-at pv i))
+           (check-pvector-model left (take xs i))
+           (check-pvector-model right (drop xs i))
+           (values (pvector-append left right) xs)]
+          [(6)
+           (define i (random len))
+           (define-values (left value right) (pvector-split pv i))
+           (check-pvector-model left (take xs i))
+           (check-equal? value (list-ref xs i))
+           (check-pvector-model right (drop xs (add1 i)))
+           (values (pvector-append left (pvector-cons-left right value))
+                   xs)]
+          [else
+           (define i (random (add1 len)))
+           (values (pvector-drop (pvector-cons-left (pvector-take pv i) 'tmp) 1)
+                   (take xs i))]))
+      (loop (add1 step) pv* xs*))))

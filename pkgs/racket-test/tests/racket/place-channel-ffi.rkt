@@ -23,6 +23,8 @@
   (check-equal? (BN-j1 bn) 1334)
   (check-equal? (cpointer-tag bn) 'BN)
   (check-equal? BN-tag 'BN)
+  (struct non-prefab (value))
+  (check-false (place-message-allowed? (non-prefab 1)))
   (printf "BN tag ~v\n" BN-tag)
   (define p (place ch
                    (define b (place-channel-get ch))
