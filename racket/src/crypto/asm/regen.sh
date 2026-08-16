@@ -134,25 +134,31 @@ assemble_elf() { # 同 assemble，但 GNU/ELF 语法（去 --apple）
   done
 }
 
-# ELF 汇编器启用某内核 SHA1/SHA3 指令所需的特性扩展。作为 `.arch_extension` 注入
-# ELF 分支，使 .S 自声明依赖 → build.zuo 无需 per-file -march（apple 分支不受影响：
-# 指令在 `# else` 内，仅 GNU as 可见）。其余内核为基线 ARMv8-A，返回空。
-elf_arch_ext() { # $1=kernel
+# ELF 汇编器启用某内核 SHA1/SHA3 指令所需特性的 arch 指令。整行注入 ELF 分支，使
+# .S 自声明依赖 → build.zuo 无需 per-file -march（apple 分支不受影响：指令在
+# `# else` 内，仅 GNU as 可见）。其余内核为基线 ARMv8-A，返回空。
+#
+# 注意 SHA3 (eor3/rax1/xar/bcax) 是 FEAT_SHA3 = ARMv8.2-A 可选扩展：GNU as 上单靠
+# `.arch_extension sha3` 不足以启用（默认基线 armv8-a 为 v8.0，扩展位不生效，debian12/
+# ubuntu2204 装配报 "selected processor does not support eor3"），必须用 `.arch
+# armv8.2-a+sha3` 一并抬高基线。SHA1/2 (FEAT_SHA1/SHA256) 是 v8.0 可选扩展，
+# `.arch_extension sha2` 在基线上即可启用，保持原样。
+elf_arch_ext() { # $1=kernel → ELF 分支 arch 指令整行（可空）
   case "$1" in
-    keccak|keccak_f2) echo "sha3" ;;   # eor3/rax1/bcax/xar = FEAT_SHA3
-    sha1)             echo "sha2" ;;    # GNU as sha2 扩展含 FEAT_SHA1 (sha1c/h/m/p/su0/su1)
+    keccak|keccak_f2) echo ".arch armv8.2-a+sha3" ;;  # FEAT_SHA3 需 v8.2 基线
+    sha1)             echo ".arch_extension sha2" ;;   # FEAT_SHA1/2 v8.0 扩展即可
     *)                echo "" ;;
   esac
 }
 
 # 输出双分支包裹体：__APPLE__ 走 $1（apple 体），否则走 $2（ELF 体）。
-# $3（可选）=ELF 分支 .arch_extension 特性名，使 ELF 体自声明所需指令扩展。
-emit_dual() { # $1=apple 体文件 $2=elf 体文件 $3=elf arch_extension（可空）
+# $3（可选）=ELF 分支 arch 指令整行，使 ELF 体自声明所需指令扩展。
+emit_dual() { # $1=apple 体文件 $2=elf 体文件 $3=elf arch 指令整行（可空）
   printf '#if defined(__aarch64__)\n'
   printf '# if defined(__APPLE__)\n'
   cat "$1"
   printf '# else\n'
-  [ -n "$3" ] && printf '.arch_extension %s\n' "$3"
+  [ -n "$3" ] && printf '%s\n' "$3"
   cat "$2"
   printf '# endif\n'
   printf '#endif\n'
