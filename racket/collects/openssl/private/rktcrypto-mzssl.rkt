@@ -17,6 +17,7 @@
          "rktcrypto-x509.rkt"
          "rktcrypto-verify.rkt"
          "rktcrypto-ffi.rkt"
+         (only-in "rktcrypto-win32-store.rkt" win32-store-ders)
          (only-in "rktcrypto-pkcs12.rkt" pkcs12-parse))
 
 (define protocol-symbol/c
@@ -128,12 +129,14 @@
     (cond
       [(path-string? src) (ssl-load-verify-root-certificates! c src)]
       [(and (pair? src) (eq? (car src) 'macosx-keychain)) (load-macosx-anchors c (cadr src))]
+      [(and (pair? src) (eq? (car src) 'win32-store)) (load-win32-anchors c (cadr src))]
       [else (void)])))
 
 (define ssl-default-verify-sources
   (make-parameter
    (case (system-type 'os*)
      [(macosx) (list '(macosx-keychain "/System/Library/Keychains/SystemRootCertificates.keychain"))]
+     [(windows) (list '(win32-store "ROOT"))]
      [else (filter (lambda (p) (and (path-string? p) (file-exists? p)))
                    '("/etc/ssl/certs/ca-certificates.crt"
                      "/etc/pki/tls/certs/ca-bundle.crt"
@@ -152,6 +155,12 @@
   (close-input-port out) (close-input-port err)
   (subprocess-wait sp)
   (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) (pem->der-list pem))))
+
+;; Windows: the system store already hands out DER, so no PEM step.
+(define (load-win32-anchors c storename)
+  (cx-set! c 'trust-anchors
+           (append (cx-ref c 'trust-anchors)
+                   (win32-store-ders 'ssl-load-verify-source! storename))))
 
 (define (ssl-load-suggested-certificate-authorities! c/l path) (void))
 

@@ -2,26 +2,46 @@
 
 ;; FFI bindings to the in-tree rktcrypto library for the TLS backend.
 ;;
-;; librktcrypto is a static library linked into the Racket executable
-;; (alongside rktio), and its symbols are exported from the running
-;; process, so `(ffi-lib #f)` resolves them with no dynamic library to
-;; load -- this is what makes the TLS backend work on a machine with no
-;; OpenSSL installed. All heavy cryptography (key schedule, AEAD record
-;; protection, signatures, big numbers) happens in C behind these
-;; bindings; the Racket side is the protocol state machine.
+;; On Unix and macOS, librktcrypto is a static library linked into the
+;; Racket executable (alongside rktio), and its symbols are exported from
+;; the running process, so `(ffi-lib #f)` resolves them with no dynamic
+;; library to load -- this is what makes the TLS backend work on a machine
+;; with no OpenSSL installed. On Windows the executable is built with MSVC,
+;; which cannot compile librktcrypto's C (__int128 and friends), so the
+;; library ships as a separate clang-built "librktcrypto.dll" in the
+;; distribution's DLL directory and is loaded here by name; when the DLL is
+;; absent the backend degrades to `ssl-available?` = #f as before. All
+;; heavy cryptography (key schedule, AEAD record protection, signatures,
+;; big numbers) happens in C behind these bindings; the Racket side is the
+;; protocol state machine.
 
 (require ffi/unsafe
          ffi/unsafe/define)
 
 (provide (protect-out (all-defined-out)))
 
-(define-ffi-definer define-rkt (ffi-lib #f)
+(define (has-rktcrypto? lib)
+  (and lib
+       (get-ffi-obj 'rktcrypto_system_random lib _fpointer (lambda () #f))
+       #t))
+
+(define rktcrypto-lib
+  (let ([in-process (ffi-lib #f)])
+    (cond
+      [(has-rktcrypto? in-process) in-process]
+      [(eq? 'windows (system-type))
+       (let ([dll (ffi-lib "librktcrypto" #:fail (lambda () #f))])
+         (and (has-rktcrypto? dll) dll))]
+      [else #f])))
+
+(define-ffi-definer define-rkt (or rktcrypto-lib (ffi-lib #f))
   #:default-make-fail make-not-available)
 
-;; Whether librktcrypto is actually part of this build; Windows builds
-;; run without it, and every binding below raises when called there.
+;; Whether librktcrypto is actually reachable in this build; without it
+;; (e.g. a Windows layout missing the DLL), every binding below raises
+;; when called.
 (define rktcrypto-available?
-  (and (get-ffi-obj 'rktcrypto_system_random (ffi-lib #f) _fpointer (lambda () #f)) #t))
+  (and rktcrypto-lib #t))
 
 ;; ---- digest algorithm ids (rktcrypto.h) ----
 (define SHA256 2)
