@@ -24,13 +24,14 @@
        "zlib")]
     [else
      null])
-   ;; No OpenSSL on any platform. Racket's crypto + TLS run entirely on the
-   ;; in-tree rktcrypto engine, and the `openssl` collection never loads an
-   ;; OpenSSL binary (openssl/libssl and openssl/libcrypto are #f shims;
-   ;; ssl-available? probes rktcrypto in the executable, not a bundled libssl).
-   ;; A bundled libssl/libcrypto would therefore be dead weight, so the
-   ;; distribution ships none — completing the OpenSSL removal on every arch.
-   null
+   ;; OpenSSL policy is platform-split. On Linux and macOS, crypto + TLS run
+   ;; entirely on the in-tree rktcrypto engine and no OpenSSL is bundled. On
+   ;; Windows, librktcrypto cannot be built (its C needs __int128 and other
+   ;; non-MSVC features), so OpenSSL is reintroduced there: the `openssl`
+   ;; collection loads the bundled libssl/libcrypto on Windows and reports
+   ;; itself unavailable elsewhere. See build.rkt for the mingw x86_64 (asm)
+   ;; and arm64 (mingw-arm64 target, no-asm) cross builds.
+   (if win? '("openssl-3") null)
    '("expat"
      "gettext")
    (cond

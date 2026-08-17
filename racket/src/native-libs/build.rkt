@@ -227,6 +227,9 @@
 
 ;; Configure for AArch64
 (define-runtime-path openssl-no-rcflags-patch "patches/openssl-no-rcflags.patch")
+;; Adds a "mingw-arm64" Configure target (clang, aarch64) to OpenSSL's
+;; Configurations/10-main.conf so the AArch64 Windows cross build has a target.
+(define-runtime-path openssl3-aarch64nt-patch "patches/openssl3-aarch64nt.patch")
 
 ;; libffi via MinGW for AArch64:
 (define-runtime-path libffi-arm64nt-patch "patches/libffi-arm64nt.patch")
@@ -549,9 +552,17 @@
                             (list "./Configure"
                                   (~a "--cross-compile-prefix=" win-prefix "-")
                                   #f ; other flags here
-                                  (~a "mingw" (if m32? "" "64"))
+                                  ;; AArch64 uses the mingw-arm64 target added by
+                                  ;; openssl3-aarch64nt-patch; x86_64 uses mingw64.
+                                  (cond
+                                   [aarch64? "mingw-arm64"]
+                                   [m32? "mingw"]
+                                   [else "mingw64"])
                                   "shared")
                             (if aarch64?
+				;; no-asm: OpenSSL's aarch64 asm feature probe in
+				;; crypto/armcap.c uses POSIX signals absent on
+				;; Windows, so build pure-C there.
 				'("no-asm")
 				null))]
                           [mac?
@@ -576,6 +587,11 @@
                                  (if aarch64?
                                      "linux-aarch64"
                                      "linux-x86_64"))])
+             ;; Pre-configure: add the mingw-arm64 target before ./Configure reads
+             ;; Configurations/10-main.conf.
+             #:patches (if (and win? aarch64?)
+                           (list openssl3-aarch64nt-patch)
+                           null)
              #:post-patches (if (and win? aarch64?)
                                 (list openssl-no-rcflags-patch)
                                 null)
