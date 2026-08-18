@@ -149,9 +149,10 @@
   (define librktcrypto.a (and rktcrypto?
                               (setup-rktcrypto (at-source "../../crypto") rktcrypto-dir config)))
 
-  ;; librktrandom follows the librktcrypto platform policy for now
-  ;; (its C is MSVC-compatible, but Windows builds are untested).
-  (define rktrandom? (not windows?))
+  ;; Unlike librktcrypto, librktrandom builds everywhere: its C is
+  ;; portable C99 (no __int128/__attribute__/__builtin_), so it is
+  ;; linked in on all platforms, including Windows/MSVC.
+  (define rktrandom? #t)
   (define rktrandom-dir (at-dir "rktrandom"))
   (define librktrandom.a (and rktrandom?
                               (setup-rktrandom (at-source "../../random") rktrandom-dir config)))

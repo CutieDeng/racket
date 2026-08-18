@@ -134,8 +134,8 @@ static void init_foreign(void)
 # include "rktio.inc"
 #ifndef WIN32
 # include "rktcrypto.inc"
-# include "rktrandom.inc"
 #endif
+# include "rktrandom.inc"
 }
 
 void racket_boot(racket_boot_arguments_t *ba)
