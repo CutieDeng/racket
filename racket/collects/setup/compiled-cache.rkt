@@ -77,14 +77,15 @@
             (linked-source-dirs)))
    equal?))
 
-(define (path->cache-relative-path path)
-  ;; This mirrors the current compiled-root behavior for complete paths:
-  ;; a source under /usr/share/racket maps under <root>/usr/share/racket.
-  (define s (path->string (simplify-path (path->complete-path path))))
-  (string->path (regexp-replace #rx"^[/\\\\]+" s "")))
-
 (define (cache-path-for-source root source)
-  (build-path root (path->cache-relative-path source)))
+  ;; Must mirror how the compile manager maps a source under a
+  ;; `current-compiled-file-roots` root, which is `reroot-path`: on Unix
+  ;; a source under /usr/share/racket maps under <root>/usr/share/racket
+  ;; (same as the previous strip-leading-slashes mapping), and on Windows
+  ;; the drive letter becomes a normalized directory element (C:\x ->
+  ;; <root>\c\x) -- the previous mapping left the path absolute there,
+  ;; and `build-path` refused it.
+  (reroot-path (simplify-path (path->complete-path source)) root))
 
 (define (debug-log-path root)
   (define parent (or (path-only root) (current-directory)))
