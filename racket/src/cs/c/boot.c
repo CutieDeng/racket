@@ -15,8 +15,8 @@
    missing foreign entries and degrades the crypto/TLS surface. */
 #ifndef WIN32
 # include "rktcrypto.h"
-# include "rktrandom.h"
 #endif
+#include "rktrandom.h"
 
 #ifdef WIN32
 # define RACKET_API_EXTERN __declspec(dllexport)
