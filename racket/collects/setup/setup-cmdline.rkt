@@ -86,6 +86,8 @@
       (add-flags `((recompile-cache ,dir)))]
      [("--system") "Use the system compiled-file cache for setup"
       (add-flags '((system-cache #t)))]
+     [("--compiled-cache-root") dir "With --system, use <dir> as the cache root instead of the configured one"
+      (add-flags `((compiled-cache-root ,dir)))]
      [("--reset-cache") "Delete compiled-file cache entries for this installation before setup"
       (add-flags '((reset-cache #t)))]
      [("--delete-cache") "Delete compiled-file cache entries for this installation and exit"

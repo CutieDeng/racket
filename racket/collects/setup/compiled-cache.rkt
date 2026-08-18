@@ -135,8 +135,10 @@
 (define (delete-compiled-cache! #:system? [system? #f]
                                 #:unsafe-delete-all? [unsafe-delete-all? #f]
                                 #:delete-only? [delete-only? #f]
+                                #:root [root-override #f]
                                 #:who [who 'raco-setup])
-  (define root (compiled-cache-root (if system? 'system 'user)))
+  (define root (or root-override
+                   (compiled-cache-root (if system? 'system 'user))))
   (define sources (compiled-cache-source-dirs))
   (define targets
     (if unsafe-delete-all?

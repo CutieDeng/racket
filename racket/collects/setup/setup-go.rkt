@@ -32,8 +32,17 @@
   (when (and unsafe-delete-all? (not (or reset-cache? delete-cache?)))
     (raise-user-error short-name
                       "--unsafe-delete-all must be combined with --reset-cache or --delete-cache"))
+  ;; A staged build (e.g. packaging into a DESTDIR) can point the cache at
+  ;; the staging area without rewriting config.rktd back and forth.
+  (define cache-root-override
+    (let ([dir (get-x-flag 'compiled-cache-root #f)])
+      (and dir (simplify-path (path->complete-path dir)))))
+  (when (and cache-root-override (not use-system-cache?))
+    (raise-user-error short-name
+                      "--compiled-cache-root must be combined with --system"))
   (define system-cache-root
-    (and use-system-cache? (compiled-cache-root 'system)))
+    (and use-system-cache?
+         (or cache-root-override (compiled-cache-root 'system))))
   (define (prepare-system-cache!)
     (make-directory* system-cache-root)
     (write-compiled-cache-debug-event!
@@ -46,6 +55,7 @@
       (delete-compiled-cache! #:system? use-system-cache?
                               #:unsafe-delete-all? unsafe-delete-all?
                               #:delete-only? delete-cache?
+                              #:root cache-root-override
                               #:who short-name))
     (printf "compiled cache root: ~a\n" root)
     (printf "compiled cache deleted: ~a\n" (length deleted))
