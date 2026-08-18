@@ -1,6 +1,7 @@
 # rktrandom on Windows — Requirements & Design (handoff document)
 
-Status: PLANNED (nothing implemented yet).
+Status: SHIPPED in 9.3.3 (2026-08-18). Kept as a worked example of the
+PoC-first flow; every acceptance box below was verified green in CI.
 Audience: the agent/engineer picking this task up cold. Everything you need
 is either in this file or at the file:line references below — verify each
 one before relying on it; this document was written against v9.3-dev just
@@ -206,11 +207,11 @@ and the 9.3.2 commits in CutieDeng/package-racket):
 
 ## 8. Acceptance criteria
 
-- [ ] `rktrandom-available?` is `#t` on Windows x86_64 AND arm64 production
+- [x] `rktrandom-available?` is `#t` on Windows x86_64 AND arm64 production
       artifacts (zip + installer), asserted in CI before publish.
-- [ ] Same-seed outputs are bit-identical to Unix (spot-checked in CI).
-- [ ] Unix/macOS builds unchanged and green (brew/deb/rpm CI).
-- [ ] No change to librktcrypto's build gating (`rktcrypto?` stays
+- [x] Same-seed outputs are bit-identical to Unix (spot-checked in CI).
+- [x] Unix/macOS builds unchanged and green (brew/deb/rpm CI).
+- [x] No change to librktcrypto's build gating (`rktcrypto?` stays
       `(not windows?)`).
-- [ ] build.zuo comment "follows the librktcrypto platform policy" is
+- [x] build.zuo comment "follows the librktcrypto platform policy" is
       updated/removed so the next reader isn't misled.
