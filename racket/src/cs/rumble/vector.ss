@@ -29,6 +29,46 @@
 
 ;; ----------------------------------------
 
+;; Call `p` with the elements of `vec` as its last arguments.  A hand-coded
+;; entry writes them straight into the argument registers and frame slots, so
+;; no intermediate list is built.  An impersonated vector must go through
+;; `vector->list`, which respects the impersonator.
+(define vector-apply*
+  (if (#%$apply-entries-available?)
+      (lambda (who p args m vec)
+        (unless (procedure? p) (raise-argument-error who "procedure?" p))
+        (cond
+         [(#%vector? vec)
+          (let ([k (#%vector-length vec)])
+            (if (fx= k 0)
+                (if (null? args) (p) (#%$apply p m args))
+                (#%$apply-vector p (fx+ m k) args vec k)))]
+         [(vector? vec)
+          (let ([l (vector->list vec)])
+            (#%$apply p (fx+ m (length l)) (append args l)))]
+         [else (raise-argument-error who "vector?" vec)]))
+      ;; no hand-coded entry on this target
+      (lambda (who p args m vec)
+        (unless (procedure? p) (raise-argument-error who "procedure?" p))
+        (cond
+         [(vector? vec)
+          (let ([l (vector->list vec)])
+            (#%$apply p (fx+ m (length l)) (append args l)))]
+         [else (raise-argument-error who "vector?" vec)]))))
+
+(define core-vector-apply
+  (case-lambda
+   [(p vec) (vector-apply* 'vector-apply p '() 0 vec)]
+   [(p a vec) (vector-apply* 'vector-apply p (list a) 1 vec)]
+   [(p a b vec) (vector-apply* 'vector-apply p (list a b) 2 vec)]
+   [(p a b c vec) (vector-apply* 'vector-apply p (list a b c) 3 vec)]
+   [(p a b c d vec) (vector-apply* 'vector-apply p (list a b c d) 4 vec)]
+   [(p a b c d e . rest)
+    (let loop ([l (list* a b c d e rest)] [m 0] [acc '()])
+      (if (null? (cdr l))
+          (vector-apply* 'vector-apply p (reverse acc) m (car l))
+          (loop (cdr l) (fx+ m 1) (cons (car l) acc))))]))
+
 (define (vector? v)
   (or (#%vector? v)
       (and (impersonator? v)

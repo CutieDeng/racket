@@ -1,6 +1,7 @@
 #lang racket/base
 
-(provide vector-empty? vector-set*! vector-copy vector-set/copy
+(provide vector-apply
+         vector-empty? vector-set*! vector-copy vector-set/copy
          vector-map vector-map! vector-append
          vector-take vector-drop vector-split-at
          vector-take-right vector-drop-right vector-split-at-right
@@ -19,6 +20,24 @@
          (rename-in (except-in "private/sort.rkt" sort)
                     [vector-sort! raw-vector-sort!]
                     [vector-sort raw-vector-sort]))
+
+;; Call `proc` with the elements of the vector as its last arguments, without
+;; building an intermediate list.
+(define core-vector-apply
+  (with-handlers ([exn:fail? (lambda (e) #f)])
+    (dynamic-require ''#%kernel 'core-vector-apply)))
+
+(define vector-apply
+  (or core-vector-apply
+      (case-lambda
+        [(p vec) (apply p (vector->list vec))]
+        [(p a . rest)
+         ;; `(cons a rest)` has at least two elements: a two-argument call is
+         ;; caught by the previous clause.
+         (let loop ([l (cons a rest)] [acc '()])
+           (if (null? (cdr l))
+               (apply p (append (reverse acc) (vector->list (car l))))
+               (loop (cdr l) (cons (car l) acc))))])))
 
 (define (vector-empty? v)
   (unless (vector? v)

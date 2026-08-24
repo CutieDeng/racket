@@ -6286,6 +6286,245 @@
                                     (if ,(%type-check mask-nil snil ,%xp)
                                         (goto ,Ldone)
                                         ,(load-regs (cdr regs)))))))))))]
+           [($apply-pvector-procedure)
+            ;; (p n args pv rtd2): write the fixed arguments in the list `args`
+            ;; followed by the elements of the large-finger pvector `pv` into
+            ;; the argument registers and frame slots, then call `p`.  `n` is
+            ;; the total argument count, which the caller knows.  `rtd2` is the
+            ;; record-type descriptor of a 2-child node; the middle tree is
+            ;; walked here, so the descriptor has to be supplied rather than
+            ;; embedded, because it is created after this code is generated.
+            ;;
+            ;; The first `asm-arg-reg-cnt` values belong in registers, so they
+            ;; are staged just past the frame arguments and moved into the
+            ;; registers at the end; later values go straight to their final
+            ;; frame slots.  The walk's own stack sits just past the staging
+            ;; area.  Nothing is allocated, so no collection can happen while
+            ;; those areas hold live pointers.
+            (let ([Largs (make-local-label 'apply-pvector-args)]
+                  [Largs-done (make-local-label 'apply-pvector-args-done)]
+                  [Lnode (make-local-label 'apply-pvector-node)]
+                  [stage-end (list-ref arg-registers 0)]
+                  [stack-ptr (list-ref arg-registers 1)]
+                  [node (list-ref arg-registers 2)]
+                  [walk-stack-words 128])
+              (define fld
+                (lambda (i)
+                  (fx+ (constant record-data-disp) (fx* (constant ptr-bytes) i))))
+              (define emit
+                (lambda (src)
+                  (with-output-language (L13.5 Effect)
+                    (%seq
+                      (set! ,(%mref ,%td 0) ,src)
+                      (set! ,%td ,(%inline + ,%td ,(%constant ptr-bytes)))
+                      (if ,(%inline eq? ,%td ,stage-end)
+                          (set! ,%td ,(%inline + ,%sfp ,(%constant ptr-bytes)))
+                          (nop))))))
+              (define emit-field
+                (lambda (base i)
+                  (emit (with-output-language (L13.5 Rhs) (%mref ,base ,(fld i))))))
+              (define push
+                (lambda (i)
+                  (with-output-language (L13.5 Effect)
+                    (%seq
+                      (set! ,(%mref ,stack-ptr 0) ,(%mref ,node ,(fld i)))
+                      (set! ,stack-ptr ,(%inline + ,stack-ptr ,(%constant ptr-bytes)))))))
+              ;; %ts holds the digit count; the digits are consecutive fields
+              (define emit-digits
+                (lambda (count-field first-field)
+                  (with-output-language (L13.5 Effect)
+                    (%seq
+                      (set! ,%ts ,(%mref ,%xp ,(fld count-field)))
+                      (set! ,%ts ,(%inline sra ,%ts ,(%constant fixnum-offset)))
+                      ,(emit-field %xp first-field)
+                      (if ,(%inline > ,%ts (immediate 1))
+                          ,(%seq
+                             ,(emit-field %xp (fx+ first-field 1))
+                             (if ,(%inline > ,%ts (immediate 2))
+                                 ,(%seq
+                                    ,(emit-field %xp (fx+ first-field 2))
+                                    (if ,(%inline > ,%ts (immediate 3))
+                                        ,(emit-field %xp (fx+ first-field 3))
+                                        (nop)))
+                                 (nop)))
+                          (nop))))))
+              ;; %ts holds rtd2 throughout the walk
+              (define is-node2
+                (lambda ()
+                  (with-output-language (L13.5 Pred)
+                    (%inline eq? ,(%mref ,node ,(constant typed-object-type-disp)) ,%ts))))
+              (define walk-middle
+                (with-output-language (L13.5 Effect)
+                  (%seq
+                    (set! ,%ts ,(ref-reg %ac1))
+                    (set! ,stack-ptr ,stage-end)
+                    (set! ,(%mref ,stack-ptr 0) ,(%mref ,%xp ,(fld 2)))
+                    (set! ,stack-ptr ,(%inline + ,stack-ptr ,(%constant ptr-bytes)))
+                    (label ,Lnode)
+                    (set! ,stack-ptr ,(%inline - ,stack-ptr ,(%constant ptr-bytes)))
+                    (set! ,node ,(%mref ,stack-ptr 0))
+                    (if ,(%inline eq? ,(%mref ,node ,(fld 1)) (immediate ,(fix 1)))
+                        ;; a level-1 node's children are elements
+                        ,(%seq
+                           ,(emit-field node 2)
+                           ,(emit-field node 3)
+                           (if ,(is-node2)
+                               (nop)
+                               ,(emit-field node 4)))
+                        ;; otherwise they are nodes: push them in reverse
+                        ,(%seq
+                           (if ,(is-node2)
+                               (nop)
+                               ,(push 4))
+                           ,(push 3)
+                           ,(push 2)))
+                    (if ,(%inline eq? ,stack-ptr ,stage-end)
+                        (nop)
+                        (goto ,Lnode)))))
+              `(lambda ,(make-info "$apply-pvector" '(5)) 0 ()
+                 ,(%seq
+                    (set! ,(ref-reg %cp) ,(make-arg-opnd 1))
+                    (set! ,%ac0 ,(make-arg-opnd 2))
+                    (set! ,%ts ,(make-arg-opnd 3))
+                    (set! ,%xp ,(make-arg-opnd 4))
+                    (set! ,%ac0 ,(%inline sra ,%ac0 ,(%constant fixnum-offset)))
+                    ;; park the node descriptor before the stack can be grown,
+                    ;; since that may relocate the incoming frame arguments
+                    (set! ,%td ,(make-arg-opnd 5))
+                    (set! ,(ref-reg %ac1) ,%td)
+                    ;; room for the arguments, the staging words, and the walk stack
+                    (set! ,%td ,(%inline + ,%ac0 (immediate ,(fx+ (constant asm-arg-reg-cnt) 1 walk-stack-words))))
+                    (set! ,%td ,(%inline sll ,%td ,(%constant log2-ptr-bytes)))
+                    (set! ,%td ,(%inline + ,%td ,%sfp))
+                    (if ,(%inline > ,%td ,(ref-reg %esp))
+                        (seq (pariah)
+                          ,(with-saved-ret-reg
+                             (with-saved-scheme-state
+                               ;; %ts holds the fixed-argument list and %ac1 the
+                               ;; node descriptor, so both must survive the call
+                               (in %cp %xp %ac0 %ts %ac1)
+                               (out %yp %td scheme-args extra-regs)
+                               `(inline ,(make-info-c-simple-call #f (lookup-c-entry handle-apply-overflood)) ,%c-simple-call))))
+                        (nop))
+                    ;; staging area starts one slot past the last frame argument
+                    (set! ,%td ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                    (set! ,%td ,(%inline + ,%td ,%sfp))
+                    (set! ,%td ,(%inline + ,%td ,(%constant ptr-bytes)))
+                    (set! ,stage-end ,(%inline + ,%td (immediate ,(fx* (constant ptr-bytes) (constant asm-arg-reg-cnt)))))
+                    (label ,Largs)
+                    (if ,(%type-check mask-nil snil ,%ts)
+                        (goto ,Largs-done)
+                        ,(%seq
+                           ,(emit (with-output-language (L13.5 Rhs) (%mref ,%ts ,(constant pair-car-disp))))
+                           (set! ,%ts ,(%mref ,%ts ,(constant pair-cdr-disp)))
+                           (goto ,Largs)))
+                    (label ,Largs-done)
+                    ,(emit-digits 1 4)
+                    ;; the middle is empty exactly when length - suffix = prefix
+                    (set! ,%ts ,(%mref ,%xp ,(fld 0)))
+                    (set! ,%ts ,(%inline - ,%ts ,(%mref ,%xp ,(fld 3))))
+                    (if ,(%inline eq? ,%ts ,(%mref ,%xp ,(fld 1)))
+                        (nop)
+                        ,walk-middle)
+                    ,(emit-digits 3 8)
+                    ;; move the staged values into the argument registers
+                    (set! ,%ts ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                    (set! ,%ts ,(%inline + ,%ts ,%sfp))
+                    (set! ,%ts ,(%inline + ,%ts ,(%constant ptr-bytes)))
+                    ,(let load-regs ([regs arg-registers] [i 0])
+                       (with-output-language (L13.5 Effect)
+                         (if (null? regs)
+                             `(nop)
+                             `(if ,(%inline > ,%ac0 (immediate ,i))
+                                  ,(%seq
+                                     (set! ,(car regs) ,(%mref ,%ts ,(fx* (constant ptr-bytes) i)))
+                                     ,(load-regs (cdr regs) (fx+ i 1)))
+                                  (nop)))))
+                    ,(do-call))))]
+           [($apply-vector-procedure)
+            ;; (p n args vec m): write the arguments in the list `args`
+            ;; followed by the `m` elements of `vec` into the argument
+            ;; registers and frame slots, then call `p`.  `n` is the total
+            ;; argument count, which the caller knows.  Staging works as in
+            ;; `$apply-pvector`: the values that belong in registers are put
+            ;; just past the frame arguments and moved into the registers at
+            ;; the end.  Nothing is allocated.
+            (let ([Largs (make-local-label 'apply-vector-args)]
+                  [Largs-done (make-local-label 'apply-vector-args-done)]
+                  [Lelems (make-local-label 'apply-vector-elems)]
+                  [Lelems-done (make-local-label 'apply-vector-elems-done)]
+                  [stage-end (list-ref arg-registers 0)]
+                  [args (list-ref arg-registers 1)])
+              (define emit
+                (lambda (src)
+                  (with-output-language (L13.5 Effect)
+                    (%seq
+                      (set! ,(%mref ,%td 0) ,src)
+                      (set! ,%td ,(%inline + ,%td ,(%constant ptr-bytes)))
+                      (if ,(%inline eq? ,%td ,stage-end)
+                          (set! ,%td ,(%inline + ,%sfp ,(%constant ptr-bytes)))
+                          (nop))))))
+              `(lambda ,(make-info "$apply-vector" '(5)) 0 ()
+                 ,(%seq
+                    (set! ,(ref-reg %cp) ,(make-arg-opnd 1))
+                    (set! ,%ac0 ,(make-arg-opnd 2))
+                    (set! ,args ,(make-arg-opnd 3))
+                    (set! ,%xp ,(make-arg-opnd 4))
+                    (set! ,%ac0 ,(%inline sra ,%ac0 ,(%constant fixnum-offset)))
+                    ;; read the element count before any frame slot is written,
+                    ;; since growing the stack may relocate the arguments
+                    (set! ,%ts ,(make-arg-opnd 5))
+                    (set! ,%ts ,(%inline sra ,%ts ,(%constant fixnum-offset)))
+                    (set! ,(ref-reg %ac1) ,%ts)
+                    (set! ,%td ,(%inline + ,%ac0 (immediate ,(fx+ (constant asm-arg-reg-cnt) 1))))
+                    (set! ,%td ,(%inline sll ,%td ,(%constant log2-ptr-bytes)))
+                    (set! ,%td ,(%inline + ,%td ,%sfp))
+                    (if ,(%inline > ,%td ,(ref-reg %esp))
+                        (seq (pariah)
+                          ,(with-saved-ret-reg
+                             (with-saved-scheme-state
+                               (in %cp %xp %ac0 %ac1 scheme-args)
+                               (out %yp %ts %td extra-regs)
+                               `(inline ,(make-info-c-simple-call #f (lookup-c-entry handle-apply-overflood)) ,%c-simple-call))))
+                        (nop))
+                    (set! ,%td ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                    (set! ,%td ,(%inline + ,%td ,%sfp))
+                    (set! ,%td ,(%inline + ,%td ,(%constant ptr-bytes)))
+                    (set! ,stage-end ,(%inline + ,%td (immediate ,(fx* (constant ptr-bytes) (constant asm-arg-reg-cnt)))))
+                    (label ,Largs)
+                    (if ,(%type-check mask-nil snil ,args)
+                        (goto ,Largs-done)
+                        ,(%seq
+                           ,(emit (with-output-language (L13.5 Rhs) (%mref ,args ,(constant pair-car-disp))))
+                           (set! ,args ,(%mref ,args ,(constant pair-cdr-disp)))
+                           (goto ,Largs)))
+                    (label ,Largs-done)
+                    ;; walk the elements as a contiguous run
+                    (set! ,%ts ,(ref-reg %ac1))
+                    (set! ,%ts ,(%inline sll ,%ts ,(%constant log2-ptr-bytes)))
+                    (set! ,%xp ,(%inline + ,%xp ,(%constant vector-data-disp)))
+                    (set! ,%ts ,(%inline + ,%ts ,%xp))
+                    (label ,Lelems)
+                    (if ,(%inline eq? ,%xp ,%ts)
+                        (goto ,Lelems-done)
+                        ,(%seq
+                           ,(emit (with-output-language (L13.5 Rhs) (%mref ,%xp 0)))
+                           (set! ,%xp ,(%inline + ,%xp ,(%constant ptr-bytes)))
+                           (goto ,Lelems)))
+                    (label ,Lelems-done)
+                    (set! ,%ts ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                    (set! ,%ts ,(%inline + ,%ts ,%sfp))
+                    (set! ,%ts ,(%inline + ,%ts ,(%constant ptr-bytes)))
+                    ,(let load-regs ([regs arg-registers] [i 0])
+                       (with-output-language (L13.5 Effect)
+                         (if (null? regs)
+                             `(nop)
+                             `(if ,(%inline > ,%ac0 (immediate ,i))
+                                  ,(%seq
+                                     (set! ,(car regs) ,(%mref ,%ts ,(fx* (constant ptr-bytes) i)))
+                                     ,(load-regs (cdr regs) (fx+ i 1)))
+                                  (nop)))))
+                    ,(do-call))))]
            [(list*-procedure) (make-list*-procedure "list*")]
            [(cons*-procedure) (make-list*-procedure "cons*")]
            [($record-procedure)

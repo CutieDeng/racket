@@ -141,6 +141,49 @@
     (err/rt-test (vector*-append vec #(a b)))
     (err/rt-test (vector*-append #(a b) vec))))
 
+;; ---------- vector-apply ----------
+(let ()
+  (arity-test vector-apply 2 -1)
+  ;; the vector's elements become the trailing arguments
+  (test '() vector-apply list #())
+  (test '(1) vector-apply list #(1))
+  (test '(1 2) vector-apply list #(1 2))
+  (test '(1 2 3) vector-apply list #(1 2 3))
+  (test '(1 2 3 4 5) vector-apply list #(1 2 3 4 5))
+  (test 6 vector-apply + #(1 2 3))
+  (test 36 vector-apply + #(1 2 3 4 5 6 7 8))
+  ;; leading arguments precede the elements, zero through six of them
+  (test '(a) vector-apply list 'a #())
+  (test '(a 1 2) vector-apply list 'a #(1 2))
+  (test '(a b 1 2) vector-apply list 'a 'b #(1 2))
+  (test '(a b c 1 2) vector-apply list 'a 'b 'c #(1 2))
+  (test '(a b c d 1 2) vector-apply list 'a 'b 'c 'd #(1 2))
+  (test '(a b c d e 1 2) vector-apply list 'a 'b 'c 'd 'e #(1 2))
+  (test '(a b c d e f 1 2) vector-apply list 'a 'b 'c 'd 'e 'f #(1 2))
+  ;; rest-argument and fixed-arity receivers
+  (test '(a b (1 2)) vector-apply (lambda (x y . r) (list x y r)) 'a 'b #(1 2))
+  (test '(1 2 3) vector-apply (lambda (x y z) (list x y z)) #(1 2 3))
+  ;; sizes past the argument-register count and into the frame
+  (test 40 vector-apply + (make-vector 40 1))
+  (test 1000 vector-apply + (make-vector 1000 1))
+  (test 100000 vector-apply + (make-vector 100000 1))
+  ;; immutable and chaperoned vectors
+  (test '(1 2) vector-apply list (vector->immutable-vector (vector 1 2)))
+  (let ([vec (chaperone-vector #(1 2 3) (lambda (b i v) v) (lambda (b i v) v))])
+    (test '(1 2 3) vector-apply list vec))
+  ;; a chaperone's interposition is consulted
+  (let ([vec (chaperone-vector (vector 1 2 3)
+                               (lambda (b i v) (error 'interposed "ref"))
+                               (lambda (b i v) v))])
+    (err/rt-test (vector-apply list vec) exn:fail? #rx"interposed"))
+  ;; type errors: the last argument must be a vector, the first a procedure
+  (err/rt-test (vector-apply 5 #(1)))
+  (err/rt-test (vector-apply + '(1 2)))
+  (err/rt-test (vector-apply + 1 2))
+  (err/rt-test (vector-apply + 1 2 'nope))
+  ;; `apply` itself still rejects vectors
+  (err/rt-test (apply + #(1 2))))
+
 ;; ---------- vector-extend ----------------
 
 (let ()

@@ -408,6 +408,8 @@
 
           ;; pvector runtime candidate
           core-pvector?
+          core-pvector-apply
+          core-vector-apply
           core-pvector-empty
           core-pvector-empty?
           core-pvector-length
