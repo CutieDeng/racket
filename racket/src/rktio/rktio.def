@@ -23,8 +23,8 @@ rktio_forget
 rktio_std_fd
 rktio_create_console
 rktio_read
-rktio_write
 rktio_writev
+rktio_write
 rktio_read_converted
 rktio_read_in
 rktio_write_in
