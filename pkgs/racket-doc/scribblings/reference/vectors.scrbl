@@ -279,6 +279,24 @@ of the elements of the given vectors in order.
 }
 
 
+@defproc[(vector-apply [proc procedure?] [v any/c] ... [vec vector?]) any]{
+
+Calls @racket[proc] with the @racket[v]s as its first arguments
+followed by the elements of @racket[vec] in order, returning the
+result of the call. The result is the same as
+@racket[(apply proc v ... (vector->list vec))], but no intermediate
+list is constructed. When @racket[vec] is an
+@tech{impersonator}, its elements are obtained as if by
+@racket[vector->list], so the impersonator's interposition
+procedures are used.
+
+@mz-examples[#:eval vec-eval
+(vector-apply + #(1 2 3))
+(vector-apply list 'a 'b #(1 2))]
+
+@history[#:added "9.3.6"]}
+
+
 @defproc[(vector-take [vec vector?] [pos exact-nonnegative-integer?]) vector?]{
 Returns a fresh vector whose elements are the first @racket[pos] elements of
 @racket[vec].  If @racket[vec] has fewer than

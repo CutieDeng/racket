@@ -16,7 +16,8 @@
          racket/unsafe/ops
          (for-syntax racket/base))
 
-(provide (rename-out [exported-pvector? pvector?]
+(provide pvector-apply
+         (rename-out [exported-pvector? pvector?]
                      [exported-pvector-empty pvector-empty]
                      [exported-pvector-empty? pvector-empty?]
                      [exported-pvector->list pvector->list]
@@ -509,6 +510,24 @@
                  (unless (list? rest4)
                    (raise-argument-error 'list->pvector "list?" lst))
                  (wrap (raw:list->pvector lst))])])])])]))
+
+;; Call `proc` with the elements of the pvector as its last arguments, without
+;; building an intermediate list.
+;; The raw layer already rejects anything that is not a pvector, and reports
+;; it as `pvector-apply`, so unwrapping without a separate check is enough.
+(define pvector-apply
+  (case-lambda
+    [(proc pv) (raw:pvector-apply proc (pvector-tree/unsafe pv))]
+    [(proc a pv) (raw:pvector-apply proc a (pvector-tree/unsafe pv))]
+    [(proc a b pv) (raw:pvector-apply proc a b (pvector-tree/unsafe pv))]
+    [(proc a b c . rest)
+     ;; `rest` is non-empty here: a four-argument call is caught by the
+     ;; previous clause, so the walk below always sees the sequence argument.
+     (let loop ([l (list* a b c rest)] [acc '()])
+       (if (null? (cdr l))
+           (apply raw:pvector-apply proc
+                  (reverse (cons (pvector-tree/unsafe (car l)) acc)))
+           (loop (cdr l) (cons (car l) acc))))]))
 
 (define (pvector->list pv)
   (cond

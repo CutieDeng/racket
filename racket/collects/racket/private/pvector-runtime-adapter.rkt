@@ -10,7 +10,8 @@
          (prefix-in fallback: "pvector.rkt")
          (for-syntax racket/base))
 
-(provide pvector?
+(provide pvector-apply
+         pvector?
          pvector-empty
          pvector-empty?
          pvector
@@ -95,6 +96,7 @@
   (maybe-kernel 'core-immutable-vector->pvector))
 (define core-fresh-vector->pvector (maybe-kernel 'core-fresh-vector->pvector))
 (define core-list->pvector (maybe-kernel 'core-list->pvector))
+(define core-pvector-apply (maybe-kernel 'core-pvector-apply))
 (define core-make-single-pvector (maybe-kernel 'core-make-single-pvector))
 (define core-make-deep2-pvector (maybe-kernel 'core-make-deep2-pvector))
 (define core-make-deep3-pvector (maybe-kernel 'core-make-deep3-pvector))
@@ -430,6 +432,19 @@
       (if (and (vector? vec) (zero? (vector-length vec)))
           (pvector-empty)
           (vector->pvector/backend vec))))
+
+(define pvector-apply
+  (if core-pvector-apply
+      core-pvector-apply
+      (case-lambda
+        [(p pv) (apply p (pvector->list pv))]
+        [(p a . rest)
+         ;; `(cons a rest)` has at least two elements: a two-argument call is
+         ;; caught by the previous clause.
+         (let loop ([l (cons a rest)] [acc '()])
+           (if (null? (cdr l))
+               (apply p (append (reverse acc) (pvector->list (car l))))
+               (loop (cdr l) (cons (car l) acc))))])))
 
 (define (list->pvector lst)
   (match lst

@@ -452,6 +452,20 @@ time.
 (pvector->vector letters)
 ]}
 
+@defproc[(pvector-apply [proc procedure?] [v any/c] ... [pv pvector?]) any]{
+
+Calls @racket[proc] with the @racket[v]s as its first arguments
+followed by the elements of @racket[pv] in order, returning the
+result of the call. The result is the same as
+@racket[(apply proc v ... (pvector->list pv))], but no intermediate
+list is constructed.
+
+@examples[
+#:eval pvector-eval
+(pvector-apply + (pvector 1 2 3))
+(pvector-apply list 'a 'b (pvector 1 2))
+]}
+
 @defproc[(make-pvector-literal-pool) pvector-literal-pool?]{
 
 Returns a mutable output pool for pvector literal data. Reusing the

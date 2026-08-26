@@ -33,6 +33,22 @@
 (define cons* ($hand-coded 'cons*-procedure))
 (define list* ($hand-coded 'list*-procedure))
 (define $apply ($hand-coded '$apply-procedure))
+;; These entries stage the values that belong in argument registers just past
+;; the frame arguments, which needs a few registers to hold the staging bounds
+;; and the walk state.  On a target with fewer argument registers than that,
+;; they are not generated at all, and the layer above falls back to building a
+;; list.
+;; A reference to a primitive is assumed to be true, so availability has to be
+;; reported by a call rather than by testing the entry itself.
+(meta-cond
+ [(fx>= (constant asm-arg-reg-cnt) 3)
+  (define $apply-pvector ($hand-coded '$apply-pvector-procedure))
+  (define $apply-vector ($hand-coded '$apply-vector-procedure))
+  (define ($apply-entries-available?) #t)]
+ [else
+  (define $apply-pvector #f)
+  (define $apply-vector #f)
+  (define ($apply-entries-available?) #f)])
 
 ;;; basic C-coded primitives
 
@@ -42,6 +58,7 @@
     void))
 (define errorf $oops)
 (define assertion-violationf $oops)
+
 
 (define $lookup-library-entry
   (foreign-procedure "(cs)lookup_library_entry"

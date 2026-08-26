@@ -841,3 +841,136 @@
               ) ; end pvector->literal-datum
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- pvector-apply ----------
+
+(arity-test pvector-apply 2 -1
+) ; end arity-test
+
+;; the pvector's elements become the trailing arguments
+(test '() pvector-apply list (pvector
+                             ) ; end pvector
+) ; end test
+(test '(1) pvector-apply list (pvector 1
+                              ) ; end pvector
+) ; end test
+(test '(1 2) pvector-apply list (pvector 1 2
+                                ) ; end pvector
+) ; end test
+(test '(1 2 3) pvector-apply list (pvector 1 2 3
+                                  ) ; end pvector
+) ; end test
+(test '(1 2 3 4 5) pvector-apply list (pvector 1 2 3 4 5
+                                      ) ; end pvector
+) ; end test
+(test 36 pvector-apply + (pvector 1 2 3 4 5 6 7 8
+                          ) ; end pvector
+) ; end test
+
+;; leading arguments precede the elements
+(test '(a) pvector-apply list 'a (pvector
+                                 ) ; end pvector
+) ; end test
+(test '(a b 1 2) pvector-apply list 'a 'b (pvector 1 2
+                                          ) ; end pvector
+) ; end test
+(test '(a b c d e f 1 2) pvector-apply list 'a 'b 'c 'd 'e 'f (pvector 1 2
+                                                              ) ; end pvector
+) ; end test
+
+;; rest-argument and fixed-arity receivers
+(test '(a b (1 2)) pvector-apply (lambda (x y . r) (list x y r
+                                                   ) ; end list
+                                 ) ; end lambda
+                                 'a 'b (pvector 1 2
+                                       ) ; end pvector
+) ; end test
+(test '(1 2 3) pvector-apply (lambda (x y z) (list x y z
+                                             ) ; end list
+                             ) ; end lambda
+                             (pvector 1 2 3
+                             ) ; end pvector
+) ; end test
+
+;; the same elements under different construction histories
+(test '(0 1 2 3 4 5 6 7) pvector-apply list (list->pvector (build-list 8 values
+                                                           ) ; end build-list
+                                            ) ; end list->pvector
+) ; end test
+(test '(0 1 2 3 4 5 6 7) pvector-apply list (vector->pvector (build-vector 8 values
+                                                             ) ; end build-vector
+                                            ) ; end vector->pvector
+) ; end test
+(test '(0 1 2 3 4 5 6 7) pvector-apply list (pvector-append (pvector 0 1 2 3
+                                                            ) ; end pvector
+                                                            (pvector 4 5 6 7
+                                                            ) ; end pvector
+                                            ) ; end pvector-append
+) ; end test
+(test '(0 1 2 3 4 5 6 7)
+      pvector-apply
+      list
+      (let loop ([pv (list->pvector (append (build-list 8 values
+                                            ) ; end build-list
+                                            (build-list 40 (lambda (i) 'junk
+                                                           ) ; end lambda
+                                            ) ; end build-list
+                                    ) ; end append
+                 ) ; end list->pvector
+                 ] ; end pv
+                 [k 40
+                 ] ; end k
+                ) ; end loop bindings
+        (if (zero? k
+            ) ; end zero?
+            pv
+            (let-values ([(v rest) (pvector-pop-right pv
+                                   ) ; end pvector-pop-right
+                         ] ; end binding
+                        ) ; end let-values bindings
+              (loop rest (sub1 k
+                         ) ; end sub1
+              ) ; end loop
+            ) ; end let-values
+        ) ; end if
+      ) ; end let loop
+) ; end test
+
+;; sizes past the argument-register count and into the frame
+(test 40 pvector-apply + (make-pvector 40 1
+                         ) ; end make-pvector
+) ; end test
+(test 1000 pvector-apply + (make-pvector 1000 1
+                           ) ; end make-pvector
+) ; end test
+(test 100000 pvector-apply + (make-pvector 100000 1
+                             ) ; end make-pvector
+) ; end test
+
+;; type errors: the last argument must be a pvector, the first a procedure
+(err/rt-test (pvector-apply 5 (pvector 1
+                              ) ; end pvector
+              ) ; end pvector-apply
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (pvector-apply + (vector 1 2
+                              ) ; end vector
+              ) ; end pvector-apply
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (pvector-apply + '(1 2
+                              ) ; end quote
+              ) ; end pvector-apply
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (pvector-apply + 1 2
+              ) ; end pvector-apply
+             exn:fail:contract?
+) ; end err/rt-test
+
+;; `apply` itself still rejects pvectors
+(err/rt-test (apply + (pvector 1 2
+                      ) ; end pvector
+              ) ; end apply
+             exn:fail:contract?
+) ; end err/rt-test

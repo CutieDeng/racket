@@ -205,6 +205,8 @@
   [continuation? (known-procedure/pure/folding 2)]
   [copy-file (known-procedure/no-prompt 12)]
   [core-pvector? (known-procedure/pure/folding 2)]
+  [core-pvector-apply (known-procedure -4)]
+  [core-vector-apply (known-procedure -4)]
   [core-pvector-empty (known-procedure/single-valued 1)]
   [core-pvector-empty? (known-procedure/pure/folding 2)]
   [core-pvector-length (known-procedure/single-valued 2)]

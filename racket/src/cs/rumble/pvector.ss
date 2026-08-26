@@ -4089,6 +4089,51 @@
         core-pvector-record-hash-code
         core-pvector-record-secondary-hash-code))
 
+(define core-pvector-node2-rtd (record-type-descriptor core-pvector-node2))
+
+;; Call `p` with the elements of `pv` as its last arguments.  A hand-coded
+;; entry writes the elements straight into the argument registers and frame
+;; slots, so no intermediate list is built.  It needs the 2-child node
+;; descriptor to walk the middle tree, since it cannot name the record type
+;; itself.
+(define pvector-apply*
+  (if (#%$apply-entries-available?)
+      (lambda (who p args m pv)
+        (unless (procedure? p) (raise-argument-error who "procedure?" p))
+        (cond
+         [(core-pvector-large-finger? pv)
+          (#%$apply-pvector p
+                            (fx+ m (core-pvector-large-finger-length pv))
+                            args pv core-pvector-node2-rtd)]
+         [(core-pvector-empty-record? pv)
+          (if (null? args) (p) (#%$apply p m args))]
+         [(core-pvector-inline? pv)
+          (let ([k (core-pvector-inline-length pv)])
+            (if (and (fx= k 1) (null? args))
+                (p (core-pvector-inline-e0 pv))
+                (#%$apply p (fx+ m k) (append args (core-pvector->list pv)))))]
+         [else (raise-argument-error who "pvector?" pv)]))
+      ;; no hand-coded entry on this target
+      (lambda (who p args m pv)
+        (unless (procedure? p) (raise-argument-error who "procedure?" p))
+        (if (core-pvector? pv)
+            (let ([l (core-pvector->list pv)])
+              (#%$apply p (fx+ m (length l)) (append args l)))
+            (raise-argument-error who "pvector?" pv)))))
+
+(define core-pvector-apply
+  (case-lambda
+   [(p pv) (pvector-apply* 'pvector-apply p '() 0 pv)]
+   [(p a pv) (pvector-apply* 'pvector-apply p (list a) 1 pv)]
+   [(p a b pv) (pvector-apply* 'pvector-apply p (list a b) 2 pv)]
+   [(p a b c pv) (pvector-apply* 'pvector-apply p (list a b c) 3 pv)]
+   [(p a b c d pv) (pvector-apply* 'pvector-apply p (list a b c d) 4 pv)]
+   [(p a b c d e . rest)
+    (let loop ([l (list* a b c d e rest)] [m 0] [acc '()])
+      (if (null? (cdr l))
+          (pvector-apply* 'pvector-apply p (reverse acc) m (car l))
+          (loop (cdr l) (fx+ m 1) (cons (car l) acc))))]))
+
 (define (set-core-pvector-record-properties!)
   (define (install! rtd)
     (struct-property-set! prop:equal+hash rtd core-pvector-record-equal+hash))
