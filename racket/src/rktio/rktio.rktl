@@ -368,20 +368,20 @@
  RKTIO_WRITE_ERROR
  ()
  intptr_t
- rktio_write
- (((ref rktio_t) rktio)
-  ((ref rktio_fd_t) rfd)
-  ((*ref char) buffer)
-  (intptr_t len)))
-(define-function/errno
- RKTIO_WRITE_ERROR
- ()
- intptr_t
  rktio_writev
  (((ref rktio_t) rktio)
   ((ref rktio_fd_t) fd)
   ((*ref rktio_iovec_t) iov)
   (intptr_t iovcnt)))
+(define-function/errno
+ RKTIO_WRITE_ERROR
+ ()
+ intptr_t
+ rktio_write
+ (((ref rktio_t) rktio)
+  ((ref rktio_fd_t) rfd)
+  ((*ref char) buffer)
+  (intptr_t len)))
 (define-function/errno
  RKTIO_READ_ERROR
  ()

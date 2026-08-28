@@ -16701,12 +16701,11 @@
     (if (syntax?$1 s_0) (|#%app| (error-syntax->name-handler) s_0) #f)))
 (define extract-source-location
   (lambda (s_0)
-    (if (syntax?$1 s_0)
-      (if (syntax-srcloc$1 s_0)
-        (let ((str_0 (srcloc->string (syntax-srcloc$1 s_0))))
+    (let ((loc_0 (if s_0 (|#%app| (error-syntax->srcloc-handler) s_0) #f)))
+      (if (srcloc? loc_0)
+        (let ((str_0 (srcloc->string loc_0)))
           (if str_0 (string-append str_0 ": ") #f))
-        #f)
-      #f)))
+        #f))))
 (define ->datum
   (lambda (expr_0)
     (let ((with-handlers-handler20_0
@@ -16734,6 +16733,8 @@
 (define install-error-syntax->string-handler!
   (lambda ()
     (begin
+      (error-syntax->srcloc-handler
+       (lambda (s_0) (if (syntax?$1 s_0) (syntax-srcloc$1 s_0) #f)))
       (error-syntax->name-handler
        (lambda (s_0)
          (begin
@@ -18457,6 +18458,11 @@
                                     mi137_0
                                     #t)
                                    (void))
+                                 (if (not instance-phase_0)
+                                   (|#%app|
+                                    (module-force-bulk-binding m_1)
+                                    (namespace-bulk-binding-registry ns138_0))
+                                   (void))
                                  (if skip-run?122_0
                                    (void)
                                    (let ((small-ht_0
@@ -19296,7 +19302,7 @@
                   (lambda (s_0) (error "bad syntax:" s_0)))))
             (lambda (t_0) v_0))))))))
 (define 1/make-set!-transformer
-  (let ((finish913
+  (let ((finish916
          (make-struct-type-install-properties
           '(set!-transformer)
           1
@@ -19316,7 +19322,7 @@
             #f
             #f
             '(1 . 0))))
-      (let ((effect914 (finish913 struct:set!-transformer_0)))
+      (let ((effect917 (finish916 struct:set!-transformer_0)))
         (let ((set!-transformer1_0
                (|#%name|
                 set!-transformer
@@ -70167,7 +70173,7 @@
                                          in38_0))
                                        (raise-argument-error
                                         who31_0
-                                        "(or/c (procedure-arity-includes?/c 2) (procedure-arity-includes?/c 6))"
+                                        "(or/c (procedure-arity-includes/c 2) (procedure-arity-includes/c 6))"
                                         extension_0)))
                                    (if (procedure-arity-includes?
                                         extension_0
@@ -70186,7 +70192,7 @@
                                      (if get-info?30_0
                                        (raise-argument-error
                                         who31_0
-                                        "(procedure-arity-includes?/c 5)"
+                                        "(procedure-arity-includes/c 5)"
                                         extension_0)
                                        (if (procedure-arity-includes?
                                             extension_0
@@ -70198,7 +70204,7 @@
                                           (|#%app| extension_0 in38_0))
                                          (raise-argument-error
                                           who31_0
-                                          "(or/c (procedure-arity-includes?/c 1) (procedure-arity-includes?/c 5))"
+                                          "(or/c (procedure-arity-includes/c 1) (procedure-arity-includes/c 5))"
                                           extension_0)))))))
                             (if get-info?30_0
                               (begin
@@ -70208,7 +70214,7 @@
                                   (void)
                                   (raise-result-error
                                    'read-language
-                                   "(procedure-arity-includes?/c 2)"
+                                   "(procedure-arity-includes/c 2)"
                                    result-v_0))
                                 result-v_0)
                               (if (1/special-comment? result-v_0)
@@ -74347,7 +74353,10 @@
           'variable-reference->namespace
           "variable-reference?"
           vr_0))
-       (let ((ns_0 (variable-reference->namespace* vr_0)))
+       (let ((ns_0
+              (variable-reference->namespace*
+               'variable-reference->namespace
+               vr_0)))
          (let ((mpi_0 (namespace-mpi ns_0)))
            (begin
              (if (non-self-module-path-index? mpi_0)
@@ -74367,17 +74376,37 @@
                    temp6_0)))
                (void))
              ns_0)))))))
+(define check-got-ns
+  (lambda (who_0 vr_0 maybe-ns_0)
+    (begin
+      (if (1/namespace? maybe-ns_0)
+        (void)
+        (raise-arguments-error
+         who_0
+         "variable reference has no associated namespace"
+         "variable reference"
+         vr_0
+         "hint"
+         (unquoted-printing-string
+          "is the variable reference from a non-module, non-top-level linklet?")))
+      maybe-ns_0)))
 (define variable-reference->namespace*
-  (lambda (vr_0)
+  (lambda (who_0 vr_0)
     (let ((inst_0 (variable-reference->instance vr_0)))
       (if (symbol? inst_0)
         (let ((app_0 (list 'quote inst_0)))
           (1/module->namespace
            app_0
-           (instance-data (variable-reference->instance vr_0 #t))))
+           (check-got-ns
+            who_0
+            vr_0
+            (instance-data (variable-reference->instance vr_0 #t)))))
         (if (not inst_0)
-          (instance-data (variable-reference->instance vr_0 #t))
-          (instance-data inst_0))))))
+          (check-got-ns
+           who_0
+           vr_0
+           (instance-data (variable-reference->instance vr_0 #t)))
+          (check-got-ns who_0 vr_0 (instance-data inst_0)))))))
 (define 1/variable-reference->module-path-index
   (|#%name|
    variable-reference->module-path-index
@@ -74389,7 +74418,11 @@
           'variable-reference->module-path-index
           "variable-reference?"
           vr_0))
-       (let ((mpi_0 (namespace-mpi (variable-reference->namespace* vr_0))))
+       (let ((mpi_0
+              (namespace-mpi
+               (variable-reference->namespace*
+                'variable-reference->module-path-index
+                vr_0))))
          (if (eq? top-level-module-path-index mpi_0) #f mpi_0))))))
 (define 1/variable-reference->resolved-module-path
   (|#%name|
@@ -74415,7 +74448,10 @@
           'variable-reference->module-source
           "variable-reference?"
           vr_0))
-       (let ((ns_0 (variable-reference->namespace* vr_0)))
+       (let ((ns_0
+              (variable-reference->namespace*
+               'variable-reference->module-source
+               vr_0)))
          (namespace-source-name ns_0))))))
 (define 1/variable-reference->phase
   (|#%name|
@@ -74428,7 +74464,8 @@
           'variable-reference->phase
           "variable-reference?"
           vr_0))
-       (namespace-phase (variable-reference->namespace* vr_0))))))
+       (namespace-phase
+        (variable-reference->namespace* 'variable-reference->phase vr_0))))))
 (define 1/variable-reference->module-base-phase
   (|#%name|
    variable-reference->module-base-phase
@@ -74440,7 +74477,10 @@
           'variable-reference->module-base-phase
           "variable-reference?"
           vr_0))
-       (namespace-0-phase (variable-reference->namespace* vr_0))))))
+       (namespace-0-phase
+        (variable-reference->namespace*
+         'variable-reference->module-base-phase
+         vr_0))))))
 (define 1/variable-reference->module-declaration-inspector
   (|#%name|
    variable-reference->module-declaration-inspector
@@ -74461,7 +74501,9 @@
          (void))
        (let ((or-part_0
               (namespace-declaration-inspector
-               (variable-reference->namespace* vr_0))))
+               (variable-reference->namespace*
+                'variable-reference->module-declaration-inspector
+                vr_0))))
          (if or-part_0
            or-part_0
            (raise-arguments-error
