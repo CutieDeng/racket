@@ -1149,3 +1149,48 @@
               ) ; end pvector-member
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- pvector-map over several pvectors ----------
+
+(test '(11 22 33) pvector->list (pvector-map (pvector 1 2 3
+                                             ) ; end pvector
+                                             (pvector 10 20 30
+                                             ) ; end pvector
+                                             +
+                                ) ; end pvector-map
+) ; end test
+(test '(111 222) pvector->list (pvector-map (pvector 1 2
+                                            ) ; end pvector
+                                            (pvector 10 20
+                                            ) ; end pvector
+                                            (pvector 100 200
+                                            ) ; end pvector
+                                            +
+                               ) ; end pvector-map
+) ; end test
+(test '() pvector->list (pvector-map (pvector
+                                     ) ; end pvector
+                                     (pvector
+                                     ) ; end pvector
+                                     +
+                        ) ; end pvector-map
+) ; end test
+(test 999000 pvector-fold-left (pvector-map (list->pvector (build-list 1000 values
+                                                           ) ; end build-list
+                                            ) ; end list->pvector
+                                            (list->pvector (build-list 1000 values
+                                                           ) ; end build-list
+                                            ) ; end list->pvector
+                                            +
+                               ) ; end pvector-map
+                               0
+                               +
+) ; end test
+(err/rt-test (pvector-map (pvector 1 2
+                          ) ; end pvector
+                          (pvector 1
+                          ) ; end pvector
+                          +
+              ) ; end pvector-map
+             exn:fail:contract?
+) ; end err/rt-test

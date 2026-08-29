@@ -958,7 +958,22 @@
                            "procedure" proc))
   proc)
 
-(define (pvector-map pv proc)
+(define (pvector-map/multi pv1 rest)
+  ;; the procedure is the last argument, pvectors come before it
+  (let loop ([l rest] [acc '()])
+    (if (null? (cdr l))
+        (wrap (apply raw:pvector-map
+                     (unwrap 'pvector-map pv1)
+                     (append (reverse (map (lambda (p) (unwrap 'pvector-map p)) acc))
+                             (list (car l)))))
+        (loop (cdr l) (cons (car l) acc)))))
+
+(define pvector-map
+  (case-lambda
+    [(pv proc) (pvector-map/one pv proc)]
+    [(pv1 . rest) (pvector-map/multi pv1 rest)]))
+
+(define (pvector-map/one pv proc)
   (cond
     [(and (eq? proc values) (pvector? pv)) pv]
     [else

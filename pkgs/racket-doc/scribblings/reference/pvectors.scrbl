@@ -309,15 +309,19 @@ the elements of @racket[other-pv].
 (pvector-append (pvector 1 2) (pvector 3 4))
 ]}
 
-@defproc[(pvector-map [pv pvector?] [proc (any/c . -> . any/c)]) pvector?]{
+@defproc[(pvector-map [pv pvector?] ...+ [proc procedure?]) pvector?]{
 
-Produces a pvector by applying @racket[proc] to each element of
-@racket[pv] and gathering the results into a new pvector. For a
-constant-time @racket[proc], this operation takes @math{O(N)} time.
+Produces a pvector by applying @racket[proc] to the elements of the
+@racket[pv]s, position by position, and gathering the results into a
+new pvector. The @racket[proc] argument must accept as many arguments
+as there are @racket[pv]s, and all @racket[pv]s must have the same
+length. For a constant-time @racket[proc], this operation takes
+@math{O(N)} time.
 
 @examples[
 #:eval pvector-eval
 (pvector-map (pvector 1 2 3) add1)
+(pvector-map (pvector 1 2 3) (pvector 10 20 30) +)
 ]}
 
 @defproc[(pvector-for-each [pv pvector?] [proc (any/c . -> . any)])
