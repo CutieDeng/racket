@@ -871,7 +871,7 @@
 (define pvector-append
   (if core-available? core-pvector-append fallback:pvector-append))
 
-(define pvector-map
+(define pvector-map/one
   (if core-available?
       core-pvector-map
       (lambda (pv proc)
@@ -883,6 +883,67 @@
           [else
            (fallback:for/pvector ([elem (fallback:in-pvector pv)])
              (proc elem))]))))
+
+(define (pvector-map-length-error who pv other)
+  (raise-arguments-error who
+                         "pvectors have different lengths"
+                         "first pvector length" (pvector-length pv)
+                         "other pvector length" (pvector-length other)))
+
+;; Lockstep map over several pvectors: the extra pvectors are read through
+;; fresh vectors while the first one drives the walk, so each element access
+;; is O(1) instead of a tree descent.
+(define (pvector-map/many pv pvs proc)
+  (let ([n (pvector-length pv)])
+    (for ([other (in-list pvs)])
+      (unless (unsafe-fx= (pvector-length other) n)
+        (pvector-map-length-error 'pvector-map pv other)))
+    (let ([vecs (map pvector->vector pvs)])
+      (if core-available?
+          (with-core-pvector-builder add!
+            (pvector-fold-left pv 0
+                               (lambda (i x)
+                                 (add! (apply proc x
+                                              (for/list ([v (in-list vecs)])
+                                                (unsafe-vector-ref v i))))
+                                 (unsafe-fx+ i 1))))
+          (list->pvector
+           (let loop ([i 0] [acc '()])
+             (if (unsafe-fx= i n)
+                 (reverse acc)
+                 (loop (unsafe-fx+ i 1)
+                       (cons (apply proc (pvector-ref pv i)
+                                    (for/list ([v (in-list vecs)])
+                                      (vector-ref v i)))
+                             acc)))))))))
+
+(define pvector-map
+  (case-lambda
+    [(pv proc) (pvector-map/one pv proc)]
+    [(pv1 pv2 proc)
+     (let ([n (pvector-length pv1)])
+       (unless (unsafe-fx= (pvector-length pv2) n)
+         (pvector-map-length-error 'pvector-map pv1 pv2))
+       (let ([v2 (pvector->vector pv2)])
+         (if core-available?
+             (with-core-pvector-builder add!
+               (pvector-fold-left pv1 0
+                                  (lambda (i x)
+                                    (add! (proc x (unsafe-vector-ref v2 i)))
+                                    (unsafe-fx+ i 1))))
+             (list->pvector
+              (let loop ([i 0] [acc '()])
+                (if (unsafe-fx= i n)
+                    (reverse acc)
+                    (loop (unsafe-fx+ i 1)
+                          (cons (proc (pvector-ref pv1 i) (vector-ref v2 i))
+                                acc))))))))]
+    [(pv1 . rest)
+     ;; the procedure is the last argument, pvectors come before it
+     (let loop ([l rest] [acc '()])
+       (if (null? (cdr l))
+           (pvector-map/many pv1 (reverse acc) (car l))
+           (loop (cdr l) (cons (car l) acc))))]))
 
 (define pvector-split-at
   (if core-available? core-pvector-split-at fallback:pvector-split-at))
