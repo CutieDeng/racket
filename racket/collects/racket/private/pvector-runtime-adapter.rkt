@@ -97,6 +97,7 @@
 (define core-fresh-vector->pvector (maybe-kernel 'core-fresh-vector->pvector))
 (define core-list->pvector (maybe-kernel 'core-list->pvector))
 (define core-pvector-apply (maybe-kernel 'core-pvector-apply))
+(define core-pvector-args (maybe-kernel 'core-pvector-args))
 (define core-make-single-pvector (maybe-kernel 'core-make-single-pvector))
 (define core-make-deep2-pvector (maybe-kernel 'core-make-deep2-pvector))
 (define core-make-deep3-pvector (maybe-kernel 'core-make-deep3-pvector))
@@ -542,51 +543,19 @@
     [else
      (fallback:make-pvector len value)]))
 
-(begin-for-syntax
-  (define pvector-inline-vector-arity-limit 64)
-  (define pvector-fixed-vector-arity-limit 112)
-
-  (define (small-pvector-proc-clause stx len)
-    (define ids (generate-temporaries
-                 (for/list ([i (in-range len)]) 'elem)))
-    (cond
-      [(= len 1)
-       (with-syntax ([(elem) ids])
-         #'[(elem) (single-value->pvector elem)])]
-      [(= len 2)
-       (with-syntax ([(left right) ids])
-         #'[(left right) (two-values->pvector left right)])]
-      [(= len 3)
-       (with-syntax ([(a b c) ids])
-         #'[(a b c) (three-values->pvector a b c)])]
-      [(= len 4)
-       (with-syntax ([(a b c d) ids])
-         #'[(a b c d) (four-values->pvector a b c d)])]
-      [(<= len pvector-inline-vector-arity-limit)
-       (with-syntax ([(elem ...) ids]
-                     [len (datum->syntax stx len)])
-         #'[(elem ...)
-            (small-immutable-vector->pvector (vector-immutable elem ...) len)])]
-      [else
-       (with-syntax ([(elem ...) ids])
-         #'[(elem ...)
-            (vector->pvector/backend (vector-immutable elem ...))])]))
-
-  (define (small-pvector-proc-clauses stx)
-    (for/list ([len (in-range 1 (add1 pvector-fixed-vector-arity-limit))])
-      (small-pvector-proc-clause stx len))))
-
-(define-syntax (make-pvector/proc stx)
-  (syntax-case stx ()
-    [(_)
-     (with-syntax ([(small-clause ...)
-                    (small-pvector-proc-clauses stx)])
-       #'(case-lambda
-           [() (pvector-empty)]
-           small-clause ...
-           [elems (list->pvector elems)]))]))
-
-(define pvector (make-pvector/proc))
+;; The hand-coded entry makes the constructor native for every argument count
+;; (including through `apply` and `call-with-values`), replacing the generated
+;; per-arity clauses.  Without it, small counts stay direct and the rest goes
+;; through `list->pvector`.
+(define pvector
+  (or core-pvector-args
+      (case-lambda
+        [() (pvector-empty)]
+        [(a) (single-value->pvector a)]
+        [(a b) (two-values->pvector a b)]
+        [(a b c) (three-values->pvector a b c)]
+        [(a b c d) (four-values->pvector a b c d)]
+        [elems (list->pvector elems)])))
 
 (define pvector->vector
   (if core-available? core-pvector->vector fallback:pvector->vector))

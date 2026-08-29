@@ -409,6 +409,7 @@
           ;; pvector runtime candidate
           core-pvector?
           core-pvector-apply
+          core-pvector-args
           core-vector-apply
           core-pvector-empty
           core-pvector-empty?
@@ -1083,6 +1084,7 @@
   (set-mpair-hash!)
   (set-hash-hash!)
   (set-core-pvector-record-properties!)
+  (install-pvector-args-finisher!)
   (set-core-intmap-record-properties!)
   (set-extflonum-print!)
   (set-impersonator-hash!)

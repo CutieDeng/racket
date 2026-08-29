@@ -4134,6 +4134,14 @@
           (pvector-apply* 'pvector-apply p (reverse acc) m (car l))
           (loop (cdr l) (fx+ m 1) (cons (car l) acc))))]))
 
+;; The `pvector` constructor: hand-coded code collects the arguments into a
+;; fresh vector and forwards it here, so the constructor is native for every
+;; argument count, including through `apply` and `call-with-values`.
+(define core-pvector-args #%$pvector-args)
+(define (install-pvector-args-finisher!)
+  ;; only reads the elements; the fresh vector is dropped afterwards
+  (#%$set-pvector-finisher! core-vector->pvector/no-copy))
+
 (define (set-core-pvector-record-properties!)
   (define (install! rtd)
     (struct-property-set! prop:equal+hash rtd core-pvector-record-equal+hash))

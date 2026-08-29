@@ -1452,6 +1452,12 @@
            (doapply p (x ...) ls (ls1 ... lsn-1 lsn))))]))
 )
 
+;; Target of the hand-coded `pvector` constructor: it has collected the
+;; arguments into a fresh vector, and a layer above (which knows the pvector
+;; record types) turns that vector into a pvector.
+(define-library-entry ($pvector-from-fresh-vector v)
+  ($pvector-finisher v))
+
 (define-library-entry (apply0 p ls)
   (doapply p () ls))
 

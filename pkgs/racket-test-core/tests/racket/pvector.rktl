@@ -974,3 +974,44 @@
               ) ; end apply
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- pvector constructor in value position ----------
+;; The constructor is a hand-coded entry, so `apply` and
+;; `call-with-values` reach it natively for every argument count.
+
+(test '() pvector->list (apply pvector '(
+                                        ) ; end quote
+                        ) ; end apply
+) ; end test
+(test '(1 2 3 4 5) pvector->list (apply pvector '(1 2 3 4 5
+                                                 ) ; end quote
+                                 ) ; end apply
+) ; end test
+(test 200 pvector-length (apply pvector (build-list 200 values
+                                        ) ; end build-list
+                         ) ; end apply
+) ; end test
+(test 100000 pvector-apply + (apply pvector (build-list 100000 (lambda (i) 1
+                                                               ) ; end lambda
+                                            ) ; end build-list
+                             ) ; end apply
+) ; end test
+(test '(1 2 3 4 5 6) pvector->list (call-with-values (lambda () (values 1 2 3 4 5 6
+                                                                ) ; end values
+                                                     ) ; end lambda
+                                                     pvector
+                                   ) ; end call-with-values
+) ; end test
+(test '(1 1 1) map pvector-length (map pvector '(1 2 3
+                                                ) ; end quote
+                                  ) ; end map
+) ; end test
+(test #t procedure? pvector
+) ; end test
+(test 'pvector object-name pvector
+) ; end test
+;; the same value regardless of how the constructor was reached
+(test #t equal? (pvector 1 2 3 4 5 6 7 8 9) (apply pvector '(1 2 3 4 5 6 7 8 9
+                                                            ) ; end quote
+                                            ) ; end apply
+) ; end test
