@@ -456,6 +456,21 @@ time.
 (pvector->vector letters)
 ]}
 
+@defproc[(procedure->pvector-rest [proc (pvector? . -> . any)]) procedure?]{
+
+Returns a procedure that accepts any number of arguments and calls
+@racket[proc] with one pvector holding them --- the pvector analog of
+writing a rest-argument @racket[lambda]. The @racket[proc] argument
+must accept one argument.
+
+@examples[
+#:eval pvector-eval
+(define sum-pv (procedure->pvector-rest
+                (lambda (pv) (pvector-fold-left pv 0 +))))
+(sum-pv 1 2 3)
+(apply sum-pv '(1 2 3 4))
+]}
+
 @deftogether[(
 @defproc[(pvector-fold-left [pv pvector?] [init any/c]
                             [proc (any/c any/c . -> . any/c)]) any/c]
