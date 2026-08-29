@@ -452,6 +452,74 @@ time.
 (pvector->vector letters)
 ]}
 
+@deftogether[(
+@defproc[(pvector-fold-left [pv pvector?] [init any/c]
+                            [proc (any/c any/c . -> . any/c)]) any/c]
+@defproc[(pvector-fold-right [pv pvector?] [init any/c]
+                             [proc (any/c any/c . -> . any/c)]) any/c]
+)]{
+
+Folds over the elements of @racket[pv]. @racket[pvector-fold-left]
+calls @racket[(proc _acc _elem)] from the first element to the last,
+and @racket[pvector-fold-right] calls @racket[(proc _elem _acc)] from
+the last element to the first, each starting from @racket[init], as
+in R6RS @racket[fold-left] and @racket[fold-right].
+
+@examples[
+#:eval pvector-eval
+(pvector-fold-left (pvector 1 2 3) '() (lambda (acc x) (cons x acc)))
+(pvector-fold-right (pvector 1 2 3) '() cons)
+]}
+
+@defproc[(pvector-reverse [pv pvector?]) pvector?]{
+
+Returns a pvector with the elements of @racket[pv] in reverse order,
+in @math{O(N)} time.}
+
+@defproc[(pvector-sort [pv pvector?]
+                       [less-than? (any/c any/c . -> . any/c)]
+                       [#:key key (or/c #f (any/c . -> . any/c)) #f]
+                       [#:cache-keys? cache-keys? boolean? #f])
+         pvector?]{
+
+Returns a pvector with the elements of @racket[pv] sorted by
+@racket[less-than?], like @racket[vector-sort]. The sort is stable.}
+
+@deftogether[(
+@defproc[(pvector-filter [pv pvector?] [pred (any/c . -> . any/c)]) pvector?]
+@defproc[(pvector-partition [pv pvector?] [pred (any/c . -> . any/c)])
+         (values pvector? pvector?)]
+@defproc[(pvector-count [pv pvector?] [pred (any/c . -> . any/c)])
+         exact-nonnegative-integer?]
+)]{
+
+Like @racket[filter], @racket[partition], and @racket[count] for
+lists: keeps the elements for which @racket[pred] answers a true
+value, splits into keepers and non-keepers, or counts the keepers.}
+
+@deftogether[(
+@defproc[(pvector-andmap [pv pvector?] [proc (any/c . -> . any/c)]) any/c]
+@defproc[(pvector-ormap [pv pvector?] [proc (any/c . -> . any/c)]) any/c]
+)]{
+
+Like @racket[andmap] and @racket[ormap] for lists, stopping at the
+first false or first true answer respectively.}
+
+@deftogether[(
+@defproc[(pvector-member [pv pvector?] [v any/c]
+                         [is-equal? (any/c any/c . -> . any/c) equal?])
+         (or/c exact-nonnegative-integer? #f)]
+@defproc[(pvector-memq [pv pvector?] [v any/c])
+         (or/c exact-nonnegative-integer? #f)]
+@defproc[(pvector-memv [pv pvector?] [v any/c])
+         (or/c exact-nonnegative-integer? #f)]
+)]{
+
+Locates the first element equal to @racket[v] (by @racket[is-equal?],
+@racket[eq?], or @racket[eqv?]) and returns its index, or @racket[#f]
+if there is none, like @racket[vector-member], @racket[vector-memq],
+and @racket[vector-memv].}
+
 @defproc[(pvector-apply [proc procedure?] [v any/c] ... [pv pvector?]) any]{
 
 Calls @racket[proc] with the @racket[v]s as its first arguments

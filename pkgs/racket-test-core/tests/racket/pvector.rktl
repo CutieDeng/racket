@@ -1015,3 +1015,137 @@
                                                             ) ; end quote
                                             ) ; end apply
 ) ; end test
+
+;; ---------- list-library-aligned combinators ----------
+
+(test '(6 2 9 5 1 4 1 3) pvector->list (pvector-reverse (pvector 3 1 4 1 5 9 2 6
+                                                        ) ; end pvector
+                                       ) ; end pvector-reverse
+) ; end test
+(test #t pvector-empty? (pvector-reverse (pvector
+                                         ) ; end pvector
+                        ) ; end pvector-reverse
+) ; end test
+(test '(1 1 2 3 4 5 6 9) pvector->list (pvector-sort (pvector 3 1 4 1 5 9 2 6
+                                                     ) ; end pvector
+                                                     <
+                                       ) ; end pvector-sort
+) ; end test
+(test '("a" "bb" "ccc") pvector->list (pvector-sort (pvector "bb" "a" "ccc"
+                                                    ) ; end pvector
+                                                    <
+                                                    #:key string-length
+                                      ) ; end pvector-sort
+) ; end test
+(test '(4 2 6) pvector->list (pvector-filter (pvector 3 1 4 1 5 9 2 6
+                                             ) ; end pvector
+                                             even?
+                             ) ; end pvector-filter
+) ; end test
+(test '((4 2 6) (3 1 1 5 9))
+      call-with-values
+      (lambda () (pvector-partition (pvector 3 1 4 1 5 9 2 6
+                                    ) ; end pvector
+                                    even?
+                 ) ; end pvector-partition
+      ) ; end lambda
+      (lambda (yes no) (list (pvector->list yes
+                             ) ; end pvector->list
+                             (pvector->list no
+                             ) ; end pvector->list
+                       ) ; end list
+      ) ; end lambda
+) ; end test
+(test 5 pvector-count (pvector 3 1 4 1 5 9 2 6
+                      ) ; end pvector
+                      odd?
+) ; end test
+(test #t pvector-andmap (pvector 1 2 3
+                        ) ; end pvector
+                        positive?
+) ; end test
+(test 30 pvector-andmap (pvector 1 2 3
+                        ) ; end pvector
+                        (lambda (x) (* x 10
+                                    ) ; end *
+                        ) ; end lambda
+) ; end test
+(test #t pvector-andmap (pvector
+                        ) ; end pvector
+                        odd?
+) ; end test
+(test 400 pvector-ormap (pvector 3 1 4
+                        ) ; end pvector
+                        (lambda (x) (and (even? x
+                                         ) ; end even?
+                                         (* x 100
+                                         ) ; end *
+                                    ) ; end and
+                        ) ; end lambda
+) ; end test
+(test #f pvector-ormap (pvector 3 1 5
+                       ) ; end pvector
+                       even?
+) ; end test
+(test '(3 2 1) pvector-fold-left (pvector 1 2 3
+                                 ) ; end pvector
+                                 '()
+                                 (lambda (acc x) (cons x acc
+                                                 ) ; end cons
+                                 ) ; end lambda
+) ; end test
+(test '(1 2 3) pvector-fold-right (pvector 1 2 3
+                                  ) ; end pvector
+                                  '()
+                                  cons
+) ; end test
+(test 1 pvector-member (pvector "a" "b" "c"
+                       ) ; end pvector
+                       "b"
+) ; end test
+(test #f pvector-member (pvector 1 2 3
+                        ) ; end pvector
+                        100
+) ; end test
+(test 1 pvector-memq (pvector 'a 'b
+                     ) ; end pvector
+                     'b
+) ; end test
+(test 1 pvector-memv (pvector 1.0 2.0
+                     ) ; end pvector
+                     2.0
+) ; end test
+;; a large pvector exercises the middle tree in every combinator
+(let ((big (list->pvector (build-list 1000 values
+                          ) ; end build-list
+           ) ; end list->pvector
+      )) ; end big
+  (test 1000 pvector-length (pvector-reverse big
+                            ) ; end pvector-reverse
+  ) ; end test
+  (test 0 pvector-ref (pvector-sort (pvector-reverse big
+                                    ) ; end pvector-reverse
+                                    <
+                      ) ; end pvector-sort
+                      0
+  ) ; end test
+  (test 500 pvector-count big even?
+  ) ; end test
+  (test 999 pvector-member big 999
+  ) ; end test
+) ; end let
+(err/rt-test (pvector-reverse 5
+              ) ; end pvector-reverse
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (pvector-sort 5 <
+              ) ; end pvector-sort
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (pvector-member (pvector 1
+                             ) ; end pvector
+                             1
+                             5
+              ) ; end pvector-member
+             exn:fail:contract?
+) ; end err/rt-test
