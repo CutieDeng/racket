@@ -363,7 +363,6 @@
 
 (begin-for-syntax
   (define pvector-inline-vector-arity-limit 64)
-  (define pvector-fixed-vector-arity-limit 112)
 
   (define (direct-small-values->pvector elem-stxs)
     (case (length elem-stxs)
@@ -381,37 +380,6 @@
        (with-syntax ([(a b c d) elem-stxs])
          #'(four-values->pvector a b c d))]
       [else #f]))
-
-  (define (small-pvector-proc-clause stx len)
-    (define ids (generate-temporaries
-                 (for/list ([i (in-range len)]) 'elem)))
-    (cond
-      [(= len 1)
-       (with-syntax ([(elem) ids])
-         #'[(elem) (single-value->pvector elem)])]
-      [(= len 2)
-       (with-syntax ([(left right) ids])
-         #'[(left right) (two-values->pvector left right)])]
-      [(= len 3)
-       (with-syntax ([(a b c) ids])
-         #'[(a b c) (three-values->pvector a b c)])]
-      [(= len 4)
-       (with-syntax ([(a b c d) ids])
-         #'[(a b c d) (four-values->pvector a b c d)])]
-      [(<= len pvector-inline-vector-arity-limit)
-       (with-syntax ([(elem ...) ids]
-                     [len (datum->syntax stx len)])
-         #'[(elem ...)
-            (small-immutable-vector->pvector (vector-immutable elem ...) len)])]
-      [else
-       (with-syntax ([(elem ...) ids]
-                     [len (datum->syntax stx len)])
-         #'[(elem ...)
-            (wrap/len (raw:vector->pvector (vector-immutable elem ...)) len)])]))
-
-  (define (small-pvector-proc-clauses stx)
-    (for/list ([len (in-range 1 (add1 pvector-fixed-vector-arity-limit))])
-      (small-pvector-proc-clause stx len)))
 
   (define (small-make-pvector-clause stx len v-id)
     (cond
@@ -435,17 +403,20 @@
     (for/list ([len (in-range 3 5)])
       (small-make-pvector-clause stx len v-id))))
 
-(define-syntax (make-pvector/proc stx)
-  (syntax-case stx ()
-    [(_)
-     (with-syntax ([(small-clause ...)
-                    (small-pvector-proc-clauses stx)])
-       #'(case-lambda
-           [() empty-pvector]
-           small-clause ...
-           [elems (wrap (raw:list->pvector elems))]))]))
-
-(define pvector/proc (make-pvector/proc))
+;; Value-position `pvector` (for `apply`, `call-with-values`, and any
+;; higher-order use): with the native backend this is the hand-coded
+;; constructor, which is native for every argument count; direct call sites
+;; are expanded inline by the `pvector` macro below and never reach it.
+(define pvector/proc
+  (if bc-native-public?
+      raw:pvector
+      (case-lambda
+        [() empty-pvector]
+        [(a) (single-value->pvector a)]
+        [(a b) (two-values->pvector a b)]
+        [(a b c) (three-values->pvector a b c)]
+        [(a b c d) (four-values->pvector a b c d)]
+        [elems (wrap (raw:list->pvector elems))])))
 
 (define-syntax (define-make-pvector/known-length stx)
   (with-syntax ([make-pvector/known-length

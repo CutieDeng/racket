@@ -44,6 +44,15 @@
  [(fx>= (constant asm-arg-reg-cnt) 3)
   (define $apply-pvector ($hand-coded '$apply-pvector-procedure))
   (define $apply-vector ($hand-coded '$apply-vector-procedure))
+
+;; The pvector constructor collects its arguments into a fresh vector by
+;; hand-coded code and hands that vector to `$pvector-finisher`, which a
+;; higher layer installs, since the pvector record types are created there.
+(define $pvector-finisher
+  (lambda (v) ($oops 'pvector "pvector runtime is not initialized")))
+(define $set-pvector-finisher!
+  (lambda (p) (set! $pvector-finisher p)))
+(define $pvector-args ($hand-coded '$pvector-args-procedure))
   (define ($apply-entries-available?) #t)]
  [else
   (define $apply-pvector #f)

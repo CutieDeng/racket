@@ -6567,6 +6567,80 @@
                                         (set! ,%ac0 ,%xp)
                                         (jump ,%ref-ret (,%ac0)))
                                      ,(f (cdr reg*) (fx+ i 1))))))))))]
+           [($pvector-args-procedure)
+            ;; The pvector constructor: collect the n arguments into a fresh
+            ;; vector exactly as `vector` does, then tail-call the
+            ;; `$pvector-from-fresh-vector` library entry with that vector,
+            ;; which forwards to the finisher installed by the layer that
+            ;; knows the pvector record types.  Going through a vector keeps
+            ;; this one entry independent of the pvector representation and
+            ;; correct for every argument count, including through `apply`
+            ;; and `call-with-values`.
+            (let* ([Ltop (make-local-label 'ltop)]
+                   [Lfin (make-local-label 'lfin)]
+                   [Lfinish (make-libspec-label 'pvector-from-fresh-vector
+                                                (lookup-libspec $pvector-from-fresh-vector)
+                                                (reg-cons* %ret %ac0 arg-registers))])
+              `(lambda ,(make-info "pvector" '(-1) #t) 0 ()
+                 ,(%seq
+                    (if ,(%inline eq? ,%ac0 (immediate 0))
+                        ,(%seq
+                           (set! ,%ac0 (literal ,(make-info-literal #f 'object '#() 0)))
+                           (goto ,Lfin))
+                        ,(%seq
+                           (set! ,%ac0 ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                           (set! ,%td ,(%inline + ,%ac0 (immediate ,(fx+ (constant ptr-bytes) (fx- (constant byte-alignment) 1)))))
+                           (set! ,%td ,(%inline logand ,%td (immediate ,(- (constant byte-alignment)))))
+                           (set! ,%xp (alloc ,(make-info-alloc (constant type-typed-object) #f #f) ,%td))
+                           ,(let ([delta (fx- (constant vector-length-offset) (constant log2-ptr-bytes))])
+                              (safe-assert (fx>= delta 0))
+                              (if (fx= delta 0)
+                                  (if (fx= (constant type-vector) 0)
+                                      `(set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%ac0)
+                                      (%seq
+                                        (set! ,%td ,(%inline logor ,%ac0 (immediate ,(constant type-vector))))
+                                        (set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td)))
+                                  (%seq
+                                    (set! ,%td ,(%inline sll ,%ac0 (immediate ,delta)))
+                                    ,(if (fx= (constant type-vector) 0)
+                                         `(set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td)
+                                         (%seq
+                                           (set! ,%td ,(%inline logor ,%td (immediate ,(constant type-vector))))
+                                           (set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td))))))
+                           ,(let f ([reg* arg-registers] [i 0])
+                              (if (null? reg*)
+                                  (%seq
+                                    ; point xp to last element of vector
+                                    (set! ,%xp ,(%inline + ,%xp ,%ac0))
+                                    ; point ac0 to last stack argument
+                                    (set! ,%ac0
+                                      ,(%lea ,%sfp ,%ac0
+                                         (fx* i (fx- (constant ptr-bytes)))))
+                                    (label ,Ltop)
+                                    (set! ,(%mref ,%xp ,(fx- (constant vector-data-disp) (constant ptr-bytes)))
+                                      ,(%mref ,%ac0 0))
+                                    (set! ,%ac0 ,(%inline - ,%ac0 ,(%constant ptr-bytes)))
+                                    (if ,(%inline eq? ,%ac0 ,%sfp)
+                                        ,(%seq
+                                           (set! ,%ac0 ,(%inline - ,%xp (immediate ,(fx* (fx+ i 1) (constant ptr-bytes)))))
+                                           (goto ,Lfin))
+                                        ,(%seq
+                                           (set! ,%xp ,(%inline - ,%xp ,(%constant ptr-bytes)))
+                                           (goto ,Ltop))))
+                                  (%seq
+                                    (set! ,(%mref ,%xp
+                                             ,(fx+ (fx* i (constant ptr-bytes)) (constant vector-data-disp)))
+                                      ,(car reg*))
+                                    (if ,(%inline eq? ,%ac0 (immediate ,(fx* (fx+ i 1) (constant ptr-bytes))))
+                                        ,(%seq
+                                           (set! ,%ac0 ,%xp)
+                                           (goto ,Lfin))
+                                        ,(f (cdr reg*) (fx+ i 1))))))))
+                    ;; the fresh vector is in ac0: hand it to the finisher
+                    (label ,Lfin)
+                    (set! ,(car arg-registers) ,%ac0)
+                    (set! ,%ac0 (immediate 1))
+                    (goto ,Lfinish))))]
            [(vector-procedure immutable-vector-procedure)
             (let* ([Ltop (make-local-label 'ltop)]
                    [mut? (eq? sym 'vector-procedure)]
