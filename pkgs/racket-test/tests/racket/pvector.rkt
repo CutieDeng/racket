@@ -32,6 +32,9 @@
   (values (append (take xs i) (drop xs (add1 i)))
           (list-ref xs i)))
 
+(define (raw-core-public-pvector? v)
+  (raw:pvector? v))
+
 (define (bc-native-public-pvector?)
   (and (raw:pvector-runtime-adapter-core-available?)
        (eq? (system-type 'vm) 'racket)))
@@ -1387,14 +1390,20 @@
   (set-box! long-mutable-elem 2)
   (check-not-equal? long-mutable-hash-before
                     (equal-hash-code long-mutable-pv))
-  (if (bc-native-public-pvector?)
+  ;; When the public layer hands out raw runtime values, `write` emits a
+  ;; readable #pvector literal (checked by round-trip, not by its internal
+  ;; shape) and `display`/`print` use the compact forms.
+  (if (raw-core-public-pvector? pv)
       (begin
-        (check-equal? (format "~s" pv) "#<pvector:3>")
-        (check-equal? (format "~a" (pvector "x" "y")) "#<pvector:2>")
-        (check-equal? (format "~s" (pvector "x" "y")) "#<pvector:2>")
-        (check-equal? (format "~v" (pvector "x" "y")) "#<pvector:2>")
-        (check-equal? (format "~s" (list->pvector (range 40)))
-                      "#<pvector:40>"))
+        (check-regexp-match #rx"^#pvector[(]" (format "~s" pv))
+        (check-equal? (read (open-input-string (format "~s" pv))) pv)
+        (check-equal? (format "~a" (pvector "x" "y")) "(pvector x y)")
+        (check-equal? (read (open-input-string (format "~s" (pvector "x" "y"))))
+                      (pvector "x" "y"))
+        (check-equal? (format "~v" (pvector "x" "y")) "(pvector \"x\" \"y\")")
+        (let ([big (list->pvector (range 40))])
+          (check-regexp-match #rx"^#pvector[(]" (format "~s" big))
+          (check-equal? (read (open-input-string (format "~s" big))) big)))
       (begin
         (check-equal? (format "~s" pv) "(pvector 1 2 3)")
         (check-equal? (format "~a" (pvector "x" "y")) "(pvector x y)")
