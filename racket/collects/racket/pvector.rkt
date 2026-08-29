@@ -33,6 +33,18 @@
                      [exported-pvector-pop-right pvector-pop-right]
                      [exported-pvector-append pvector-append]
                      [exported-pvector-map pvector-map]
+                     [exported-pvector-fold-left pvector-fold-left]
+                     [exported-pvector-fold-right pvector-fold-right]
+                     [exported-pvector-reverse pvector-reverse]
+                     [exported-pvector-sort pvector-sort]
+                     [exported-pvector-filter pvector-filter]
+                     [exported-pvector-partition pvector-partition]
+                     [exported-pvector-count pvector-count]
+                     [exported-pvector-andmap pvector-andmap]
+                     [exported-pvector-ormap pvector-ormap]
+                     [exported-pvector-member pvector-member]
+                     [exported-pvector-memq pvector-memq]
+                     [exported-pvector-memv pvector-memv]
                      [exported-pvector-for-each pvector-for-each]
                      [exported-pvector-insert pvector-insert]
                      [exported-pvector-delete pvector-delete]
@@ -982,6 +994,52 @@
           (proc (raw:pvector-view-left/fast (pvector-tree/unsafe pv*)))]))
      (void)]))
 
+
+;; --------------------------------------------------------------------------
+;; List-library-aligned combinators.  The pvector comes first and the
+;; procedure last, as elsewhere in this module.  `pvector-fold-left` calls
+;; `(proc acc elem)` and `pvector-fold-right` calls `(proc elem acc)`,
+;; following R6RS and the underlying primitive.
+
+(define (pvector-fold-left pv init proc)
+  (raw:pvector-fold-left (unwrap 'pvector-fold-left pv) init proc))
+
+(define (pvector-fold-right pv init proc)
+  (raw:pvector-fold-right (unwrap 'pvector-fold-right pv) init proc))
+
+(define (pvector-reverse pv)
+  (wrap (raw:pvector-reverse (unwrap 'pvector-reverse pv))))
+
+(define (pvector-sort pv less? #:key [key #f] #:cache-keys? [cache-keys? #f])
+  (wrap (raw:pvector-sort (unwrap 'pvector-sort pv) less?
+                          #:key key #:cache-keys? cache-keys?)))
+
+(define (pvector-filter pv pred)
+  (wrap (raw:pvector-filter (unwrap 'pvector-filter pv) pred)))
+
+(define (pvector-partition pv pred)
+  (define-values (yes no)
+    (raw:pvector-partition (unwrap 'pvector-partition pv) pred))
+  (values (wrap yes) (wrap no)))
+
+(define (pvector-count pv pred)
+  (raw:pvector-count (unwrap 'pvector-count pv) pred))
+
+(define (pvector-andmap pv proc)
+  (raw:pvector-andmap (unwrap 'pvector-andmap pv) proc))
+
+(define (pvector-ormap pv proc)
+  (raw:pvector-ormap (unwrap 'pvector-ormap pv) proc))
+
+(define (pvector-member pv v [is-equal? equal?])
+  (raw:pvector-member (unwrap 'pvector-member pv) v is-equal?))
+
+(define (pvector-memq pv v)
+  (raw:pvector-memq (unwrap 'pvector-memq pv) v))
+
+(define (pvector-memv pv v)
+  (raw:pvector-memv (unwrap 'pvector-memv pv) v))
+
 (define (pvector-insert pv index value)
   (cond
     [(and (fixnum? index) (unsafe-fx>= index 0))
@@ -1469,6 +1527,42 @@
 
 (define exported-pvector-map
   (if bc-native-public? raw:pvector-map pvector-map))
+
+(define exported-pvector-fold-left
+  (if bc-native-public? raw:pvector-fold-left pvector-fold-left))
+
+(define exported-pvector-fold-right
+  (if bc-native-public? raw:pvector-fold-right pvector-fold-right))
+
+(define exported-pvector-reverse
+  (if bc-native-public? raw:pvector-reverse pvector-reverse))
+
+(define exported-pvector-sort
+  (if bc-native-public? raw:pvector-sort pvector-sort))
+
+(define exported-pvector-filter
+  (if bc-native-public? raw:pvector-filter pvector-filter))
+
+(define exported-pvector-partition
+  (if bc-native-public? raw:pvector-partition pvector-partition))
+
+(define exported-pvector-count
+  (if bc-native-public? raw:pvector-count pvector-count))
+
+(define exported-pvector-andmap
+  (if bc-native-public? raw:pvector-andmap pvector-andmap))
+
+(define exported-pvector-ormap
+  (if bc-native-public? raw:pvector-ormap pvector-ormap))
+
+(define exported-pvector-member
+  (if bc-native-public? raw:pvector-member pvector-member))
+
+(define exported-pvector-memq
+  (if bc-native-public? raw:pvector-memq pvector-memq))
+
+(define exported-pvector-memv
+  (if bc-native-public? raw:pvector-memv pvector-memv))
 
 (define exported-pvector-for-each
   (if bc-native-public? raw:pvector-for-each pvector-for-each))

@@ -11,6 +11,18 @@
          (for-syntax racket/base))
 
 (provide pvector-apply
+         pvector-fold-left
+         pvector-fold-right
+         pvector-reverse
+         pvector-sort
+         pvector-filter
+         pvector-partition
+         pvector-count
+         pvector-andmap
+         pvector-ormap
+         pvector-member
+         pvector-memq
+         pvector-memv
          pvector?
          pvector-empty
          pvector-empty?
@@ -133,6 +145,7 @@
 (define core-pvector-append (maybe-kernel 'core-pvector-append))
 (define core-pvector-map (maybe-kernel 'core-pvector-map))
 (define core-pvector-for-each (maybe-kernel 'core-pvector-for-each))
+(define core-pvector-fold-left (maybe-kernel 'core-pvector-fold-left))
 (define core-pvector-split-at (maybe-kernel 'core-pvector-split-at))
 (define core-pvector-split-at-right (maybe-kernel 'core-pvector-split-at-right))
 (define core-pvector-split (maybe-kernel 'core-pvector-split))
@@ -556,6 +569,87 @@
         [(a b c) (three-values->pvector a b c)]
         [(a b c d) (four-values->pvector a b c d)]
         [elems (list->pvector elems)])))
+
+;; ---------------------------------------------------------------------------
+;; Combinators aligned with the list library.  Argument order follows this
+;; module's convention: the pvector first, the procedure last.  `fold-left`
+;; calls `(proc acc elem)` and `fold-right` calls `(proc elem acc)`, as in
+;; R6RS, matching the underlying primitive.
+
+(define (pvector-fold-left pv init proc)
+  (if core-pvector-fold-left
+      (core-pvector-fold-left pv init proc)
+      (let loop ([xs (pvector->list pv)] [acc init])
+        (if (null? xs) acc (loop (cdr xs) (proc acc (car xs)))))))
+
+(define (pvector-fold-right pv init proc)
+  ;; a list of the elements is as cheap as any right-to-left walk here
+  (let loop ([xs (pvector->list pv)])
+    (if (null? xs) init (proc (car xs) (loop (cdr xs))))))
+
+(define (pvector-reverse pv)
+  (let ([n (pvector-length pv)])
+    (if (unsafe-fx<= n 1)
+        pv
+        (let ([vec (make-vector n)])
+          (pvector-fold-left pv (unsafe-fx- n 1)
+                             (lambda (i x) (vector-set! vec i x) (unsafe-fx- i 1)))
+          (fresh-vector->pvector vec)))))
+
+(define (pvector-sort pv less?
+                      #:key [key #f]
+                      #:cache-keys? [cache-keys? #f])
+  (let ([vec (pvector->vector pv)])
+    (if key
+        (vector-sort! vec less? #:key key #:cache-keys? cache-keys?)
+        (vector-sort! vec less?))
+    (fresh-vector->pvector vec)))
+
+(define (pvector-filter pv pred)
+  (if core-available?
+      (with-core-pvector-builder add!
+        (pvector-fold-left pv #f (lambda (acc x) (when (pred x) (add! x)) #f)))
+      (list->pvector (filter pred (pvector->list pv)))))
+
+(define (pvector-partition pv pred)
+  (values (pvector-filter pv pred)
+          (pvector-filter pv (lambda (x) (not (pred x))))))
+
+(define (pvector-count pv pred)
+  (pvector-fold-left pv 0 (lambda (n x) (if (pred x) (unsafe-fx+ n 1) n))))
+
+(define (pvector-andmap pv proc)
+  (let/ec return
+    (pvector-fold-left pv #t
+                       (lambda (acc x)
+                         (let ([r (proc x)])
+                           (if r r (return #f)))))))
+
+(define (pvector-ormap pv proc)
+  (let/ec return
+    (pvector-fold-left pv #f
+                       (lambda (acc x)
+                         (let ([r (proc x)])
+                           (if r (return r) #f))))))
+
+(define (pvector-index-where* who pv want? v)
+  (let/ec return
+    (pvector-fold-left pv 0
+                       (lambda (i x)
+                         (if (want? x v) (return i) (unsafe-fx+ i 1))))
+    #f))
+
+(define (pvector-member pv v [is-equal? equal?])
+  (unless (and (procedure? is-equal?) (procedure-arity-includes? is-equal? 2))
+    (raise-argument-error 'pvector-member "(procedure-arity-includes/c 2)" is-equal?))
+  (pvector-index-where* 'pvector-member pv (lambda (x v) (is-equal? x v)) v))
+
+(define (pvector-memq pv v)
+  (pvector-index-where* 'pvector-memq pv eq? v))
+
+(define (pvector-memv pv v)
+  (pvector-index-where* 'pvector-memv pv eqv? v))
+
 
 (define pvector->vector
   (if core-available? core-pvector->vector fallback:pvector->vector))
