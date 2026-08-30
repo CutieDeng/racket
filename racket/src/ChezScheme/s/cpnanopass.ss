@@ -6363,21 +6363,31 @@
                     (label ,Lnode)
                     (set! ,stack-ptr ,(%inline - ,stack-ptr ,(%constant ptr-bytes)))
                     (set! ,node ,(%mref ,stack-ptr 0))
-                    (if ,(%inline eq? ,(%mref ,node ,(fld 1)) (immediate ,(fix 1)))
+                    ;; field 0 is the packed (measure<<6)|level fixnum; masking
+                    ;; with the fixnum-encoded 63 leaves the fixnum-encoded
+                    ;; level.  %td is the emit destination pointer, so the
+                    ;; scratch here is %ts, which caches the node descriptor;
+                    ;; each branch reloads it from its thread-context slot
+                    ;; before the descriptor comparison.
+                    (set! ,%ts ,(%mref ,node ,(fld 0)))
+                    (set! ,%ts ,(%inline logand ,%ts (immediate ,(fix 63))))
+                    (if ,(%inline eq? ,%ts (immediate ,(fix 1)))
                         ;; a level-1 node's children are elements
                         ,(%seq
+                           (set! ,%ts ,(ref-reg %ac1))
+                           ,(emit-field node 1)
                            ,(emit-field node 2)
-                           ,(emit-field node 3)
                            (if ,(is-node2)
                                (nop)
-                               ,(emit-field node 4)))
+                               ,(emit-field node 3)))
                         ;; otherwise they are nodes: push them in reverse
                         ,(%seq
+                           (set! ,%ts ,(ref-reg %ac1))
                            (if ,(is-node2)
                                (nop)
-                               ,(push 4))
-                           ,(push 3)
-                           ,(push 2)))
+                               ,(push 3))
+                           ,(push 2)
+                           ,(push 1)))
                     (if ,(%inline eq? ,stack-ptr ,stage-end)
                         (nop)
                         (goto ,Lnode)))))

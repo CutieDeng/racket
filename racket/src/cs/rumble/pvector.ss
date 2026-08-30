@@ -23,22 +23,38 @@
   [nongenerative #{core-pvector-inline cutie-pvector-runtime-native-2}]
   [sealed #t])
 
-(define-record-type core-pvector-node2
-  [fields (immutable measure)
-          (immutable level)
+;; The measure (element count) and level (tree depth) of a node share one
+;; fixnum field: (measure << 6) | level.  A level-L node has measure >= 2^L,
+;; and the measure is capped at 2^54-1 (checked where lengths grow), so the
+;; level fits in 6 bits and the packed value peaks at 2^60-64+63, within the
+;; 60-bit fixnum range.  This layout is mirrored by the hand-coded
+;; `$apply-pvector` entry in "cpnanopass.ss": field 0 is the packed word and
+;; the children start at field 1.
+(define-record-type (core-pvector-node2 %make-core-pvector-node2-packed core-pvector-node2?)
+  [fields (immutable packed)
           (immutable a)
           (immutable b)]
-  [nongenerative #{core-pvector-node2 cutie-pvector-runtime-native-4}]
+  [nongenerative #{core-pvector-node2 cutie-pvector-packed-node-1}]
   [sealed #t])
 
-(define-record-type core-pvector-node3
-  [fields (immutable measure)
-          (immutable level)
+(define-record-type (core-pvector-node3 %make-core-pvector-node3-packed core-pvector-node3?)
+  [fields (immutable packed)
           (immutable a)
           (immutable b)
           (immutable c)]
-  [nongenerative #{core-pvector-node3 cutie-pvector-runtime-native-5}]
+  [nongenerative #{core-pvector-node3 cutie-pvector-packed-node-2}]
   [sealed #t])
+
+(define core-pvector-max-length (- (fxsll 1 54) 1))
+
+(define (core-pvector-node-pack measure level)
+  (fxior (fxsll measure 6) level))
+
+(define (make-core-pvector-node2 measure level a b)
+  (%make-core-pvector-node2-packed (core-pvector-node-pack measure level) a b))
+
+(define (make-core-pvector-node3 measure level a b c)
+  (%make-core-pvector-node3-packed (core-pvector-node-pack measure level) a b c))
 
 (define-record-type (core-pvector-large-finger
                      %make-core-pvector-large-finger
@@ -843,15 +859,16 @@
        b
        c)))
 
-(define (core-pvector-node-measure node)
+(define (core-pvector-node-packed node)
   (if (core-pvector-node2? node)
-      (core-pvector-node2-measure node)
-      (core-pvector-node3-measure node)))
+      (core-pvector-node2-packed node)
+      (core-pvector-node3-packed node)))
+
+(define (core-pvector-node-measure node)
+  (fxsrl (core-pvector-node-packed node) 6))
 
 (define (core-pvector-node-level node)
-  (if (core-pvector-node2? node)
-      (core-pvector-node2-level node)
-      (core-pvector-node3-level node)))
+  (fxand (core-pvector-node-packed node) #x3F))
 
 (define (core-pvector-node-link2 a b)
   (core-make-node2
@@ -2203,6 +2220,11 @@
         (core-vector->pvector/no-copy vec))])))
 
 (define (core-make-pvector len value)
+  (when (fx> len core-pvector-max-length)
+    (raise-arguments-error 'make-pvector
+                           "length exceeds the maximum pvector length"
+                           "length" len
+                           "maximum" core-pvector-max-length))
   (cond
    [(fx= len 0)
     empty-core-pvector]
@@ -3598,6 +3620,13 @@
    (core-pvector-inline-e0 right)))
 
 (define (core-pvector-append/known-length left left-len right right-len)
+  ;; the packed node word caps the measure at 2^54-1; appending is the one
+  ;; growth path whose result length is not bounded by an allocated vector
+  (when (fx> (fx+ left-len right-len) core-pvector-max-length)
+    (raise-arguments-error 'pvector-append
+                           "result length exceeds the maximum pvector length"
+                           "result length" (fx+ left-len right-len)
+                           "maximum" core-pvector-max-length))
   (cond
    [(fx= left-len 0) right]
    [(fx= right-len 0) left]
