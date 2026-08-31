@@ -6651,6 +6651,94 @@
                     (set! ,(car arg-registers) ,%ac0)
                     (set! ,%ac0 (immediate 1))
                     (goto ,Lfinish))))]
+           [(pvector-rest-wrapper)
+            ;; Code object placed in the closures made by
+            ;; `$make-pvector-rest-procedure`; the closure layout is
+            ;; [code, proc, arity-mask], as for `$make-wrapper-procedure`,
+            ;; and this name must be listed in `hand-coded-closure?` so
+            ;; that `$hand-coded` produces the raw code object that the
+            ;; closure's code slot needs.  Collect the n arguments into a
+            ;; fresh vector exactly as the `pvector` constructor does,
+            ;; then tail-call the `$pvector-rest-invoke` library entry
+            ;; with the wrapped procedure and that vector; the entry
+            ;; turns the vector into a pvector and calls the procedure.
+            (let* ([Ltop (make-local-label 'ltop)]
+                   [Lfin (make-local-label 'lfin)]
+                   [Linvoke (make-libspec-label 'pvector-rest-invoke
+                                                (lookup-libspec $pvector-rest-invoke)
+                                                (reg-cons* %ret %ac0 arg-registers))]
+                   [info (make-info "pvector-rest-wrapper" '())])
+              (info-lambda-fv*-set! info '(proc arity-mask))
+              (info-lambda-flags-set! info (constant code-flag-arity-in-closure))
+              `(lambda ,info 0 ()
+                 ,(%seq
+                    (if ,(%inline eq? ,%ac0 (immediate 0))
+                        ,(%seq
+                           (set! ,%ac0 (literal ,(make-info-literal #f 'object '#() 0)))
+                           (goto ,Lfin))
+                        ,(%seq
+                           (set! ,%ac0 ,(%inline sll ,%ac0 ,(%constant log2-ptr-bytes)))
+                           (set! ,%td ,(%inline + ,%ac0 (immediate ,(fx+ (constant ptr-bytes) (fx- (constant byte-alignment) 1)))))
+                           (set! ,%td ,(%inline logand ,%td (immediate ,(- (constant byte-alignment)))))
+                           (set! ,%xp (alloc ,(make-info-alloc (constant type-typed-object) #f #f) ,%td))
+                           ,(let ([delta (fx- (constant vector-length-offset) (constant log2-ptr-bytes))])
+                              (safe-assert (fx>= delta 0))
+                              (if (fx= delta 0)
+                                  (if (fx= (constant type-vector) 0)
+                                      `(set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%ac0)
+                                      (%seq
+                                        (set! ,%td ,(%inline logor ,%ac0 (immediate ,(constant type-vector))))
+                                        (set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td)))
+                                  (%seq
+                                    (set! ,%td ,(%inline sll ,%ac0 (immediate ,delta)))
+                                    ,(if (fx= (constant type-vector) 0)
+                                         `(set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td)
+                                         (%seq
+                                           (set! ,%td ,(%inline logor ,%td (immediate ,(constant type-vector))))
+                                           (set! ,(%mref ,%xp ,(constant vector-type-disp)) ,%td))))))
+                           ,(let f ([reg* arg-registers] [i 0])
+                              (if (null? reg*)
+                                  (%seq
+                                    ; point xp to last element of vector
+                                    (set! ,%xp ,(%inline + ,%xp ,%ac0))
+                                    ; point ac0 to last stack argument
+                                    (set! ,%ac0
+                                      ,(%lea ,%sfp ,%ac0
+                                         (fx* i (fx- (constant ptr-bytes)))))
+                                    (label ,Ltop)
+                                    (set! ,(%mref ,%xp ,(fx- (constant vector-data-disp) (constant ptr-bytes)))
+                                      ,(%mref ,%ac0 0))
+                                    (set! ,%ac0 ,(%inline - ,%ac0 ,(%constant ptr-bytes)))
+                                    (if ,(%inline eq? ,%ac0 ,%sfp)
+                                        ,(%seq
+                                           (set! ,%ac0 ,(%inline - ,%xp (immediate ,(fx* (fx+ i 1) (constant ptr-bytes)))))
+                                           (goto ,Lfin))
+                                        ,(%seq
+                                           (set! ,%xp ,(%inline - ,%xp ,(%constant ptr-bytes)))
+                                           (goto ,Ltop))))
+                                  (%seq
+                                    (set! ,(%mref ,%xp
+                                             ,(fx+ (fx* i (constant ptr-bytes)) (constant vector-data-disp)))
+                                      ,(car reg*))
+                                    (if ,(%inline eq? ,%ac0 (immediate ,(fx* (fx+ i 1) (constant ptr-bytes))))
+                                        ,(%seq
+                                           (set! ,%ac0 ,%xp)
+                                           (goto ,Lfin))
+                                        ,(f (cdr reg*) (fx+ i 1))))))))
+                    ;; the fresh vector is in ac0; fetch the wrapped
+                    ;; procedure from this wrapper's own closure and
+                    ;; tail-call the invoke entry with (proc vector)
+                    (label ,Lfin)
+                    (set! ,(make-arg-opnd 2) ,%ac0)
+                    ,(meta-cond
+                       [(real-register? '%cp)
+                        `(set! ,(make-arg-opnd 1) ,(%mref ,%cp ,(constant closure-data-disp)))]
+                       [else
+                        (%seq
+                          (set! ,%td ,(ref-reg %cp))
+                          (set! ,(make-arg-opnd 1) ,(%mref ,%td ,(constant closure-data-disp))))])
+                    (set! ,%ac0 (immediate 2))
+                    (goto ,Linvoke))))]
            [(vector-procedure immutable-vector-procedure)
             (let* ([Ltop (make-local-label 'ltop)]
                    [mut? (eq? sym 'vector-procedure)]

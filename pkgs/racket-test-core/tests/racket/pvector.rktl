@@ -1351,3 +1351,52 @@
              ) ; end let-values
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- procedure->pvector-rest, host-procedure wrapper ----------
+
+;; an applicable struct cannot take the host-procedure wrapper and must
+;; still work through the fallback
+(let ()
+  (struct app (f) #:property prop:procedure (struct-field-index f
+                             ) ; end struct-field-index
+  ) ; end struct
+  (let ([g (procedure->pvector-rest (app pvector->list
+                                    ) ; end app
+           ) ; end procedure->pvector-rest
+          ]
+    ) ; end bindings
+    (test '(1 2 3) g 1 2 3
+    ) ; end test
+    (test #t procedure-arity-includes? g 0
+    ) ; end test
+  ) ; end let
+) ; end let
+
+;; a chaperoned procedure keeps its interposition through the wrapper
+(let* ([hits 0]
+       [g (procedure->pvector-rest (chaperone-procedure pvector->list
+                                                        (lambda (pv) (set! hits (add1 hits
+                                                                                ) ; end add1
+                                                                     ) ; end set!
+                                                                     pv
+                                                        ) ; end lambda
+                                   ) ; end chaperone-procedure
+          ) ; end procedure->pvector-rest
+         ]
+  ) ; end bindings
+  (test '(a b) g 'a 'b
+  ) ; end test
+  (test 1 'chaperone-hits hits
+  ) ; end test
+) ; end let*
+
+;; wrapped result flows through tail positions and multiple shapes
+(test 500500 'pvector-rest-sum
+      (apply (procedure->pvector-rest (lambda (pv) (pvector-fold-left pv 0 +
+                                                   ) ; end pvector-fold-left
+                                      ) ; end lambda
+             ) ; end procedure->pvector-rest
+             (build-list 1000 add1
+             ) ; end build-list
+      ) ; end apply
+) ; end test

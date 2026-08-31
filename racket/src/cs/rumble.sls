@@ -410,6 +410,7 @@
           core-pvector?
           core-pvector-apply
           core-pvector-args
+          core-procedure->pvector-rest
           core-vector-apply
           core-pvector-empty
           core-pvector-empty?

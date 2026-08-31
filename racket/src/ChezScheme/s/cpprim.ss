@@ -3513,6 +3513,7 @@
         (lambda (name)
           (not (memq name '(nuate nonprocedure-code error-invoke invoke
                                   $wrapper-apply wrapper-apply arity-wrapper-apply
+                                  pvector-rest-wrapper
                                   popcount-slow cpu-features)))))
       (define-inline 2 $hand-coded
         [(name)
@@ -3626,6 +3627,10 @@
         [(e-proc e-arity-mask)
          (bind #f (e-proc e-arity-mask)
            (make-wrapper-closure-alloc e-proc e-arity-mask #f (lookup-libspec $wrapper-apply)))])
+      (define-inline 3 $make-pvector-rest-procedure
+        [(e-proc e-arity-mask)
+         (bind #f (e-proc e-arity-mask)
+           (make-wrapper-closure-alloc e-proc e-arity-mask #f (lookup-libspec pvector-rest-wrapper)))])
       (define-inline 3 make-wrapper-procedure
         [(e-proc e-arity-mask e-data)
          (bind #f (e-proc e-arity-mask e-data)

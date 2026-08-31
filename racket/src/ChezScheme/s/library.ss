@@ -131,6 +131,12 @@
 (define-hand-coded-library-entry $wrapper-apply)
 (define-hand-coded-library-entry wrapper-apply)
 (define-hand-coded-library-entry arity-wrapper-apply)
+;;; $pvector-rest-invoke must come before pvector-rest-wrapper, whose
+;;; code refers to it; `$pvector-finisher` is only called here, after
+;;; the definition in "prims.ss" is loaded
+(define-library-entry ($pvector-rest-invoke f v)
+  (f ($pvector-finisher v)))
+(define-hand-coded-library-entry pvector-rest-wrapper)
 (define-hand-coded-library-entry event-detour)
 (define-hand-coded-library-entry popcount-slow) ; before fxpopcount use
 (define-hand-coded-library-entry cpu-features)  ; before fxpopcount use

@@ -2345,6 +2345,7 @@
   ($make-vector/no-interrupt-trap [flags single-valued])
   ($make-vtable [flags single-valued])
   ($make-wrapper-procedure [flags single-valued])
+  ($make-pvector-rest-procedure [flags single-valued])
   ($map [flags single-valued])
   ($mark-invoked! [flags single-valued])
   ($maybe-compile-file [flags single-valued])

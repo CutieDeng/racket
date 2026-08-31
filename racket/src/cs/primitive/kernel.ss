@@ -207,6 +207,7 @@
   [core-pvector? (known-procedure/pure/folding 2)]
   [core-pvector-apply (known-procedure -4)]
   [core-pvector-args (known-procedure -1)]
+  [core-procedure->pvector-rest (known-procedure/single-valued 2)]
   [core-vector-apply (known-procedure -4)]
   [core-pvector-empty (known-procedure/single-valued 1)]
   [core-pvector-empty? (known-procedure/pure/folding 2)]

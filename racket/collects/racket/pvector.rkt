@@ -511,7 +511,12 @@
     (raise-arguments-error 'procedure->pvector-rest
                            "procedure does not accept one argument"
                            "procedure" proc))
-  (lambda args (proc (list->pvector args))))
+  ;; hand-coded wrapper when the runtime provides one and `proc` is a
+  ;; host procedure; otherwise (BC, applicable structs) build the
+  ;; argument pvector by way of a rest list
+  (or (and raw:core-procedure->pvector-rest
+           (raw:core-procedure->pvector-rest proc))
+      (lambda args (proc (list->pvector args)))))
 
 (define pvector-apply
   (case-lambda

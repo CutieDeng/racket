@@ -4163,6 +4163,18 @@
           (pvector-apply* 'pvector-apply p (reverse acc) m (car l))
           (loop (cdr l) (fx+ m 1) (cons (car l) acc))))]))
 
+;; Wrapper closure for `procedure->pvector-rest`: hand-coded code collects
+;; the arguments of a call into a fresh vector and calls the wrapped
+;; procedure with the pvector built from that vector, so no intermediate
+;; list is built.  Only for plain Chez procedures; returns #f otherwise,
+;; and the caller falls back to a Scheme-level variadic wrapper.
+(define core-procedure->pvector-rest
+  (if (#%$apply-entries-available?)
+      (lambda (proc)
+        (and (#%procedure? proc)
+             (#%$make-pvector-rest-procedure proc -1)))
+      (lambda (proc) #f)))
+
 ;; The `pvector` constructor: hand-coded code collects the arguments into a
 ;; fresh vector and forwards it here, so the constructor is native for every
 ;; argument count, including through `apply` and `call-with-values`.
