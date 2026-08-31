@@ -2,6 +2,7 @@
 (require '#%flfxnum
          (only-in '#%foreign cpointer? ptr-add)
          (only-in '#%place place-shared?)
+         (only-in '#%linklet primitive-table)
          racket/prefab)
 
 (provide place-message-allowed?
@@ -21,8 +22,19 @@
 (struct message-ized (unmessage)
   #:authentic)
 
-(define (allowed? v #:direct? direct?)
-  (let loop ([v v] [graph #hasheq()])
+;; The host can expose pvector operations through a `#%pvector`
+;; primitive table; when the table is absent, pvectors are simply
+;; not recognized here, so they are not allowed as place messages
+(define pvector-table (primitive-table '#%pvector))
+(define pvector? (if pvector-table
+                     (hash-ref pvector-table 'pvector?)
+                     (lambda (v) #f)))
+(define pvector-cursor-start (and pvector-table (hash-ref pvector-table 'pvector-cursor-start)))
+(define pvector-cursor-value (and pvector-table (hash-ref pvector-table 'pvector-cursor-value)))
+(define pvector-cursor-next (and pvector-table (hash-ref pvector-table 'pvector-cursor-next)))
+
+(define (allowed? v #:direct? init-direct?)
+  (let loop ([v v] [graph #hasheq()] [direct? init-direct?])
     (or (number? v)
         (char? v)
         (boolean? v)
@@ -39,15 +51,15 @@
         (and (pair? v)
              (or (hash-ref graph v #f)
                  (let ([graph (hash-set graph v #t)])
-                   (and (loop (car v) graph)
-                        (loop (cdr v) graph)))))
+                   (and (loop (car v) graph direct?)
+                        (loop (cdr v) graph direct?)))))
         (and (box? v)
              (or (not direct?)
                  (and (immutable? v)
                       (not (impersonator? v))))
              (or (hash-ref graph v #f)
                  (let ([graph (hash-set graph v #t)])
-                   (loop (unbox v) graph))))
+                   (loop (unbox v) graph direct?))))
         (and (vector? v)
              (or (not direct?)
                  (and (immutable? v)
@@ -55,12 +67,12 @@
              (or (hash-ref graph v #f)
                  (let ([graph (hash-set graph v #t)])
                    (for/and ([e (in-vector v)])
-                     (loop e graph)))))
+                     (loop e graph direct?)))))
         (and (immutable-prefab-struct-key v)
              (or (hash-ref graph v #f)
                  (let ([graph (hash-set graph v #t)])
                    (for/and ([e (in-vector (struct->vector v))])
-                     (loop e graph)))))
+                     (loop e graph direct?)))))
         (and (hash? v)
              (or (not direct?)
                  (and (immutable? v)
@@ -68,8 +80,22 @@
              (or (hash-ref graph v #f)
                  (let ([graph (hash-set graph v #t)])
                    (for/and ([(k v) (in-hash v)])
-                     (and (loop k graph)
-                          (loop v graph))))))
+                     (and (loop k graph direct?)
+                          (loop v graph direct?))))))
+        ;; A pvector is allowed only when every element could be
+        ;; passed directly; the pvector is then itself passed
+        ;; directly, which is safe because its nodes are immutable
+        ;; and cannot form cycles
+        (and (pvector? v)
+             (not (impersonator? v))
+             (or (hash-ref graph v #f)
+                 (let ([graph (hash-set graph v #t)])
+                   (let elem-loop ([cur (pvector-cursor-start v #f)])
+                     (cond
+                       [(not cur) #t]
+                       [(loop (pvector-cursor-value cur) graph #t)
+                        (elem-loop (pvector-cursor-next cur))]
+                       [else #f])))))
         (and (not direct?)
              (or (cpointer? v)
                  (and (or (fxvector? v)
@@ -119,6 +145,13 @@
          (if (place-shared? v)
              v
              (bytes->immutable-bytes v))]
+        [(and (pvector? v)
+              (not (impersonator? v))
+              (allowed? v #:direct? #t))
+         ;; a pvector whose elements can all be passed directly is
+         ;; itself passed directly; any other pvector is disallowed,
+         ;; so it falls through to `fail` below
+         v]
         [else
          (unless graph (set! graph (make-hasheq)))
          (cond

@@ -2111,11 +2111,17 @@
         (check-equal? (pvector->list pv*) '(a "b" 3)))))
 
 (test-case "place message boundary"
+  ;; a pvector of immutable values is passed directly, without copying
   (define pv (pvector 'a "b" 3))
-  (check-false (place-message-allowed? pv))
+  (check-true (place-message-allowed? pv))
   (define-values (in out) (place-channel))
+  (place-channel-put in pv)
+  (check-eq? pv (place-channel-get out))
+  ;; a pvector with an element that would need conversion is refused
+  (define mutable-pv (pvector (string-copy "b")))
+  (check-false (place-message-allowed? mutable-pv))
   (check-exn #rx"(cannot transmit|place-message-allowed\\?)"
-             (lambda () (place-channel-put in pv))))
+             (lambda () (place-channel-put in mutable-pv))))
 
 (test-case "default racket language bindings"
   (for ([module-path (in-list '(racket racket/init))])
