@@ -1222,3 +1222,132 @@
               ) ; end procedure->pvector-rest
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- place-channel messages ----------
+
+(require racket/place
+) ; end require
+
+(let-values ([(pch1 pch2) (place-channel
+                          ) ; end place-channel
+             ]
+  ) ; end bindings
+  ;; a pvector of immutable values passes through with its identity intact
+  (let ([pv (pvector 1 2 3
+            ) ; end pvector
+           ]
+    ) ; end bindings
+    (place-channel-put pch1 pv
+    ) ; end place-channel-put
+    (test #t eq? pv (place-channel-get pch2
+                    ) ; end place-channel-get
+    ) ; end test
+  ) ; end let
+  ;; larger list->pvector tree
+  (let ([pv (list->pvector (build-list 1000 values
+                           ) ; end build-list
+            ) ; end list->pvector
+           ]
+    ) ; end bindings
+    (place-channel-put pch1 pv
+    ) ; end place-channel-put
+    (test #t eq? pv (place-channel-get pch2
+                    ) ; end place-channel-get
+    ) ; end test
+  ) ; end let
+  ;; append-built middle tree
+  (let* ([half (list->pvector (build-list 600 values
+                              ) ; end build-list
+               ) ; end list->pvector
+              ]
+         [pv (pvector-append half half
+             ) ; end pvector-append
+            ]
+    ) ; end bindings
+    (place-channel-put pch1 pv
+    ) ; end place-channel-put
+    (test #t eq? pv (place-channel-get pch2
+                    ) ; end place-channel-get
+    ) ; end test
+  ) ; end let*
+  ;; nested pvectors and other immutable elements
+  (let ([pv (pvector "apple" (pvector 1 2
+                             ) ; end pvector
+                     3.5 #\a 'sym
+            ) ; end pvector
+           ]
+    ) ; end bindings
+    (place-channel-put pch1 pv
+    ) ; end place-channel-put
+    (test #t eq? pv (place-channel-get pch2
+                    ) ; end place-channel-get
+    ) ; end test
+  ) ; end let
+  ;; empty pvector
+  (let ([pv (pvector
+            ) ; end pvector
+           ]
+    ) ; end bindings
+    (place-channel-put pch1 pv
+    ) ; end place-channel-put
+    (test #t eq? pv (place-channel-get pch2
+                    ) ; end place-channel-get
+    ) ; end test
+  ) ; end let
+  ;; a pvector inside a message that is otherwise copied keeps its identity
+  (let* ([pv (pvector 1 2 3
+             ) ; end pvector
+            ]
+         [msg (list pv (string-copy "mutable"
+                       ) ; end string-copy
+              ) ; end list
+             ]
+    ) ; end bindings
+    (place-channel-put pch1 msg
+    ) ; end place-channel-put
+    (let ([r (place-channel-get pch2
+             ) ; end place-channel-get
+            ]
+      ) ; end bindings
+      (test #t eq? pv (car r
+                      ) ; end car
+      ) ; end test
+      (test "mutable" cadr r
+      ) ; end test
+    ) ; end let
+  ) ; end let*
+) ; end let-values
+
+;; predicate consistency with the put behavior
+(test #t place-message-allowed? (pvector 1 2 3
+                                ) ; end pvector
+) ; end test
+(test #t place-message-allowed? (pvector
+                                ) ; end pvector
+) ; end test
+(test #t place-message-allowed? (pvector (vector->immutable-vector (vector 1
+                                                                   ) ; end vector
+                                         ) ; end vector->immutable-vector
+                                ) ; end pvector
+) ; end test
+(test #f place-message-allowed? (pvector (string-copy "mutable"
+                                         ) ; end string-copy
+                                ) ; end pvector
+) ; end test
+(test #f place-message-allowed? (pvector (vector 1
+                                         ) ; end vector
+                                ) ; end pvector
+) ; end test
+
+;; a pvector with a mutable element is refused by put
+(err/rt-test (let-values ([(a b) (place-channel
+                                 ) ; end place-channel
+                          ]
+              ) ; end bindings
+               (place-channel-put a (pvector (string-copy "mutable"
+                                             ) ; end string-copy
+                                    ) ; end pvector
+               ) ; end place-channel-put
+             ) ; end let-values
+             exn:fail:contract?
+) ; end err/rt-test

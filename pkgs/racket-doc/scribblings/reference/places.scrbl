@@ -364,6 +364,13 @@ messages:
        replaced by immutable variants, and where a
        hash table @tech{impersonator} is copied;}
 
+ @item{@tech{pvectors} whose elements are all values that can be sent
+       without conversion or copying, such as immutable strings or
+       other such pvectors; a pvector is never copied, so it arrives
+       @racket[eq?] to the sent pvector when sent within a place, and
+       a pvector containing values that would need conversion (such as
+       a mutable string) is not allowed as a message;}
+
  @item{@tech{place channels}, where a @tech{place descriptor} is
        automatically replaced by a plain place channel;}
 
@@ -380,7 +387,8 @@ messages:
        @racket[make-shared-fxvector], @racket[shared-bytes], and
        @racket[make-shared-bytes].}]
 
-@history[#:changed "8.4.0.7" @elem{Include boxes in allowed messages.}]}
+@history[#:changed "8.4.0.7" @elem{Include boxes in allowed messages.}
+         #:changed "9.3.6" @elem{Include pvectors in allowed messages.}]}
 
 @deftogether[(
 @defthing[prop:place-location struct-type-property?]

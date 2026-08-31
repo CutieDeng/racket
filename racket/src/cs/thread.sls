@@ -257,6 +257,15 @@
         'prop:unsafe-authentic-override prop:unsafe-authentic-override
         'get-system-stats get-system-stats
         'internal-error internal-error)]
+      [(|#%pvector|)
+       ;; Used by "place-message.rkt" to recognize and traverse
+       ;; pvectors, which can be passed directly as place messages
+       ;; when their elements can
+       (hasheq
+        'pvector? core-pvector?
+        'pvector-cursor-start core-pvector-cursor-start
+        'pvector-cursor-value core-pvector-cursor-value
+        'pvector-cursor-next core-pvector-cursor-next)]
       [else #f]))
 
   ;; Tie knots:

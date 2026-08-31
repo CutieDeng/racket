@@ -20,6 +20,11 @@ without traversing from the front. Unlike a @tech{vector}, an update or
 an operation that adds or removes elements returns a new pvector while
 the old pvector remains intact.
 
+A pvector whose elements can all be sent as @tech{place channel}
+messages without conversion or copying can itself be sent as a place
+message, and it is passed without copying; see
+@racket[place-message-allowed?].
+
 Unless otherwise specified, operations on a pvector of length
 @math{N} take @math{O(log N)} time. Constructing a pvector from all of
 its elements, converting all of its elements, or iterating through all

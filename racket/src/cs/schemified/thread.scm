@@ -3043,6 +3043,15 @@
   (|#%name| message-ized? (record-predicate struct:message-ized)))
 (define message-ized-unmessage
   (|#%name| message-ized-unmessage (record-accessor struct:message-ized 0)))
+(define pvector-table (primitive-table '|#%pvector|))
+(define pvector?
+  (if pvector-table (hash-ref pvector-table 'pvector?) (lambda (v_0) #f)))
+(define pvector-cursor-start
+  (if pvector-table (hash-ref pvector-table 'pvector-cursor-start) #f))
+(define pvector-cursor-value
+  (if pvector-table (hash-ref pvector-table 'pvector-cursor-value) #f))
+(define pvector-cursor-next
+  (if pvector-table (hash-ref pvector-table 'pvector-cursor-next) #f))
 (define allowed?.1
   (|#%name|
    allowed?
@@ -3051,7 +3060,7 @@
       ((loop_0
         (|#%name|
          loop
-         (lambda (v_0 graph_0)
+         (lambda (v_0 graph_0 direct?_0)
            (let ((or-part_0 (number? v_0)))
              (if or-part_0
                or-part_0
@@ -3075,7 +3084,7 @@
                                                 (if or-part_6
                                                   or-part_6
                                                   (bytes? v_0)))
-                                            (let ((or-part_6 (not direct?2_0)))
+                                            (let ((or-part_6 (not direct?_0)))
                                               (if or-part_6
                                                 or-part_6
                                                 (let ((or-part_7
@@ -3107,10 +3116,12 @@
                                                                 #t)))
                                                           (if (loop_0
                                                                (car v_0)
-                                                               graph_1)
+                                                               graph_1
+                                                               direct?_0)
                                                             (loop_0
                                                              (cdr v_0)
-                                                             graph_1)
+                                                             graph_1
+                                                             direct?_0)
                                                             #f))))
                                                     #f)))
                                              (if or-part_8
@@ -3119,7 +3130,7 @@
                                                       (if (box? v_0)
                                                         (if (let ((or-part_9
                                                                    (not
-                                                                    direct?2_0)))
+                                                                    direct?_0)))
                                                               (if or-part_9
                                                                 or-part_9
                                                                 (if (immutable?
@@ -3142,7 +3153,8 @@
                                                                       #t)))
                                                                 (loop_0
                                                                  (unbox v_0)
-                                                                 graph_1))))
+                                                                 graph_1
+                                                                 direct?_0))))
                                                           #f)
                                                         #f)))
                                                  (if or-part_9
@@ -3151,7 +3163,7 @@
                                                           (if (vector? v_0)
                                                             (if (let ((or-part_10
                                                                        (not
-                                                                        direct?2_0)))
+                                                                        direct?_0)))
                                                                   (if or-part_10
                                                                     or-part_10
                                                                     (if (immutable?
@@ -3197,7 +3209,8 @@
                                                                                         (let ((result_1
                                                                                                (loop_0
                                                                                                 e_0
-                                                                                                graph_1)))
+                                                                                                graph_1
+                                                                                                direct?_0)))
                                                                                           (values
                                                                                            result_1))))
                                                                                    (if (if (not
@@ -3265,7 +3278,8 @@
                                                                                           (let ((result_1
                                                                                                  (loop_0
                                                                                                   e_0
-                                                                                                  graph_1)))
+                                                                                                  graph_1
+                                                                                                  direct?_0)))
                                                                                             (values
                                                                                              result_1))))
                                                                                      (if (if (not
@@ -3294,7 +3308,7 @@
                                                                        v_0)
                                                                     (if (let ((or-part_12
                                                                                (not
-                                                                                direct?2_0)))
+                                                                                direct?_0)))
                                                                           (if or-part_12
                                                                             or-part_12
                                                                             (if (immutable?
@@ -3333,10 +3347,12 @@
                                                                                               (let ((result_1
                                                                                                      (if (loop_0
                                                                                                           k_0
-                                                                                                          graph_1)
+                                                                                                          graph_1
+                                                                                                          direct?_0)
                                                                                                        (loop_0
                                                                                                         v_1
-                                                                                                        graph_1)
+                                                                                                        graph_1
+                                                                                                        direct?_0)
                                                                                                        #f)))
                                                                                                 (values
                                                                                                  result_1))))
@@ -3364,42 +3380,89 @@
                                                                     #f)))
                                                              (if or-part_12
                                                                or-part_12
-                                                               (if (not
-                                                                    direct?2_0)
-                                                                 (let ((or-part_13
-                                                                        (cpointer?
-                                                                         v_0)))
-                                                                   (if or-part_13
-                                                                     or-part_13
+                                                               (let ((or-part_13
+                                                                      (if (|#%app|
+                                                                           pvector?
+                                                                           v_0)
+                                                                        (if (not
+                                                                             (impersonator?
+                                                                              v_0))
+                                                                          (let ((or-part_13
+                                                                                 (hash-ref
+                                                                                  graph_0
+                                                                                  v_0
+                                                                                  #f)))
+                                                                            (if or-part_13
+                                                                              or-part_13
+                                                                              (let ((graph_1
+                                                                                     (hash-set
+                                                                                      graph_0
+                                                                                      v_0
+                                                                                      #t)))
+                                                                                (letrec*
+                                                                                 ((elem-loop_0
+                                                                                   (|#%name|
+                                                                                    elem-loop
+                                                                                    (lambda (cur_0)
+                                                                                      (if (not
+                                                                                           cur_0)
+                                                                                        #t
+                                                                                        (if (loop_0
+                                                                                             (|#%app|
+                                                                                              pvector-cursor-value
+                                                                                              cur_0)
+                                                                                             graph_1
+                                                                                             #t)
+                                                                                          (elem-loop_0
+                                                                                           (|#%app|
+                                                                                            pvector-cursor-next
+                                                                                            cur_0))
+                                                                                          #f))))))
+                                                                                 (elem-loop_0
+                                                                                  (|#%app|
+                                                                                   pvector-cursor-start
+                                                                                   v_0
+                                                                                   #f))))))
+                                                                          #f)
+                                                                        #f)))
+                                                                 (if or-part_13
+                                                                   or-part_13
+                                                                   (if (not
+                                                                        direct?_0)
                                                                      (let ((or-part_14
-                                                                            (if (let ((or-part_14
-                                                                                       (fxvector?
-                                                                                        v_0)))
-                                                                                  (if or-part_14
-                                                                                    or-part_14
-                                                                                    (let ((or-part_15
-                                                                                           (flvector?
+                                                                            (cpointer?
+                                                                             v_0)))
+                                                                       (if or-part_14
+                                                                         or-part_14
+                                                                         (let ((or-part_15
+                                                                                (if (let ((or-part_15
+                                                                                           (fxvector?
                                                                                             v_0)))
                                                                                       (if or-part_15
                                                                                         or-part_15
-                                                                                        (bytes?
-                                                                                         v_0)))))
-                                                                              (place-shared?
-                                                                               v_0)
-                                                                              #f)))
-                                                                       (if or-part_14
-                                                                         or-part_14
-                                                                         (if (place-message?
-                                                                              v_0)
-                                                                           (if (|#%app|
-                                                                                (place-message-ref
-                                                                                 v_0)
-                                                                                v_0)
-                                                                             #t
-                                                                             #f)
-                                                                           #f)))))
-                                                                 #f)))))))))))))))))))))))))))))))
-      (loop_0 v4_0 hash2610)))))
+                                                                                        (let ((or-part_16
+                                                                                               (flvector?
+                                                                                                v_0)))
+                                                                                          (if or-part_16
+                                                                                            or-part_16
+                                                                                            (bytes?
+                                                                                             v_0)))))
+                                                                                  (place-shared?
+                                                                                   v_0)
+                                                                                  #f)))
+                                                                           (if or-part_15
+                                                                             or-part_15
+                                                                             (if (place-message?
+                                                                                  v_0)
+                                                                               (if (|#%app|
+                                                                                    (place-message-ref
+                                                                                     v_0)
+                                                                                    v_0)
+                                                                                 #t
+                                                                                 #f)
+                                                                               #f)))))
+                                                                     #f)))))))))))))))))))))))))))))))))
+      (loop_0 v4_0 hash2610 direct?2_0)))))
 (define place-message-allowed-direct? (lambda (v_0) (allowed?.1 #t v_0)))
 (define 1/place-message-allowed?
   (|#%name| place-message-allowed? (lambda (v_0) (allowed?.1 #f v_0))))
@@ -3446,168 +3509,125 @@
                              (if (place-shared? v_1)
                                v_1
                                (bytes->immutable-bytes v_1))
-                             (begin
-                               (if graph_0 (void) (set! graph_0 (make-hasheq)))
-                               (let ((cond-val_0 (hash-ref graph_0 v_1 #f)))
-                                 (if cond-val_0
-                                   (begin
-                                     (if used_0
-                                       (void)
-                                       (set! used_0 (make-hasheq)))
-                                     (hash-set! used_0 cond-val_0 #t)
-                                     cond-val_0)
-                                   (if (pair? v_1)
-                                     (let ((ph_0 (make-placeholder #f)))
-                                       (begin
-                                         (hash-set! graph_0 v_1 ph_0)
-                                         (maybe-ph_0
-                                          ph_0
-                                          v_1
-                                          (let ((app_0 (loop_0 (car v_1))))
-                                            (cons app_0 (loop_0 (cdr v_1)))))))
-                                     (if (box? v_1)
+                             (if (if (|#%app| pvector? v_1)
+                                   (if (not (impersonator? v_1))
+                                     (allowed?.1 #t v_1)
+                                     #f)
+                                   #f)
+                               v_1
+                               (begin
+                                 (if graph_0
+                                   (void)
+                                   (set! graph_0 (make-hasheq)))
+                                 (let ((cond-val_0 (hash-ref graph_0 v_1 #f)))
+                                   (if cond-val_0
+                                     (begin
+                                       (if used_0
+                                         (void)
+                                         (set! used_0 (make-hasheq)))
+                                       (hash-set! used_0 cond-val_0 #t)
+                                       cond-val_0)
+                                     (if (pair? v_1)
                                        (let ((ph_0 (make-placeholder #f)))
                                          (begin
                                            (hash-set! graph_0 v_1 ph_0)
                                            (maybe-ph_0
                                             ph_0
                                             v_1
-                                            (box (loop_0 (unbox v_1))))))
-                                       (if (vector? v_1)
+                                            (let ((app_0 (loop_0 (car v_1))))
+                                              (cons
+                                               app_0
+                                               (loop_0 (cdr v_1)))))))
+                                       (if (box? v_1)
                                          (let ((ph_0 (make-placeholder #f)))
                                            (begin
                                              (hash-set! graph_0 v_1 ph_0)
                                              (maybe-ph_0
                                               ph_0
                                               v_1
-                                              (let ((len_0
-                                                     (vector-length v_1)))
-                                                (begin
-                                                  (if (exact-nonnegative-integer?
-                                                       len_0)
-                                                    (void)
-                                                    (1/raise-argument-error
-                                                     'for/vector
-                                                     "exact-nonnegative-integer?"
-                                                     len_0))
-                                                  (let ((v_2
-                                                         (make-vector
-                                                          len_0
-                                                          0)))
-                                                    (begin
-                                                      (if (zero? len_0)
-                                                        (void)
-                                                        (call-with-values
-                                                         (lambda ()
-                                                           (values
-                                                            v_1
-                                                            (unsafe-vector-length
-                                                             v_1)))
-                                                         (lambda (vec_0 len_1)
-                                                           (letrec*
-                                                            ((for-loop_0
-                                                              (|#%name|
-                                                               for-loop
-                                                               (lambda (i_0
-                                                                        pos_0)
-                                                                 (if (unsafe-fx<
-                                                                      pos_0
-                                                                      len_1)
-                                                                   (let ((e_0
-                                                                          (unsafe-vector-ref
-                                                                           vec_0
-                                                                           pos_0)))
-                                                                     (let ((i_1
-                                                                            (let ((i_1
-                                                                                   (begin
-                                                                                     (unsafe-vector*-set!
-                                                                                      v_2
-                                                                                      i_0
-                                                                                      (loop_0
-                                                                                       e_0))
-                                                                                     (unsafe-fx+
-                                                                                      1
-                                                                                      i_0))))
-                                                                              (values
-                                                                               i_1))))
-                                                                       (if (if (not
-                                                                                (let ((x_0
-                                                                                       (list
-                                                                                        e_0)))
-                                                                                  (unsafe-fx=
-                                                                                   i_1
-                                                                                   len_0)))
-                                                                             #t
-                                                                             #f)
-                                                                         (for-loop_0
-                                                                          i_1
-                                                                          (unsafe-fx+
-                                                                           1
-                                                                           pos_0))
-                                                                         i_1)))
-                                                                   i_0)))))
-                                                            (for-loop_0
-                                                             0
-                                                             0)))))
-                                                      v_2)))))))
-                                         (let ((cond-val_1
-                                                (immutable-prefab-struct-key
-                                                 v_1)))
-                                           (if cond-val_1
-                                             (let ((ph_0
-                                                    (make-placeholder #f)))
-                                               (begin
-                                                 (hash-set! graph_0 v_1 ph_0)
-                                                 (maybe-ph_0
-                                                  ph_0
-                                                  v_1
-                                                  (apply
-                                                   make-prefab-struct
-                                                   cond-val_1
-                                                   (reverse$1
-                                                    (call-with-values
-                                                     (lambda ()
-                                                       (unsafe-normalise-inputs
-                                                        unsafe-vector-length
-                                                        (struct->vector v_1)
-                                                        1
-                                                        #f
-                                                        1))
-                                                     (lambda (v*_0
-                                                              start*_0
-                                                              stop*_0
-                                                              step*_0)
-                                                       (letrec*
-                                                        ((for-loop_0
-                                                          (|#%name|
-                                                           for-loop
-                                                           (lambda (fold-var_0
-                                                                    idx_0)
-                                                             (if (unsafe-fx<
-                                                                  idx_0
-                                                                  stop*_0)
-                                                               (let ((e_0
-                                                                      (unsafe-vector-ref
-                                                                       v*_0
-                                                                       idx_0)))
-                                                                 (let ((fold-var_1
-                                                                        (let ((fold-var_1
-                                                                               (cons
-                                                                                (loop_0
-                                                                                 e_0)
-                                                                                fold-var_0)))
-                                                                          (values
-                                                                           fold-var_1))))
-                                                                   (for-loop_0
-                                                                    fold-var_1
-                                                                    (unsafe-fx+
-                                                                     idx_0
-                                                                     1))))
-                                                               fold-var_0)))))
-                                                        (for-loop_0
-                                                         null
-                                                         start*_0)))))))))
-                                             (if (hash? v_1)
+                                              (box (loop_0 (unbox v_1))))))
+                                         (if (vector? v_1)
+                                           (let ((ph_0 (make-placeholder #f)))
+                                             (begin
+                                               (hash-set! graph_0 v_1 ph_0)
+                                               (maybe-ph_0
+                                                ph_0
+                                                v_1
+                                                (let ((len_0
+                                                       (vector-length v_1)))
+                                                  (begin
+                                                    (if (exact-nonnegative-integer?
+                                                         len_0)
+                                                      (void)
+                                                      (1/raise-argument-error
+                                                       'for/vector
+                                                       "exact-nonnegative-integer?"
+                                                       len_0))
+                                                    (let ((v_2
+                                                           (make-vector
+                                                            len_0
+                                                            0)))
+                                                      (begin
+                                                        (if (zero? len_0)
+                                                          (void)
+                                                          (call-with-values
+                                                           (lambda ()
+                                                             (values
+                                                              v_1
+                                                              (unsafe-vector-length
+                                                               v_1)))
+                                                           (lambda (vec_0
+                                                                    len_1)
+                                                             (letrec*
+                                                              ((for-loop_0
+                                                                (|#%name|
+                                                                 for-loop
+                                                                 (lambda (i_0
+                                                                          pos_0)
+                                                                   (if (unsafe-fx<
+                                                                        pos_0
+                                                                        len_1)
+                                                                     (let ((e_0
+                                                                            (unsafe-vector-ref
+                                                                             vec_0
+                                                                             pos_0)))
+                                                                       (let ((i_1
+                                                                              (let ((i_1
+                                                                                     (begin
+                                                                                       (unsafe-vector*-set!
+                                                                                        v_2
+                                                                                        i_0
+                                                                                        (loop_0
+                                                                                         e_0))
+                                                                                       (unsafe-fx+
+                                                                                        1
+                                                                                        i_0))))
+                                                                                (values
+                                                                                 i_1))))
+                                                                         (if (if (not
+                                                                                  (let ((x_0
+                                                                                         (list
+                                                                                          e_0)))
+                                                                                    (unsafe-fx=
+                                                                                     i_1
+                                                                                     len_0)))
+                                                                               #t
+                                                                               #f)
+                                                                           (for-loop_0
+                                                                            i_1
+                                                                            (unsafe-fx+
+                                                                             1
+                                                                             pos_0))
+                                                                           i_1)))
+                                                                     i_0)))))
+                                                              (for-loop_0
+                                                               0
+                                                               0)))))
+                                                        v_2)))))))
+                                           (let ((cond-val_1
+                                                  (immutable-prefab-struct-key
+                                                   v_1)))
+                                             (if cond-val_1
                                                (let ((ph_0
                                                       (make-placeholder #f)))
                                                  (begin
@@ -3615,43 +3635,101 @@
                                                    (maybe-ph_0
                                                     ph_0
                                                     v_1
-                                                    (let ((temp12_0
-                                                           (lambda (k_0 v_2)
-                                                             (let ((app_0
-                                                                    (loop_0
-                                                                     k_0)))
-                                                               (values
-                                                                app_0
-                                                                (loop_0
-                                                                 v_2))))))
-                                                      (hash-map/copy.1
-                                                       'immutable
-                                                       v_1
-                                                       temp12_0)))))
-                                               (if (cpointer? v_1)
-                                                 (ptr-add v_1 0)
-                                                 (if (if (let ((or-part_0
-                                                                (fxvector?
-                                                                 v_1)))
-                                                           (if or-part_0
-                                                             or-part_0
-                                                             (flvector? v_1)))
-                                                       (place-shared? v_1)
-                                                       #f)
-                                                   v_1
-                                                   (if (place-message? v_1)
-                                                     (let ((make-unmessager_0
+                                                    (apply
+                                                     make-prefab-struct
+                                                     cond-val_1
+                                                     (reverse$1
+                                                      (call-with-values
+                                                       (lambda ()
+                                                         (unsafe-normalise-inputs
+                                                          unsafe-vector-length
+                                                          (struct->vector v_1)
+                                                          1
+                                                          #f
+                                                          1))
+                                                       (lambda (v*_0
+                                                                start*_0
+                                                                stop*_0
+                                                                step*_0)
+                                                         (letrec*
+                                                          ((for-loop_0
+                                                            (|#%name|
+                                                             for-loop
+                                                             (lambda (fold-var_0
+                                                                      idx_0)
+                                                               (if (unsafe-fx<
+                                                                    idx_0
+                                                                    stop*_0)
+                                                                 (let ((e_0
+                                                                        (unsafe-vector-ref
+                                                                         v*_0
+                                                                         idx_0)))
+                                                                   (let ((fold-var_1
+                                                                          (let ((fold-var_1
+                                                                                 (cons
+                                                                                  (loop_0
+                                                                                   e_0)
+                                                                                  fold-var_0)))
+                                                                            (values
+                                                                             fold-var_1))))
+                                                                     (for-loop_0
+                                                                      fold-var_1
+                                                                      (unsafe-fx+
+                                                                       idx_0
+                                                                       1))))
+                                                                 fold-var_0)))))
+                                                          (for-loop_0
+                                                           null
+                                                           start*_0)))))))))
+                                               (if (hash? v_1)
+                                                 (let ((ph_0
+                                                        (make-placeholder #f)))
+                                                   (begin
+                                                     (hash-set!
+                                                      graph_0
+                                                      v_1
+                                                      ph_0)
+                                                     (maybe-ph_0
+                                                      ph_0
+                                                      v_1
+                                                      (let ((temp14_0
+                                                             (lambda (k_0 v_2)
+                                                               (let ((app_0
+                                                                      (loop_0
+                                                                       k_0)))
+                                                                 (values
+                                                                  app_0
+                                                                  (loop_0
+                                                                   v_2))))))
+                                                        (hash-map/copy.1
+                                                         'immutable
+                                                         v_1
+                                                         temp14_0)))))
+                                                 (if (cpointer? v_1)
+                                                   (ptr-add v_1 0)
+                                                   (if (if (let ((or-part_0
+                                                                  (fxvector?
+                                                                   v_1)))
+                                                             (if or-part_0
+                                                               or-part_0
+                                                               (flvector?
+                                                                v_1)))
+                                                         (place-shared? v_1)
+                                                         #f)
+                                                     v_1
+                                                     (if (place-message? v_1)
+                                                       (let ((make-unmessager_0
+                                                              (|#%app|
+                                                               (place-message-ref
+                                                                v_1)
+                                                               v_1)))
+                                                         (if make-unmessager_0
+                                                           (message-ized1.1
                                                             (|#%app|
-                                                             (place-message-ref
-                                                              v_1)
-                                                             v_1)))
-                                                       (if make-unmessager_0
-                                                         (message-ized1.1
-                                                          (|#%app|
-                                                           make-unmessager_0))
-                                                         (|#%app| fail_0)))
-                                                     (|#%app|
-                                                      fail_0))))))))))))))))))))
+                                                             make-unmessager_0))
+                                                           (|#%app| fail_0)))
+                                                       (|#%app|
+                                                        fail_0)))))))))))))))))))))
                   (loop_0 v_0))))
             (message-ized1.1 new-v_0)))))))
 (define un-message-ize
@@ -3771,11 +3849,11 @@
                                      fold-var_0)))))
                               (for-loop_0 null start*_0))))))
                         (if (hash? v_1)
-                          (let ((temp15_0
+                          (let ((temp17_0
                                  (lambda (k_0 v_2)
                                    (let ((app_0 (loop_0 k_0)))
                                      (values app_0 (loop_0 v_2))))))
-                            (hash-map/copy.1 'immutable v_1 temp15_0))
+                            (hash-map/copy.1 'immutable v_1 temp17_0))
                           (if (if (cpointer? v_1)
                                 (if v_1 (not (bytes? v_1)) #f)
                                 #f)
