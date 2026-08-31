@@ -1194,3 +1194,31 @@
               ) ; end pvector-map
              exn:fail:contract?
 ) ; end err/rt-test
+
+;; ---------- procedure->pvector-rest ----------
+
+(test '() (procedure->pvector-rest pvector->list)
+) ; end test
+(test '(1 2 3) (procedure->pvector-rest pvector->list) 1 2 3
+) ; end test
+(test '(1 2 3 4 5) apply (procedure->pvector-rest pvector->list) '(1 2 3 4 5
+                                                                  ) ; end quote
+) ; end test
+(test 19900 apply (procedure->pvector-rest (lambda (pv) (pvector-fold-left pv 0 +
+                                                        ) ; end pvector-fold-left
+                                           ) ; end lambda
+                  ) ; end procedure->pvector-rest
+                  (build-list 200 values
+                  ) ; end build-list
+) ; end test
+(test #t procedure-arity-includes? (procedure->pvector-rest pvector->list) 0
+) ; end test
+(err/rt-test (procedure->pvector-rest 5
+              ) ; end procedure->pvector-rest
+             exn:fail:contract?
+) ; end err/rt-test
+(err/rt-test (procedure->pvector-rest (lambda () 1
+                                      ) ; end lambda
+              ) ; end procedure->pvector-rest
+             exn:fail:contract?
+) ; end err/rt-test

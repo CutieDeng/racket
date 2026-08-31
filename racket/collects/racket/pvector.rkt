@@ -17,6 +17,7 @@
          (for-syntax racket/base))
 
 (provide pvector-apply
+         procedure->pvector-rest
          (rename-out [exported-pvector? pvector?]
                      [exported-pvector-empty pvector-empty]
                      [exported-pvector-empty? pvector-empty?]
@@ -498,6 +499,20 @@
 ;; building an intermediate list.
 ;; The raw layer already rejects anything that is not a pvector, and reports
 ;; it as `pvector-apply`, so unwrapping without a separate check is enough.
+;; `(procedure->pvector-rest proc)` returns a procedure that accepts any
+;; number of arguments and calls `proc` with one pvector holding them, the
+;; pvector analog of writing a rest-argument lambda.  This reference
+;; implementation collects through a list; a native path can replace the
+;; body without changing the interface.
+(define (procedure->pvector-rest proc)
+  (unless (procedure? proc)
+    (raise-argument-error 'procedure->pvector-rest "procedure?" proc))
+  (unless (procedure-arity-includes? proc 1)
+    (raise-arguments-error 'procedure->pvector-rest
+                           "procedure does not accept one argument"
+                           "procedure" proc))
+  (lambda args (proc (list->pvector args))))
+
 (define pvector-apply
   (case-lambda
     [(proc pv) (raw:pvector-apply proc (pvector-tree/unsafe pv))]
