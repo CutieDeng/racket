@@ -2978,6 +2978,12 @@
     (unless (or (fixnum? arity-mask) (bignum? arity-mask)) ($oops who "~s is not an arity mask" arity-mask))
     (#3%$make-wrapper-procedure proc arity-mask)))
 
+(define-who $make-pvector-rest-procedure
+  (lambda (proc arity-mask)
+    (unless (procedure? proc) ($oops who "~s is not a procedure" proc))
+    (unless (or (fixnum? arity-mask) (bignum? arity-mask)) ($oops who "~s is not an arity mask" arity-mask))
+    (#3%$make-pvector-rest-procedure proc arity-mask)))
+
 (define-who make-wrapper-procedure
   (lambda (proc arity-mask data)
     (unless (procedure? proc) ($oops who "~s is not a procedure" proc))

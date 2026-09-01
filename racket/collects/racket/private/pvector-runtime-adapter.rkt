@@ -11,6 +11,7 @@
          (for-syntax racket/base))
 
 (provide pvector-apply
+         core-procedure->pvector-rest
          pvector-fold-left
          pvector-fold-right
          pvector-reverse
@@ -110,6 +111,7 @@
 (define core-list->pvector (maybe-kernel 'core-list->pvector))
 (define core-pvector-apply (maybe-kernel 'core-pvector-apply))
 (define core-pvector-args (maybe-kernel 'core-pvector-args))
+(define core-procedure->pvector-rest (maybe-kernel 'core-procedure->pvector-rest))
 (define core-make-single-pvector (maybe-kernel 'core-make-single-pvector))
 (define core-make-deep2-pvector (maybe-kernel 'core-make-deep2-pvector))
 (define core-make-deep3-pvector (maybe-kernel 'core-make-deep3-pvector))

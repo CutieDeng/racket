@@ -3103,6 +3103,8 @@
      (popcount-slow #f 0 #f #t)
      (cpu-features #f 0 #f #t)
      ($pvector-from-fresh-vector #f 1 #f #t)
+     (pvector-rest-wrapper #f 0 #f #f)
+     ($pvector-rest-invoke #f 2 #f #t)
   ))
 
 (let ()
