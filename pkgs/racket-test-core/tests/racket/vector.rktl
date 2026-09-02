@@ -636,3 +636,12 @@
 ;; ----------------------------------------
 
 (report-errs)
+
+;; ---------- vector-apply with non-host procedures ----------
+(let ()
+  (struct app (p) #:property prop:procedure (struct-field-index p))
+  (define (kw x y #:s [s 10]) (+ x y s))
+  (test 13 vector-apply kw (vector 1 2))
+  (test '(1 2) vector-apply (app list) (vector 1 2))
+  (test '(1 2) vector-apply (app list) (chaperone-vector (vector 1 2) (lambda (v i e) e) (lambda (v i e) e)))
+  (err/rt-test (vector-apply (app (lambda (x) x)) (vector 1 2)) exn:fail:contract?))

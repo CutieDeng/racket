@@ -94,6 +94,15 @@
 (define (slow-extract-procedure f n-args)
   (do-extract-procedure f f f n-args #f not-a-procedure))
 
+;; For runtime code that applies a procedure directly or through a
+;; hand-coded entry, either of which can apply only a host procedure:
+;; extract one from an applicable struct (or continuation), checking
+;; that it accepts `n-args` arguments
+(define (extract-host-procedure p n-args)
+  (if (#%procedure? p)
+      p
+      (slow-extract-procedure p n-args)))
+
 ;; Returns a host-Scheme procedure, but first checks arity so that
 ;; checking and reporting use the right top-level function, and
 ;; the returned procedure may just report a not-a-procedure error

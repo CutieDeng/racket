@@ -1400,3 +1400,80 @@
              ) ; end build-list
       ) ; end apply
 ) ; end test
+
+;; ---------- non-host procedures through direct-call primitives ----------
+
+;; keyword procedures and applicable structs must be applied through
+;; extraction, not passed raw to hand-coded entries
+(let ()
+  (struct app (p) #:property prop:procedure (struct-field-index p
+                             ) ; end struct-field-index
+  ) ; end struct
+  (define (kw x y #:s [s 10]) (+ x y s
+                              ) ; end +
+  ) ; end define kw
+  (define (kw/required #:must k x) (list k x
+                                   ) ; end list
+  ) ; end define kw/required
+  (test 13 pvector-apply kw (pvector 1 2
+                            ) ; end pvector
+  ) ; end test
+  (test 4950 pvector-apply + (list->pvector (build-list 100 values
+                                            ) ; end build-list
+                             ) ; end list->pvector
+  ) ; end test
+  (test '(1 2 3) pvector-apply (app list) (pvector 1 2 3
+                                          ) ; end pvector
+  ) ; end test
+  (test 500 'apply-appstruct-big
+        (length (pvector-apply (app list) (list->pvector (build-list 500 values
+                                                         ) ; end build-list
+                                          ) ; end list->pvector
+                ) ; end pvector-apply
+        ) ; end length
+  ) ; end test
+  (err/rt-test (pvector-apply kw/required (pvector 1
+                                          ) ; end pvector
+               ) ; end pvector-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  (err/rt-test (pvector-apply (app (lambda (x) x
+                                   ) ; end lambda
+                              ) ; end app
+                              (pvector 1 2 3
+                              ) ; end pvector
+               ) ; end pvector-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  (test '(2 3) pvector->list (pvector-map (pvector 1 2) (app add1
+                                                        ) ; end app
+                             ) ; end pvector-map
+  ) ; end test
+  (test 6 'for-each-appstruct
+        (let ([n 0]
+          ) ; end bindings
+          (pvector-for-each (pvector 1 2 3) (app (lambda (x) (set! n (+ n x
+                                                                      ) ; end +
+                                                             ) ; end set!
+                                                 ) ; end lambda
+                                            ) ; end app
+          ) ; end pvector-for-each
+          n
+        ) ; end let
+  ) ; end test
+  (test 6 pvector-fold-left (pvector 1 2 3) 0 (app +
+                                              ) ; end app
+  ) ; end test
+  (test '(7 8) (procedure->pvector-rest (app pvector->list
+                                        ) ; end app
+               ) ; end procedure->pvector-rest
+        7 8
+  ) ; end test
+  (test 42 'continuation-through-pvector-apply
+        (call/cc (lambda (k) (pvector-apply k (pvector 42
+                                              ) ; end pvector
+                             ) ; end pvector-apply
+                 ) ; end lambda
+        ) ; end call/cc
+  ) ; end test
+) ; end let

@@ -39,21 +39,26 @@
         (unless (procedure? p) (raise-argument-error who "procedure?" p))
         (cond
          [(#%vector? vec)
-          (let ([k (#%vector-length vec)])
+          (let* ([k (#%vector-length vec)]
+                 [p (extract-host-procedure p (fx+ m k))])
             (if (fx= k 0)
                 (if (null? args) (p) (#%$apply p m args))
                 (#%$apply-vector p (fx+ m k) args vec k)))]
          [(vector? vec)
-          (let ([l (vector->list vec)])
-            (#%$apply p (fx+ m (length l)) (append args l)))]
+          (let* ([l (vector->list vec)]
+                 [n (fx+ m (length l))]
+                 [p (extract-host-procedure p n)])
+            (#%$apply p n (append args l)))]
          [else (raise-argument-error who "vector?" vec)]))
       ;; no hand-coded entry on this target
       (lambda (who p args m vec)
         (unless (procedure? p) (raise-argument-error who "procedure?" p))
         (cond
          [(vector? vec)
-          (let ([l (vector->list vec)])
-            (#%$apply p (fx+ m (length l)) (append args l)))]
+          (let* ([l (vector->list vec)]
+                 [n (fx+ m (length l))]
+                 [p (extract-host-procedure p n)])
+            (#%$apply p n (append args l)))]
          [else (raise-argument-error who "vector?" vec)]))))
 
 (define core-vector-apply
