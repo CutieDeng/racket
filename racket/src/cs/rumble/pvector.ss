@@ -3921,7 +3921,8 @@
   (unless (procedure-arity-includes? proc 1)
     (error 'core-pvector-map "procedure does not accept one argument"))
   (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-map pv))])
+              (core-check-pvector 'core-pvector-map pv))]
+        [proc (extract-host-procedure proc 1)])
     (cond
      [(fx= len 0) empty-core-pvector]
      [(eq? proc values) pv]
@@ -3952,6 +3953,7 @@
 (define (core-unsafe-pvector-for-each pv proc)
   (let ([len (core-pvector-length/unchecked pv)])
     (unless (or (eq? proc values) (eq? proc void))
+      (let ([proc (extract-host-procedure proc 1)])
       (cond
        [(fx= len 0) (void)]
        [(fx= len 1)
@@ -3969,7 +3971,7 @@
         (proc (core-pvector-large-finger-ref/known-length pv len 2))
         (proc (core-pvector-large-finger-ref/known-length pv len 3))]
        [else
-        (core-pvector-for-each-range/known-length pv len 0 len proc)])))
+        (core-pvector-for-each-range/known-length pv len 0 len proc)]))))
   (void))
 
 (define (core-pvector-for-each pv proc)
@@ -3982,7 +3984,8 @@
    proc))
 
 (define (core-unsafe-pvector-fold-left pv init proc)
-  (let ([len (core-pvector-length/unchecked pv)])
+  (let ([len (core-pvector-length/unchecked pv)]
+        [proc (extract-host-procedure proc 2)])
     (cond
      [(fx= len 0) init]
      [(fx= len 1)
@@ -4131,23 +4134,28 @@
         (unless (procedure? p) (raise-argument-error who "procedure?" p))
         (cond
          [(core-pvector-large-finger? pv)
-          (#%$apply-pvector p
-                            (fx+ m (core-pvector-large-finger-length pv))
-                            args pv core-pvector-node2-rtd)]
+          (let* ([n (fx+ m (core-pvector-large-finger-length pv))]
+                 [p (extract-host-procedure p n)])
+            (#%$apply-pvector p n args pv core-pvector-node2-rtd))]
          [(core-pvector-empty-record? pv)
-          (if (null? args) (p) (#%$apply p m args))]
+          (let ([p (extract-host-procedure p m)])
+            (if (null? args) (p) (#%$apply p m args)))]
          [(core-pvector-inline? pv)
-          (let ([k (core-pvector-inline-length pv)])
+          (let* ([k (core-pvector-inline-length pv)]
+                 [n (fx+ m k)]
+                 [p (extract-host-procedure p n)])
             (if (and (fx= k 1) (null? args))
                 (p (core-pvector-inline-e0 pv))
-                (#%$apply p (fx+ m k) (append args (core-pvector->list pv)))))]
+                (#%$apply p n (append args (core-pvector->list pv)))))]
          [else (raise-argument-error who "pvector?" pv)]))
       ;; no hand-coded entry on this target
       (lambda (who p args m pv)
         (unless (procedure? p) (raise-argument-error who "procedure?" p))
         (if (core-pvector? pv)
-            (let ([l (core-pvector->list pv)])
-              (#%$apply p (fx+ m (length l)) (append args l)))
+            (let* ([l (core-pvector->list pv)]
+                   [n (fx+ m (length l))]
+                   [p (extract-host-procedure p n)])
+              (#%$apply p n (append args l)))
             (raise-argument-error who "pvector?" pv)))))
 
 (define core-pvector-apply
@@ -4171,8 +4179,9 @@
 (define core-procedure->pvector-rest
   (if (#%$apply-entries-available?)
       (lambda (proc)
-        (and (#%procedure? proc)
-             (#%$make-pvector-rest-procedure proc -1)))
+        ;; the wrapper calls the wrapped procedure with one argument,
+        ;; so an applicable struct is extracted with that arity
+        (#%$make-pvector-rest-procedure (extract-host-procedure proc 1) -1))
       (lambda (proc) #f)))
 
 ;; The `pvector` constructor: hand-coded code collects the arguments into a
