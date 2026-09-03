@@ -1477,3 +1477,74 @@
         ) ; end call/cc
   ) ; end test
 ) ; end let
+
+;; ---------- error names use public operation names ----------
+
+;; primitives report the public name, not an internal core-* name
+(err/rt-test (pvector-length 5
+              ) ; end pvector-length
+             exn:fail:contract? #rx"^pvector-length:"
+) ; end err/rt-test
+(err/rt-test (pvector-ref 5 0
+              ) ; end pvector-ref
+             exn:fail:contract? #rx"^pvector-ref:"
+) ; end err/rt-test
+(err/rt-test (pvector-ref (pvector 1) 5
+              ) ; end pvector-ref
+             exn:fail? #rx"^pvector-ref:"
+) ; end err/rt-test
+(err/rt-test (pvector-first 5
+              ) ; end pvector-first
+             exn:fail:contract? #rx"^pvector-first:"
+) ; end err/rt-test
+(err/rt-test (pvector-first (pvector
+                            ) ; end pvector
+              ) ; end pvector-first
+             exn:fail? #rx"^pvector-first:"
+) ; end err/rt-test
+(err/rt-test (pvector-last (pvector
+                           ) ; end pvector
+              ) ; end pvector-last
+             exn:fail? #rx"^pvector-last:"
+) ; end err/rt-test
+(err/rt-test (pvector-map 5 add1
+              ) ; end pvector-map
+             exn:fail:contract? #rx"^pvector-map:"
+) ; end err/rt-test
+(err/rt-test (pvector->list 5
+              ) ; end pvector->list
+             exn:fail:contract? #rx"^pvector->list:"
+) ; end err/rt-test
+(err/rt-test (pvector->vector 5
+              ) ; end pvector->vector
+             exn:fail:contract? #rx"^pvector->vector:"
+) ; end err/rt-test
+;; derived operations validate at their own entry
+(err/rt-test (pvector-reverse 5
+              ) ; end pvector-reverse
+             exn:fail:contract? #rx"^pvector-reverse:"
+) ; end err/rt-test
+(err/rt-test (pvector-sort 5 <
+              ) ; end pvector-sort
+             exn:fail:contract? #rx"^pvector-sort:"
+) ; end err/rt-test
+(err/rt-test (pvector-fold-right 5 0 +
+              ) ; end pvector-fold-right
+             exn:fail:contract? #rx"^pvector-fold-right:"
+) ; end err/rt-test
+(err/rt-test (pvector-filter 5 odd?
+              ) ; end pvector-filter
+             exn:fail:contract? #rx"^pvector-filter:"
+) ; end err/rt-test
+(err/rt-test (pvector-count 5 odd?
+              ) ; end pvector-count
+             exn:fail:contract? #rx"^pvector-count:"
+) ; end err/rt-test
+(err/rt-test (pvector-member 5 1
+              ) ; end pvector-member
+             exn:fail:contract? #rx"^pvector-member:"
+) ; end err/rt-test
+(err/rt-test (pvector-andmap 5 odd?
+              ) ; end pvector-andmap
+             exn:fail:contract? #rx"^pvector-andmap:"
+) ; end err/rt-test

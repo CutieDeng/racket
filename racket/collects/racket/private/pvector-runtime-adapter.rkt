@@ -578,6 +578,14 @@
 ;; calls `(proc acc elem)` and `fold-right` calls `(proc elem acc)`, as in
 ;; R6RS, matching the underlying primitive.
 
+;; Derived operations validate the pvector argument here, so their
+;; errors carry the derived operation's own name instead of whichever
+;; primitive happens to touch the argument first
+(define (check-pvector who pv)
+  (unless (pvector? pv)
+    (raise-argument-error who "pvector?" pv))
+  pv)
+
 (define (pvector-fold-left pv init proc)
   (if core-pvector-fold-left
       (core-pvector-fold-left pv init proc)
@@ -585,11 +593,13 @@
         (if (null? xs) acc (loop (cdr xs) (proc acc (car xs)))))))
 
 (define (pvector-fold-right pv init proc)
+  (check-pvector 'pvector-fold-right pv)
   ;; a list of the elements is as cheap as any right-to-left walk here
   (let loop ([xs (pvector->list pv)])
     (if (null? xs) init (proc (car xs) (loop (cdr xs))))))
 
 (define (pvector-reverse pv)
+  (check-pvector 'pvector-reverse pv)
   (let ([n (pvector-length pv)])
     (if (unsafe-fx<= n 1)
         pv
@@ -601,6 +611,7 @@
 (define (pvector-sort pv less?
                       #:key [key #f]
                       #:cache-keys? [cache-keys? #f])
+  (check-pvector 'pvector-sort pv)
   (let ([vec (pvector->vector pv)])
     (if key
         (vector-sort! vec less? #:key key #:cache-keys? cache-keys?)
@@ -608,19 +619,23 @@
     (fresh-vector->pvector vec)))
 
 (define (pvector-filter pv pred)
+  (check-pvector 'pvector-filter pv)
   (if core-available?
       (with-core-pvector-builder add!
         (pvector-fold-left pv #f (lambda (acc x) (when (pred x) (add! x)) #f)))
       (list->pvector (filter pred (pvector->list pv)))))
 
 (define (pvector-partition pv pred)
+  (check-pvector 'pvector-partition pv)
   (values (pvector-filter pv pred)
           (pvector-filter pv (lambda (x) (not (pred x))))))
 
 (define (pvector-count pv pred)
+  (check-pvector 'pvector-count pv)
   (pvector-fold-left pv 0 (lambda (n x) (if (pred x) (unsafe-fx+ n 1) n))))
 
 (define (pvector-andmap pv proc)
+  (check-pvector 'pvector-andmap pv)
   (let/ec return
     (pvector-fold-left pv #t
                        (lambda (acc x)
@@ -628,6 +643,7 @@
                            (if r r (return #f)))))))
 
 (define (pvector-ormap pv proc)
+  (check-pvector 'pvector-ormap pv)
   (let/ec return
     (pvector-fold-left pv #f
                        (lambda (acc x)
@@ -635,6 +651,7 @@
                            (if r (return r) #f))))))
 
 (define (pvector-index-where* who pv want? v)
+  (check-pvector who pv)
   (let/ec return
     (pvector-fold-left pv 0
                        (lambda (i x)
