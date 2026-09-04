@@ -3052,6 +3052,8 @@
   (if pvector-table (hash-ref pvector-table 'pvector-cursor-value) #f))
 (define pvector-cursor-next
   (if pvector-table (hash-ref pvector-table 'pvector-cursor-next) #f))
+(define pvector-place-atomics?
+  (if pvector-table (hash-ref pvector-table 'pvector-place-atomics? #f) #f))
 (define allowed?.1
   (|#%name|
    allowed?
@@ -3394,35 +3396,43 @@
                                                                                   #f)))
                                                                             (if or-part_13
                                                                               or-part_13
-                                                                              (let ((graph_1
-                                                                                     (hash-set
-                                                                                      graph_0
-                                                                                      v_0
-                                                                                      #t)))
-                                                                                (letrec*
-                                                                                 ((elem-loop_0
-                                                                                   (|#%name|
-                                                                                    elem-loop
-                                                                                    (lambda (cur_0)
-                                                                                      (if (not
-                                                                                           cur_0)
-                                                                                        #t
-                                                                                        (if (loop_0
-                                                                                             (|#%app|
-                                                                                              pvector-cursor-value
-                                                                                              cur_0)
-                                                                                             graph_1
-                                                                                             #t)
-                                                                                          (elem-loop_0
-                                                                                           (|#%app|
-                                                                                            pvector-cursor-next
-                                                                                            cur_0))
-                                                                                          #f))))))
-                                                                                 (elem-loop_0
-                                                                                  (|#%app|
-                                                                                   pvector-cursor-start
-                                                                                   v_0
-                                                                                   #f))))))
+                                                                              (let ((or-part_14
+                                                                                     (if pvector-place-atomics?
+                                                                                       (|#%app|
+                                                                                        pvector-place-atomics?
+                                                                                        v_0)
+                                                                                       #f)))
+                                                                                (if or-part_14
+                                                                                  or-part_14
+                                                                                  (let ((graph_1
+                                                                                         (hash-set
+                                                                                          graph_0
+                                                                                          v_0
+                                                                                          #t)))
+                                                                                    (letrec*
+                                                                                     ((elem-loop_0
+                                                                                       (|#%name|
+                                                                                        elem-loop
+                                                                                        (lambda (cur_0)
+                                                                                          (if (not
+                                                                                               cur_0)
+                                                                                            #t
+                                                                                            (if (loop_0
+                                                                                                 (|#%app|
+                                                                                                  pvector-cursor-value
+                                                                                                  cur_0)
+                                                                                                 graph_1
+                                                                                                 #t)
+                                                                                              (elem-loop_0
+                                                                                               (|#%app|
+                                                                                                pvector-cursor-next
+                                                                                                cur_0))
+                                                                                              #f))))))
+                                                                                     (elem-loop_0
+                                                                                      (|#%app|
+                                                                                       pvector-cursor-start
+                                                                                       v_0
+                                                                                       #f))))))))
                                                                           #f)
                                                                         #f)))
                                                                  (if or-part_13

@@ -124,7 +124,7 @@
 
 (define (core-pvector-length pv)
   (core-pvector-length/unchecked
-   (core-check-pvector 'core-pvector-length pv)))
+   (core-check-pvector 'pvector-length pv)))
 
 (define (make-core-pvector-large-finger/inline
          len prefix-len middle suffix-len p0 p1 p2 p3 s0 s1 s2 s3)
@@ -2253,7 +2253,7 @@
    [(core-pvector-large-finger? pv)
     (core-pvector-large-finger-ref pv index)]
    [else
-    (error 'core-pvector-ref "index out of bounds")]))
+    (error 'pvector-ref "index out of bounds")]))
 
 (define (core-pvector-large-finger-ref pv index)
   (core-pvector-large-finger-ref/known-length
@@ -2268,7 +2268,7 @@
    [(core-pvector-large-finger? pv)
     (core-pvector-large-finger-ref/known-length pv len index)]
    [else
-    (error 'core-pvector-ref "index out of bounds")]))
+    (error 'pvector-ref "index out of bounds")]))
 
 (define (core-vector-fill-range! dest dest-offset src start end)
   (let loop ([i start] [offset dest-offset])
@@ -3235,7 +3235,7 @@
     (error who "index out of bounds")))
 
 (define (core-pvector-ref pv index)
-  (let ([len (core-check-index 'core-pvector-ref pv index)])
+  (let ([len (core-check-index 'pvector-ref pv index)])
     (core-pvector-ref-edge/unchecked pv len index)))
 
 (define (core-pvector-view-left pv)
@@ -3245,9 +3245,9 @@
    [(core-pvector-large-finger? pv)
     (core-pvector-large-finger-p0 pv)]
    [(not (core-pvector-empty-record? pv))
-    (raise-argument-error 'core-pvector-view-left "pvector?" pv)]
+    (raise-argument-error 'pvector-first "pvector?" pv)]
    [else
-    (error 'core-pvector-view-left "empty pvector")]))
+    (error 'pvector-first "empty pvector")]))
 
 (define (core-pvector-view-right pv)
   (cond
@@ -3257,9 +3257,9 @@
     (let ([suffix-len (core-pvector-large-finger-suffix-length pv)])
       (core-pvector-large-finger-suffix-ref pv (fx- suffix-len 1)))]
    [(not (core-pvector-empty-record? pv))
-    (raise-argument-error 'core-pvector-view-right "pvector?" pv)]
+    (raise-argument-error 'pvector-last "pvector?" pv)]
    [else
-    (error 'core-pvector-view-right "empty pvector")]))
+    (error 'pvector-last "empty pvector")]))
 
 (define (core-pvector-ref-edge/unchecked pv len index)
   (cond
@@ -3456,7 +3456,7 @@
    [(core-pvector-inline? pv)
     (make-core-pvector-cursor (core-pvector-inline-e0 pv) '())]
    [(not (core-pvector-large-finger? pv))
-    (error 'core-pvector-cursor-start "expected a pvector")]
+    (error 'pvector-cursor-start "expected a pvector")]
    [else
     (core-pvector-cursor-advance!
      (make-core-pvector-cursor
@@ -3476,7 +3476,8 @@
     (core-pvector-fill-range!/known-length vec offset pv len 0 len)))
 
 (define (core-pvector->vector pv)
-  (let ([len (core-pvector-length pv)])
+  (let ([len (core-pvector-length/unchecked
+              (core-check-pvector 'pvector->vector pv))])
     (cond
      [(fx= len 0)
       (make-vector 0)]
@@ -3503,7 +3504,7 @@
         vec)])))
 
 (define (core-pvector-set pv index value)
-  (let ([len (core-check-index 'core-pvector-set pv index)])
+  (let ([len (core-check-index 'pvector-set pv index)])
     (cond
      [(fx= len 1)
       (let ([current (core-pvector-view-left pv)])
@@ -3538,7 +3539,7 @@
    [(core-pvector-inline? pv)
     (core-make-deep2-pvector value (core-pvector-inline-e0 pv))]
    [(not (core-pvector-large-finger? pv))
-    (raise-argument-error 'core-pvector-cons-left "pvector?" pv)]
+    (raise-argument-error 'pvector-cons-left "pvector?" pv)]
    [else
     (core-pvector-large-finger-cons-left pv value)]))
 
@@ -3558,7 +3559,7 @@
    [(core-pvector-inline? pv)
     (core-make-deep2-pvector (core-pvector-inline-e0 pv) value)]
    [(not (core-pvector-large-finger? pv))
-    (raise-argument-error 'core-pvector-cons-right "pvector?" pv)]
+    (raise-argument-error 'pvector-cons-right "pvector?" pv)]
    [else
     (core-pvector-large-finger-cons-right pv value)]))
 
@@ -3572,7 +3573,7 @@
     (core-pvector-large-finger-cons-right/known-length pv len value)]))
 
 (define (core-pvector-pop-left pv)
-  (let ([len (core-check-index 'core-pvector-pop-left pv 0)])
+  (let ([len (core-check-index 'pvector-pop-left pv 0)])
     (cond
      [(fx= len 1)
       (values (core-pvector-view-left pv) empty-core-pvector)]
@@ -3593,9 +3594,9 @@
 
 (define (core-pvector-pop-right pv)
   (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-pop-right pv))])
+              (core-check-pvector 'pvector-pop-right pv))])
     (when (fx= len 0)
-      (error 'core-pvector-pop-right "empty pvector"))
+      (error 'pvector-pop-right "empty pvector"))
     (cond
      [(fx= len 1)
       (values (core-pvector-view-right pv) empty-core-pvector)]
@@ -3643,9 +3644,9 @@
 
 (define (core-pvector-append left right)
   (let ([left-len (core-pvector-length/unchecked
-                   (core-check-pvector 'core-pvector-append left))]
+                   (core-check-pvector 'pvector-append left))]
         [right-len (core-pvector-length/unchecked
-                    (core-check-pvector 'core-pvector-append right))])
+                    (core-check-pvector 'pvector-append right))])
     (core-pvector-append/known-length left left-len right right-len)))
 
 (define (core-pvector-copy/unchecked pv len start end)
@@ -3708,11 +3709,11 @@
 
 (define (core-pvector-copy pv start end)
   (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-copy pv))])
-    (core-check-end-index/known-length 'core-pvector-copy start len)
-    (core-check-end-index/known-length 'core-pvector-copy end len)
+              (core-check-pvector 'pvector-copy pv))])
+    (core-check-end-index/known-length 'pvector-copy start len)
+    (core-check-end-index/known-length 'pvector-copy end len)
     (when (fx> start end)
-      (error 'core-pvector-copy "starting index is greater than ending index"))
+      (error 'pvector-copy "starting index is greater than ending index"))
     (core-pvector-copy/unchecked pv len start end)))
 
 (define (core-pvector-split-at-left-edge/known-length pv len)
@@ -3740,35 +3741,35 @@
               (core-make-single-pvector (core-pvector-view-right pv)))))
 
 (define (core-pvector-take pv pos)
-  (let ([len (core-check-end-index 'core-pvector-take pv pos)])
+  (let ([len (core-check-end-index 'pvector-take pv pos)])
     (cond
      [(fx= pos 0) empty-core-pvector]
      [(fx= pos len) pv]
      [else (core-pvector-copy/unchecked pv len 0 pos)])))
 
 (define (core-pvector-drop pv pos)
-  (let ([len (core-check-end-index 'core-pvector-drop pv pos)])
+  (let ([len (core-check-end-index 'pvector-drop pv pos)])
     (cond
      [(fx= pos 0) pv]
      [(fx= pos len) empty-core-pvector]
      [else (core-pvector-copy/unchecked pv len pos len)])))
 
 (define (core-pvector-take-right pv pos)
-  (let ([len (core-check-end-index 'core-pvector-take-right pv pos)])
+  (let ([len (core-check-end-index 'pvector-take-right pv pos)])
     (cond
      [(fx= pos 0) empty-core-pvector]
      [(fx= pos len) pv]
      [else (core-pvector-copy/unchecked pv len (fx- len pos) len)])))
 
 (define (core-pvector-drop-right pv pos)
-  (let ([len (core-check-end-index 'core-pvector-drop-right pv pos)])
+  (let ([len (core-check-end-index 'pvector-drop-right pv pos)])
     (cond
      [(fx= pos 0) pv]
      [(fx= pos len) empty-core-pvector]
      [else (core-pvector-copy/unchecked pv len 0 (fx- len pos))])))
 
 (define (core-pvector-split-at pv pos)
-  (let ([len (core-check-end-index 'core-pvector-split-at pv pos)])
+  (let ([len (core-check-end-index 'pvector-split-at pv pos)])
     (cond
      [(fx= pos 0)
       (values empty-core-pvector pv)]
@@ -3793,7 +3794,7 @@
                   (core-pvector-copy/unchecked pv len pos len)))])))
 
 (define (core-pvector-split-at-right pv pos)
-  (let ([len (core-check-end-index 'core-pvector-split-at-right pv pos)])
+  (let ([len (core-check-end-index 'pvector-split-at-right pv pos)])
     (cond
      [(fx= pos 0)
       (values empty-core-pvector pv)]
@@ -3823,7 +3824,7 @@
                     (core-pvector-copy/unchecked pv len 0 split-pos))))])))
 
 (define (core-pvector-split pv index)
-  (let ([len (core-check-index 'core-pvector-split pv index)])
+  (let ([len (core-check-index 'pvector-split pv index)])
     (cond
      [(fx= index 0)
       (if (core-pvector-large-finger? pv)
@@ -3868,7 +3869,7 @@
                   (core-pvector-copy/unchecked pv len (fx+ index 1) len)))])))
 
 (define (core-pvector-insert pv index value)
-  (let ([len (core-check-end-index 'core-pvector-insert pv index)])
+  (let ([len (core-check-end-index 'pvector-insert pv index)])
     (cond
      [(fx= index 0) (core-pvector-cons-left/known-length pv len value)]
      [(fx= index len) (core-pvector-cons-right/known-length pv len value)]
@@ -3876,7 +3877,7 @@
       (core-pvector-large-finger-insert/known-length pv len index value)])))
 
 (define (core-pvector-delete pv index)
-  (let ([len (core-check-index 'core-pvector-delete pv index)])
+  (let ([len (core-check-index 'pvector-delete pv index)])
     (cond
      [(fx= len 1)
       (values empty-core-pvector (core-pvector-view-left pv))]
@@ -3917,11 +3918,11 @@
 
 (define (core-pvector-map pv proc)
   (unless (procedure? proc)
-    (raise-argument-error 'core-pvector-map "procedure?" proc))
+    (raise-argument-error 'pvector-map "procedure?" proc))
   (unless (procedure-arity-includes? proc 1)
-    (error 'core-pvector-map "procedure does not accept one argument"))
+    (error 'pvector-map "procedure does not accept one argument"))
   (let ([len (core-pvector-length/unchecked
-              (core-check-pvector 'core-pvector-map pv))]
+              (core-check-pvector 'pvector-map pv))]
         [proc (extract-host-procedure proc 1)])
     (cond
      [(fx= len 0) empty-core-pvector]
@@ -3976,11 +3977,11 @@
 
 (define (core-pvector-for-each pv proc)
   (unless (procedure? proc)
-    (raise-argument-error 'core-pvector-for-each "procedure?" proc))
+    (raise-argument-error 'pvector-for-each "procedure?" proc))
   (unless (procedure-arity-includes? proc 1)
-    (error 'core-pvector-for-each "procedure does not accept one argument"))
+    (error 'pvector-for-each "procedure does not accept one argument"))
   (core-unsafe-pvector-for-each
-   (core-check-pvector 'core-pvector-for-each pv)
+   (core-check-pvector 'pvector-for-each pv)
    proc))
 
 (define (core-unsafe-pvector-fold-left pv init proc)
@@ -4024,16 +4025,17 @@
 
 (define (core-pvector-fold-left pv init proc)
   (unless (procedure? proc)
-    (raise-argument-error 'core-pvector-fold-left "procedure?" proc))
+    (raise-argument-error 'pvector-fold-left "procedure?" proc))
   (unless (procedure-arity-includes? proc 2)
-    (error 'core-pvector-fold-left "procedure does not accept two arguments"))
+    (error 'pvector-fold-left "procedure does not accept two arguments"))
   (core-unsafe-pvector-fold-left
-   (core-check-pvector 'core-pvector-fold-left pv)
+   (core-check-pvector 'pvector-fold-left pv)
    init
    proc))
 
 (define (core-pvector->list pv)
-  (let ([len (core-pvector-length pv)])
+  (let ([len (core-pvector-length/unchecked
+              (core-check-pvector 'pvector->list pv))])
     (cond
      [(fx= len 0) '()]
      [(fx= len 1) (list (core-pvector-view-left pv))]
@@ -4183,6 +4185,32 @@
         ;; so an applicable struct is extracted with that arity
         (#%$make-pvector-rest-procedure (extract-host-procedure proc 1) -1))
       (lambda (proc) #f)))
+
+;; Fast pre-filter for place messages: #t when every element is a value
+;; that a place channel can always pass directly -- a number, character,
+;; boolean, symbol, keyword, void, null, or an immutable string or byte
+;; string.  #f only means the caller must decide with its own, complete
+;; rules: elements such as pairs or nested pvectors land there even
+;; though they may turn out to be allowed.
+(define (core-pvector-place-atomics? pv)
+  ;; the tree-recursive walk costs far less per element than a cursor,
+  ;; and a one-shot continuation makes it exit at the first miss
+  (#%call/1cc
+   (lambda (return)
+     (core-unsafe-pvector-for-each
+      pv
+      (lambda (v)
+        (unless (or (number? v)
+                    (symbol? v)
+                    (char? v)
+                    (boolean? v)
+                    (null? v)
+                    (void? v)
+                    (keyword? v)
+                    (and (string? v) (immutable-string? v))
+                    (and (bytevector? v) (immutable-bytevector? v)))
+          (return #f))))
+     #t)))
 
 ;; The `pvector` constructor: hand-coded code collects the arguments into a
 ;; fresh vector and forwards it here, so the constructor is native for every
@@ -4369,7 +4397,7 @@
       'Empty))
 
 (define (core-pvector-literal-emit! pv state)
-  (let ([pv (core-check-pvector 'core-pvector-literal-emit! pv)])
+  (let ([pv (core-check-pvector 'pvector->literal-datum pv)])
     (cond
      [(core-pvector-empty-record? pv) 'Empty]
      [else
@@ -4409,7 +4437,7 @@
               id)))])))
 
 (define (core-pvector-literal-error msg . args)
-  (error 'core-pvector-literal->pvector (apply format msg args)))
+  (error 'pvector-literal->pvector (apply format msg args)))
 
 (define (core-pvector-literal-proper-list? v)
   (let loop ([v v])

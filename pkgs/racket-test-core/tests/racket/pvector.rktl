@@ -1477,3 +1477,168 @@
         ) ; end call/cc
   ) ; end test
 ) ; end let
+
+;; ---------- error names use public operation names ----------
+
+;; primitives report the public name, not an internal core-* name
+(err/rt-test (pvector-length 5
+              ) ; end pvector-length
+             exn:fail:contract? #rx"^pvector-length:"
+) ; end err/rt-test
+(err/rt-test (pvector-ref 5 0
+              ) ; end pvector-ref
+             exn:fail:contract? #rx"^pvector-ref:"
+) ; end err/rt-test
+(err/rt-test (pvector-ref (pvector 1) 5
+              ) ; end pvector-ref
+             exn:fail? #rx"^pvector-ref:"
+) ; end err/rt-test
+(err/rt-test (pvector-first 5
+              ) ; end pvector-first
+             exn:fail:contract? #rx"^pvector-first:"
+) ; end err/rt-test
+(err/rt-test (pvector-first (pvector
+                            ) ; end pvector
+              ) ; end pvector-first
+             exn:fail? #rx"^pvector-first:"
+) ; end err/rt-test
+(err/rt-test (pvector-last (pvector
+                           ) ; end pvector
+              ) ; end pvector-last
+             exn:fail? #rx"^pvector-last:"
+) ; end err/rt-test
+(err/rt-test (pvector-map 5 add1
+              ) ; end pvector-map
+             exn:fail:contract? #rx"^pvector-map:"
+) ; end err/rt-test
+(err/rt-test (pvector->list 5
+              ) ; end pvector->list
+             exn:fail:contract? #rx"^pvector->list:"
+) ; end err/rt-test
+(err/rt-test (pvector->vector 5
+              ) ; end pvector->vector
+             exn:fail:contract? #rx"^pvector->vector:"
+) ; end err/rt-test
+;; derived operations validate at their own entry
+(err/rt-test (pvector-reverse 5
+              ) ; end pvector-reverse
+             exn:fail:contract? #rx"^pvector-reverse:"
+) ; end err/rt-test
+(err/rt-test (pvector-sort 5 <
+              ) ; end pvector-sort
+             exn:fail:contract? #rx"^pvector-sort:"
+) ; end err/rt-test
+(err/rt-test (pvector-fold-right 5 0 +
+              ) ; end pvector-fold-right
+             exn:fail:contract? #rx"^pvector-fold-right:"
+) ; end err/rt-test
+(err/rt-test (pvector-filter 5 odd?
+              ) ; end pvector-filter
+             exn:fail:contract? #rx"^pvector-filter:"
+) ; end err/rt-test
+(err/rt-test (pvector-count 5 odd?
+              ) ; end pvector-count
+             exn:fail:contract? #rx"^pvector-count:"
+) ; end err/rt-test
+(err/rt-test (pvector-member 5 1
+              ) ; end pvector-member
+             exn:fail:contract? #rx"^pvector-member:"
+) ; end err/rt-test
+(err/rt-test (pvector-andmap 5 odd?
+              ) ; end pvector-andmap
+             exn:fail:contract? #rx"^pvector-andmap:"
+) ; end err/rt-test
+(err/rt-test (pvector-empty? 5
+              ) ; end pvector-empty?
+             exn:fail:contract? #rx"^pvector-empty[?]:"
+) ; end err/rt-test
+(test #t pvector-empty? (pvector
+                        ) ; end pvector
+) ; end test
+(test #f pvector-empty? (pvector 1
+                        ) ; end pvector
+) ; end test
+;; the match pattern for an empty pvector still fails (not raises) on
+;; a non-pvector value
+(test 'no 'match-empty-pattern-non-pvector
+      (match 5
+        [(pvector) 'yes
+        ] ; end clause
+        [_ 'no
+        ] ; end clause
+      ) ; end match
+) ; end test
+
+;; ---------- pvector-keyword-apply ----------
+
+(let ()
+  (define (f x y #:s [s 10] #:t [t 0]) (list x y s t
+                                       ) ; end list
+  ) ; end define f
+  (define (g #:must k x) (list k x
+                          ) ; end list
+  ) ; end define g
+  (test '(1 2 10 0) pvector-keyword-apply f '() '() (pvector 1 2
+                                                    ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) (pvector 1 2
+                                                       ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 7) pvector-keyword-apply f '(#:s #:t) '(5 7) (pvector 1 2
+                                                              ) ; end pvector
+  ) ; end test
+  ;; leading by-position arguments before the pvector
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) 1 (pvector 2
+                                                         ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) 1 2 (pvector
+                                                           ) ; end pvector
+  ) ; end test
+  ;; required keyword supplied / missing
+  (test '(9 1) pvector-keyword-apply g '(#:must) '(9) (pvector 1
+                                                      ) ; end pvector
+  ) ; end test
+  (err/rt-test (pvector-keyword-apply g '() '() (pvector 1
+                                                ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  ;; a plain procedure refuses keywords with a proper error
+  (err/rt-test (pvector-keyword-apply car '(#:s) '(5) (pvector 1
+                                                      ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  ;; large sequence stays correct
+  (test 500500 'kw-apply-large
+        (pvector-keyword-apply (lambda args (apply + args
+                                            ) ; end apply
+                               ) ; end lambda
+                               '() '()
+                               (list->pvector (build-list 1000 add1
+                                              ) ; end build-list
+                               ) ; end list->pvector
+        ) ; end pvector-keyword-apply
+  ) ; end test
+  ;; validation carries this operation's name
+  (err/rt-test (pvector-keyword-apply 5 '() '() (pvector
+                                                ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:t #:s) '(1 2) (pvector
+                                                          ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:s) '(1 2) (pvector
+                                                      ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:s) '(5) '(1 2
+                                                     ) ; end quoted list
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+) ; end let
