@@ -168,7 +168,8 @@
 (test-case "construction and conversion"
   (check-pvector-model (pvector-empty) '())
   (check-pred pvector-empty? (pvector-empty))
-  (check-false (pvector-empty? '(not a pvector)))
+  (check-exn #rx"^pvector-empty[?]: contract violation"
+             (lambda () (pvector-empty? '(not a pvector))))
   (check-true (procedure? pvector))
   (when (bc-native-public-pvector?)
     (check-true (raw:pvector-runtime-adapter-cursor-available?))

@@ -1522,7 +1522,11 @@
   (if bc-native-public? raw:pvector-empty pvector-empty))
 
 (define exported-pvector-empty?
-  (if bc-native-public? raw:pvector-empty? pvector-empty?))
+  (let ([base (if bc-native-public? raw:pvector-empty? pvector-empty?)])
+    (lambda (v)
+      (unless (exported-pvector? v)
+        (raise-argument-error 'pvector-empty? "pvector?" v))
+      (base v))))
 
 (define exported-pvector->list
   (if bc-native-public? raw:pvector->list pvector->list))

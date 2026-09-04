@@ -73,11 +73,11 @@ otherwise.}
 
 @deftogether[(
 @defproc[(pvector-empty) pvector?]
-@defproc[(pvector-empty? [v any/c]) boolean?]
+@defproc[(pvector-empty? [pv pvector?]) boolean?]
 )]{
 
 The @racket[pvector-empty] function returns an empty pvector. The
-@racket[pvector-empty?] predicate returns @racket[#t] when @racket[v]
+@racket[pvector-empty?] predicate returns @racket[#t] when @racket[pv]
 is an empty pvector, and @racket[#f] otherwise.
 
 Both operations take @math{O(1)} time.
@@ -86,7 +86,7 @@ Both operations take @math{O(1)} time.
 #:eval pvector-eval
 (pvector-empty)
 (pvector-empty? (pvector-empty))
-(pvector-empty? null)
+(pvector-empty? (pvector 1 2))
 ]}
 
 @defproc[(pvector [v any/c] ...) pvector?]{

@@ -1548,3 +1548,23 @@
               ) ; end pvector-andmap
              exn:fail:contract? #rx"^pvector-andmap:"
 ) ; end err/rt-test
+(err/rt-test (pvector-empty? 5
+              ) ; end pvector-empty?
+             exn:fail:contract? #rx"^pvector-empty[?]:"
+) ; end err/rt-test
+(test #t pvector-empty? (pvector
+                        ) ; end pvector
+) ; end test
+(test #f pvector-empty? (pvector 1
+                        ) ; end pvector
+) ; end test
+;; the match pattern for an empty pvector still fails (not raises) on
+;; a non-pvector value
+(test 'no 'match-empty-pattern-non-pvector
+      (match 5
+        [(pvector) 'yes
+        ] ; end clause
+        [_ 'no
+        ] ; end clause
+      ) ; end match
+) ; end test
