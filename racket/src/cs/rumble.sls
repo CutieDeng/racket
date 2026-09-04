@@ -411,6 +411,7 @@
           core-pvector-apply
           core-pvector-args
           core-procedure->pvector-rest
+          core-pvector-place-atomics?
           core-vector-apply
           core-pvector-empty
           core-pvector-empty?

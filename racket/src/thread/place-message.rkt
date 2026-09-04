@@ -32,6 +32,9 @@
 (define pvector-cursor-start (and pvector-table (hash-ref pvector-table 'pvector-cursor-start)))
 (define pvector-cursor-value (and pvector-table (hash-ref pvector-table 'pvector-cursor-value)))
 (define pvector-cursor-next (and pvector-table (hash-ref pvector-table 'pvector-cursor-next)))
+;; fast pre-filter: #t means every element is unconditionally allowed
+;; as a direct message, #f decides nothing
+(define pvector-place-atomics? (and pvector-table (hash-ref pvector-table 'pvector-place-atomics? #f)))
 
 (define (allowed? v #:direct? init-direct?)
   (let loop ([v v] [graph #hasheq()] [direct? init-direct?])
@@ -89,6 +92,8 @@
         (and (pvector? v)
              (not (impersonator? v))
              (or (hash-ref graph v #f)
+                 (and pvector-place-atomics?
+                      (pvector-place-atomics? v))
                  (let ([graph (hash-set graph v #t)])
                    (let elem-loop ([cur (pvector-cursor-start v #f)])
                      (cond

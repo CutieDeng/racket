@@ -4186,6 +4186,32 @@
         (#%$make-pvector-rest-procedure (extract-host-procedure proc 1) -1))
       (lambda (proc) #f)))
 
+;; Fast pre-filter for place messages: #t when every element is a value
+;; that a place channel can always pass directly -- a number, character,
+;; boolean, symbol, keyword, void, null, or an immutable string or byte
+;; string.  #f only means the caller must decide with its own, complete
+;; rules: elements such as pairs or nested pvectors land there even
+;; though they may turn out to be allowed.
+(define (core-pvector-place-atomics? pv)
+  ;; the tree-recursive walk costs far less per element than a cursor,
+  ;; and a one-shot continuation makes it exit at the first miss
+  (#%call/1cc
+   (lambda (return)
+     (core-unsafe-pvector-for-each
+      pv
+      (lambda (v)
+        (unless (or (number? v)
+                    (symbol? v)
+                    (char? v)
+                    (boolean? v)
+                    (null? v)
+                    (void? v)
+                    (keyword? v)
+                    (and (string? v) (immutable-string? v))
+                    (and (bytevector? v) (immutable-bytevector? v)))
+          (return #f))))
+     #t)))
+
 ;; The `pvector` constructor: hand-coded code collects the arguments into a
 ;; fresh vector and forwards it here, so the constructor is native for every
 ;; argument count, including through `apply` and `call-with-values`.

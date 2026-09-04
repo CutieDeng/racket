@@ -265,7 +265,8 @@
         'pvector? core-pvector?
         'pvector-cursor-start core-pvector-cursor-start
         'pvector-cursor-value core-pvector-cursor-value
-        'pvector-cursor-next core-pvector-cursor-next)]
+        'pvector-cursor-next core-pvector-cursor-next
+        'pvector-place-atomics? core-pvector-place-atomics?)]
       [else #f]))
 
   ;; Tie knots:
