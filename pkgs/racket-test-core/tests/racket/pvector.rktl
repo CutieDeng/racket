@@ -1568,3 +1568,77 @@
         ] ; end clause
       ) ; end match
 ) ; end test
+
+;; ---------- pvector-keyword-apply ----------
+
+(let ()
+  (define (f x y #:s [s 10] #:t [t 0]) (list x y s t
+                                       ) ; end list
+  ) ; end define f
+  (define (g #:must k x) (list k x
+                          ) ; end list
+  ) ; end define g
+  (test '(1 2 10 0) pvector-keyword-apply f '() '() (pvector 1 2
+                                                    ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) (pvector 1 2
+                                                       ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 7) pvector-keyword-apply f '(#:s #:t) '(5 7) (pvector 1 2
+                                                              ) ; end pvector
+  ) ; end test
+  ;; leading by-position arguments before the pvector
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) 1 (pvector 2
+                                                         ) ; end pvector
+  ) ; end test
+  (test '(1 2 5 0) pvector-keyword-apply f '(#:s) '(5) 1 2 (pvector
+                                                           ) ; end pvector
+  ) ; end test
+  ;; required keyword supplied / missing
+  (test '(9 1) pvector-keyword-apply g '(#:must) '(9) (pvector 1
+                                                      ) ; end pvector
+  ) ; end test
+  (err/rt-test (pvector-keyword-apply g '() '() (pvector 1
+                                                ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  ;; a plain procedure refuses keywords with a proper error
+  (err/rt-test (pvector-keyword-apply car '(#:s) '(5) (pvector 1
+                                                      ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract?
+  ) ; end err/rt-test
+  ;; large sequence stays correct
+  (test 500500 'kw-apply-large
+        (pvector-keyword-apply (lambda args (apply + args
+                                            ) ; end apply
+                               ) ; end lambda
+                               '() '()
+                               (list->pvector (build-list 1000 add1
+                                              ) ; end build-list
+                               ) ; end list->pvector
+        ) ; end pvector-keyword-apply
+  ) ; end test
+  ;; validation carries this operation's name
+  (err/rt-test (pvector-keyword-apply 5 '() '() (pvector
+                                                ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:t #:s) '(1 2) (pvector
+                                                          ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:s) '(1 2) (pvector
+                                                      ) ; end pvector
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+  (err/rt-test (pvector-keyword-apply f '(#:s) '(5) '(1 2
+                                                     ) ; end quoted list
+               ) ; end pvector-keyword-apply
+               exn:fail:contract? #rx"^pvector-keyword-apply:"
+  ) ; end err/rt-test
+) ; end let

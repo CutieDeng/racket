@@ -28,6 +28,7 @@
              new-app
              make-keyword-procedure
              keyword-apply
+             keyword-procedure-extract/method
              procedure-keywords
              new:procedure-reduce-arity
              new:procedure-reduce-arity-mask

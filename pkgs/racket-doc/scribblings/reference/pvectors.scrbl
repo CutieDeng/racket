@@ -558,6 +558,32 @@ list is constructed.
 (pvector-apply list 'a 'b (pvector 1 2))
 ]}
 
+@defproc[(pvector-keyword-apply [proc procedure?]
+                                [kw-lst (listof keyword?)]
+                                [kw-val-lst list?]
+                                [v any/c] ...
+                                [pv pvector?])
+         any]{
+
+Like @racket[keyword-apply], but with the argument sequence in a
+pvector: calls @racket[proc] with the keyword arguments described by
+@racket[kw-lst] and @racket[kw-val-lst] and with the @racket[v]s
+followed by the elements of @racket[pv] as its by-position arguments.
+The result is the same as
+@racket[(keyword-apply proc kw-lst kw-val-lst v ... (pvector->list pv))],
+but no intermediate list is constructed for the by-position arguments.
+As for @racket[keyword-apply], the keywords in @racket[kw-lst] must be
+distinct and sorted by @racket[keyword<?].
+
+@examples[
+#:eval pvector-eval
+(define (rectangle width height #:filler [filler #\space])
+  (list width height filler))
+(pvector-keyword-apply rectangle '() '() (pvector 2 3))
+(pvector-keyword-apply rectangle '(#:filler) '(#\x) (pvector 2 3))
+(pvector-keyword-apply rectangle '(#:filler) '(#\x) 2 (pvector 3))
+]}
+
 @defproc[(make-pvector-literal-pool) pvector-literal-pool?]{
 
 Returns a mutable output pool for pvector literal data. Reusing the

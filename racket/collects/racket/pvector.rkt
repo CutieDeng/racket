@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require (prefix-in raw: "private/pvector-runtime-adapter.rkt")
+(require (only-in racket/private/kw keyword-procedure-extract/method)
+         (prefix-in raw: "private/pvector-runtime-adapter.rkt")
          "private/serialize-structs.rkt"
          (only-in "private/for.rkt"
                   define-sequence-syntax
@@ -17,6 +18,7 @@
          (for-syntax racket/base))
 
 (provide pvector-apply
+         pvector-keyword-apply
          procedure->pvector-rest
          (rename-out [exported-pvector? pvector?]
                      [exported-pvector-empty pvector-empty]
@@ -517,6 +519,49 @@
   (or (and raw:core-procedure->pvector-rest
            (raw:core-procedure->pvector-rest proc))
       (lambda args (proc (list->pvector args)))))
+
+;; Like `keyword-apply` with the argument sequence in a pvector: after
+;; the same validation, the extracted procedure (which takes the
+;; keyword lists as its two leading positional arguments) goes through
+;; `pvector-apply`, so the elements reach the argument registers and
+;; frame slots without an intermediate list.
+(define (pvector-keyword-apply proc kws kw-vals seq . more)
+  (define who 'pvector-keyword-apply)
+  (unless (procedure? proc)
+    (raise-argument-error who "procedure?" proc))
+  (let loop ([ks kws])
+    (cond
+      [(null? ks) (void)]
+      [(or (not (pair? ks)) (not (keyword? (car ks))))
+       (raise-argument-error who "(listof keyword?)" kws)]
+      [(null? (cdr ks)) (void)]
+      [(or (not (pair? (cdr ks))) (not (keyword? (cadr ks))))
+       (loop (cdr ks))]
+      [(keyword<? (car ks) (cadr ks))
+       (loop (cdr ks))]
+      [else
+       (raise-argument-error who "(and/c (listof keyword?) sorted? distinct?)" kws)]))
+  (unless (list? kw-vals)
+    (raise-argument-error who "list?" kw-vals))
+  (unless (= (length kws) (length kw-vals))
+    (raise-arguments-error who
+                           "keyword list length does not match value list length"
+                           "keyword list" kws
+                           "value list" kw-vals))
+  (let* ([all (cons seq more)]
+         [pv (let loop ([l all]) (if (null? (cdr l)) (car l) (loop (cdr l))))]
+         [vs (let loop ([l all]) (if (null? (cdr l)) '() (cons (car l) (loop (cdr l)))))])
+    (unless (exported-pvector? pv)
+      (raise-argument-error who "pvector?" pv))
+    (if (null? kws)
+        (apply pvector-apply proc (append vs (list pv)))
+        (apply pvector-apply
+               (keyword-procedure-extract/method
+                kws
+                (+ 2 (length vs) (exported-pvector-length pv))
+                proc
+                0)
+               kws kw-vals (append vs (list pv))))))
 
 (define pvector-apply
   (case-lambda
