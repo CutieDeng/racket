@@ -3965,6 +3965,62 @@
      len prefix-len middle suffix-len
      p0 p1 p2 p3 s0 s1 s2 s3)))
 
+;; Mirror reversal: every node carries its own measure, so a node
+;; reverses by reallocating with the same packed word and the children
+;; in the opposite order, and the tree reverses by swapping the
+;; (internally reversed) prefix and suffix digit groups around the
+;; mirrored middle.  No intermediate vector is involved.
+(define (core-pvector-node-reverse-all node)
+  (let ([level (core-pvector-node-level node)])
+    (if (fx= level 1)
+        (if (core-pvector-node2? node)
+            (%make-core-pvector-node2-packed
+             (core-pvector-node2-packed node)
+             (core-pvector-node2-b node)
+             (core-pvector-node2-a node))
+            (%make-core-pvector-node3-packed
+             (core-pvector-node3-packed node)
+             (core-pvector-node3-c node)
+             (core-pvector-node3-b node)
+             (core-pvector-node3-a node)))
+        (if (core-pvector-node2? node)
+            (%make-core-pvector-node2-packed
+             (core-pvector-node2-packed node)
+             (core-pvector-node-reverse-all (core-pvector-node2-b node))
+             (core-pvector-node-reverse-all (core-pvector-node2-a node)))
+            (%make-core-pvector-node3-packed
+             (core-pvector-node3-packed node)
+             (core-pvector-node-reverse-all (core-pvector-node3-c node))
+             (core-pvector-node-reverse-all (core-pvector-node3-b node))
+             (core-pvector-node-reverse-all (core-pvector-node3-a node)))))))
+
+(define (core-pvector-reverse pv)
+  (let ([pv (core-check-pvector 'pvector-reverse pv)])
+    (cond
+     [(core-pvector-empty-record? pv) pv]
+     [(core-pvector-inline? pv) pv]
+     [else
+      (let* ([len (core-pvector-large-finger-length pv)]
+             [plen (core-pvector-large-finger-prefix-length pv)]
+             [slen (core-pvector-large-finger-suffix-length pv)]
+             [middle (let ([m (core-pvector-large-finger-middle pv)])
+                       (if (fx= len (fx+ plen slen))
+                           m
+                           (core-pvector-node-reverse-all m)))]
+             ;; new prefix = suffix reversed; new suffix = prefix reversed
+             [rev-s (lambda (i)
+                      (if (fx< i slen)
+                          (core-pvector-large-finger-suffix-ref pv (fx- slen (fx+ i 1)))
+                          #f))]
+             [rev-p (lambda (i)
+                      (if (fx< i plen)
+                          (core-pvector-large-finger-prefix-ref pv (fx- plen (fx+ i 1)))
+                          #f))])
+        (%make-core-pvector-large-finger
+         len slen middle plen
+         (rev-s 0) (rev-s 1) (rev-s 2) (rev-s 3)
+         (rev-p 0) (rev-p 1) (rev-p 2) (rev-p 3)))])))
+
 (define (core-pvector-map pv proc)
   (unless (procedure? proc)
     (raise-argument-error 'pvector-map "procedure?" proc))
