@@ -3916,6 +3916,55 @@
 	               (core-pvector-delete-by-copy/unchecked pv len index)
 	               deleted))))])))
 
+;; Shape-preserving map: rebuild the node tree directly, copying each
+;; node's packed measure/level word verbatim (a map changes no measures),
+;; so no intermediate vector and no re-chunking is involved.  The
+;; explicit let* sequencing keeps the procedure's call order
+;; left-to-right, which is observable and guaranteed.
+(define (core-pvector-node-map-all node proc)
+  (let ([level (core-pvector-node-level node)])
+    (if (fx= level 1)
+        (if (core-pvector-node2? node)
+            (let* ([a (proc (core-pvector-node2-a node))]
+                   [b (proc (core-pvector-node2-b node))])
+              (%make-core-pvector-node2-packed
+               (core-pvector-node2-packed node) a b))
+            (let* ([a (proc (core-pvector-node3-a node))]
+                   [b (proc (core-pvector-node3-b node))]
+                   [c (proc (core-pvector-node3-c node))])
+              (%make-core-pvector-node3-packed
+               (core-pvector-node3-packed node) a b c)))
+        (if (core-pvector-node2? node)
+            (let* ([a (core-pvector-node-map-all (core-pvector-node2-a node) proc)]
+                   [b (core-pvector-node-map-all (core-pvector-node2-b node) proc)])
+              (%make-core-pvector-node2-packed
+               (core-pvector-node2-packed node) a b))
+            (let* ([a (core-pvector-node-map-all (core-pvector-node3-a node) proc)]
+                   [b (core-pvector-node-map-all (core-pvector-node3-b node) proc)]
+                   [c (core-pvector-node-map-all (core-pvector-node3-c node) proc)])
+              (%make-core-pvector-node3-packed
+               (core-pvector-node3-packed node) a b c))))))
+
+(define (core-pvector-large-finger-map-all pv proc)
+  (let* ([len (core-pvector-large-finger-length pv)]
+         [prefix-len (core-pvector-large-finger-prefix-length pv)]
+         [suffix-len (core-pvector-large-finger-suffix-length pv)]
+         [p0 (if (fx< 0 prefix-len) (proc (core-pvector-large-finger-p0 pv)) #f)]
+         [p1 (if (fx< 1 prefix-len) (proc (core-pvector-large-finger-p1 pv)) #f)]
+         [p2 (if (fx< 2 prefix-len) (proc (core-pvector-large-finger-p2 pv)) #f)]
+         [p3 (if (fx< 3 prefix-len) (proc (core-pvector-large-finger-p3 pv)) #f)]
+         [middle (let ([m (core-pvector-large-finger-middle pv)])
+                   (if (fx= len (fx+ prefix-len suffix-len))
+                       m
+                       (core-pvector-node-map-all m proc)))]
+         [s0 (if (fx< 0 suffix-len) (proc (core-pvector-large-finger-s0 pv)) #f)]
+         [s1 (if (fx< 1 suffix-len) (proc (core-pvector-large-finger-s1 pv)) #f)]
+         [s2 (if (fx< 2 suffix-len) (proc (core-pvector-large-finger-s2 pv)) #f)]
+         [s3 (if (fx< 3 suffix-len) (proc (core-pvector-large-finger-s3 pv)) #f)])
+    (%make-core-pvector-large-finger
+     len prefix-len middle suffix-len
+     p0 p1 p2 p3 s0 s1 s2 s3)))
+
 (define (core-pvector-map pv proc)
   (unless (procedure? proc)
     (raise-argument-error 'pvector-map "procedure?" proc))
@@ -3947,9 +3996,7 @@
        (proc (core-pvector-large-finger-ref/known-length pv len 2))
        (proc (core-pvector-large-finger-ref/known-length pv len 3)))]
      [else
-      (let ([vec (make-vector len)])
-        (core-pvector-map-range!/known-length vec 0 pv len 0 len proc)
-        (core-vector->pvector/no-copy vec))])))
+      (core-pvector-large-finger-map-all pv proc)])))
 
 (define (core-unsafe-pvector-for-each pv proc)
   (let ([len (core-pvector-length/unchecked pv)])
