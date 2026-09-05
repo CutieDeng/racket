@@ -125,6 +125,20 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   }
   vspace_offsets[vspaces_count] = VFASLHEADER_DATA_SIZE(header);
 
+  /* attribution aid: report each loaded vfasl block's per-space sizes */
+  if (getenv("PLT_VFASL_STATS")) {
+    static const char *vspace_names[] =
+      { "symbol", "rtd", "closure", "impure", "pure-typed",
+        "impure-record", "code", "data", "reloc" };
+    fprintf(stderr, ";; vfasl block: total %ld", (long)VFASLHEADER_DATA_SIZE(header));
+    for (s = 0; s < vspaces_count; s++) {
+      long sz = (long)(vspace_offsets[s+1] - vspace_offsets[s]);
+      if (sz > 0)
+        fprintf(stderr, " %s %ld", vspace_names[s], sz);
+    }
+    fprintf(stderr, "\n");
+  }
+
   bv_addr = (bv ? &BVIT(bv, size_vfasl_header + offset) : NULL);
 
   to_static = (S_vfasl_boot_mode > 0);
