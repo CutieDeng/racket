@@ -112,6 +112,7 @@
 (define core-pvector-apply (maybe-kernel 'core-pvector-apply))
 (define core-pvector-args (maybe-kernel 'core-pvector-args))
 (define core-procedure->pvector-rest (maybe-kernel 'core-procedure->pvector-rest))
+(define core-pvector-reverse (maybe-kernel 'core-pvector-reverse))
 (define core-make-single-pvector (maybe-kernel 'core-make-single-pvector))
 (define core-make-deep2-pvector (maybe-kernel 'core-make-deep2-pvector))
 (define core-make-deep3-pvector (maybe-kernel 'core-make-deep3-pvector))
@@ -600,13 +601,15 @@
 
 (define (pvector-reverse pv)
   (check-pvector 'pvector-reverse pv)
-  (let ([n (pvector-length pv)])
-    (if (unsafe-fx<= n 1)
-        pv
-        (let ([vec (make-vector n)])
-          (pvector-fold-left pv (unsafe-fx- n 1)
-                             (lambda (i x) (vector-set! vec i x) (unsafe-fx- i 1)))
-          (fresh-vector->pvector vec)))))
+  (if core-pvector-reverse
+      (core-pvector-reverse pv)
+      (let ([n (pvector-length pv)])
+        (if (unsafe-fx<= n 1)
+            pv
+            (let ([vec (make-vector n)])
+              (pvector-fold-left pv (unsafe-fx- n 1)
+                                 (lambda (i x) (vector-set! vec i x) (unsafe-fx- i 1)))
+              (fresh-vector->pvector vec))))))
 
 (define (pvector-sort pv less?
                       #:key [key #f]

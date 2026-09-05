@@ -1642,3 +1642,66 @@
                exn:fail:contract? #rx"^pvector-keyword-apply:"
   ) ; end err/rt-test
 ) ; end let
+
+;; ---------- structural map and reverse ----------
+
+;; map calls the procedure left-to-right (observable order)
+(test '(0 1 2 3 4 5 6 7 8 9) 'map-call-order
+      (let ([order '()
+            ] ; end binding
+        ) ; end bindings
+        (pvector-map (list->pvector (build-list 10 values
+                                    ) ; end build-list
+                     ) ; end list->pvector
+                     (lambda (x) (set! order (cons x order
+                                             ) ; end cons
+                                  ) ; end set!
+                                  x
+                     ) ; end lambda
+        ) ; end pvector-map
+        (reverse order
+        ) ; end reverse
+      ) ; end let
+) ; end test
+;; reverse agrees with the list reverse across construction shapes
+(let ([shapes (list (pvector
+                    ) ; end pvector
+                    (pvector 1
+                    ) ; end pvector
+                    (pvector 1 2 3 4 5
+                    ) ; end pvector
+                    (list->pvector (build-list 1000 values
+                                   ) ; end build-list
+                    ) ; end list->pvector
+                    (let ([h (list->pvector (build-list 600 values
+                                            ) ; end build-list
+                             ) ; end list->pvector
+                            ]
+                      ) ; end bindings
+                      (pvector-append h h
+                      ) ; end pvector-append
+                    ) ; end let
+              ) ; end list
+      ]
+  ) ; end bindings
+  (for-each (lambda (pv)
+              (test (reverse (pvector->list pv
+                             ) ; end pvector->list
+                    ) ; end reverse
+                    'reverse-shape
+                    (pvector->list (pvector-reverse pv
+                                   ) ; end pvector-reverse
+                    ) ; end pvector->list
+              ) ; end test
+              (test (pvector->list pv
+                    ) ; end pvector->list
+                    'reverse-idempotent
+                    (pvector->list (pvector-reverse (pvector-reverse pv
+                                                    ) ; end inner reverse
+                                   ) ; end outer reverse
+                    ) ; end pvector->list
+              ) ; end test
+            ) ; end lambda
+            shapes
+  ) ; end for-each
+) ; end let
