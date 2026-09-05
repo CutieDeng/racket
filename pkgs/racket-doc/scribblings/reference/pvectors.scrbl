@@ -49,8 +49,10 @@ Traversal operations such as @racket[stream-for-each],
 and @racket[stream-ormap] visit pvector elements in order.
 Pvectors compare with @racket[equal?] element by element. Writing a
 pvector with @racket[write] or @racket[pretty-write] emits a
-@racketresultfont{#pvector} literal that can be read back with
-@racket[read]. Displaying a pvector uses a compact
+readable @racketresultfont{#pvector(elem ...)} literal holding the
+written elements, and @racket[read] accepts that form directly, so
+@racketresultfont{#pvector(1 2 3)} reads as
+@racket[(pvector 1 2 3)]. Displaying a pvector uses a compact
 @racketresultfont{(pvector ...)} form for human-readable output.
 
 @note-lib[racket/pvector #:use-sources (racket/pvector)]
@@ -477,6 +479,30 @@ must accept one argument.
 ]}
 
 @deftogether[(
+@defform*[((pvector-lambda rest-id body ...+)
+           (pvector-lambda (arg-id ... . rest-id) body ...+))]
+@defform[(define/pvector-rest (name . formals) body ...+)]
+)]{
+
+The @racket[pvector-lambda] form produces a variadic procedure whose
+arguments arrive as one pvector bound to @racket[rest-id], with no
+intermediate list --- shorthand for @racket[procedure->pvector-rest]
+over a one-argument @racket[lambda]. The second shape binds the
+@racket[arg-id]s to the leading by-position arguments and the
+remaining arguments as a pvector; the procedure's arity requires at
+least as many arguments as there are @racket[arg-id]s. The
+@racket[define/pvector-rest] form is the corresponding definition
+shorthand.
+
+@examples[
+#:eval pvector-eval
+((pvector-lambda pv (pvector-length pv)) 'a 'b 'c)
+(define/pvector-rest (scaled k . pv)
+  (pvector-map pv (lambda (x) (* k x))))
+(scaled 10 1 2 3)
+]}
+
+@deftogether[(
 @defproc[(pvector-fold-left [pv pvector?] [init any/c]
                             [proc (any/c any/c . -> . any/c)]) any/c]
 @defproc[(pvector-fold-right [pv pvector?] [init any/c]
@@ -676,10 +702,15 @@ Converts a datum in either single-pvector literal shape accepted by the
 Writes @racketresultfont{#pvector} followed by the datum produced by
 @racket[pvector->literal-datum]. This function is an explicit literal
 output helper. The Racket reader accepts @racketresultfont{#pvector}
-input in the expanded form @racketresultfont{#pvector((elem ...) #f)}
-and in the raw form
-@racketresultfont{#pvector(root-id-or-Empty defs)}. The
-@racket[read-accept-pvector] parameter controls both forms, and
+input in three forms: the readable form
+@racketresultfont{#pvector(elem ...)}, whose datum is any list that
+does not match the other two shapes; the expanded form
+@racketresultfont{#pvector((elem ...) #f)}, which can express every
+element list and so serves as the escape for element lists whose
+shape coincides with the other forms; and the raw form
+@racketresultfont{#pvector(root-id-or-Empty defs)}, where
+@racketresultfont{defs} is a nonempty list of two-element lists. The
+@racket[read-accept-pvector] parameter controls all forms, and
 @racket[read-accept-pvector-raw] separately controls the raw form.
 When @racket[pretty?] is true, the literal datum is emitted with
 @racket[pretty-write] instead of @racket[write].}
