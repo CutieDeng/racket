@@ -690,16 +690,17 @@
              ) ; end parameterize
             ) ; end regexp-match?
       ) ; end test
-      (test #t values
-            (regexp-match?
-             #rx"expanded element list is not a proper list: 1$"
-             (parameterize ([read-accept-pvector-raw #f
-                            ] ; end read-accept-pvector-raw
-                           ) ; end parameterize args
-               (read-pvector-error-message "#pvector(1 #f)"
-               ) ; end read-pvector-error-message
-             ) ; end parameterize
-            ) ; end regexp-match?
+      ;; under the readable-literal rules, `(1 #f)` matches neither the
+      ;; expanded nor the raw shape, so it reads as a plain element list
+      (test '(1 #f)
+            pvector->list
+            (parameterize ([read-accept-pvector-raw #f
+                           ] ; end read-accept-pvector-raw
+                          ) ; end parameterize args
+              (read (open-input-string "#pvector(1 #f)"
+                    ) ; end open-input-string
+              ) ; end read
+            ) ; end parameterize
       ) ; end test
       (test #t values
             (regexp-match?
@@ -708,12 +709,11 @@
              ) ; end read-pvector-error-message
             ) ; end regexp-match?
       ) ; end test
-      (test #t values
-            (regexp-match?
-             #rx"expanded element list is not a proper list: 1$"
-             (read-pvector-error-message "#pvector(1 #f)"
-             ) ; end read-pvector-error-message
-            ) ; end regexp-match?
+      (test '(1 #f)
+            pvector->list
+            (read (open-input-string "#pvector(1 #f)"
+                  ) ; end open-input-string
+            ) ; end read
       ) ; end test
       (test #t values
             (regexp-match?
@@ -798,13 +798,13 @@
              ) ; end read-pvector-error-message
             ) ; end regexp-match?
       ) ; end test
-      (test #t values
-            (regexp-match?
-             #rx"forward-reference option expects one definition list"
-             (read-pvector-error-message
-              "#pvector(0 (#:allow-forward-refs))"
-             ) ; end read-pvector-error-message
-            ) ; end regexp-match?
+      ;; a datum that does not match the raw shape reads as a plain
+      ;; element list under the readable-literal rules
+      (test '(0 (#:allow-forward-refs))
+            pvector->list
+            (read (open-input-string "#pvector(0 (#:allow-forward-refs))"
+                  ) ; end open-input-string
+            ) ; end read
       ) ; end test
       (test #t values
             (regexp-match?
@@ -1704,4 +1704,76 @@
             ) ; end lambda
             shapes
   ) ; end for-each
+) ; end let
+
+;; ---------- pvector-lambda and readable literals ----------
+
+(test '(1 2 3) (pvector-lambda pv (pvector->list pv
+                                  ) ; end pvector->list
+               ) ; end pvector-lambda
+      1 2 3
+) ; end test
+(test '(1 2 (3 4)) (pvector-lambda (x y . pv) (list x y (pvector->list pv
+                                                        ) ; end pvector->list
+                                              ) ; end list
+                   ) ; end pvector-lambda
+      1 2 3 4
+) ; end test
+(arity-test (pvector-lambda (x y . pv) x
+            ) ; end pvector-lambda
+            2 -1
+) ; end arity-test
+(err/rt-test ((pvector-lambda (x y . pv) x
+              ) ; end pvector-lambda
+              1
+             ) ; end call
+             exn:fail:contract:arity?
+) ; end err/rt-test
+(test 10 'define/pvector-rest
+      (let (
+        ) ; end bindings
+        (define/pvector-rest (sum-all . pv) (pvector-fold-left pv 0 +
+                                            ) ; end pvector-fold-left
+        ) ; end define/pvector-rest
+        (sum-all 1 2 3 4
+        ) ; end sum-all
+      ) ; end let
+) ; end test
+;; readable literal form
+(test '(1 2 3) pvector->list (read (open-input-string "#pvector(1 2 3)"
+                                   ) ; end open-input-string
+                             ) ; end read
+) ; end test
+(test #t pvector-empty? (read (open-input-string "#pvector()"
+                              ) ; end open-input-string
+                        ) ; end read
+) ; end test
+(test '(1 2) pvector->list (read (open-input-string "#pvector(1 2)"
+                                 ) ; end open-input-string
+                           ) ; end read
+) ; end test
+;; the elements escape form expresses shape-colliding element lists
+(test '((1 2) 3) pvector->list (read (open-input-string "#pvector(((1 2) 3) #f)"
+                                     ) ; end open-input-string
+                               ) ; end read
+) ; end test
+;; write emits the readable form and round-trips
+(let ([pv (list->pvector (build-list 100 values
+                         ) ; end build-list
+          ) ; end list->pvector
+         ]
+  ) ; end bindings
+  (test pv 'write-read-round-trip
+        (read (open-input-string (let ([o (open-output-string
+                                          ) ; end open-output-string
+                                         ]
+                                    ) ; end bindings
+                                    (write pv o
+                                    ) ; end write
+                                    (get-output-string o
+                                    ) ; end get-output-string
+                                  ) ; end let
+              ) ; end open-input-string
+        ) ; end read
+  ) ; end test
 ) ; end let

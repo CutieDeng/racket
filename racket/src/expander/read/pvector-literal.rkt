@@ -27,11 +27,40 @@
                   accum-str))
   c)
 
+;; The elements form is `((element ...) #f)`; it can express any
+;; element list, so it doubles as the unambiguous escape for the two
+;; shapes below.
+(define (elements-pvector-literal-datum? datum)
+  (and (pair? datum)
+       (pair? (cdr datum))
+       (null? (cddr datum))
+       (eq? (cadr datum) #f)
+       (list? (car datum))))
+
+;; The raw (structural) form is `(root-id ((id form) ...))` or
+;; `(root-id (#:allow-forward-refs ((id form) ...)))`; requiring the
+;; definitions to be a nonempty list of two-element lists keeps almost
+;; every plain element list out of this shape.
+(define (raw-defs-shape? defs)
+  (and (pair? defs)
+       (list? defs)
+       (andmap (lambda (def)
+                 (and (pair? def)
+                      (pair? (cdr def))
+                      (null? (cddr def))))
+               defs)))
+
 (define (raw-pvector-literal-datum? datum)
   (and (pair? datum)
        (pair? (cdr datum))
        (null? (cddr datum))
-       (not (eq? (cadr datum) #f))))
+       (let ([defs (cadr datum)])
+         (or (raw-defs-shape? defs)
+             (and (pair? defs)
+                  (pair? (cdr defs))
+                  (null? (cddr defs))
+                  (eq? (car defs) '#:allow-forward-refs)
+                  (raw-defs-shape? (cadr defs)))))))
 
 ;; `#pv` has been read.
 (define (read-pvector read-one dispatch-c init-c second-c accum-str in config)
@@ -43,13 +72,21 @@
     (cond
       [(null? chars)
        (define datum (read-one #f in (disable-wrapping config)))
-       (when (and (not (check-parameter read-accept-pvector-raw config))
-                  (raw-pvector-literal-datum? datum))
-         (reader-error in config "`#pvector` raw literals not enabled"))
+       (define normalized
+         (cond
+           [(elements-pvector-literal-datum? datum) datum]
+           [(raw-pvector-literal-datum? datum)
+            (unless (check-parameter read-accept-pvector-raw config)
+              (reader-error in config "`#pvector` raw literals not enabled"))
+            datum]
+           [(list? datum)
+            ;; plain elements form: `#pvector(element ...)`
+            (list datum #f)]
+           [else datum]))
        (wrap (catch-and-reraise-as-reader
               in
               config
-              (core-pvector-literal->pvector datum))
+              (core-pvector-literal->pvector normalized))
              in
              config
              init-c)]

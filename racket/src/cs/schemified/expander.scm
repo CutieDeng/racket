@@ -469,6 +469,7 @@
 (define kw2836 (string->keyword "missing"))
 (define nhash2607 (cons #f (hasheq)))
 (define rx2897 (regexp "/+"))
+(define kw3342 (string->keyword "allow-forward-refs"))
 (define rx2900 (byte-regexp #vu8(91 46 93 40 91 94 46 93 42 41 36)))
 (define rx2937 (regexp "[.]zo$"))
 (define rx2418 (regexp "[.]ss$"))
@@ -69518,11 +69519,46 @@
                 temp4_0
                 (list expected_0 accum-str_0)))))
          c_0)))))
+(define elements-pvector-literal-datum?
+  (lambda (datum_0)
+    (if (pair? datum_0)
+      (if (pair? (cdr datum_0))
+        (if (null? (cddr datum_0))
+          (if (eq? (cadr datum_0) #f) (list? (car datum_0)) #f)
+          #f)
+        #f)
+      #f)))
+(define raw-defs-shape?
+  (lambda (defs_0)
+    (if (pair? defs_0)
+      (if (list? defs_0)
+        (andmap_2814
+         (lambda (def_0)
+           (if (pair? def_0)
+             (if (pair? (cdr def_0)) (null? (cddr def_0)) #f)
+             #f))
+         defs_0)
+        #f)
+      #f)))
 (define raw-pvector-literal-datum?
   (lambda (datum_0)
     (if (pair? datum_0)
       (if (pair? (cdr datum_0))
-        (if (null? (cddr datum_0)) (not (eq? (cadr datum_0) #f)) #f)
+        (if (null? (cddr datum_0))
+          (let ((defs_0 (cadr datum_0)))
+            (let ((or-part_0 (raw-defs-shape? defs_0)))
+              (if or-part_0
+                or-part_0
+                (if (pair? defs_0)
+                  (if (pair? (cdr defs_0))
+                    (if (null? (cddr defs_0))
+                      (if (eq? (car defs_0) kw3342)
+                        (raw-defs-shape? (cadr defs_0))
+                        #f)
+                      #f)
+                    #f)
+                  #f))))
+          #f)
         #f)
       #f)))
 (define read-pvector
@@ -69561,29 +69597,33 @@
                         #f
                         in_0
                         (disable-wrapping config_0))))
-                  (begin
-                    (if (if (not
-                             (check-parameter
-                              1/read-accept-pvector-raw
-                              config_0))
-                          (raw-pvector-literal-datum? datum_0)
-                          #f)
-                      (let ((temp12_0 "`#pvector` raw literals not enabled"))
-                        (reader-error.1
-                         unsafe-undefined
-                         '#\x78
-                         #f
-                         unsafe-undefined
-                         in_0
-                         config_0
-                         temp12_0
-                         (list)))
-                      (void))
+                  (let ((normalized_0
+                         (if (elements-pvector-literal-datum? datum_0)
+                           datum_0
+                           (if (raw-pvector-literal-datum? datum_0)
+                             (begin
+                               (if (check-parameter
+                                    1/read-accept-pvector-raw
+                                    config_0)
+                                 (void)
+                                 (let ((temp12_0
+                                        "`#pvector` raw literals not enabled"))
+                                   (reader-error.1
+                                    unsafe-undefined
+                                    '#\x78
+                                    #f
+                                    unsafe-undefined
+                                    in_0
+                                    config_0
+                                    temp12_0
+                                    (list))))
+                               datum_0)
+                             (if (list? datum_0) (list datum_0 #f) datum_0)))))
                     (wrap
                      (catch-and-reraise-as-reader/proc
                       in_0
                       config_0
-                      (lambda () (core-pvector-literal->pvector datum_0)))
+                      (lambda () (core-pvector-literal->pvector normalized_0)))
                      in_0
                      config_0
                      init-c_0)))

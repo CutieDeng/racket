@@ -20,6 +20,8 @@
 (provide pvector-apply
          pvector-keyword-apply
          procedure->pvector-rest
+         pvector-lambda
+         define/pvector-rest
          (rename-out [exported-pvector? pvector?]
                      [exported-pvector-empty pvector-empty]
                      [exported-pvector-empty? pvector-empty?]
@@ -519,6 +521,44 @@
   (or (and raw:core-procedure->pvector-rest
            (raw:core-procedure->pvector-rest proc))
       (lambda args (proc (list->pvector args)))))
+
+;; `(pvector-lambda pv body ...)` is a variadic procedure whose
+;; arguments arrive as one pvector, riding the hand-coded wrapper from
+;; `procedure->pvector-rest`, so no rest list is built.  The
+;; `(pvector-lambda (x ... . pv) body ...)` form binds leading
+;; by-position arguments first and the remaining arguments as a
+;; pvector; its arity is reduced accordingly so arity errors and
+;; `procedure-arity` report the fixed arguments.
+(define-syntax (pvector-lambda stx)
+  (syntax-case stx ()
+    [(_ rest-id body ...)
+     (identifier? #'rest-id)
+     #'(procedure->pvector-rest (lambda (rest-id) body ...))]
+    [(_ (arg ... . rest-id) body ...)
+     (and (identifier? #'rest-id)
+          (andmap identifier? (syntax->list #'(arg ...))))
+     (let ([n-fixed (length (syntax->list #'(arg ...)))])
+       (if (zero? n-fixed)
+           #'(procedure->pvector-rest (lambda (rest-id) body ...))
+           (with-syntax ([n n-fixed]
+                         [(idx ...) (for/list ([i (in-range n-fixed)]) i)])
+             #'(procedure-reduce-arity-mask
+                (procedure->pvector-rest
+                 (lambda (all)
+                   (let ([arg (pvector-ref all idx)] ...
+                         [rest-id (pvector-drop all n)])
+                     body ...)))
+                (arithmetic-shift -1 n)
+                'pvector-lambda))))]))
+
+(define-syntax (define/pvector-rest stx)
+  (syntax-case stx ()
+    [(_ (name . formals) body ...)
+     (identifier? #'name)
+     ;; the wrapper's code carries a generic name, so rename the
+     ;; definition's procedure after it
+     #'(define name
+         (procedure-rename (pvector-lambda formals body ...) 'name))]))
 
 ;; Like `keyword-apply` with the argument sequence in a pvector: after
 ;; the same validation, the extracted procedure (which takes the
@@ -2678,7 +2718,14 @@
 (define (pvector-print pv port mode)
   (case mode
     [(#t)
-     (write-pvector-literal pv port)]
+     ;; the readable form writes the elements directly; the structural
+     ;; (raw) form remains available through `write-pvector-literal`
+     (display "#pvector(" port)
+     (let ([first? #t])
+       (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
+         (if first? (set! first? #f) (display " " port))
+         (write elem port)))
+     (display ")" port)]
     [else
      (display "(pvector" port)
      (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
