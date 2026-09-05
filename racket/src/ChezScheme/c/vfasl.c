@@ -82,7 +82,7 @@ static uptr symbol_pos_to_offset(uptr sym_pos) {
 }
 
 static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static);
-static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets);
+static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint);
 
 static ptr lookup_singleton(iptr which);
 
@@ -376,6 +376,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   {
     SPACE_OFFSET_DECLS;
     uptr p_off = 0;
+    int target_hint = 0;
     while (bm != bm_end) {
       octet m = *bm;
 #     define MAYBE_FIXUP(i)                                             \
@@ -383,7 +384,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
         ptr *p3;                                                        \
         INC_SPACE_OFFSET(p_off);                                        \
         p3 = SPACE_PTR(p_off);                                          \
-        VFASL_MARK(p3); *p3 = find_pointer_from_offset((uptr)*p3, vspaces, vspace_offsets); \
+        VFASL_MARK(p3); *p3 = find_pointer_from_offset((uptr)*p3, vspaces, vspace_offsets, &target_hint); \
       }                                                                 \
       p_off += sizeof(uptr);
 
@@ -625,7 +626,8 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   {
     ptr v;
     ITYPE t;
-    v = find_pointer_from_offset(VFASLHEADER_RESULT_OFFSET(header), vspaces, vspace_offsets);
+    int result_hint = 0;
+    v = find_pointer_from_offset(VFASLHEADER_RESULT_OFFSET(header), vspaces, vspace_offsets, &result_hint);
     if (((t = TYPEBITS(v)) == type_typed_object)
         && TYPEP(TYPEFIELD(v), mask_box, type_box))
       v = Sunbox(v);
@@ -652,6 +654,7 @@ ptr S_vfasl_to(ptr bv)
 #define VFASL_RELOC_POS(p) (UNFIX(p) >> vfasl_reloc_tag_bits)
 
 static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static) {
+  int target_hint = 0;
     ptr t; iptr a, m, n;
 
     t = CODERELOC(co);
@@ -724,7 +727,7 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
         } else {
           uptr offset = (uptr)obj;
 
-          obj = find_pointer_from_offset(offset, vspaces, vspace_offsets);
+          obj = find_pointer_from_offset(offset, vspaces, vspace_offsets, &target_hint);
           if (TYPEBITS(obj) == type_typed_object) {
             ptr tf = TYPEFIELD(obj);
             if (TYPEP(tf, mask_record, type_record)) {
@@ -751,14 +754,20 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
     }
 }
 
-static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets)
+static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint)
 {
-  int s = 0;
+  int s = *hint;
   ITYPE t = TYPEBITS(p_off);
 
   p_off = (uptr)UNTYPE(p_off, t);
-  while (p_off >= vspace_offsets[s+1])
-    s++;
+  /* references cluster by target space, so first try where the
+     previous reference landed */
+  if ((p_off < vspace_offsets[s]) || (p_off >= vspace_offsets[s+1])) {
+    s = 0;
+    while (p_off >= vspace_offsets[s+1])
+      s++;
+    *hint = s;
+  }
 
   return TYPE(ptr_add(vspaces[s], p_off - vspace_offsets[s]), t);
 }
