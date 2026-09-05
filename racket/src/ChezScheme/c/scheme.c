@@ -629,6 +629,8 @@ static IBOOL next_path(const char *execpath, char *path,
 #include <sys/stat.h>
 #endif
 
+extern int S_vfasl_source_is_permanent_mapping;
+
 typedef struct boot_desc {
   struct fileFaslFileObj ffo;
   iptr len; /* 0 => unknown */
@@ -939,6 +941,7 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
             (void)madvise(boot_map, boot_map_len, MADV_WILLNEED);
             S_fasl_init_bytes(&boot->ffo.f, (ptr)0,
                               (char *)boot_map + boot->offset, use);
+            S_vfasl_source_is_permanent_mapping = 1;
           }
         }
       }
@@ -996,8 +999,9 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
 
   S_G.load_binary = Sfalse;
 #ifndef WIN32
-  if (boot_map != MAP_FAILED)
-    (void)munmap(boot_map, boot_map_len);
+  /* the mapping stays for the life of the process: loaded spaces may
+     point into it, and the shared pages are part of the benefit */
+  S_vfasl_source_is_permanent_mapping = 0;
 #endif
   if (boot->close_after)
     CLOSE(boot->ffo.f.uf.fd);
