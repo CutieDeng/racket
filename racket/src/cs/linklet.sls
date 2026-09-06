@@ -875,7 +875,13 @@
         ;; result of the linklet body:
         (with-continuation-mark
           linklet-instantiate-key (instance-name target-instance)
-          (begin
+          (let ([trace-t0 (and trace-times-on?
+                               (current-inexact-monotonic-milliseconds))])
+           (when trace-t0
+             (trace-printf-core ";; instantiate-start ~a\n"
+                                (instance-name target-instance)))
+           (begin0
+           (begin
            ;; Trigger lazy conversion of code from bytevector, but
            ;; beware that multiple thread might try to do that at once
            (let-values ([(prep code) (with-interrupts-disabled
@@ -911,7 +917,12 @@
                                              (linklet-importss linklet)
                                              (linklet-importss-abi linklet)
                                              (create-variables target-instance
-                                                               (linklet-exports linklet)))))))))]
+                                                               (linklet-exports linklet))))))))
+           (when trace-t0
+             (trace-printf-core ";; instantiate-end ~a ~a\n"
+                                (instance-name target-instance)
+                                (- (current-inexact-monotonic-milliseconds)
+                                   trace-t0))))))]
        [else
         ;; Make a fresh instance, recur, and return the instance
         (let ([i (make-instance (linklet-name linklet))])
