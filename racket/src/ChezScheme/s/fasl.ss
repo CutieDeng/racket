@@ -92,6 +92,15 @@
                (bld (vector-ref x i) t a? d)
                (bldvec (fx+ i 1)))))))
 
+(define bld-closure
+   (lambda (x t a? d)
+      (bld ($closure-code x) t a? d)
+      (let ([n ($closure-length x)])
+        (let loop ([i 0])
+          (unless (fx= i n)
+            (bld ($closure-ref x i) t a? d)
+            (loop (fx+ i 1)))))))
+
 (define bld-stencil-vector
    (lambda (x t a? d)
       (let ([len ($stencil-vector-length x)])
@@ -250,6 +259,8 @@
         [(bignum? x) (if (target-fixnum? x)
                          (bld-simple x t a? d)
                          (bld-graph (maybe-intern-bignum x t) t a? d #t bld-simple))]
+        [(and (procedure? x) (not ($continuation? x)))
+         (bld-graph x t a? d #t bld-closure)]
         [else (bld-graph x t a? d #t bld-simple)])))
 
 (module (small-integer? large-integer?)
@@ -670,6 +681,21 @@
              (put-u8 p (constant fasl-type-graph-ref))
              (put-uptr p (car a))]))))
 
+(define wrf-closure
+  (lambda (x p t a?)
+    ;; a closure serializes as its free-variable values plus its code;
+    ;; the code object must be provided through the externals mechanism
+    ;; (or be otherwise picked up by an enclosing graph), since a live
+    ;; code object cannot be written into a fasl stream
+    (put-u8 p (constant fasl-type-closure-freevars))
+    (let ([n ($closure-length x)])
+      (put-uptr p n)
+      (wrf ($closure-code x) p t a?)
+      (let loop ([i 0])
+        (unless (fx= i n)
+          (wrf ($closure-ref x i) p t a?)
+          (loop (fx+ i 1)))))))
+
 (define (wrf-invalid x p t a?)
   (wrf-graph x p t a?
              (lambda (x p t a?)
@@ -720,6 +746,8 @@
          [(eq? x '#0=#0#) (wrf-immediate (constant black-hole) p)]
          [($rtd-counts? x) (wrf-immediate (constant sfalse) p)]
          [(phantom-bytevector? x) (wrf-graph x p t a? wrf-phantom)]
+         [(and (procedure? x) (not ($continuation? x)))
+          (wrf-graph x p t a? wrf-closure)]
          [else (wrf-invalid x p t a?)])))
 
 (module (start)
