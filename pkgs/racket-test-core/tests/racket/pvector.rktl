@@ -1782,6 +1782,29 @@
   ) ; end test
 ) ; end let
 
+;; adapter-layer semantics: one-argument map is an arity error, the
+;; member equality sees the sought value first, and the partition
+;; predicate runs once per element
+(err/rt-test (pvector-map (pvector 1 2)) exn:fail:contract:arity?)
+(test #f procedure-arity-includes? pvector-map 1)
+(test 1 pvector-member (pvector 1 5 9) 4 <)
+(let ([calls (box 0)])
+  (define-values (yes no)
+    (pvector-partition (pvector 1 2 3 4)
+                       (lambda (x)
+                         (set-box! calls (+ 1 (unbox calls)))
+                         (odd? x))
+    ) ; end pvector-partition
+  ) ; end define-values
+  (test '(1 3) pvector->list yes)
+  (test '(2 4) pvector->list no)
+  (test 4 unbox calls)
+) ; end let calls
+;; a bad pvector with a bad index reports the index first, under the
+;; operation's own name
+(err/rt-test (pvector-insert '(not a pvector) -1 'x)
+             exn:fail:contract? #rx"pvector-insert")
+
 ;; every growth path checks the maximum length; structure sharing
 ;; makes reaching the cap cheap
 (let* ([d52 (for/fold ([p (pvector 0 1)]) ([i 52]) (pvector-append p p))]

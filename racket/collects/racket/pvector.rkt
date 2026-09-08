@@ -1076,7 +1076,7 @@
 (define pvector-map
   (case-lambda
     [(pv proc) (pvector-map/one pv proc)]
-    [(pv1 . rest) (pvector-map/multi pv1 rest)]))
+    [(pv1 next . rest) (pvector-map/multi pv1 (cons next rest))]))
 
 (define (pvector-map/one pv proc)
   (cond

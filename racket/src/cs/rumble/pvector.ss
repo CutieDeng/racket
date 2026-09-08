@@ -3883,8 +3883,8 @@
                   (core-pvector-copy/unchecked pv len (fx+ index 1) len)))])))
 
 (define (core-pvector-insert pv index value)
-  (core-pvector-check-growth 'pvector-insert (core-pvector-length pv))
   (let ([len (core-check-end-index 'pvector-insert pv index)])
+    (core-pvector-check-growth 'pvector-insert len)
     (cond
      [(fx= index 0) (core-pvector-cons-left/known-length pv len value)]
      [(fx= index len) (core-pvector-cons-right/known-length pv len value)]
