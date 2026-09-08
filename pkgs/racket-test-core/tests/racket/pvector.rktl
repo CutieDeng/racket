@@ -1782,6 +1782,27 @@
   ) ; end test
 ) ; end let
 
+;; graph references (#N#) inside pvector literals resolve through
+;; make-reader-graph instead of leaving placeholders in the elements
+(let ([v (read (open-input-string "(#0=1 #pvector(#0# 2))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test 1 pvector-ref (cadr v) 0)
+) ; end let
+(let ([v (read (open-input-string "(#0=(a b) #pvector(#0#))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test #t eq? (car v) (pvector-ref (cadr v) 0))
+) ; end let
+(let ([v (read (open-input-string "#0=(x #pvector(#0#))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test #t eq? v (pvector-ref (cadr v) 0))
+) ; end let
+
 ;; adapter-layer semantics: one-argument map is an arity error, the
 ;; member equality sees the sought value first, and the partition
 ;; predicate runs once per element

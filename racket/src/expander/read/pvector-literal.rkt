@@ -4,7 +4,9 @@
          "wrap.rkt"
          "error.rkt"
          "parameter.rkt"
-         (only-in '#%kernel core-pvector-literal->pvector))
+         (only-in '#%kernel
+                  core-pvector-literal->pvector
+                  make-pvector-placeholder))
 
 (provide read-pvector)
 
@@ -89,10 +91,19 @@
             ;; plain elements form: `#pvector(element ...)`
             (list datum #f)]
            [else datum]))
+       (define graph? (and (read-config-state-graph
+                            (read-config-st config))
+                           #t))
        (wrap (catch-and-reraise-as-reader
               in
               config
-              (core-pvector-literal->pvector normalized))
+              (if (and graph?
+                       (elements-pvector-literal-datum? normalized))
+                  ;; graph references (#N#) inside the elements are
+                  ;; placeholders at this point; defer construction to
+                  ;; make-reader-graph so they resolve
+                  (make-pvector-placeholder (car normalized))
+                  (core-pvector-literal->pvector normalized)))
              in
              config
              init-c)]

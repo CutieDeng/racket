@@ -644,6 +644,7 @@
           placeholder-get
           hash-placeholder?
           make-hash-placeholder
+          make-pvector-placeholder
           make-hasheq-placeholder
           make-hasheqv-placeholder
           make-hashalw-placeholder

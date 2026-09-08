@@ -689,6 +689,7 @@
   [make-file-or-directory-link (known-procedure/no-prompt 4)]
   [make-hash (known-procedure/single-valued 3)]
   [make-hash-placeholder (known-procedure/no-prompt 2)]
+  [make-pvector-placeholder (known-procedure/no-prompt 2)]
   [make-hasheq (known-procedure/no-prompt 3)]
   [make-hasheq-placeholder (known-procedure/no-prompt 2)]
   [make-hashalw (known-procedure/no-prompt 3)]
