@@ -908,8 +908,15 @@
 ;; merge-right: level(a) >= level(b); returns one or two balanced
 ;; nodes no taller than a (the second value is #f when one suffices).
 (define (core-pvector-node-merge-right a b)
-  (if (fx>= (core-pvector-node-level b) (core-pvector-node-level a))
-      (values a b)
+  (let ([la (core-pvector-node-level a)]
+        [lb (core-pvector-node-level b)])
+   (cond
+    [(fx= la lb) (values a b)]
+    ;; descending the spine can reach a child shorter than b (shapes
+    ;; produced by slicing are not height-sorted), so sink it into
+    ;; b's left spine instead of pairing trees of different heights
+    [(fx< la lb) (core-pvector-node-merge-left a b)]
+    [else
       (if (core-pvector-node2? a)
           (let-values ([(r1 r2) (core-pvector-node-merge-right
                                  (core-pvector-node2-b a) b)])
@@ -928,11 +935,15 @@
                         (core-pvector-node-link2 r1 r2))
                 (values (core-pvector-node-link3
                          (core-pvector-node3-a a) (core-pvector-node3-b a) r1)
-                        #f))))))
+                        #f))))])))
 
 (define (core-pvector-node-merge-left a b)
-  (if (fx>= (core-pvector-node-level a) (core-pvector-node-level b))
-      (values a b)
+  (let ([la (core-pvector-node-level a)]
+        [lb (core-pvector-node-level b)])
+   (cond
+    [(fx= la lb) (values a b)]
+    [(fx> la lb) (core-pvector-node-merge-right a b)]
+    [else
       (if (core-pvector-node2? b)
           (let-values ([(r1 r2) (core-pvector-node-merge-left
                                  a (core-pvector-node2-a b))])
@@ -951,7 +962,7 @@
                          (core-pvector-node3-b b) (core-pvector-node3-c b)))
                 (values (core-pvector-node-link3
                          r1 (core-pvector-node3-b b) (core-pvector-node3-c b))
-                        #f))))))
+                        #f))))])))
 
 ;; In-place tree insertion: navigate by measure to the leaf position
 ;; and carry two-three splits upward, so repeated middle insertion
@@ -1020,6 +1031,73 @@
                     (values (core-pvector-node-link2 a b)
                             (core-pvector-node-link2 r1 r2))
                     (values (core-pvector-node-link3 a b r1) #f)))])))))
+
+;; Pop the rightmost leaf node off a tree: returns the remaining
+;; tree (#f when the popped leaf was the whole tree) and the leaf
+;; node (level one, holding two or three elements).  The remainder is
+;; rebuilt with balanced concatenation, so repeated popping keeps the
+;; tree balanced -- the previous fallback sliced the whole pvector,
+;; whose bulk-built trees have saturated spines that made the next
+;; overflow split all the way up, one level per growth/pop cycle.
+(define (core-pvector-node-pop-right node)
+  (if (fx= (core-pvector-node-level node) 1)
+      (values #f node)
+      (if (core-pvector-node2? node)
+          (let-values ([(rest leaf) (core-pvector-node-pop-right
+                                     (core-pvector-node2-b node))])
+            (if rest
+                (values (core-pvector-node-concat
+                         (core-pvector-node2-a node) rest)
+                        leaf)
+                (values (core-pvector-node2-a node) leaf)))
+          (let-values ([(rest leaf) (core-pvector-node-pop-right
+                                     (core-pvector-node3-c node))])
+            (if rest
+                (values (core-pvector-node-concat
+                         (core-pvector-node-link2
+                          (core-pvector-node3-a node)
+                          (core-pvector-node3-b node))
+                         rest)
+                        leaf)
+                (values (core-pvector-node-link2
+                         (core-pvector-node3-a node)
+                         (core-pvector-node3-b node))
+                        leaf))))))
+
+(define (core-pvector-node-pop-left node)
+  (if (fx= (core-pvector-node-level node) 1)
+      (values #f node)
+      (if (core-pvector-node2? node)
+          (let-values ([(rest leaf) (core-pvector-node-pop-left
+                                     (core-pvector-node2-a node))])
+            (if rest
+                (values (core-pvector-node-concat
+                         rest (core-pvector-node2-b node))
+                        leaf)
+                (values (core-pvector-node2-b node) leaf)))
+          (let-values ([(rest leaf) (core-pvector-node-pop-left
+                                     (core-pvector-node3-a node))])
+            (if rest
+                (values (core-pvector-node-concat
+                         rest
+                         (core-pvector-node-link2
+                          (core-pvector-node3-b node)
+                          (core-pvector-node3-c node)))
+                        leaf)
+                (values (core-pvector-node-link2
+                         (core-pvector-node3-b node)
+                         (core-pvector-node3-c node))
+                        leaf))))))
+
+;; a leaf node's two or three elements as an immutable vector,
+;; for reloading a finger edge
+(define (core-pvector-leaf-node->vector leaf)
+  (if (core-pvector-node2? leaf)
+      (core-immutable-vector2 (core-pvector-node2-a leaf)
+                              (core-pvector-node2-b leaf))
+      (core-immutable-vector3 (core-pvector-node3-a leaf)
+                              (core-pvector-node3-b leaf)
+                              (core-pvector-node3-c leaf))))
 
 (define (core-pvector-node-concat a b)
   (let-values ([(r1 r2)
@@ -3755,7 +3833,16 @@
                      len)])
         (values value
                 (or direct
-                    (core-pvector-copy/unchecked pv len 1 len))))]
+                    (let ([middle (core-pvector-large-finger-middle pv)])
+                      (if middle
+                          (let-values ([(rest leaf)
+                                        (core-pvector-node-pop-left middle)])
+                            (core-pvector-large-finger-with-prefix-vector
+                             pv
+                             (fx- len 1)
+                             (core-pvector-leaf-node->vector leaf)
+                             rest))
+                          (core-pvector-copy/unchecked pv len 1 len))))))]
      [else
       (values (core-pvector-view-left pv)
               (core-pvector-copy/unchecked pv len 1 len))])))
@@ -3778,7 +3865,18 @@
                      len)])
         (values value
                 (or direct
-                    (core-pvector-copy/unchecked pv len 0 (fx- len 1)))))]
+                    (let ([middle (core-pvector-large-finger-middle pv)])
+                      (if middle
+                          ;; reload the suffix from the middle's
+                          ;; rightmost leaf, keeping the tree balanced
+                          (let-values ([(rest leaf)
+                                        (core-pvector-node-pop-right middle)])
+                            (core-pvector-large-finger-with-suffix-vector
+                             pv
+                             (fx- len 1)
+                             rest
+                             (core-pvector-leaf-node->vector leaf)))
+                          (core-pvector-copy/unchecked pv len 0 (fx- len 1)))))))]
      [else
       (values (core-pvector-view-right pv)
               (core-pvector-copy/unchecked pv len 0 (fx- len 1)))])))

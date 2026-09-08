@@ -1819,6 +1819,22 @@
   (test #t < (depth-of (for/fold ([p (pvector)]) ([i 256])
                          (pvector-append p (list->pvector (list i i i i)))))
           20)
+  ;; popping interleaved with same-side growth reloads the edge from
+  ;; the middle instead of slicing, so depth stays logarithmic
+  (test #t < (depth-of
+              (for/fold ([p (pvector 0 1 2 3)]) ([i 4000])
+                (if (zero? (modulo i 3))
+                    (call-with-values (lambda () (pvector-pop-right p))
+                                      (lambda (v r) r))
+                    (pvector-cons-right p i))))
+          20)
+  (test #t < (depth-of
+              (for/fold ([p (pvector 0 1 2 3)]) ([i 4000])
+                (if (zero? (modulo i 3))
+                    (call-with-values (lambda () (pvector-pop-left p))
+                                      (lambda (v r) r))
+                    (pvector-cons-right p i))))
+          20)
 ) ; end let depth-of
 ;; random-position inserts agree with the list model
 (let loop ([p (pvector)] [l '()] [i 0])
