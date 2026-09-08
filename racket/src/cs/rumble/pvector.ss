@@ -897,6 +897,140 @@
    b
    c))
 
+;; Balanced concatenation of two node trees, preserving element order
+;; (a's leaves before b's).  Linking two trees of very different
+;; heights directly would make the taller side's spine grow by one per
+;; link -- the consing and appending growth paths did exactly that,
+;; which made read depth linear in the number of grafts.  Instead the
+;; shorter tree sinks along the taller tree's spine to a node of its
+;; own height and is inserted there with two-three carrying, so the
+;; result's depth stays within one of the taller input's.
+;; merge-right: level(a) >= level(b); returns one or two balanced
+;; nodes no taller than a (the second value is #f when one suffices).
+(define (core-pvector-node-merge-right a b)
+  (if (fx>= (core-pvector-node-level b) (core-pvector-node-level a))
+      (values a b)
+      (if (core-pvector-node2? a)
+          (let-values ([(r1 r2) (core-pvector-node-merge-right
+                                 (core-pvector-node2-b a) b)])
+            (if r2
+                (values (core-pvector-node-link3
+                         (core-pvector-node2-a a) r1 r2)
+                        #f)
+                (values (core-pvector-node-link2
+                         (core-pvector-node2-a a) r1)
+                        #f)))
+          (let-values ([(r1 r2) (core-pvector-node-merge-right
+                                 (core-pvector-node3-c a) b)])
+            (if r2
+                (values (core-pvector-node-link2
+                         (core-pvector-node3-a a) (core-pvector-node3-b a))
+                        (core-pvector-node-link2 r1 r2))
+                (values (core-pvector-node-link3
+                         (core-pvector-node3-a a) (core-pvector-node3-b a) r1)
+                        #f))))))
+
+(define (core-pvector-node-merge-left a b)
+  (if (fx>= (core-pvector-node-level a) (core-pvector-node-level b))
+      (values a b)
+      (if (core-pvector-node2? b)
+          (let-values ([(r1 r2) (core-pvector-node-merge-left
+                                 a (core-pvector-node2-a b))])
+            (if r2
+                (values (core-pvector-node-link3
+                         r1 r2 (core-pvector-node2-b b))
+                        #f)
+                (values (core-pvector-node-link2
+                         r1 (core-pvector-node2-b b))
+                        #f)))
+          (let-values ([(r1 r2) (core-pvector-node-merge-left
+                                 a (core-pvector-node3-a b))])
+            (if r2
+                (values (core-pvector-node-link2 r1 r2)
+                        (core-pvector-node-link2
+                         (core-pvector-node3-b b) (core-pvector-node3-c b)))
+                (values (core-pvector-node-link3
+                         r1 (core-pvector-node3-b b) (core-pvector-node3-c b))
+                        #f))))))
+
+;; In-place tree insertion: navigate by measure to the leaf position
+;; and carry two-three splits upward, so repeated middle insertion
+;; keeps the depth logarithmic (splitting a tree and concatenating
+;; the halves back would raise the depth by one per round instead).
+;; Returns one or two nodes (the second is #f when one suffices).
+(define (core-pvector-node-insert-at node index value)
+  (if (fx= (core-pvector-node-level node) 1)
+      (if (core-pvector-node2? node)
+          (let ([a (core-pvector-node2-a node)]
+                [b (core-pvector-node2-b node)])
+            (cond
+             [(fx= index 0) (values (core-make-leaf-node3 value a b) #f)]
+             [(fx= index 1) (values (core-make-leaf-node3 a value b) #f)]
+             [else (values (core-make-leaf-node3 a b value) #f)]))
+          (let ([a (core-pvector-node3-a node)]
+                [b (core-pvector-node3-b node)]
+                [c (core-pvector-node3-c node)])
+            (cond
+             [(fx= index 0)
+              (values (core-make-leaf-node2 value a)
+                      (core-make-leaf-node2 b c))]
+             [(fx= index 1)
+              (values (core-make-leaf-node2 a value)
+                      (core-make-leaf-node2 b c))]
+             [(fx= index 2)
+              (values (core-make-leaf-node2 a b)
+                      (core-make-leaf-node2 value c))]
+             [else
+              (values (core-make-leaf-node2 a b)
+                      (core-make-leaf-node2 c value))])))
+      (if (core-pvector-node2? node)
+          (let* ([a (core-pvector-node2-a node)]
+                 [b (core-pvector-node2-b node)]
+                 [am (core-pvector-node-measure a)])
+            (if (fx< index am)
+                (let-values ([(r1 r2) (core-pvector-node-insert-at a index value)])
+                  (if r2
+                      (values (core-pvector-node-link3 r1 r2 b) #f)
+                      (values (core-pvector-node-link2 r1 b) #f)))
+                (let-values ([(r1 r2) (core-pvector-node-insert-at b (fx- index am) value)])
+                  (if r2
+                      (values (core-pvector-node-link3 a r1 r2) #f)
+                      (values (core-pvector-node-link2 a r1) #f)))))
+          (let* ([a (core-pvector-node3-a node)]
+                 [b (core-pvector-node3-b node)]
+                 [c (core-pvector-node3-c node)]
+                 [am (core-pvector-node-measure a)]
+                 [bm (core-pvector-node-measure b)])
+            (cond
+             [(fx< index am)
+              (let-values ([(r1 r2) (core-pvector-node-insert-at a index value)])
+                (if r2
+                    (values (core-pvector-node-link2 r1 r2)
+                            (core-pvector-node-link2 b c))
+                    (values (core-pvector-node-link3 r1 b c) #f)))]
+             [(fx< index (fx+ am bm))
+              (let-values ([(r1 r2) (core-pvector-node-insert-at b (fx- index am) value)])
+                (if r2
+                    (values (core-pvector-node-link2 a r1)
+                            (core-pvector-node-link2 r2 c))
+                    (values (core-pvector-node-link3 a r1 c) #f)))]
+             [else
+              (let-values ([(r1 r2) (core-pvector-node-insert-at c (fx- index (fx+ am bm)) value)])
+                (if r2
+                    (values (core-pvector-node-link2 a b)
+                            (core-pvector-node-link2 r1 r2))
+                    (values (core-pvector-node-link3 a b r1) #f)))])))))
+
+(define (core-pvector-node-concat a b)
+  (let-values ([(r1 r2)
+                (if (fx>= (core-pvector-node-level a)
+                          (core-pvector-node-level b))
+                    (core-pvector-node-merge-right a b)
+                    (core-pvector-node-merge-left a b))])
+    (if r2
+        (core-pvector-node-link2 r1 r2)
+        r1)))
+
 (define (core-pvector-node-vector-max-level nodes)
   (let ([len (#%vector-length nodes)])
     (let loop ([i 0] [max-level 1])
@@ -1386,7 +1520,7 @@
         (let* ([bridge (core-pvector-large-finger-full-edge->node pv #t)]
                [old-middle (core-pvector-large-finger-middle pv)]
                [middle (if old-middle
-                           (core-pvector-node-link2 bridge old-middle)
+                           (core-pvector-node-concat bridge old-middle)
                            bridge)])
           (core-pvector-large-finger-with-prefix-vector
            pv
@@ -1416,7 +1550,7 @@
         (let* ([bridge (core-pvector-large-finger-full-edge->node pv #f)]
                [old-middle (core-pvector-large-finger-middle pv)]
                [middle (if old-middle
-                           (core-pvector-node-link2 old-middle bridge)
+                           (core-pvector-node-concat old-middle bridge)
                            bridge)])
           (core-pvector-large-finger-with-suffix-vector
            pv
@@ -1567,7 +1701,20 @@
                 suffix-len
                 (fx- index suffix-start)
                 value))
-              (core-pvector-insert-by-copy/unchecked pv len index value))))))
+              (let* ([middle (core-pvector-large-finger-middle pv)]
+                     [middle-start prefix-len]
+                     [middle-len (if middle (core-pvector-node-measure middle) 0)])
+                (if (and middle
+                         (fx>= index middle-start)
+                         (fx<= index (fx+ middle-start middle-len)))
+                    ;; in-place middle insertion keeps the depth
+                    ;; logarithmic under repeated inserts
+                    (let-values ([(r1 r2) (core-pvector-node-insert-at
+                                           middle (fx- index middle-start) value)])
+                      (core-pvector-large-finger-with-middle
+                       pv new-len
+                       (if r2 (core-pvector-node-link2 r1 r2) r1)))
+                    (core-pvector-insert-by-copy/unchecked pv len index value))))))))
 
 (define (core-pvector-large-finger-delete/known-length pv len index)
   (let* ([new-len (fx- len 1)]
@@ -1841,7 +1988,7 @@
       (let* ([bridge (core-pvector-large-finger-full-edge->node left #f)]
              [old-middle (core-pvector-large-finger-middle left)]
              [middle (if old-middle
-                         (core-pvector-node-link2 old-middle bridge)
+                         (core-pvector-node-concat old-middle bridge)
                          bridge)])
         (core-pvector-large-finger-with-suffix-vector
          left
@@ -1867,7 +2014,7 @@
       (let* ([bridge (core-pvector-large-finger-full-edge->node right #t)]
              [old-middle (core-pvector-large-finger-middle right)]
              [middle (if old-middle
-                         (core-pvector-node-link2 bridge old-middle)
+                         (core-pvector-node-concat bridge old-middle)
                          bridge)])
         (core-pvector-large-finger-with-prefix-vector
          right
@@ -2040,10 +2187,12 @@
          [bridge (core-pvector-digit-bridge-node left-suffix right-prefix)]
          [middle (if left-middle
                      (if right-middle
-                         (core-pvector-node-link3 left-middle bridge right-middle)
-                         (core-pvector-node-link2 left-middle bridge))
+                         (core-pvector-node-concat
+                          (core-pvector-node-concat left-middle bridge)
+                          right-middle)
+                         (core-pvector-node-concat left-middle bridge))
                      (if right-middle
-                         (core-pvector-node-link2 bridge right-middle)
+                         (core-pvector-node-concat bridge right-middle)
                          bridge))])
     (make-core-pvector-large-finger
      (fx+ left-len right-len)
