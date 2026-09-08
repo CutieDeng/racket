@@ -1757,6 +1757,25 @@
                                      ) ; end open-input-string
                                ) ; end read
 ) ; end test
+;; the canonical raw form of the empty pvector reads back empty,
+;; while a plain two-element list whose second element is `()` stays
+;; an element list
+(test #t pvector-empty? (read (open-input-string "#pvector(Empty ())"
+                              ) ; end open-input-string
+                        ) ; end read
+) ; end test
+(test '(a ()) pvector->list (read (open-input-string "#pvector(a ())"
+                                  ) ; end open-input-string
+                            ) ; end read
+) ; end test
+(let ([o (open-output-string)])
+  (write-pvector-literal (pvector) o)
+  (test #t pvector-empty? (read (open-input-string (get-output-string o)
+                                ) ; end get-output-string
+                          ) ; end read
+  ) ; end test
+) ; end let
+
 ;; write emits the readable form and round-trips
 (let ([pv (list->pvector (build-list 100 values
                          ) ; end build-list

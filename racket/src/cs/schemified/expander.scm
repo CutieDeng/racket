@@ -69549,15 +69549,19 @@
             (let ((or-part_0 (raw-defs-shape? defs_0)))
               (if or-part_0
                 or-part_0
-                (if (pair? defs_0)
-                  (if (pair? (cdr defs_0))
-                    (if (null? (cddr defs_0))
-                      (if (eq? (car defs_0) kw3342)
-                        (raw-defs-shape? (cadr defs_0))
+                (let ((or-part_1
+                       (if (null? defs_0) (eq? (car datum_0) 'Empty) #f)))
+                  (if or-part_1
+                    or-part_1
+                    (if (pair? defs_0)
+                      (if (pair? (cdr defs_0))
+                        (if (null? (cddr defs_0))
+                          (if (eq? (car defs_0) kw3342)
+                            (raw-defs-shape? (cadr defs_0))
+                            #f)
+                          #f)
                         #f)
-                      #f)
-                    #f)
-                  #f))))
+                      #f))))))
           #f)
         #f)
       #f)))
