@@ -546,6 +546,7 @@
 (define-constant fasl-type-uncompressed 44)
 (define-constant fasl-type-gzip 45)
 (define-constant fasl-type-lz4 46)
+(define-constant fasl-type-closure-freevars 47)
 
 (define-constant fasl-type-fasl 100)
 (define-constant fasl-type-vfasl 101)

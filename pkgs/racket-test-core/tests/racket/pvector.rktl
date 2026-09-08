@@ -1228,6 +1228,11 @@
 (require racket/place
 ) ; end require
 
+;; pvector place-message support lives in the CS thread layer; BC has
+;; none, and a places-disabled BC build has no place-channel at all
+(when (and (place-enabled?)
+           (eq? 'chez-scheme (system-type 'vm))
+      ) ; end and
 (let-values ([(pch1 pch2) (place-channel
                           ) ; end place-channel
              ]
@@ -1317,6 +1322,7 @@
     ) ; end let
   ) ; end let*
 ) ; end let-values
+) ; end when place
 
 ;; predicate consistency with the put behavior
 (test #t place-message-allowed? (pvector 1 2 3
@@ -1757,6 +1763,132 @@
                                      ) ; end open-input-string
                                ) ; end read
 ) ; end test
+;; the canonical raw form of the empty pvector reads back empty,
+;; while a plain two-element list whose second element is `()` stays
+;; an element list
+(test #t pvector-empty? (read (open-input-string "#pvector(Empty ())"
+                              ) ; end open-input-string
+                        ) ; end read
+) ; end test
+(test '(a ()) pvector->list (read (open-input-string "#pvector(a ())"
+                                  ) ; end open-input-string
+                            ) ; end read
+) ; end test
+(let ([o (open-output-string)])
+  (write-pvector-literal (pvector) o)
+  (test #t pvector-empty? (read (open-input-string (get-output-string o)
+                                ) ; end get-output-string
+                          ) ; end read
+  ) ; end test
+) ; end let
+
+;; graph references (#N#) inside pvector literals resolve through
+;; make-reader-graph instead of leaving placeholders in the elements
+(let ([v (read (open-input-string "(#0=1 #pvector(#0# 2))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test 1 pvector-ref (cadr v) 0)
+) ; end let
+(let ([v (read (open-input-string "(#0=(a b) #pvector(#0#))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test #t eq? (car v) (pvector-ref (cadr v) 0))
+) ; end let
+(let ([v (read (open-input-string "#0=(x #pvector(#0#))"
+               ) ; end open-input-string
+         ) ; end read
+      ])
+  (test #t eq? v (pvector-ref (cadr v) 0))
+) ; end let
+
+;; adapter-layer semantics: one-argument map is an arity error, the
+;; member equality sees the sought value first, and the partition
+;; predicate runs once per element
+(err/rt-test (pvector-map (pvector 1 2)) exn:fail:contract:arity?)
+(test #f procedure-arity-includes? pvector-map 1)
+(test 1 pvector-member (pvector 1 5 9) 4 <)
+(let ([calls (box 0)])
+  (define-values (yes no)
+    (pvector-partition (pvector 1 2 3 4)
+                       (lambda (x)
+                         (set-box! calls (+ 1 (unbox calls)))
+                         (odd? x))
+    ) ; end pvector-partition
+  ) ; end define-values
+  (test '(1 3) pvector->list yes)
+  (test '(2 4) pvector->list no)
+  (test 4 unbox calls)
+) ; end let calls
+;; a bad pvector with a bad index reports the index first, under the
+;; operation's own name
+(err/rt-test (pvector-insert '(not a pvector) -1 'x)
+             exn:fail:contract? #rx"pvector-insert")
+
+;; every growth path checks the maximum length; structure sharing
+;; makes reaching the cap cheap
+(let* ([d52 (for/fold ([p (pvector 0 1)]) ([i 52]) (pvector-append p p))]
+       [d52- (call-with-values (lambda () (pvector-pop-right d52))
+                               (lambda (v rest) rest)
+             ) ; end call-with-values
+       ]
+       [near (pvector-append d52 d52-)])
+  (err/rt-test (pvector-cons-right near 99) exn:fail? #rx"pvector-cons-right.*maximum")
+  (err/rt-test (pvector-cons-left near 99) exn:fail? #rx"pvector-cons-left.*maximum")
+  (err/rt-test (pvector-insert near 5 99) exn:fail? #rx"pvector-insert.*maximum")
+  (err/rt-test (pvector-append near near) exn:fail? #rx"pvector-append.*maximum")
+  (let ([near-1 (call-with-values (lambda () (pvector-pop-right near))
+                                  (lambda (v rest) rest)
+                ) ; end call-with-values
+        ])
+    (test #t = (pvector-length (pvector-cons-right near-1 7))
+            (- (expt 2 54) 1)
+    ) ; end test
+  ) ; end let near-1
+) ; end let cap
+
+;; write escapes element sequences that would read back as a
+;; different literal shape
+(let ([rt (lambda (pv)
+            (let ([o (open-output-string)])
+              (write pv o)
+              (let ([back (read (open-input-string (get-output-string o)
+                                ) ; end open-input-string
+                          ) ; end read
+                    ])
+                (equal? (pvector->list back) (pvector->list pv))
+              ) ; end let back
+            ) ; end let o
+          ) ; end lambda
+        ])
+  (test #t rt (pvector (list 1 2) #f))
+  (test #t rt (pvector 'x '((a 1))))
+  (test #t rt (pvector 'Empty '()))
+  (test #t rt (pvector 'a '(1 2)))
+) ; end let rt
+;; a structure-shared pvector past the write threshold falls back to
+;; the structural form, stays readable, and stays fast
+(let ([big (for/fold ([pv (pvector 0 1)]) ([i 40]) (pvector-append pv pv))])
+  (let ([o (open-output-string)])
+    (write big o)
+    (let ([back (read (open-input-string (get-output-string o)
+                      ) ; end open-input-string
+                ) ; end read
+          ])
+      (test #t = (pvector-length back) (pvector-length big))
+      (test #t equal? (pvector-ref back 12345) (pvector-ref big 12345))
+    ) ; end let back
+  ) ; end let o
+) ; end let big
+;; the raw literal form round-trips appended (level-mixed) structures
+(test #t pvector? (literal-datum->pvector
+                   (pvector->literal-datum
+                    (for/fold ([pv (pvector 0 1)]) ([i 8]) (pvector-append pv pv))
+                   ) ; end pvector->literal-datum
+                  ) ; end literal-datum->pvector
+) ; end test
+
 ;; write emits the readable form and round-trips
 (let ([pv (list->pvector (build-list 100 values
                          ) ; end build-list

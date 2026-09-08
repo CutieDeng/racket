@@ -1071,6 +1071,18 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             CLOSENTRY(*x) = (ptr)((uptr)cod + offset);
             return;
         }
+        case fasl_type_closure_freevars: {
+            ptr cod; iptr n, i;
+            n = (iptr)uptrin(f);
+            *x = S_closure((ptr)0, n);
+            faslin(tc, &cod, t, pstrbuf, f);
+            if (!Scodep(cod))
+              S_error1("", "malformed fasl closure found in ~a", f->uf.path);
+            CLOSENTRY(*x) = (ptr)((uptr)cod + code_data_disp);
+            for (i = 0; i != n; i += 1)
+              faslin(tc, &CLOSIT(*x, i), t, pstrbuf, f);
+            return;
+        }
         case fasl_type_flonum: {
             *x = Sflonum(doublein(f));
             return;

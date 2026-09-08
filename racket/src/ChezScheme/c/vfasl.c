@@ -82,9 +82,118 @@ static uptr symbol_pos_to_offset(uptr sym_pos) {
 }
 
 static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static);
-static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets);
+static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint);
 
 static ptr lookup_singleton(iptr which);
+
+/* Set by the boot loader while the fasl stream's buffer is a
+   process-lifetime file mapping: the reloc space, which relinking
+   consumes during the load and which would be dropped afterward
+   anyway (see relink_code), can then point into the mapping instead
+   of being copied into segments.  No heap reference to the mapped
+   bytes survives the load: every code object's reloc field ends up
+   cleared or pointing at a fresh copy in the static generation, the
+   same as with the discarded temporary copy this replaces. */
+int S_vfasl_source_is_permanent_mapping = 0;
+
+/* attribution aid: cumulative per-phase load times, gated by
+   PLT_VFASL_TIMES and reported at exit */
+#include <time.h>
+#include <stdlib.h>
+enum {
+  vfasl_phase_copy, vfasl_phase_room, vfasl_phase_memcpy,
+  vfasl_phase_ptr_sweep, vfasl_phase_singletons,
+  vfasl_phase_intern_syms, vfasl_phase_symrefs, vfasl_phase_rtds,
+  vfasl_phase_closures, vfasl_phase_relink, vfasl_phase_count
+};
+static const char *vfasl_phase_names[] = {
+  "room+copy", "  find_room", "  memcpy", "ptr-sweep", "singletons", "intern-syms",
+  "symrefs", "rtds", "closures", "relink-code"
+};
+static uint64_t vfasl_phase_ns[vfasl_phase_count];
+static int vfasl_times_on = -1;
+static uint64_t vfasl_now(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
+static void vfasl_report_times(void) {
+  int i;
+  for (i = 0; i < vfasl_phase_count; i++)
+    fprintf(stderr, ";; vfasl %-12s %8.2f ms\n",
+            vfasl_phase_names[i], vfasl_phase_ns[i] / 1e6);
+}
+static void vfasl_times_init(void) {
+  if (vfasl_times_on < 0) {
+    vfasl_times_on = (getenv("PLT_VFASL_TIMES") != NULL);
+    if (vfasl_times_on)
+      atexit(vfasl_report_times);
+  }
+}
+#define VFASL_PHASE_BEGIN() (vfasl_times_on ? vfasl_now() : 0)
+#define VFASL_PHASE_END(t0, phase) \
+  do { if (vfasl_times_on) vfasl_phase_ns[phase] += vfasl_now() - (t0); } while (0)
+
+/* attribution aid: distinct pages written after the initial copy,
+   per vspace, gated by PLT_VFASL_WRITES */
+static int vfasl_writes_on = -1;
+static uptr vfasl_w_base[9], vfasl_w_end[9];
+static unsigned char *vfasl_w_bits[9];
+static uptr vfasl_pages_total[9], vfasl_pages_written[9];
+static void vfasl_writes_report(void) {
+  static const char *names[] =
+    { "symbol", "rtd", "closure", "impure", "pure-typed",
+      "impure-record", "code", "data", "reloc" };
+  int s;
+  for (s = 0; s < 9; s++)
+    if (vfasl_pages_total[s])
+      fprintf(stderr, ";; vfasl writes %-14s %6ld / %6ld pages (%.1f%%)\n",
+              names[s], (long)vfasl_pages_written[s], (long)vfasl_pages_total[s],
+              100.0 * vfasl_pages_written[s] / vfasl_pages_total[s]);
+}
+static void vfasl_writes_begin(ptr *vspaces, uptr *vspace_offsets) {
+  int s;
+  if (vfasl_writes_on < 0) {
+    vfasl_writes_on = (getenv("PLT_VFASL_WRITES") != NULL);
+    if (vfasl_writes_on) atexit(vfasl_writes_report);
+  }
+  if (!vfasl_writes_on) return;
+  for (s = 0; s < 9; s++) {
+    uptr len = vspace_offsets[s+1] - vspace_offsets[s];
+    uptr npages = (len + 4095) >> 12;
+    vfasl_w_base[s] = (uptr)vspaces[s];
+    vfasl_w_end[s] = (uptr)vspaces[s] + len;
+    vfasl_w_bits[s] = npages ? calloc((npages + 7) >> 3, 1) : NULL;
+    vfasl_pages_total[s] += npages;
+  }
+}
+static void vfasl_writes_end(void) {
+  int s;
+  if (vfasl_writes_on != 1) return;
+  for (s = 0; s < 9; s++) {
+    if (vfasl_w_bits[s]) {
+      uptr npages = (vfasl_w_end[s] - vfasl_w_base[s] + 4095) >> 12, i;
+      for (i = 0; i < npages; i++)
+        if (vfasl_w_bits[s][i >> 3] & (1 << (i & 7)))
+          vfasl_pages_written[s]++;
+      free(vfasl_w_bits[s]);
+      vfasl_w_bits[s] = NULL;
+    }
+    vfasl_w_base[s] = vfasl_w_end[s] = 0;
+  }
+}
+static void vfasl_mark_write(void *addr) {
+  uptr a = (uptr)addr;
+  int s;
+  if (vfasl_writes_on != 1) return;
+  for (s = 0; s < 9; s++)
+    if (a >= vfasl_w_base[s] && a < vfasl_w_end[s] && vfasl_w_bits[s]) {
+      uptr pg = (a - vfasl_w_base[s]) >> 12;
+      vfasl_w_bits[s][pg >> 3] |= (1 << (pg & 7));
+      return;
+    }
+}
+#define VFASL_MARK(addr) vfasl_mark_write((void *)(addr))
 
 /************************************************************/
 /* Loading                                                  */
@@ -125,20 +234,54 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   }
   vspace_offsets[vspaces_count] = VFASLHEADER_DATA_SIZE(header);
 
+  vfasl_times_init();
+
+  /* attribution aid: report each loaded vfasl block's per-space sizes */
+  if (getenv("PLT_VFASL_STATS")) {
+    static const char *vspace_names[] =
+      { "symbol", "rtd", "closure", "impure", "pure-typed",
+        "impure-record", "code", "data", "reloc" };
+    fprintf(stderr, ";; vfasl block: total %ld", (long)VFASLHEADER_DATA_SIZE(header));
+    for (s = 0; s < vspaces_count; s++) {
+      long sz = (long)(vspace_offsets[s+1] - vspace_offsets[s]);
+      if (sz > 0)
+        fprintf(stderr, " %s %ld", vspace_names[s], sz);
+    }
+    fprintf(stderr, "\n");
+  }
+
   bv_addr = (bv ? &BVIT(bv, size_vfasl_header + offset) : NULL);
 
   to_static = (S_vfasl_boot_mode > 0);
-  
+
+  {
+  uint64_t phase_t0 = VFASL_PHASE_BEGIN();
   for (s = 0; s < vspaces_count; s++) {
     uptr sz = vspace_offsets[s+1] - vspace_offsets[s];
     if (sz > 0) {
+      uint64_t sub_t0 = VFASL_PHASE_BEGIN();
+      if (S_vfasl_source_is_permanent_mapping
+          && !bv
+          && stream
+          && ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation)
+          && (((uptr)stream->next & (byte_alignment - 1)) == 0)
+          && ((iptr)(stream->end - stream->next) >= (iptr)sz)) {
+        /* zero-copy: the space stays in the mapping */
+        vspaces[s] = TO_PTR(stream->next);
+        stream->next += sz;
+        VFASL_PHASE_END(sub_t0, vfasl_phase_room);
+        continue;
+      }
       if ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation) {
         newspace_find_room(tc, type_untyped, sz, vspaces[s]);
       } else {
         find_room(tc, vspace_spaces[s], (to_static ? static_generation : 0), type_untyped, sz, vspaces[s]);
       }
+      VFASL_PHASE_END(sub_t0, vfasl_phase_room);
       if (bv) {
+        sub_t0 = VFASL_PHASE_BEGIN();
         memcpy(TO_VOIDP(vspaces[s]), bv_addr, sz);
+        VFASL_PHASE_END(sub_t0, vfasl_phase_memcpy);
         bv_addr = TO_VOIDP(ptr_add(TO_PTR(bv_addr), sz));
       } else {
 	ptr dest;
@@ -222,6 +365,10 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   } while (0)
 #define SPACE_PTR(off) TO_VOIDP(ptr_add(vspaces[s2], (off) - offset2))
 
+  VFASL_PHASE_END(phase_t0, vfasl_phase_copy);
+  vfasl_writes_begin(vspaces, vspace_offsets);
+  phase_t0 = VFASL_PHASE_BEGIN();
+
   /* Fix up pointers. The initial content has all pointers relative to
      the start of the data. Since the spaces of referenced pointers
      may be discontiguous, use `find_pointer_from_offset` to get each
@@ -229,6 +376,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
   {
     SPACE_OFFSET_DECLS;
     uptr p_off = 0;
+    int target_hint = 0;
     while (bm != bm_end) {
       octet m = *bm;
 #     define MAYBE_FIXUP(i)                                             \
@@ -236,7 +384,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
         ptr *p3;                                                        \
         INC_SPACE_OFFSET(p_off);                                        \
         p3 = SPACE_PTR(p_off);                                          \
-        *p3 = find_pointer_from_offset((uptr)*p3, vspaces, vspace_offsets); \
+        VFASL_MARK(p3); *p3 = find_pointer_from_offset((uptr)*p3, vspaces, vspace_offsets, &target_hint); \
       }                                                                 \
       p_off += sizeof(uptr);
 
@@ -254,6 +402,9 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     }
   }
 
+  VFASL_PHASE_END(phase_t0, vfasl_phase_ptr_sweep);
+  phase_t0 = VFASL_PHASE_BEGIN();
+
   /* Replace references to singletons like "" and #vu8().
      This needs to be before interning symbols, in case ""
      is a symbol name. */
@@ -266,9 +417,12 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
       r_off = singletonrefs[i];
       INC_SPACE_OFFSET(r_off);
       ref = SPACE_PTR(r_off);
-      *ref = lookup_singleton(UNFIX(*ref));
+      VFASL_MARK(ref); *ref = lookup_singleton(UNFIX(*ref));
     }
   }
+
+  VFASL_PHASE_END(phase_t0, vfasl_phase_singletons);
+  phase_t0 = VFASL_PHASE_BEGIN();
 
   /* Intern symbols */
   {
@@ -298,6 +452,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
 
         uninterned = (SYMPVAL(sym) == Sfalse);
 
+        VFASL_MARK(TO_VOIDP(UNTYPE(sym, type_symbol)));
         INITSYMVAL(sym) = sunbound;
         INITSYMCODE(sym, S_G.nonprocedure_code);
 
@@ -309,6 +464,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
           isym = S_intern4(sym);
           if (isym != sym) {
             /* The symbol was already interned, so point to the existing one */
+            VFASL_MARK(TO_VOIDP(UNTYPE(sym, type_symbol)));
             INITSYMVAL(sym) = isym;
             if (S_vfasl_boot_mode > 0) {
               IGEN gen = SegInfo(ptr_get_segment(isym))->generation;
@@ -329,6 +485,9 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     }
   }
 
+  VFASL_PHASE_END(phase_t0, vfasl_phase_intern_syms);
+  phase_t0 = VFASL_PHASE_BEGIN();
+
   /* Replace symbol references with interned references */
   {
     SPACE_OFFSET_DECLS;
@@ -348,6 +507,9 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     }
   }
   
+  VFASL_PHASE_END(phase_t0, vfasl_phase_symrefs);
+  phase_t0 = VFASL_PHASE_BEGIN();
+
   /* Intern rtds */
   if (VSPACE_LENGTH(vspace_rtd) > 0) {
     ptr rtd = TYPE(vspaces[vspace_rtd], type_typed_object);
@@ -376,8 +538,10 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
       parent_rtd = rtd_parent(rtd);
       if (parent_rtd != Sfalse) {
         ptr parent_uid = RECORDDESCUID(parent_rtd);
-        if (!Ssymbolp(parent_uid))
+        if (!Ssymbolp(parent_uid)) {
+          VFASL_MARK(TO_VOIDP(UNTYPE(rtd, type_typed_object)));
           rtd_parent(rtd) = parent_uid;
+        }
       }
 
       new_rtd = rtd;
@@ -408,10 +572,13 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
       uid = RECORDDESCUID(rtd);
       if (!Ssymbolp(uid)) {
         /* uid is replacement interned rtd */
-        *ref = uid;
+        VFASL_MARK(ref); *ref = uid;
       }
     }
   }
+
+  VFASL_PHASE_END(phase_t0, vfasl_phase_rtds);
+  phase_t0 = VFASL_PHASE_BEGIN();
 
   /* Fix code pointers on closures */
   {
@@ -429,10 +596,14 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
       printf("\n");
 #endif
 
+      VFASL_MARK(TO_VOIDP(UNTYPE(cl, type_closure)));
       SETCLOSCODE(cl,code);
       cl = ptr_add(cl, size_closure(CLOSLEN(cl)));
     }
   }
+
+  VFASL_PHASE_END(phase_t0, vfasl_phase_closures);
+  phase_t0 = VFASL_PHASE_BEGIN();
 
   /* Fix code via relocations */
   {    
@@ -446,12 +617,17 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     }
   }
 
+  VFASL_PHASE_END(phase_t0, vfasl_phase_relink);
+  }
+  vfasl_writes_end();
+
   /* Turn result offset into a value, unboxing if it's a box (which
      supports a symbol result, for example). */
   {
     ptr v;
     ITYPE t;
-    v = find_pointer_from_offset(VFASLHEADER_RESULT_OFFSET(header), vspaces, vspace_offsets);
+    int result_hint = 0;
+    v = find_pointer_from_offset(VFASLHEADER_RESULT_OFFSET(header), vspaces, vspace_offsets, &result_hint);
     if (((t = TYPEBITS(v)) == type_typed_object)
         && TYPEP(TYPEFIELD(v), mask_box, type_box))
       v = Sunbox(v);
@@ -478,6 +654,7 @@ ptr S_vfasl_to(ptr bv)
 #define VFASL_RELOC_POS(p) (UNFIX(p) >> vfasl_reloc_tag_bits)
 
 static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static) {
+  int target_hint = 0;
     ptr t; iptr a, m, n;
 
     t = CODERELOC(co);
@@ -550,7 +727,7 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
         } else {
           uptr offset = (uptr)obj;
 
-          obj = find_pointer_from_offset(offset, vspaces, vspace_offsets);
+          obj = find_pointer_from_offset(offset, vspaces, vspace_offsets, &target_hint);
           if (TYPEBITS(obj) == type_typed_object) {
             ptr tf = TYPEFIELD(obj);
             if (TYPEP(tf, mask_record, type_record)) {
@@ -572,18 +749,25 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
           }
         }
 
+        VFASL_MARK(TO_VOIDP((uptr)UNTYPE(co, type_typed_object) + a));
         S_set_code_obj("vfasl", RELOC_TYPE(entry), co, a, obj, item_off);
     }
 }
 
-static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets)
+static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint)
 {
-  int s = 0;
+  int s = *hint;
   ITYPE t = TYPEBITS(p_off);
 
   p_off = (uptr)UNTYPE(p_off, t);
-  while (p_off >= vspace_offsets[s+1])
-    s++;
+  /* references cluster by target space, so first try where the
+     previous reference landed */
+  if ((p_off < vspace_offsets[s]) || (p_off >= vspace_offsets[s+1])) {
+    s = 0;
+    while (p_off >= vspace_offsets[s+1])
+      s++;
+    *hint = s;
+  }
 
   return TYPE(ptr_add(vspaces[s], p_off - vspace_offsets[s]), t);
 }

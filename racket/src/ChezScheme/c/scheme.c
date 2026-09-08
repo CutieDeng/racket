@@ -623,6 +623,14 @@ static IBOOL next_path(const char *execpath, char *path,
 /***************************************************************************/
 /* BOOT FILES */
 
+#ifndef WIN32
+/* for mapping boot files instead of streaming them */
+#include <sys/mman.h>
+#include <sys/stat.h>
+#endif
+
+extern int S_vfasl_source_is_permanent_mapping;
+
 typedef struct boot_desc {
   struct fileFaslFileObj ffo;
   iptr len; /* 0 => unknown */
@@ -909,9 +917,37 @@ static void boot_element(ptr tc, ptr x, struct boot_desc *boot) {
 
 static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
   ptr x; iptr i;
+#ifndef WIN32
+  void *boot_map = MAP_FAILED;
+  size_t boot_map_len = 0;
+#endif
 
   if (boot->need_check) {
     if (boot->is_fd) {
+#ifndef WIN32
+      /* Map the boot file and load from memory, so the fasl layer's
+         buffered path applies instead of a read() per span; fall back
+         to streaming if the mapping is not available. */
+      {
+        struct stat sb;
+        if ((fstat(boot->ffo.f.uf.fd, &sb) == 0)
+            && (sb.st_size > boot->offset)) {
+          boot_map_len = (size_t)sb.st_size;
+          boot_map = mmap(NULL, boot_map_len, PROT_READ, MAP_PRIVATE,
+                          boot->ffo.f.uf.fd, 0);
+          if (boot_map != MAP_FAILED) {
+            iptr avail = (iptr)sb.st_size - boot->offset;
+            iptr use = ((boot->len > 0) && (boot->len < avail)) ? boot->len : avail;
+            (void)madvise(boot_map, boot_map_len, MADV_WILLNEED);
+            S_fasl_init_bytes(&boot->ffo.f, (ptr)0,
+                              (char *)boot_map + boot->offset, use);
+            S_vfasl_source_is_permanent_mapping = 1;
+          }
+        }
+      }
+      if (boot_map == MAP_FAILED)
+#endif
+      {
       if (LSEEK(boot->ffo.f.uf.fd, boot->offset, SEEK_SET) != boot->offset) {
         fprintf(stderr, "seek in boot file %s failed\n", boot->path);
         S_abnormal_exit();
@@ -919,6 +955,7 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
       S_fasl_init_fd(&boot->ffo, (ptr)0, boot->ffo.f.uf.fd,
                      (boot->len > 0) ? FASL_BUFFER_READ_REMAINING : FASL_BUFFER_READ_ALL,
                      boot->len);
+      }
     }
     check_boot(&boot->ffo.f, 1, boot->path);
     check_dependencies_header(&boot->ffo.f, boot->path);
@@ -961,6 +998,11 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
   }
 
   S_G.load_binary = Sfalse;
+#ifndef WIN32
+  /* the mapping stays for the life of the process: loaded spaces may
+     point into it, and the shared pages are part of the benefit */
+  S_vfasl_source_is_permanent_mapping = 0;
+#endif
   if (boot->close_after)
     CLOSE(boot->ffo.f.uf.fd);
 }

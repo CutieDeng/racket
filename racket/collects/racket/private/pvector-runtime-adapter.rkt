@@ -306,7 +306,8 @@
   (core-fresh-vector->pvector vec))
 
 (define-syntax-rule (with-core-pvector-builder emit body ...)
-  (let* ([len 0]
+  (let* ([done? #f]
+         [len 0]
          [capacity core-builder-block-size]
          [uniform? #t]
          [uniform-value #f]
@@ -324,6 +325,12 @@
                   (syntax-rules ()
                     [(_ value)
                      (let ([value* value])
+                       ;; re-entering through a continuation captured
+                       ;; in the body after the builder finished would
+                       ;; scribble past the returned pvector
+                       (when done?
+                         (error 'pvector-builder
+                                "builder used after its result was returned"))
                        (when uniform?
                          (if (unsafe-fx= len 0)
                              (set! uniform-value value*)
@@ -334,6 +341,7 @@
                        (unsafe-vector-set! vec len value*)
                        (set! len (unsafe-fx+ len 1)))])])
       body ...)
+    (set! done? #t)
     (cond
       [(unsafe-fx= len 0)
        (core-pvector-empty)]
@@ -454,7 +462,11 @@
   (if core-pvector-apply
       core-pvector-apply
       (case-lambda
-        [(p pv) (apply p (pvector->list pv))]
+        [(p pv)
+         (unless (procedure? p)
+           (raise-argument-error 'pvector-apply "procedure?" p))
+         (check-pvector 'pvector-apply pv)
+         (apply p (pvector->list pv))]
         [(p a . rest)
          ;; `(cons a rest)` has at least two elements: a two-argument call is
          ;; caught by the previous clause.
@@ -590,8 +602,12 @@
 (define (pvector-fold-left pv init proc)
   (if core-pvector-fold-left
       (core-pvector-fold-left pv init proc)
-      (let loop ([xs (pvector->list pv)] [acc init])
-        (if (null? xs) acc (loop (cdr xs) (proc acc (car xs)))))))
+      (begin
+        (check-pvector 'pvector-fold-left pv)
+        (unless (procedure? proc)
+          (raise-argument-error 'pvector-fold-left "procedure?" proc))
+        (let loop ([xs (pvector->list pv)] [acc init])
+          (if (null? xs) acc (loop (cdr xs) (proc acc (car xs))))))))
 
 (define (pvector-fold-right pv init proc)
   (check-pvector 'pvector-fold-right pv)
@@ -630,8 +646,16 @@
 
 (define (pvector-partition pv pred)
   (check-pvector 'pvector-partition pv)
-  (values (pvector-filter pv pred)
-          (pvector-filter pv (lambda (x) (not (pred x))))))
+  ;; one pass, so the predicate sees each element exactly once, as
+  ;; with `partition` on lists
+  (let ([acc (pvector-fold-left
+              pv (cons '() '())
+              (lambda (acc x)
+                (if (pred x)
+                    (cons (cons x (car acc)) (cdr acc))
+                    (cons (car acc) (cons x (cdr acc))))))])
+    (values (list->pvector (reverse (car acc)))
+            (list->pvector (reverse (cdr acc))))))
 
 (define (pvector-count pv pred)
   (check-pvector 'pvector-count pv)
@@ -664,7 +688,9 @@
 (define (pvector-member pv v [is-equal? equal?])
   (unless (and (procedure? is-equal?) (procedure-arity-includes? is-equal? 2))
     (raise-argument-error 'pvector-member "(procedure-arity-includes/c 2)" is-equal?))
-  (pvector-index-where* 'pvector-member pv (lambda (x v) (is-equal? x v)) v))
+  ;; like vector-member, the sought value is the equality's first
+  ;; argument, so asymmetric predicates behave the same way
+  (pvector-index-where* 'pvector-member pv (lambda (x v) (is-equal? v x)) v))
 
 (define (pvector-memq pv v)
   (pvector-index-where* 'pvector-memq pv eq? v))
@@ -960,9 +986,11 @@
                     (loop (unsafe-fx+ i 1)
                           (cons (proc (pvector-ref pv1 i) (vector-ref v2 i))
                                 acc))))))))]
-    [(pv1 . rest)
-     ;; the procedure is the last argument, pvectors come before it
-     (let loop ([l rest] [acc '()])
+    [(pv1 next . rest)
+     ;; the procedure is the last argument, pvectors come before it;
+     ;; requiring a second argument here keeps a one-argument call an
+     ;; arity error instead of a failure inside the loop
+     (let loop ([l (cons next rest)] [acc '()])
        (if (null? (cdr l))
            (pvector-map/many pv1 (reverse acc) (car l))
            (loop (cdr l) (cons (car l) acc))))]))

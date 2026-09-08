@@ -1,5 +1,8 @@
 
 (define-record placeholder (val))
+(define-record-type (pvector-placeholder create-pvector-placeholder pvector-placeholder?)
+  (fields (mutable elements)))
+
 (define-record-type (hash-placeholder create-hash-placeholder hash-placeholder?)
   (fields (mutable alist)))
 (define-record-type (hasheq-placeholder create-hasheq-placeholder hasheq-placeholder?)
@@ -19,6 +22,13 @@
 (define/who (placeholder-get ph)
   (check who placeholder? ph)
   (placeholder-val ph))
+
+(define/who (make-pvector-placeholder lst)
+  (check who
+         :test (list? lst)
+         :contract "list?"
+         lst)
+  (create-pvector-placeholder lst))
 
 (define/who (make-hash-placeholder alst)
   (check who
@@ -65,6 +75,19 @@
                                    "illegal placeholder cycle in value"
                                    "value" orig-v))
           (loop next))]
+       [(pvector-placeholder? v)
+        ;; resolve the elements first (they may contain further
+        ;; placeholders), then build the pvector; pvectors are
+        ;; immutable, so no shell is needed for cycles through the
+        ;; placeholder itself -- graph references resolve through the
+        ;; elements
+        (let ([p (core-list->pvector
+                  (let eloop ([es (pvector-placeholder-elements v)])
+                    (if (null? es)
+                        '()
+                        (cons (loop (car es)) (eloop (cdr es))))))])
+          (hashtable-set! ht v p)
+          p)]
        [(pair? v)
         (let ([p (cons #f #f)])
           (hashtable-set! ht v p)

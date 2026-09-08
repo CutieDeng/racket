@@ -69549,15 +69549,19 @@
             (let ((or-part_0 (raw-defs-shape? defs_0)))
               (if or-part_0
                 or-part_0
-                (if (pair? defs_0)
-                  (if (pair? (cdr defs_0))
-                    (if (null? (cddr defs_0))
-                      (if (eq? (car defs_0) kw3342)
-                        (raw-defs-shape? (cadr defs_0))
+                (let ((or-part_1
+                       (if (null? defs_0) (eq? (car datum_0) 'Empty) #f)))
+                  (if or-part_1
+                    or-part_1
+                    (if (pair? defs_0)
+                      (if (pair? (cdr defs_0))
+                        (if (null? (cddr defs_0))
+                          (if (eq? (car defs_0) kw3342)
+                            (raw-defs-shape? (cadr defs_0))
+                            #f)
+                          #f)
                         #f)
-                      #f)
-                    #f)
-                  #f))))
+                      #f))))))
           #f)
         #f)
       #f)))
@@ -69619,14 +69623,25 @@
                                     (list))))
                                datum_0)
                              (if (list? datum_0) (list datum_0 #f) datum_0)))))
-                    (wrap
-                     (catch-and-reraise-as-reader/proc
-                      in_0
-                      config_0
-                      (lambda () (core-pvector-literal->pvector normalized_0)))
-                     in_0
-                     config_0
-                     init-c_0)))
+                    (let ((graph?_0
+                           (if (read-config-state-graph
+                                (read-config/inner-st
+                                 (read-config/outer-inner config_0)))
+                             #t
+                             #f)))
+                      (wrap
+                       (catch-and-reraise-as-reader/proc
+                        in_0
+                        config_0
+                        (lambda ()
+                          (if (if graph?_0
+                                (elements-pvector-literal-datum? normalized_0)
+                                #f)
+                            (make-pvector-placeholder (car normalized_0))
+                            (core-pvector-literal->pvector normalized_0))))
+                       in_0
+                       config_0
+                       init-c_0))))
                 (let ((c_0
                        (read-expect-char$1
                         (car chars_1)

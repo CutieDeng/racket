@@ -1394,8 +1394,17 @@
   ;; When the public layer hands out raw runtime values, `write` emits a
   ;; readable #pvector literal (checked by round-trip, not by its internal
   ;; shape) and `display`/`print` use the compact forms.
-  (if (raw-core-public-pvector? pv)
-      (begin
+  (cond
+    [(bc-native-public-pvector?)
+     ;; BC's native printer shows the opaque form
+     (check-equal? (format "~s" pv) "#<pvector:3>")
+     (check-equal? (format "~a" (pvector "x" "y")) "#<pvector:2>")
+     (check-equal? (format "~s" (pvector "x" "y")) "#<pvector:2>")
+     (check-equal? (format "~v" (pvector "x" "y")) "#<pvector:2>")
+     (check-equal? (format "~s" (list->pvector (range 40)))
+                   "#<pvector:40>")]
+    [(raw-core-public-pvector? pv)
+     (let ()
         (check-regexp-match #rx"^#pvector[(]" (format "~s" pv))
         (check-equal? (read (open-input-string (format "~s" pv))) pv)
         (check-equal? (format "~a" (pvector "x" "y")) "(pvector x y)")
@@ -1404,8 +1413,9 @@
         (check-equal? (format "~v" (pvector "x" "y")) "(pvector \"x\" \"y\")")
         (let ([big (list->pvector (range 40))])
           (check-regexp-match #rx"^#pvector[(]" (format "~s" big))
-          (check-equal? (read (open-input-string (format "~s" big))) big)))
-      (begin
+          (check-equal? (read (open-input-string (format "~s" big))) big)))]
+    [else
+     (let ()
         (check-equal? (format "~s" pv) "(pvector 1 2 3)")
         (check-equal? (format "~a" (pvector "x" "y")) "(pvector x y)")
         (check-equal? (format "~s" (pvector "x" "y")) "(pvector \"x\" \"y\")")
@@ -1415,7 +1425,7 @@
                        "(pvector 0 1 2 3 4 5 6 7 8 9 "
                        "10 11 12 13 14 15 16 17 18 19 "
                        "20 21 22 23 24 25 26 27 28 29 "
-                       "30 31 32 33 34 35 36 37 38 39)")))))
+                       "30 31 32 33 34 35 36 37 38 39)")))]))
 
 (test-case "pvector direct for/fold expansion shape"
   (define (expanded-datum form)
@@ -2112,8 +2122,12 @@
         (check-equal? (pvector->list pv*) '(a "b" 3)))))
 
 (test-case "place message boundary"
-  ;; a pvector of immutable values is passed directly, without copying
+  ;; a pvector of immutable values is passed directly, without
+  ;; copying; the support lives in the CS thread layer, so BC refuses
   (define pv (pvector 'a "b" 3))
+  (unless (eq? (system-type 'vm) 'chez-scheme)
+    (check-false (place-message-allowed? pv)))
+  (when (eq? (system-type 'vm) 'chez-scheme)
   (check-true (place-message-allowed? pv))
   (define-values (in out) (place-channel))
   (place-channel-put in pv)
@@ -2122,7 +2136,7 @@
   (define mutable-pv (pvector (string-copy "b")))
   (check-false (place-message-allowed? mutable-pv))
   (check-exn #rx"(cannot transmit|place-message-allowed\\?)"
-             (lambda () (place-channel-put in mutable-pv))))
+             (lambda () (place-channel-put in mutable-pv)))))
 
 (test-case "default racket language bindings"
   (for ([module-path (in-list '(racket racket/init))])
