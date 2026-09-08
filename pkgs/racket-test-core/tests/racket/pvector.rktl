@@ -1782,6 +1782,72 @@
   ) ; end test
 ) ; end let
 
+;; incremental growth keeps the middle balanced: depth stays
+;; logarithmic under one-sided consing, chunked appending, and
+;; repeated middle insertion (each formerly built a linear spine)
+(let ([depth-of
+       (lambda (pv)
+         (let ([tbl (make-hash)]
+               [d0 (pvector->literal-datum pv)])
+           (for-each (lambda (def) (hash-set! tbl (car def) (cadr def)))
+                     (cadr d0))
+           (let loop ([id (car d0)])
+             (let ([v (hash-ref tbl id #f)])
+               (if (not v)
+                   0
+                   (case (car v)
+                     [(Node Digit Deep Deep/val)
+                      (+ 1 (apply max 0 (map loop (cddr v))))]
+                     [(Node/val Digit/val) 1]
+                     [else 0]
+                   ) ; end case
+               ) ; end if
+             ) ; end let v
+           ) ; end loop
+         ) ; end let tbl
+       ) ; end lambda
+      ])
+  (test #t < (depth-of (for/fold ([p (pvector)]) ([i 4096])
+                         (pvector-cons-right p i)))
+          20)
+  (test #t < (depth-of (for/fold ([p (pvector)]) ([i 4096])
+                         (pvector-cons-left p i)))
+          20)
+  (test #t < (depth-of (for/fold ([p (pvector)]) ([i 4096])
+                         (pvector-insert p (quotient (pvector-length p) 2) i)))
+          20)
+  (test #t < (depth-of (for/fold ([p (pvector)]) ([i 256])
+                         (pvector-append p (list->pvector (list i i i i)))))
+          20)
+  ;; popping interleaved with same-side growth reloads the edge from
+  ;; the middle instead of slicing, so depth stays logarithmic
+  (test #t < (depth-of
+              (for/fold ([p (pvector 0 1 2 3)]) ([i 4000])
+                (if (zero? (modulo i 3))
+                    (call-with-values (lambda () (pvector-pop-right p))
+                                      (lambda (v r) r))
+                    (pvector-cons-right p i))))
+          20)
+  (test #t < (depth-of
+              (for/fold ([p (pvector 0 1 2 3)]) ([i 4000])
+                (if (zero? (modulo i 3))
+                    (call-with-values (lambda () (pvector-pop-left p))
+                                      (lambda (v r) r))
+                    (pvector-cons-right p i))))
+          20)
+) ; end let depth-of
+;; random-position inserts agree with the list model
+(let loop ([p (pvector)] [l '()] [i 0])
+  (if (= i 400)
+      (test #t equal? (pvector->list p) l)
+      (let* ([pos (modulo (* i 2654435761) (add1 (length l)))]
+             [p2 (pvector-insert p pos i)]
+             [l2 (append (take l pos) (list i) (drop l pos))])
+        (loop p2 l2 (add1 i))
+      ) ; end let*
+  ) ; end if
+) ; end loop
+
 ;; a long consing chain overflows the packed word's six-bit level
 ;; field without saturation, corrupting the measure of a middle node
 ;; (indices then shift by one in a mid-range window); audit every
