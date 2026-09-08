@@ -2715,17 +2715,47 @@
                                #'rest-pat
                                #'rest-pat))))])))
 
+;; Writing every element is linear in the length, which a
+;; structure-shared pvector can make astronomically larger than the
+;; structure itself, so past this many elements `write` falls back to
+;; the structural (raw) literal form, which is linear in the
+;; structure and still readable.
+(define pvector-write-structural-threshold 65536)
+
+;; A two-element sequence can collide with the datum shapes of the
+;; expanded literal form `((elem ...) #f)` and the raw literal form
+;; `(root (defs ...))`; detecting a superset of the reader's exact
+;; boundary is fine, since escaping to the expanded form is always
+;; readable and only changes the printed shape.
+(define (pvector-write-elements-collide? e1 e2)
+  (or (and (list? e1) (eq? e2 #f))
+      (and (symbol? e1) (list? e2))))
+
 (define (pvector-print pv port mode)
   (case mode
     [(#t)
-     ;; the readable form writes the elements directly; the structural
-     ;; (raw) form remains available through `write-pvector-literal`
-     (display "#pvector(" port)
-     (let ([first? #t])
-       (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
-         (if first? (set! first? #f) (display " " port))
-         (write elem port)))
-     (display ")" port)]
+     ;; the readable form writes the elements directly, escaping to
+     ;; the expanded literal form when the element sequence would read
+     ;; back as a different literal shape, and to the structural (raw)
+     ;; form when the length makes element-wise writing unreasonable
+     (let ([len (pvector-length/unsafe pv)])
+       (cond
+         [(> len pvector-write-structural-threshold)
+          (write-pvector-literal pv port)]
+         [(and (= len 2)
+               (pvector-write-elements-collide?
+                (raw:pvector-ref/fast (pvector-tree/unsafe pv) 0)
+                (raw:pvector-ref/fast (pvector-tree/unsafe pv) 1)))
+          (display "#pvector(" port)
+          (write (pvector->list pv) port)
+          (display " #f)" port)]
+         [else
+          (display "#pvector(" port)
+          (let ([first? #t])
+            (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])
+              (if first? (set! first? #f) (display " " port))
+              (write elem port)))
+          (display ")" port)]))]
     [else
      (display "(pvector" port)
      (for ([elem (raw:in-pvector (pvector-tree/unsafe pv))])

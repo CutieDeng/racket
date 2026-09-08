@@ -4679,33 +4679,24 @@
      (core-pvector-literal-list-ref/fill right-values 2)
      (core-pvector-literal-list-ref/fill right-values 3))))
 
-(define (core-pvector-literal-node-same-level? nodes)
-  (or (null? nodes)
-      (let ([level (core-pvector-node-level (car nodes))])
-        (let loop ([nodes (cdr nodes)])
-          (cond
-           [(null? nodes) #t]
-           [(fx= level (core-pvector-node-level (car nodes)))
-            (loop (cdr nodes))]
-           [else #f])))))
-
 (define (core-pvector-literal-build-node variant size nodes)
+  ;; child nodes may sit at different levels: a node's level is an
+  ;; upper bound on its height, and the runtime's own link
+  ;; constructors combine children with the maximum child level plus
+  ;; one (see core-pvector-node-link2/link3), which appending relies
+  ;; on, so rebuild literal nodes the same way instead of requiring
+  ;; uniform child levels
   (let ([len (core-list-length nodes)])
     (core-pvector-literal-check-node-arity variant len)
-    (unless (core-pvector-literal-node-same-level? nodes)
-      (core-pvector-literal-error
-       "~a child nodes do not have the same level"
-       variant))
     (core-pvector-literal-check-size
      variant
      size
      (core-pvector-literal-node-list-measure nodes))
-    (let ([node-level (fx+ (core-pvector-node-level (car nodes)) 1)])
-      (cond
-       [(fx= len 2)
-        (core-make-node2 node-level (car nodes) (cadr nodes))]
-       [else
-        (core-make-node3 node-level (car nodes) (cadr nodes) (caddr nodes))]))))
+    (cond
+     [(fx= len 2)
+      (core-pvector-node-link2 (car nodes) (cadr nodes))]
+     [else
+      (core-pvector-node-link3 (car nodes) (cadr nodes) (caddr nodes))])))
 
 (define (core-pvector-literal-parse-def-value
          val node-ref digit/val-ref digit-ref inner-ref)

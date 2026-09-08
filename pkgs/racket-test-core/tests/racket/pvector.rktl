@@ -1776,6 +1776,47 @@
   ) ; end test
 ) ; end let
 
+;; write escapes element sequences that would read back as a
+;; different literal shape
+(let ([rt (lambda (pv)
+            (let ([o (open-output-string)])
+              (write pv o)
+              (let ([back (read (open-input-string (get-output-string o)
+                                ) ; end open-input-string
+                          ) ; end read
+                    ])
+                (equal? (pvector->list back) (pvector->list pv))
+              ) ; end let back
+            ) ; end let o
+          ) ; end lambda
+        ])
+  (test #t rt (pvector (list 1 2) #f))
+  (test #t rt (pvector 'x '((a 1))))
+  (test #t rt (pvector 'Empty '()))
+  (test #t rt (pvector 'a '(1 2)))
+) ; end let rt
+;; a structure-shared pvector past the write threshold falls back to
+;; the structural form, stays readable, and stays fast
+(let ([big (for/fold ([pv (pvector 0 1)]) ([i 40]) (pvector-append pv pv))])
+  (let ([o (open-output-string)])
+    (write big o)
+    (let ([back (read (open-input-string (get-output-string o)
+                      ) ; end open-input-string
+                ) ; end read
+          ])
+      (test #t = (pvector-length back) (pvector-length big))
+      (test #t equal? (pvector-ref back 12345) (pvector-ref big 12345))
+    ) ; end let back
+  ) ; end let o
+) ; end let big
+;; the raw literal form round-trips appended (level-mixed) structures
+(test #t pvector? (literal-datum->pvector
+                   (pvector->literal-datum
+                    (for/fold ([pv (pvector 0 1)]) ([i 8]) (pvector-append pv pv))
+                   ) ; end pvector->literal-datum
+                  ) ; end literal-datum->pvector
+) ; end test
+
 ;; write emits the readable form and round-trips
 (let ([pv (list->pvector (build-list 100 values
                          ) ; end build-list
