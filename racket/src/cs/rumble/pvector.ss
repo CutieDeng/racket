@@ -25,7 +25,7 @@
 
 ;; The measure (element count) and level (tree depth) of a node share one
 ;; fixnum field: (measure << 6) | level.  A level-L node has measure >= 2^L,
-;; and the measure is capped at 2^54-1 (checked where lengths grow), so the
+;; and the measure is capped by the fixnum width (checked where lengths grow), so the
 ;; level fits in 6 bits and the packed value peaks at 2^60-64+63, within the
 ;; 60-bit fixnum range.  This layout is mirrored by the hand-coded
 ;; `$apply-pvector` entry in "cpnanopass.ss": field 0 is the packed word and
@@ -45,7 +45,10 @@
   [nongenerative #{core-pvector-node3 cutie-pvector-packed-node-2}]
   [sealed #t])
 
-(define core-pvector-max-length (- (fxsll 1 54) 1))
+;; The packed node word holds (measure<<6)|level, so with one sign
+;; bit and six level bits the measure gets (fixnum-width)-7 bits:
+;; 2^54-1 on 64-bit targets, 2^23-1 on 32-bit targets.
+(define core-pvector-max-length (- (fxsll 1 (fx- (fixnum-width) 7)) 1))
 
 (define (core-pvector-node-pack measure level)
   (fxior (fxsll measure 6) level))
@@ -3541,9 +3544,17 @@
    [(not (core-pvector-large-finger? pv))
     (raise-argument-error 'pvector-cons-left "pvector?" pv)]
    [else
+    (core-pvector-check-growth 'pvector-cons-left (core-pvector-large-finger-length pv))
     (core-pvector-large-finger-cons-left pv value)]))
 
+(define (core-pvector-check-growth who len)
+  (when (fx>= len core-pvector-max-length)
+    (raise-arguments-error who
+                           "result length exceeds the maximum pvector length"
+                           "maximum" core-pvector-max-length)))
+
 (define (core-pvector-cons-left/known-length pv len value)
+  (core-pvector-check-growth 'pvector-cons-left len)
   (cond
    [(fx= len 0)
     (core-make-single-pvector value)]
@@ -3561,9 +3572,11 @@
    [(not (core-pvector-large-finger? pv))
     (raise-argument-error 'pvector-cons-right "pvector?" pv)]
    [else
+    (core-pvector-check-growth 'pvector-cons-right (core-pvector-large-finger-length pv))
     (core-pvector-large-finger-cons-right pv value)]))
 
 (define (core-pvector-cons-right/known-length pv len value)
+  (core-pvector-check-growth 'pvector-cons-right len)
   (cond
    [(fx= len 0)
     (core-make-single-pvector value)]
@@ -3621,8 +3634,9 @@
    (core-pvector-inline-e0 right)))
 
 (define (core-pvector-append/known-length left left-len right right-len)
-  ;; the packed node word caps the measure at 2^54-1; appending is the one
-  ;; growth path whose result length is not bounded by an allocated vector
+  ;; the packed node word caps the measure (see core-pvector-max-length);
+  ;; appending can overshoot the cap by more than one, so it checks the
+  ;; sum itself rather than going through core-pvector-check-growth
   (when (fx> (fx+ left-len right-len) core-pvector-max-length)
     (raise-arguments-error 'pvector-append
                            "result length exceeds the maximum pvector length"
@@ -3869,6 +3883,7 @@
                   (core-pvector-copy/unchecked pv len (fx+ index 1) len)))])))
 
 (define (core-pvector-insert pv index value)
+  (core-pvector-check-growth 'pvector-insert (core-pvector-length pv))
   (let ([len (core-check-end-index 'pvector-insert pv index)])
     (cond
      [(fx= index 0) (core-pvector-cons-left/known-length pv len value)]

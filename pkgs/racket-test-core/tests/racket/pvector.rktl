@@ -1776,6 +1776,28 @@
   ) ; end test
 ) ; end let
 
+;; every growth path checks the maximum length; structure sharing
+;; makes reaching the cap cheap
+(let* ([d52 (for/fold ([p (pvector 0 1)]) ([i 52]) (pvector-append p p))]
+       [d52- (call-with-values (lambda () (pvector-pop-right d52))
+                               (lambda (v rest) rest)
+             ) ; end call-with-values
+       ]
+       [near (pvector-append d52 d52-)])
+  (err/rt-test (pvector-cons-right near 99) exn:fail? #rx"pvector-cons-right.*maximum")
+  (err/rt-test (pvector-cons-left near 99) exn:fail? #rx"pvector-cons-left.*maximum")
+  (err/rt-test (pvector-insert near 5 99) exn:fail? #rx"pvector-insert.*maximum")
+  (err/rt-test (pvector-append near near) exn:fail? #rx"pvector-append.*maximum")
+  (let ([near-1 (call-with-values (lambda () (pvector-pop-right near))
+                                  (lambda (v rest) rest)
+                ) ; end call-with-values
+        ])
+    (test #t = (pvector-length (pvector-cons-right near-1 7))
+            (- (expt 2 54) 1)
+    ) ; end test
+  ) ; end let near-1
+) ; end let cap
+
 ;; write escapes element sequences that would read back as a
 ;; different literal shape
 (let ([rt (lambda (pv)
