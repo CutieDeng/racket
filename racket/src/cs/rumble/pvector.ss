@@ -51,7 +51,13 @@
 (define core-pvector-max-length (- (fxsll 1 (fx- (fixnum-width) 7)) 1))
 
 (define (core-pvector-node-pack measure level)
-  (fxior (fxsll measure 6) level))
+  ;; the level is a height upper bound whose only precise use is
+  ;; distinguishing leaf nodes (level 1) from interior nodes, so it
+  ;; saturates at the six-bit field's maximum; without the clamp, the
+  ;; max-plus-one level of a long enough linking chain (about sixty
+  ;; edge overflows of consing, or as many appends) overflows into the
+  ;; low bit of the measure, which silently corrupts indexing
+  (fxior (fxsll measure 6) (fxmin level 63)))
 
 (define (make-core-pvector-node2 measure level a b)
   (%make-core-pvector-node2-packed (core-pvector-node-pack measure level) a b))

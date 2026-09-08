@@ -1782,6 +1782,22 @@
   ) ; end test
 ) ; end let
 
+;; a long consing chain overflows the packed word's six-bit level
+;; field without saturation, corrupting the measure of a middle node
+;; (indices then shift by one in a mid-range window); audit every
+;; index over a chain deep into the saturation region
+(let ([p (for/fold ([p (pvector)]) ([i (in-range 600)]) (pvector-cons-right p i))])
+  (test #t andmap values
+        (for/list ([i (in-range 600)]) (= (pvector-ref p i) i))
+  ) ; end test
+  (test 'X pvector-ref (pvector-set p 253 'X) 253)
+) ; end let
+(let ([q (for/fold ([q (pvector)]) ([i (in-range 600)]) (pvector-cons-left q i))])
+  (test #t andmap values
+        (for/list ([i (in-range 600)]) (= (pvector-ref q i) (- 599 i)))
+  ) ; end test
+) ; end let
+
 ;; graph references (#N#) inside pvector literals resolve through
 ;; make-reader-graph instead of leaving placeholders in the elements
 (let ([v (read (open-input-string "(#0=1 #pvector(#0# 2))"
