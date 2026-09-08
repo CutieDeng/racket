@@ -1228,6 +1228,11 @@
 (require racket/place
 ) ; end require
 
+;; pvector place-message support lives in the CS thread layer; BC has
+;; none, and a places-disabled BC build has no place-channel at all
+(when (and (place-enabled?)
+           (eq? 'chez-scheme (system-type 'vm))
+      ) ; end and
 (let-values ([(pch1 pch2) (place-channel
                           ) ; end place-channel
              ]
@@ -1317,6 +1322,7 @@
     ) ; end let
   ) ; end let*
 ) ; end let-values
+) ; end when place
 
 ;; predicate consistency with the put behavior
 (test #t place-message-allowed? (pvector 1 2 3

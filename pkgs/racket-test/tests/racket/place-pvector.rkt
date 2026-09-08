@@ -3,7 +3,10 @@
          racket/pvector)
 
 (module+ test
-  (go))
+  ;; real places with pvector messages need the CS thread layer
+  (when (and (place-enabled?)
+             (eq? 'chez-scheme (system-type 'vm)))
+    (go)))
 
 (define (go)
   (define p (place ch
