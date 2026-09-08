@@ -100,6 +100,7 @@ int S_vfasl_source_is_permanent_mapping = 0;
    PLT_VFASL_TIMES and reported at exit */
 #include <time.h>
 #include <stdlib.h>
+#include <stdint.h>
 enum {
   vfasl_phase_copy, vfasl_phase_room, vfasl_phase_memcpy,
   vfasl_phase_ptr_sweep, vfasl_phase_singletons,
