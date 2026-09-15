@@ -375,3 +375,16 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - .zo 兼容:fasl/vector/pvector 三套件全过。
 **缺口(下轮)**:①R3 量化基准未跑(dispatch 尾位理论零成本,fasl.rktl 过=定性;P1.1 式 A/B 稳态微基准待补)②实验接线:A 写 seg4z-codes.fasl(枚举序)/B 单次 fasl-read 换掉 97ms zo 重放,zo-b-lookup 改表索引③PORTABLE_BYTECODE_SWAPENDIAN 交叉端序不支持(记为限制)。
 **纪律再证**:#% 前缀是 Chez reader 语法,racket-read datum 里是普通符号,须 ($primitive $name) 显式形式;scheme-environment 缺部分 $-prims($code-name 等),$primitive 全适用。
+
+## 2026-09-15/16:codes.fasl 接线战役(D137-D144)——zo 重放替换全链打通 11/11+11/12
+**接线形态**:A 端 `zo-a-write-codes!`(p3.3-table)把 demand 集(manifest 的 zo/zoclo 名,8415/40289,未引槽 #f)经 `fasl-write 第三参外置谓词`写成 seg4z-codes.fasl(32.4MB,~9s)+codes.manifest(外置命名);B 端 `zo-b-build-from-codes!` 先解 manifest 建 extvec(5208 条全解析,未解析槽=FATAL 防 #f 注入 reloc)再单次 `fasl-read 'load extvec` 填 zo-b-vecs——(evt.seq) 索引协议不动,P33_CODEFASL=1 门控,回退 zo 重放保留。
+**外置命名全谱(逐雷实测建立,每条都有崩溃现场)**:
+- static code(gen=7):bdw 名(dw-codetab);walk 外的 107 个→staddr 兜底。⚠ staddr-static? 的 heapish? 守卫不含 code(40289 全误判 dynamic 的教训),gen 判定直接问 $generation。
+- **FFI 目标地址(普适级发现)**:eval-linklet 物化把 foreign 调用目标 relink 成当进程裸地址(tag 4=非法对象 tag=4 字节对齐 C 地址;$generation 返回 #f 而非炸);A 传 B 必错(首轮 staddr 命名→B GC "copy: illegal type"/OOM,ASLR 布局不同构)。正解=`foreign-address-name` 反查符号名→manifest 'fentry→B `foreign-entry` 重解析(180 条全命中)。**产品化 code 通道铁律:跨进程 code 供给必须把 FFI 地址符号化。**
+- boot 既存 generic 哈希表:dwseq 名;init 新建分派表:kv 内容重建('ht,zo-named code 值以 (vector 'zo e s) 占位+B 延迟回填破"表需 codes、codes 需 extvec"死锁);**kv 含活闭包(expander 回调)的=运行态缓存,'ht-empty 空表冷启语义**。
+- boot static tlc/symbol-cell(gen=7 tag=7,wrf 拒收):staddr(真 static,同构成立)。
+- **kw/rmp intern 域(P3.1 三专项定律在 code 供给面复现)**:code 常量池里的 keyword(deserialize fill 指令按 eq 匹配!"bad fill encoding: '#:representative-scope-fill!")与 resolved-module-path(linklet 互连键,"not exported"×5)副本分裂→7 fail;外置 'kw/'rmp 语义名+B 桥 intern→7 fail 全消。
+**验收状态**:pair 全链 11/11+**扩展 11/12**;唯一残余=sim 族(syntax/parse residual prefab 分裂,minimatch "#<sim:dots>")——'prefab 通道三处已建但**外置 rtd 引发读端流错位("malformed fasl closure",嫌疑=wrf-record 的 rtd 专用写路径绕过外置谓词而 bld 遵守→图表计数错位)**,P33_CF_PREFAB 门控关闭待归因。
+**其它实测**:demand 裁剪 40289→8415 仅省 6% 字节(34.4→32.2MB)——被引 code 图即大头;B 相位 zo build+read ≈78ms(旧 97ms 重放+34ms 读,细测待做);OOM 双例(纯错指针随机死法)随 fentry 修复消失;**codes 线也有方差崩**(2 例/6 有效对,验收段 invalid memory,107 staddr 兜底 code 为重点嫌疑,与主段 21% 方差同型)。
+**工程纪律新记**:fasl-write 外置谓词每 unique 对象恰询一次(bld+wrf 同询,collected 序=extvec 序=引擎既约);crash-learn 循环(attempt→first-irritant→forced 重试)是外置面探索的标准姿势;S_get_code_obj 返回**基对象**(自身已减 item_off,fasl.c 尾行),勿二次剥。
+**下轮清单**:①prefab 流错位归因(fasl.ss wrf-record rtd 路径 vs 谓词交互)→12/12 ②codes 线方差(staddr 兜底 107 code 逐条验证)③B 相位细测+32MB 构成分析④稳定性批。

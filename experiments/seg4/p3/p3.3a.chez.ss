@@ -778,6 +778,26 @@
                              (p3-fasl-to-file! (string-append P3 "/seg4z-externals.manifest")
                                                (vector 'p3-manifest 1 rootnames mvec))
                              (zo-a-write-list! (string-append P3 "/seg4z-zolist.fasl"))
+                             (when (equal? (#%getenv "P33_CODEFASL") "1")
+                               (let ([t0 (c-cpu)]
+                                     [used (c2-mkht c3-equalhash c3-equalpred)])
+                                 ;; demand set: (evt . seq) names the segment
+                                 ;; manifest actually references
+                                 (let lp ([i 0])
+                                   (when (fx< i (vector-length mvec))
+                                     (let ([e (vector-ref mvec i)])
+                                       (when (and (vector? e)
+                                                  (fx>= (vector-length e) 3)
+                                                  (memq (vector-ref e 0) '(zo zoclo)))
+                                         (c2-htset! used
+                                                    (cons (vector-ref e 1)
+                                                          (vector-ref e 2))
+                                                    #t)))
+                                     (lp (fx+ i 1))))
+                                 (zo-a-write-codes! (string-append P3 "/seg4z-codes.fasl")
+                                                    (string-append P3 "/seg4z-codes.manifest")
+                                                    used o)
+                                 (o "codes fasl written in " (- (c-cpu) t0) " ms")))
                              ;; textual patch digest
                              (let ([dg (c-oof (string-append P3 "/seg4z-patch.rktd") 'replace)])
                                (define (d . xs) (for-each (lambda (x) (c-disp x dg)) xs) (c-nl dg))

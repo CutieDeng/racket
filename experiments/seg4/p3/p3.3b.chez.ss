@@ -326,7 +326,13 @@
          (for-each (lambda (s) (o "   loc-fail: " s)) (reverse loc-fail-samples))
          ;; ---- code supply (P3.3: fasl-level zo loading, NO instantiation) ----
          (p "zo table build (fasl decode, no instantiation)... cpu=" (c-cpu))
-         (zo-b-build! (string-append P3 "/seg4z-zolist.fasl") rkt-load-zo-event o)
+         (if (equal? (#%getenv "P33_CODEFASL") "1")
+             (zo-b-build-from-codes! (string-append P3 "/seg4z-codes.fasl")
+                                     (string-append P3 "/seg4z-codes.manifest")
+                                     (string-append P3 "/seg4z-zolist.fasl")
+                                     rkt-string->keyword rkt-bytes->path
+                                     rkt-make-rmp rkt-prefab-rtd o)
+             (zo-b-build! (string-append P3 "/seg4z-zolist.fasl") rkt-load-zo-event o))
          ;; Racket-level guarded eval (uses current-namespace at call time)
          (let* ([safe-eval-cell (box #f)]
                 [safe-eval (lambda (e)

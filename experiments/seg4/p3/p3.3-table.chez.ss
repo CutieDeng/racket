@@ -47,6 +47,250 @@
 (define (zo-a-write-list! path)
   (p3-fasl-to-file! path (vector 'p3-zolist 1 (list->vector (reverse zo-a-events)))))
 
+(define (zo-a-write-codes! bv-path manifest-path used o)
+  ;; used: equal-ht of (evt . seq) actually referenced by the segment
+  ;; manifest (zo/zoclo names); unreferenced slots write #f -- B never
+  ;; looks them up, and each dropped code drops its constant-pool
+  ;; hazards (live callback tables etc.) with it
+  ;; native code supply (P33_CODEFASL): the per-event enumeration
+  ;; vectors written through the kernel's live-code fasl writer as one
+  ;; shared graph; (evt . seq) indexing is unchanged on the B side.
+  ;; Static-generation codes (reachable both as enumeration entries and
+  ;; through dynamic codes' reloc recursion) have no reloc table to
+  ;; serialize and exist in B's own boot heap anyway: they leave the
+  ;; graph through fasl-write's external-predicate hook (the engine's
+  ;; own mechanism) and travel as bdw names in a side manifest, in
+  ;; collection order = B's extvec order.
+  (let* ([all-vecs (list->vector (reverse zo-a-codevecs))]
+         [vecs (let ([nv (make-vector (vector-length all-vecs) '#())])
+                 (let lp ([i 0] [kept 0] [dropped 0])
+                   (if (fx= i (vector-length all-vecs))
+                       (o "codes fasl: demand-filter kept=" kept
+                          "  dropped=" dropped)
+                       (let* ([cv (vector-ref all-vecs i)]
+                              [m (vector-length cv)]
+                              [fv (make-vector m #f)]
+                              [k2 (let lp2 ([j 0] [k2 kept])
+                                    (if (fx= j m)
+                                        k2
+                                        (if (c-htref used (cons i j) #f)
+                                            (begin
+                                              (vector-set! fv j (vector-ref cv j))
+                                              (lp2 (fx+ j 1) (fx+ k2 1)))
+                                            (lp2 (fx+ j 1) k2))))])
+                         (vector-set! nv i fv)
+                         (lp (fx+ i 1) k2 (fx+ dropped (fx- m (fx- k2 kept)))))))
+                 nv)]
+         [root (vector 'p3-codes 1 vecs)]
+         [forced (make-eq-hashtable)]   ; crash-learned unfaslable objects
+         [exts '()]
+         [next 0])
+    (define (pred v)
+      (cond
+        [(and ($code? v)
+              (eqv? (try (lambda () (staddr-gen v)) #f) 7))
+         (set! exts (cons (cons 'scode v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        ;; racket-interned identity domains (P3.1 lesson, retriggered
+        ;; by native code supply): keywords are eq-matched by the
+        ;; deserializer's fill instructions, resolved-module-paths key
+        ;; the linklet cross-instance wiring -- copies split the world
+        [(p3-kw? v)
+         (set! exts (cons (cons 'kw v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        [(p3-rmp? v)
+         (set! exts (cons (cons 'rmp v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        ;; prefab rtds intern by racket prefab KEY, not by Chez uid --
+        ;; a fasl rtd copy splits minimatch struct dispatch (#<sim:...>).
+        ;; GATED: externalizing rtds through the fasl predicate produced
+        ;; "malformed fasl closure" on the read side (stream desync,
+        ;; suspicion: wrf-record's dedicated rtd path bypasses the
+        ;; predicate while bld honored it) -- under investigation
+        [(and (equal? (#%getenv "P33_CF_PREFAB") "1")
+              (c3-rtd? v) (p33-prefab-key+count v))
+         (set! exts (cons (cons 'prefab v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        [(eq-hashtable-ref forced v #f)
+         (set! exts (cons (cons 'alien v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        ;; unmanaged tagged pointers (boot-static data outside SegInfo
+        ;; coverage: measured as #<foreign>, $generation errors, all
+        ;; type predicates #f) -- name them by static address; an
+        ;; immediate misclassified here is harmless (its delta
+        ;; roundtrips to the same value on B)
+        [(and (not (fixnum? v))
+              (not (char? v)) (not (null? v)) (not (boolean? v))
+              (not (eof-object? v)) (not (bwp-object? v))
+              ;; $generation returns #f (not an error) for pointers
+              ;; outside SegInfo coverage -- measured on this batch
+              (let ([g (try (lambda () (staddr-gen v)) 'BAD)])
+                (if (eq? g 'BAD) #t (not g))))
+         (set! exts (cons (cons 'alien v) exts))
+         (set! next (fx+ next 1))
+         #t]
+        [else #f]))
+    (let attempt ([iter 1])
+      (set! exts '())
+      (set! next 0)
+      (let ([r (call/cc
+                (lambda (k)
+                  (with-exception-handler
+                    (lambda (e) (k (cons 'err e)))
+                    (lambda ()
+                      (call-with-values
+                        (lambda () (c-obvop))
+                        (lambda (op get)
+                          (c-faslw root op pred)
+                          (cons 'ok (get))))))))])
+        (cond
+          [(eq? (car r) 'ok)
+           (p3-write-bv-file! bv-path (cdr r))]
+          [(fx> iter 40)
+           (o "FATAL: codes fasl write did not converge after 40 iters")
+           (exit 1)]
+          [else
+           (let ([irr (first-irritant (cdr r))])
+             (o "  codes-write learn iter " iter ": " (obj-brief irr)
+                "  code?=" ($code? irr)
+                " rec?=" ($rec? irr)
+                " proc?=" (procedure? irr)
+                " sym?=" (symbol? irr)
+                " pair?=" (pair? irr)
+                " tlc?=" (try (lambda () ($tlc? irr)) '?)
+                " gen=" (try (lambda () (staddr-gen irr)) '?)
+                " fxaddr=" (try (lambda () (staddr-fxaddr irr)) '?)
+                " delta=" (try (lambda () (fx- (staddr-fxaddr irr) staddr-anchor)) '?)
+                " spec=" (try (lambda () (staddr-spec irr)) '?))
+             (if (eq? irr 'NO-IRRITANT)
+                 (begin
+                   (o "FATAL: codes fasl crash with no irritant: "
+                      (cond->string (cdr r)))
+                   (exit 1))
+                 (begin
+                   (eq-hashtable-set! forced irr #t)
+                   (attempt (fx+ iter 1)))))])))
+    (let ([mv (make-vector next #f)]
+          [nunnamed 0]
+          [nalien 0])
+      (let lp ([i 0] [l (reverse exts)])
+        (when (pair? l)
+          (let ([tag (car (car l))] [v (cdr (car l))])
+            (cond
+              [(eq? tag 'kw)
+               (vector-set! mv i (vector 'kw (p3-kw-str v)))]
+              [(eq? tag 'rmp)
+               (vector-set! mv i (vector 'rmp (p3-rmp-name-spec v)))]
+              [(eq? tag 'prefab)
+               (let ([kc (p33-prefab-key+count v)])
+                 (vector-set! mv i (vector 'prefab (car kc) (cdr kc))))]
+              [(eq? tag 'alien)
+               ;; measured identity: 4-byte-aligned raw C addresses --
+               ;; FFI targets relinked into THIS process by eval-linklet
+               ;; materialization (tag 4 is not a legal object tag).
+               ;; They must go back to symbolic form: reverse the
+               ;; address to its foreign-entry name; B re-resolves in
+               ;; its own address space.  staddr naming is WRONG here
+               ;; (the region is not the static generation; measured
+               ;; B-side GC "copy: illegal type" / OOM from wrong
+               ;; pointers under ASLR).
+               (set! nalien (fx+ nalien 1))
+               (let* ([seq (eq-hashtable-ref dw-obj-seq v #f)]
+                      [sp (and (not seq) (staddr-spec v))]
+                      [addr (and sp (fxlogor (fxsll (fx+ staddr-anchor (car sp)) 3)
+                                             (cdr sp)))]
+                      [nm (and addr (try (lambda () (foreign-address-name addr)) #f))])
+                 (cond
+                   ;; boot-era object with a walk-sequence name (some
+                   ;; crash-learned generic hashtables live here)
+                   [seq (vector-set! mv i (vector 'dwseq seq))]
+                   [nm (vector-set! mv i (vector 'fentry nm))]
+                   ;; init-minted generic hashtable (compiler dispatch
+                   ;; tables burned into constant pools): rebuild by
+                   ;; content on B, eqvht-aux style -- the zo-replay
+                   ;; line materializes a fresh one per process too
+                   [(hashtable? v)
+                    (let* ([hf (c2-hashfn v)]
+                           [kind (cond
+                                   [(not hf) 'eqv]
+                                   [(eq? hf c3-equalhash) 'equal]
+                                   [else 'other])]
+                           [weak (c3-htweak? v)]
+                           [ks (c-htkeys v)]
+                           [enc (lambda (x)
+                                  ;; dispatch-table values are often zo
+                                  ;; codes; carry them by name (the
+                                  ;; manifest fasl has no externals)
+                                  (cond
+                                    [(and ($code? x) (zo-a-lookup x))
+                                     => (lambda (hit)
+                                          (vector 'zo (car hit) (cdr hit)))]
+                                    [else x]))]
+                           [plain? (lambda (x)
+                                     ;; safe for a plain (predicate-free)
+                                     ;; manifest fasl write
+                                     (or (symbol? x) (fixnum? x) (string? x)
+                                         (boolean? x) (null? x) (char? x)
+                                         (bytevector? x) (flonum? x)
+                                         (and (vector? x)
+                                              (eq? (vector-ref x 0) 'zo))))]
+                           [kv (call/cc
+                                (lambda (kk)
+                                  (let ([vec (make-vector (vector-length ks))])
+                                    (let lp2 ([k 0])
+                                      (when (fx< k (vector-length ks))
+                                        (let* ([key (enc (vector-ref ks k))]
+                                               [val (enc (c-htref v (vector-ref ks k) #f))])
+                                          (unless (and (plain? key) (plain? val))
+                                            ;; live values (closures over
+                                            ;; expander callbacks): this is
+                                            ;; a runtime cache -- ship EMPTY
+                                            (kk #f))
+                                          (vector-set! vec k (cons key val)))
+                                        (lp2 (fx+ k 1))))
+                                    vec)))])
+                      (if kv
+                          (vector-set! mv i (vector 'ht kind weak kv))
+                          (vector-set! mv i (vector 'ht-empty kind weak))))]
+                   ;; genuinely static-generation object the fasl layer
+                   ;; refuses (boot tlc / symbol cells): same-layout
+                   ;; address identity applies (gen 7 IS the static
+                   ;; generation, unlike the FFI raw addresses)
+                   [(and sp (eqv? (try (lambda () (staddr-gen v)) #f) 7))
+                    (vector-set! mv i (vector 'staddr (car sp) (cdr sp)))]
+                   [else
+                    (o "  [alien-residue] i=" i " brief=" (obj-brief v)
+                       " gen=" (try (lambda () (staddr-gen v)) 'ERR)
+                       " tag=" (and sp (cdr sp))
+                       " delta=" (and sp (car sp))
+                       " fxaddr=" (try (lambda () (staddr-fxaddr v)) '?))
+                    (vector-set! mv i (vector 'alien (obj-brief v)
+                                              (and sp (cdr sp))))]))]
+              [(eq-hashtable-ref dw-codetab v #f)
+               => (lambda (pr)
+                    (vector-set! mv i (vector 'bdw (car pr) (cdr pr))))]
+              [else
+               ;; static code outside the mark-point bdw walk: fall
+               ;; back to static-address identity (same proof-carrying
+               ;; spec as the alien channel)
+               (let ([sp (staddr-spec v)])
+                 (if sp
+                     (begin
+                       (set! nunnamed (fx+ nunnamed 1))
+                       (vector-set! mv i (vector 'staddr (car sp) (cdr sp))))
+                     (begin
+                       (set! nunnamed (fx+ nunnamed 1))
+                       (vector-set! mv i (vector 'unnamed (dw-code-key v))))))]))
+          (lp (fx+ i 1) (cdr l))))
+      (o "codes fasl: externals=" next "  bdw-unnamed=" nunnamed
+         "  alien=" nalien)
+      (p3-fasl-to-file! manifest-path (vector 'p3-codes-manifest 1 mv)))))
+
 ;; ---------- B side: name -> code ----------
 (define zo-b-vecs #f)                   ; vector of per-event code vectors
 (define zo-b-nmismatch 0)
@@ -79,6 +323,187 @@
        "  codes=" ncodes "  count-mismatch-events=" zo-b-nmismatch
        "  wrapped-forced=" zo-enum-stats-wc "  wc-force-fail=" zo-enum-stats-wcfail)
     n))
+
+(define (zo-b-build-from-codes! bv-path manifest-path zolist-path
+                                rkt-string->keyword rkt-bytes->path rkt-make-rmp
+                                rkt-prefab-rtd o)
+  ;; single fasl-read replaces the 330-file zo replay.  The side
+  ;; manifest names the externalized static codes (bdw keys) resolved
+  ;; against B's own boot heap into the extvec BEFORE the read; any
+  ;; unresolved slot is fatal (it would silently wire #f into a reloc
+  ;; span -- the zoclo-MISS lesson).  The zolist still supplies
+  ;; per-event expected counts as a parity check.
+  (let* ([mm (p3-fasl-from-file manifest-path)]
+         [mv (vector-ref mm 2)]
+         [nx (vector-length mv)]
+         [extvec (make-vector nx #f)]
+         [ht-pending '()]   ; (table . kv) -- filled AFTER the codes read
+         [nmiss 0])
+    (let lp ([i 0])
+      (when (fx< i nx)
+        (let ([e (vector-ref mv i)])
+          (case (vector-ref e 0)
+            [(bdw)
+             (let ([r (dw-lookup-code (vector-ref e 1) (vector-ref e 2))])
+               (if r
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest MISS i=" i
+                          " key=" (vector-ref e 1)
+                          " occ=" (vector-ref e 2))))))]
+            [(kw)
+             ;; re-intern through racket's keyword table
+             (let ([k (try (lambda () (rkt-string->keyword (vector-ref e 1))) #f)])
+               (if k
+                   (vector-set! extvec i k)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest KW-MISS i=" i
+                          " str=" (vector-ref e 1))))))]
+            [(rmp)
+             ;; re-intern through racket's resolved-module-path table
+             ;; (spec decoding mirrors the segment resolver's rmp case)
+             (let* ([spec (vector-ref e 1)]
+                    [name (let dec ([s spec])
+                            (and s
+                                 (case (vector-ref s 0)
+                                   [(sym) (vector-ref s 1)]
+                                   [(pth) (try (lambda ()
+                                                 (rkt-bytes->path (vector-ref s 1)))
+                                               #f)]
+                                   [(lst) (let ([b (dec (vector-ref s 1))])
+                                            (and b (cons b (vector-ref s 2))))]
+                                   [else #f])))]
+                    [r (and name (try (lambda () (rkt-make-rmp name)) #f))])
+               (if r
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest RMP-MISS i=" i)))))]
+            [(prefab)
+             ;; canonical prefab rtd by racket key + total field count
+             (let ([r (try (lambda ()
+                             (rkt-prefab-rtd (vector-ref e 1) (vector-ref e 2)))
+                           #f)])
+               (if (and r (c3-rtd? r))
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest PREFAB-MISS i=" i)))))]
+            [(ht-empty)
+             ;; runtime cache table shipped empty (cold-start semantics)
+             (let* ([kind (vector-ref e 1)]
+                    [weak (vector-ref e 2)]
+                    [t (case kind
+                         [(equal other) (c2-mkht c3-equalhash c3-equalpred)]
+                         [else (if weak (c3-mkweqv) (c2-mkeqvht))])])
+               (vector-set! extvec i t))]
+            [(ht)
+             ;; init-minted dispatch table: the empty table enters the
+             ;; extvec now (its identity is all the reloc patch needs);
+             ;; kv values may name zo codes, so filling waits until the
+             ;; codes read below has built zo-b-vecs
+             (let* ([kind (vector-ref e 1)]
+                    [weak (vector-ref e 2)]
+                    [kv (vector-ref e 3)]
+                    [t (case kind
+                         [(equal other) (c2-mkht c3-equalhash c3-equalpred)]
+                         [else (if weak (c3-mkweqv) (c2-mkeqvht))])])
+               (set! ht-pending (cons (cons t kv) ht-pending))
+               (vector-set! extvec i t))]
+            [(dwseq)
+             ;; boot-era object named by walk sequence (B's own walk
+             ;; produced the same numbering at the mark point)
+             (let ([r (c-htref dw-seq-obj (vector-ref e 1) #f)])
+               (if r
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest DWSEQ-MISS i=" i
+                          " seq=" (vector-ref e 1))))))]
+            [(fentry)
+             ;; FFI target: re-resolve the foreign name in THIS
+             ;; process's address space
+             (let ([a (try (lambda () (foreign-entry (vector-ref e 1))) #f)])
+               (if a
+                   (vector-set! extvec i (staddr-a2o a 0))
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest FENTRY-MISS i=" i
+                          " name=" (vector-ref e 1))))))]
+            [(staddr)
+             ;; static-generation code outside the bdw walk: same-layout
+             ;; address identity (A-side spec carried a roundtrip proof)
+             (let ([r (staddr-resolve (vector-ref e 1) (vector-ref e 2))])
+               (if r
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest STADDR-MISS i=" i
+                          " delta=" (vector-ref e 1)
+                          " tag=" (vector-ref e 2))))))]
+            [else
+             (set! nmiss (fx+ nmiss 1))
+             (when (fx<= nmiss 8)
+               (o "  codes-manifest UNNAMED i=" i
+                  " info=" (vector-ref e 1)))]))
+        (lp (fx+ i 1))))
+    (when (fx> nmiss 0)
+      (o "FATAL: codes manifest unresolved static codes: " nmiss " / " nx
+         "; aborting (a #f extvec slot would corrupt a reloc span)")
+      (exit 1))
+    (let* ([bv (p3-read-bv-file bv-path)]
+           [ip (c-obvip bv)]
+           [m (c-faslr ip 'load extvec)]
+           [vecs (vector-ref m 2)]
+           [meta (p3-fasl-from-file zolist-path)]
+           [evs (vector-ref meta 2)]
+           [n (vector-length vecs)]
+         [ncodes 0]
+         [nbad 0])
+      (set! zo-b-vecs vecs)
+      ;; deferred dispatch-table fill: zo names resolve now
+      (let ([decode (lambda (x)
+                      (if (and (vector? x)
+                               (fx= (vector-length x) 3)
+                               (eq? (vector-ref x 0) 'zo))
+                          (zo-b-lookup (vector-ref x 1) (vector-ref x 2))
+                          x))])
+        (for-each
+          (lambda (pr)
+            (let ([t (car pr)] [kv (cdr pr)])
+              (let lp2 ([k 0])
+                (when (fx< k (vector-length kv))
+                  (let ([e2 (vector-ref kv k)])
+                    (c2-htset! t (decode (car e2)) (decode (cdr e2))))
+                  (lp2 (fx+ k 1))))))
+          ht-pending))
+      (unless (fx= n (vector-length evs))
+        (set! nbad (fx+ nbad 1))
+        (o "  codes-fasl EVENT-COUNT MISMATCH: codes=" n
+           " zolist=" (vector-length evs)))
+      (let lp ([i 0])
+        (when (fx< i n)
+          (let ([m2 (vector-length (vector-ref vecs i))])
+            (set! ncodes (fx+ ncodes m2))
+            (when (fx< i (vector-length evs))
+              (unless (fx= m2 (vector-ref (vector-ref evs i) 2))
+                (set! nbad (fx+ nbad 1))
+                (o "  codes-fasl COUNT MISMATCH evt=" i
+                   " codes=" m2
+                   " expected=" (vector-ref (vector-ref evs i) 2)))))
+          (lp (fx+ i 1))))
+      (o "zo table (native codes fasl): events=" n "  codes=" ncodes
+         "  static-extvec=" nx "  count-mismatches=" nbad)
+      n)))
 
 (define (zo-b-lookup evt seq)
   (and zo-b-vecs

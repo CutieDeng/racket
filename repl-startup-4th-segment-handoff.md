@@ -199,7 +199,7 @@ CS `eq-hash-code` = rumble `codes` 弱表按首问序分配的**进程本地序�
 
 ### 7.3 产品化清单
 - build.zuo 四段构建、embed-boot.rkt、boot.c（retain-reloc 钩子转正）、main.sps 条件装载。
-- zo 重放→内核 closure-fasl 原生 code（fasl-type-closure-freevars=47 已在主线），164ms（green-none 线实测 97ms）归零的关键。**内核基石已落地（2026-09-15，D134-D136）**：`fasl.ss wrf-code/bld-code` + `prim5.c s_fasl_code_info`——活 code 对象经既有 fasl_type_code 线格式原生往返，库入口/C 入口/立即数按编译器符号化编码逆向分类；p73 电池 10/10 + fasl/vector/pvector 三套件全过；**t4 证明 code+闭包同图旅行时 0-fv 身份分裂天然不发生**（zoclo 届时自然消失）。剩实验接线：A 写 `seg4z-codes.fasl`、B 单次 fasl-read 替代 zo 重放、zo-b-lookup 改表索引；R3 量化微基准待补。
+- zo 重放→内核 closure-fasl 原生 code（fasl-type-closure-freevars=47 已在主线），164ms（green-none 线实测 97ms）归零的关键。**内核基石已落地（2026-09-15，D134-D136）**：`fasl.ss wrf-code/bld-code` + `prim5.c s_fasl_code_info`——活 code 对象经既有 fasl_type_code 线格式原生往返，库入口/C 入口/立即数按编译器符号化编码逆向分类；p73 电池 10/10 + fasl/vector/pvector 三套件全过；**t4 证明 code+闭包同图旅行时 0-fv 身份分裂天然不发生**（zoclo 届时自然消失）。**实验接线已打通（2026-09-15/16，D137-D144）**：A 写 `seg4z-codes.fasl`（demand 集 8415 code，32.4MB）+ `seg4z-codes.manifest`（外置命名：bdw/staddr/fentry/ht/kw/rmp 全谱），B 单次 fasl-read（extvec 5208 全解析）替代 330 文件 zo 重放，`P33_CODEFASL=1` 门控——**11/11 + 扩展 11/12**。唯一残余=sim prefab 分裂（'prefab 通道已建、外置 rtd 引发流错位待归因，`P33_CF_PREFAB` 门控）。铁律新增：**跨进程 code 供给必须把 FFI 目标地址符号化**（`foreign-address-name`→`foreign-entry`，eval-linklet 物化 relink 的当进程地址在 B 是毒指针）；kw/rmp intern 律在 code 常量池同样成立。codes 线方差与 32MB 构成分析在下轮清单（流水账 D144）。R3 量化微基准待补。
 - zomiss 10（#f|128 匿名 code）→0。
 - 两处 C 改动提交（用户裁决时机）。
 - xrepl-lib 惰性化三改动（readline 双惰性化）已在安装拷贝 `racket/share/pkgs/xrepl-lib/xrepl/xrepl.rkt`，待 vendoring。
