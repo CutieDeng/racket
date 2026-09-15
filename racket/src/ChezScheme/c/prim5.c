@@ -2361,6 +2361,8 @@ static ptr s_fasl_code_info(ptr co) {
       code_off = RELOC_CODE_OFFSET(entry);
     }
     a += code_off;
+    /* S_get_code_obj returns the BASE object: it subtracts item_off
+       itself (fasl.c: return (ptr)(item - o)) -- do NOT strip again */
     obj = S_get_code_obj(RELOC_TYPE(entry), co, a, item_off);
     /* classify the item the way the compiler's fasl writer would have
        encoded it: library entries and C entries travel as indices
