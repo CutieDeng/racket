@@ -153,6 +153,14 @@ void racket_boot(racket_boot_arguments_t *ba)
 
   Sscheme_init(NULL);
 
+  /* Keep relocation tables for static-generation code objects, so
+     boot-library code remains introspectable (heap-walk naming for the
+     pre-instantiated namespace segment needs to reach codes referenced
+     only through other codes' constant pools). Gated by an environment
+     variable while the fourth-boot-segment work is experimental. */
+  if (getenv("RACKET_RETAIN_STATIC_RELOC") != NULL)
+    Sretain_static_relocation();
+
 #ifdef PBCHUNK_REGISTER
   register_pbchunks();
 #endif

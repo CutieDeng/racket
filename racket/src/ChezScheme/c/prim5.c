@@ -2281,7 +2281,10 @@ static ptr s_get_reloc(ptr co, IBOOL with_offsets) {
 
   require(Scodep(co),"s_get_reloc","~s is not a code object",co);
 
-  if (s_generation(co) == FIX(static_generation))
+  /* static-generation code normally has its reloc table discarded, but
+     with retain_static_relocation the table is valid and walkable */
+  if ((s_generation(co) == FIX(static_generation))
+      && !S_G.retain_static_relocation)
     return Snil;
 
   ls = Snil;
