@@ -100,6 +100,7 @@ static void s_nanosleep(ptr sec, ptr nsec);
 static ptr s_set_collect_trip_bytes(ptr n);
 static void c_exit(I32 status);
 static ptr s_get_reloc(ptr co, IBOOL with_offsets);
+static ptr s_fasl_code_info(ptr co);
 #ifdef PTHREADS
 static s_thread_rv_t s_backdoor_thread_start(void *p);
 static iptr s_backdoor_thread(ptr p);
@@ -2222,6 +2223,7 @@ void S_prim5_init(void) {
 #endif /* LOG1P */
 
     Sforeign_symbol("(cs)s_get_reloc", (void *)s_get_reloc);
+    Sforeign_symbol("(cs)s_fasl_code_info", (void *)s_fasl_code_info);
     Sforeign_symbol("(cs)getenv", (void *)s_getenv);
     Sforeign_symbol("(cs)putenv", (void *)s_putenv);
     Sforeign_symbol("(cs)byte-copy", (void *)s_byte_copy);
@@ -2320,6 +2322,92 @@ static ptr s_get_reloc(ptr co, IBOOL with_offsets) {
     }
   }
   return ls;
+}
+
+/* everything fasl-write needs from a live code object that the Scheme
+   layer cannot reach: type flags, byte length, a copy of the machine
+   code, the free count, and the relocation table as explicit entries
+   (type, extended?, code-offset delta, item offset, object) in table
+   order.  Follows s_get_reloc's allocation pattern: C-side allocation
+   grows the heap and never collects, so co and t stay put. */
+static ptr s_fasl_code_info(ptr co) {
+  ptr bv, rls, t, res; iptr len; uptr a, m, n;
+
+  require(Scodep(co),"s_fasl_code_info","~s is not a code object",co);
+
+  if ((s_generation(co) == FIX(static_generation))
+      && !S_G.retain_static_relocation)
+    return Sfalse;
+
+  len = CODELEN(co);
+  bv = S_bytevector(len);
+  memcpy(&BVIT(bv, 0), TO_VOIDP(&CODEIT(co, 0)), len);
+
+  rls = Snil;
+  t = CODERELOC(co);
+  m = RELOCSIZE(t);
+  a = 0;
+  n = 0;
+  while (n < m) {
+    uptr entry, item_off, code_off; IBOOL ext; ptr obj, v;
+    entry = RELOCIT(t, n); n += 1;
+    if (RELOC_EXTENDED_FORMAT(entry)) {
+      ext = 1;
+      item_off = RELOCIT(t, n); n += 1;
+      code_off = RELOCIT(t, n); n += 1;
+    } else {
+      ext = 0;
+      item_off = RELOC_ITEM_OFFSET(entry);
+      code_off = RELOC_CODE_OFFSET(entry);
+    }
+    a += code_off;
+    obj = S_get_code_obj(RELOC_TYPE(entry), co, a, item_off);
+    /* classify the item the way the compiler's fasl writer would have
+       encoded it: library entries and C entries travel as indices
+       (fasl_type_library / _library_code / _entry), never as objects;
+       a leftover fixnum-looking value is a raw immediate.  kind codes:
+       0=obj 1=library 2=library-code 3=centry 4=immediate */
+    {
+      iptr kind = 0; ptr payload = obj; iptr i2;
+      if (Sfixnump(obj)) {
+        kind = 4; payload = Sunsigned((uptr)obj);
+        for (i2 = 0; i2 < c_entry_vector_size; i2 += 1) {
+          if (Svector_ref(S_G.c_entry_vector, i2) == obj) {
+            kind = 3; payload = FIX(i2); break;
+          }
+        }
+      } else {
+        for (i2 = 0; i2 < library_entry_vector_size; i2 += 1) {
+          ptr le = Svector_ref(S_G.library_entry_vector, i2);
+          if (le != Sfalse) {
+            if (le == obj) { kind = 1; payload = FIX(i2); break; }
+            if (Scodep(obj) && CLOSCODE(le) == obj) {
+              kind = 2; payload = FIX(i2); break;
+            }
+          }
+        }
+      }
+      v = S_vector(6);
+      INITVECTIT(v, 0) = FIX((iptr)RELOC_TYPE(entry));
+      INITVECTIT(v, 1) = ext ? Strue : Sfalse;
+      INITVECTIT(v, 2) = Sunsigned(code_off);
+      INITVECTIT(v, 3) = Sunsigned(item_off);
+      INITVECTIT(v, 4) = FIX(kind);
+      INITVECTIT(v, 5) = payload;
+      rls = Scons(v, rls);
+    }
+  }
+  { ptr r = Snil;
+    while (rls != Snil) { r = Scons(Scar(rls), r); rls = Scdr(rls); }
+    rls = r; }
+
+  res = S_vector(5);
+  INITVECTIT(res, 0) = FIX((iptr)((CODETYPE(co) >> code_flags_offset) & 0xff));
+  INITVECTIT(res, 1) = FIX(len);
+  INITVECTIT(res, 2) = bv;
+  INITVECTIT(res, 3) = FIX(CODEFREE(co));
+  INITVECTIT(res, 4) = rls;
+  return res;
 }
 
 static void s_byte_copy(ptr src, iptr srcoff, ptr dst, iptr dstoff, iptr cnt) {
