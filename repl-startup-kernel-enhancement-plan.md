@@ -361,3 +361,17 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - **⇒ ~4.66MB(92%)是多槽共享核心图**(ns/expander 世界:patch ops 引用之,h7 codes-delta 的键即其对象,rtdprops/aux 亦可达)。砍任何容器都省不下;**7.2.2 原设想(rtdprops/zo 清单按需化)对字节证伪**(独占 37K/42K 级)。真裁剪须动核心图=7.2.3 分层领域。
 **计时(green-none P33_PROBES=0,prog 相位时间线,已验证)**:B 恢复主链 driver-entry→replay-done ≈193ms=zo 重放 **97ms**(330 事件/40289 codes;实验命名装置,产品归零)+bdw/cpb walk ~26+manifest/loc 7+resolve 3+fasl-read+install ~34(读本体 14ms@5.08MB)+hooks 1+replay 24。窗口内 GC ~71ms(zo 重放分配主导,产品同灭)。**产品外推:boot 37+read/install ~34+replay/hooks ~25 ≈ 96ms,80-100ms 目标在 green-none 线上成立**。
 **优先级重排(数据驱动)**:段字节(5.08MB)不在 time-to-prompt 关键路径(读 14ms),只关 RSS 红线与分发体积→7.2.3 图分层**降级缓做**;**下一里程碑=7.3 产品化**,首项=code 通道原生化(内核 closure-fasl 47 已在主线,消 97ms zo 重放=最大实验伪影,同时 zoclo 命名基座随动)。
+
+## 🎯 2026-09-15:内核原生 code fasl 能力落地(D134-D136)——P1.1 的下半场
+**能力**:活 code 对象可 fasl-write/fasl-read 往返(此前 wrf 无 code 分支=invalid fasl object,闭包的 code 只能走 externals)。P7.3 code 通道原生化的内核基石。
+**实现**(无新 fasl 类型,复用 fasl_type_code=11 既有线格式,读端 fasl.c:1138 本已存在):
+- `prim5.c s_fasl_code_info`(+注册):活 code 的 flags/字节长/机器码 bytevector 拷贝/free-count/**逐条 reloc 元组**(type/extended?/code-off 增量/item-off/kind/payload)。沿 s_get_reloc 分配模式(C 侧分配只扩堆不收集,co/t 不动)。static-gen 无 retain 时返回 #f。
+- `fasl.ss bld-code/wrf-code` + dispatch 尾位两插入($code? 测试在全部既有类型之后=非 code 路径零成本)。**关键机制事实:读端读完机器码后对每条 reloc 无条件 S_set_code_obj 重打 span→活字节里烤死的地址不必清零,原样拷贝即可**;code_off 为累计增量,与活表同约定。
+- **D135 分类通道(get-room 事故)**:活 reloc 里的库入口/C 入口/立即数**不可当对象递归**(boot-static 库 code 无 reloc 表,直接炸)——编译器 fasl 对它们走符号化 fasl_type_library/library_code/entry/immediate 索引;写端逆向分类(kind 0-4),bld 只收 kind-0。逆查:globals.h 的 vfasl 逆查表(c_entries/library_entries/library_entry_codes)是**死声明**(写端已迁 Scheme),自建线性扫 library_entry_vector/c_entry_vector(spike 级;产品化可换哈希)。
+**验证(已验证)**:
+- p73 电池(experiments/seg4/p73-code-roundtrip.rkt)**10/10**:1-fv/0-fv/互递归/自引用 0-fv/裸 code,字段 bit 级+行为等价。
+- **t4 前提实测(重要新知)**:纯自调用 letrec 编译成 code 直引,**不产** reloc 自字面量(reloc 全 code);只有"把自己当值用"(eq? n f——恰是 stxparam mark-key 形态)才产字面量。
+- **t4-unified 行为证明**:往返后 (sf2 sf2)='self+读端 reloc 字面量 eq sf2——**code 与闭包同图旅行时 0-fv 身份分裂天然不发生**,原生 code 通道下 zoclo 机制自然消失(判据不变)的直接证据。
+- .zo 兼容:fasl/vector/pvector 三套件全过。
+**缺口(下轮)**:①R3 量化基准未跑(dispatch 尾位理论零成本,fasl.rktl 过=定性;P1.1 式 A/B 稳态微基准待补)②实验接线:A 写 seg4z-codes.fasl(枚举序)/B 单次 fasl-read 换掉 97ms zo 重放,zo-b-lookup 改表索引③PORTABLE_BYTECODE_SWAPENDIAN 交叉端序不支持(记为限制)。
+**纪律再证**:#% 前缀是 Chez reader 语法,racket-read datum 里是普通符号,须 ($primitive $name) 显式形式;scheme-environment 缺部分 $-prims($code-name 等),$primitive 全适用。
