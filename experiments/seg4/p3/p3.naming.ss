@@ -1182,6 +1182,89 @@
          (car l)]
         [else (loop (cdr l))]))))
 
+;; ---------- 7.2.1 targeted preheat: lazy syntax-literals force plan ----------
+;; The workload preheat exists to force declared modules' deserialized-
+;; syntax-vector boxes (the scope-minting layer) before the segment is
+;; written; running user-level code for that drags the workload's own
+;; modules and eval by-products into the segment.  This enumerates the
+;; registry declarations instead and hands back each module's
+;; force-bulk-binding closure (expander eval/module.rkt wires it to
+;; force-syntax-deserialize) so the runner can invoke them racket-side
+;; (exception-wrapped there -- racket raise from a bare Chez frame kills
+;; the process) with the namespace's bulk-binding-registry.
+
+(define (p33-rtd-field-index rtd want)
+  ;; absolute field index (as $rref counts, inherited fields first) of
+  ;; the field named `want`, searching rtd then its ancestors; #f if absent
+  (let loop ([r rtd])
+    (and r
+         (let* ([names (record-type-field-names r)]
+                [base (let ([p (record-type-parent r)])
+                       (if p (rtd-total-fields p) 0))]
+                [n (vector-length names)])
+           (let scan ([i 0])
+             (cond
+               [(fx= i n) (loop (record-type-parent r))]
+               [(eq? (vector-ref names i) want) (fx+ base i)]
+               [else (scan (fx+ i 1))]))))))
+
+(define (p33-rec-field-by-name x want)
+  (let ([i (and ($rec? x) (p33-rtd-field-index ($rtd x) want))])
+    (and i (try (lambda () ($rref x i)) #f))))
+
+(define (p33-fsp-name-str k)
+  ;; deterministic sort key for a resolved-module-path (single field: name)
+  (let ([nm (if (p3-rmp? k) (try (lambda () ($rref k 0)) k) k)])
+    (cond
+      [(symbol? nm) (symbol->string nm)]
+      [(and ($rec? nm) (p3-path? nm))
+       (c-fmt "~a" (try (lambda () ($rref nm 0)) nm))]
+      [else (c-fmt "~s" nm)])))
+
+(define (p33-syntax-force-plan ns)
+  ;; -> (vector breg (vector (name-str . force-closure) ...)) name-sorted,
+  ;;    or (vector 'ERR diag) when a field lookup fails.
+  ;; Field access by INDEX (rumble rtds do not carry the racket source
+  ;; field names): ns f7=module-registry f9=bulk-binding-registry
+  ;; (handoff constants, project-validated); module-registry f0=
+  ;; declarations (registry.rkt:7); module f12=force-bulk-binding
+  ;; (namespace/module.rkt:74, #:authentic, no parent).  Each index is
+  ;; validated against the record's rtd-name / a procedure? check.
+  (let* ([reg (let ([r (try (lambda () ($rref ns 7)) #f)])
+                (and ($rec? r) (eq? (rtd-name r) 'module-registry) r))]
+         [breg (let ([r (try (lambda () ($rref ns 9)) #f)])
+                 (and ($rec? r) r))]
+         [decls (and reg (try (lambda () ($rref reg 0)) #f))]
+         [ht (and decls ($rec? decls)
+                  ;; racket mutable hash: descend only into the Chez
+                  ;; hashtable field (dw-kids precedent, d97-d100)
+                  (let ([n (rtd-total-fields ($rtd decls))])
+                    (let scan ([i 0])
+                      (and (fx< i n)
+                           (let ([v (try (lambda () ($rref decls i)) #f)])
+                             (if (hashtable? v) v (scan (fx+ i 1))))))))])
+    (if (not (and breg ht))
+        (vector 'ERR (list 'reg (and reg #t) 'breg (and breg #t)
+                           'decls (and decls #t) 'ht (and ht #t)
+                           'f7-name (let ([r (try (lambda () ($rref ns 7)) #f)])
+                                      (and ($rec? r) (rtd-name r)))))
+        (let* ([ks (hashtable-keys ht)]
+               [prs (let lp ([i (fx- (vector-length ks) 1)] [acc '()])
+                      (if (fx< i 0)
+                          acc
+                          (lp (fx- i 1)
+                              (let* ([k (vector-ref ks i)]
+                                     [m (hashtable-ref ht k #f)]
+                                     [fbb (and m ($rec? m)
+                                               (eq? (rtd-name m) 'module)
+                                               (try (lambda () ($rref m 12)) #f))])
+                                (if (procedure? fbb)
+                                    (cons (cons (p33-fsp-name-str k) fbb) acc)
+                                    acc)))))])
+          (vector breg
+                  (list->vector
+                   (sort (lambda (a b) (string<? (car a) (car b))) prs)))))))
+
 (define (p33-zoclo-target? v)
   ;; the 'zoclo rule's object-side essence (sans mark-ht guard): would this
   ;; closure canonicalize through the zoclo channel?  Used by A's manifest

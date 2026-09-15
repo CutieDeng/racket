@@ -232,7 +232,62 @@
         ;; the first forcing of many module templates -- B-minted scopes
         ;; split the binding world (kw.rkt #%app unbound).
         ;; Runs before (current-load orig) so cold loads are intercepted.
+        ;; P33_PREHEAT selects the preheat strategy (read here, inside the
+        ;; A-only path: an env read before the mark point would allocate
+        ;; differently on A and B and the segment is boot-state sensitive):
+        ;;   workload (default) -- the 20-expr acceptance workload below
+        ;;   force              -- targeted force of every declared module's
+        ;;                         deserialized-syntax box via the module's
+        ;;                         force-bulk-binding closure (7.2.1): no
+        ;;                         user-level code, no new instantiations
+        ;;   both               -- workload then force (diagnostic)
+        ;;   none               -- no preheat at all (diagnostic)
         (if (equal? role "A")
+            (let-values ([(pmode) (let-values ([(v) (getenv* #"P33_PREHEAT")])
+                                    (if v (bytes->string/utf-8 v) "workload"))])
+              (begin
+                (if (if (equal? pmode "force") #t (equal? pmode "none"))
+                    (void)
+                    (run-workload-preheat!))
+                (if (if (equal? pmode "workload") #t (equal? pmode "none"))
+                    (void)
+                    (run-force-preheat!))
+                (if (equal? pmode "none")
+                    (say "[p33][A] preheat: none (diagnostic)")
+                    (void))))
+            (void))
+        (current-load orig)
+        (collect-garbage)
+        (collect-garbage))))
+  (define-values (run-force-preheat!)
+    (lambda ()
+      (let-values ([(plan) (ceval (list 'p32-in
+                                        (list 'quote
+                                              (list 'p33-syntax-force-plan
+                                                    (list 'quote (vector-ref rootvec 0))))))])
+        (if (if (vector? plan) (eq? (vector-ref plan 0) 'ERR) #t)
+            (say "[p33][A] force-preheat PLAN FAILED: " plan)
+            (let-values ([(breg) (vector-ref plan 0)]
+                         [(prs) (vector-ref plan 1)]
+                         [(se2) (rkt-make-safe-eval)])
+              (letrec-values ([(lp)
+                               (lambda (i ok err)
+                                 (if (= i (vector-length prs))
+                                     (say "[p33][A] force-preheat: modules="
+                                          (vector-length prs) " ok=" ok " err=" err)
+                                     (let-values ([(r) (se2 (list (cdr (vector-ref prs i))
+                                                                  breg))])
+                                       (if (eq? (car r) 'val)
+                                           (lp (+ i 1) (+ ok 1) err)
+                                           (begin
+                                             (if (< err 8)
+                                                 (say "[p33][A] force-preheat ERR "
+                                                      (car (vector-ref prs i)) ": " (cdr r))
+                                                 (void))
+                                             (lp (+ i 1) ok (+ err 1)))))))])
+                (lp 0 0 0)))))))
+  (define-values (run-workload-preheat!)
+    (lambda ()
             (let-values ([(se) (rkt-make-safe-eval)])
               (let-values ([(res)
                             (map (lambda (e) (car (se e)))
@@ -267,11 +322,7 @@
                                                   n
                                                   (cnt (cdr l)
                                                        (if (eq? (car l) 'err) (+ n 1) n))))])
-                       (cnt res 0)))))
-            (void))
-        (current-load orig)
-        (collect-garbage)
-        (collect-garbage))))
+                       (cnt res 0)))))))
   ;; --- 3c. B-side: load one recorded zo event (fasl decode only, NO declare) ---
   (define-values (rkt-load-zo-event)
     (lambda (ps enc)

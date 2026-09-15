@@ -69,12 +69,15 @@ racket -q -n 启动                        racket -q -n 启动（byte-identical 
 
 ---
 
-## 3. 当前状态矩阵（2026-09-10 深夜实测）
+## 3. 当前状态矩阵（2026-09-15 晚更新）
 
-| 线 | 配置 | 验收 | 稳定性 |
-|---|---|---|---|
-| 绿基线 | 默认（全部 env 不设） | 核心 11/11 VERDICT(A) + 扩展 10/12 | 4/4 |
-| 配方线 | `RACKET_RETAIN_STATIC_RELOC=1` + `P33_LIBID=1` | 核心 11/11 + **扩展 12/12 fail=0** | **6/6**（2026-09-15） |
+| 线 | 配置 | 验收 | 稳定性 | 段体积 |
+|---|---|---|---|---|
+| **green-none（推荐线）** | env 全不设 + `P33_PREHEAT=none` | 核心 11/11 VERDICT(A) + **扩展 12/12 fail=0** | **15/15 全净**（2026-09-15） | **5.078MB** |
+| 配方线（降级为诊断线） | `RACKET_RETAIN_STATIC_RELOC=1` + `P33_LIBID=1` | 核心 11/11 + 扩展 12/12 fail=0 | 验收全绿但 **~21% 对在诊断走查段 B invalid memory**（错位槽,流水账 D128-D131） | 9.26MB（workload 预热） |
+| 绿基线（历史） | 默认（全部 env 不设,workload 预热） | 核心 11/11 + 扩展 10/12（zoclo 前） | 4/4 | — |
+
+- **D131 裁决**：zoclo 根除 class 族后 staddr/dwseq/retain 对验收面不再必要；A 预热（workload/定向 force）均可弃——零预热 15/15 满分且段 -45%。定向 force 机制（`P33_PREHEAT=force`,353 模块 0 err）实测使段**增大**到 9.44MB,方向证伪,保留为诊断装备。配方线的 ~21% 崩溃=段内解析错位槽（验收路径未踩,census 走查触发）,归因 retain/staddr 线（15 连净 P≈0.03 的统计证据;根因未最终定位）。
 
 - 验收 11 项=8 核心（算术/map/sort/require 热+冷/sha1/contract 错误路径）+ x1-x3 xrepl 层（prompt-read 活/toplevel-prefix 可达/interaction-info 可达）。
 - **2026-09-15 起配方线零功能残余**：class 族（原 §7.1）经 'zoclo 通道根除，扩展 12/12 首次满分。
@@ -116,6 +119,7 @@ worktree：`/Users/cutiedeng/Y2026/M08/D24/racket-feat-native-pvector/`（分支
 |---|---|
 | `P33_ROLE=A/B` | 角色 |
 | `P33_XREPL=none/require-only/full` | xrepl 层级 |
+| `P33_PREHEAT=workload/force/both/none` | A 预热策略（默认 workload=20 项工作负载；none=零预热=**推荐线**；force=定向 force 全 registry，诊断用，段更大） |
 | `RACKET_RETAIN_STATIC_RELOC=1` | C 层保留 static reloc（配方线） |
 | `P33_LIBID=1` | 开 staddr/dwseq 通道（配方线） |
 | `P33_PROBES=0` | 计时模式（关验收/探针） |
@@ -130,11 +134,12 @@ worktree：`/Users/cutiedeng/Y2026/M08/D24/racket-feat-native-pvector/`（分支
 ```sh
 SP=<scratchpad>; RK=<worktree>/racket/bin/racket
 cd $SP/p3
-# 配方线一对：
-RACKET_RETAIN_STATIC_RELOC=1 P33_LIBID=1 P33_XREPL=full P33_ROLE=A $RK -q -n -t p3.3-run.rkt
-RACKET_RETAIN_STATIC_RELOC=1 P33_LIBID=1 P33_XREPL=full P33_ROLE=B $RK -q -n -t p3.3-run.rkt
+# 推荐线（green-none）一对：
+P33_PREHEAT=none P33_XREPL=full P33_ROLE=A $RK -q -n -t p3.3-run.rkt
+P33_PREHEAT=none P33_XREPL=full P33_ROLE=B $RK -q -n -t p3.3-run.rkt
 grep -a 'SUMMARY\|VERDICT\|extended' $SP/p3/p3.3b.log
-# 多对稳定性：bash run6.sh（勿在 tmux 打长单行）
+# 多对稳定性：bash run-greennone12.sh；诊断线（旧配方线）：run6.sh / run-preheat-matrix.sh
+# （勿在 tmux 打长单行；runner 任何改动只能整对验证——B-only 冒烟对 runner 改动无效）
 ```
 
 ---
@@ -188,8 +193,8 @@ CS `eq-hash-code` = rumble `codes` 弱表按首问序分配的**进程本地序�
 - **产品化警示**：任何跨进程 fasl 场景，凡以闭包对象本体为 eq key 的机制都受此制约；zoclo 判据（A 侧 cell==literal 才外置）是语义保真的关键。
 
 ### 7.2 段裁剪（9.2MB → 数百 KB~2MB）
-1. **定向 force 替代工作负载预热**（大头，~4.2MB）：枚举 registry 已声明模块的 deserialized-syntax box 逐一 force，不跑用户级代码、不新增模块实例化。
-2. fasl 图裁枝：rtdprops 1277 rtd 全量、zo 清单 4 万名按需化。
+1. ✅ **预热裁除（2026-09-15，D128-D131，实测反转原设想）**：原计划"定向 force 替代工作负载预热"已实现（`P33_PREHEAT=force`，`p33-syntax-force-plan` 索引式枚举 registry+module f12 force-bulk-binding，353 模块 0 err）但**证伪**——全量 force 使段涨到 9.44MB。真解=**零预热**（`P33_PREHEAT=none`）：5.078MB（-45%），15/15 全净满分（见 §3 green-none 线）。"A 预热必要"（§5.1）已不复现，机制**未理解**（候选=D1 覆盖+h7+现通道集使 B 端惰性 force 自洽），列为待研。
+2. fasl 图裁枝：rtdprops 全量→按需、zo 清单按需化。（下一杠杆，基于 green-none 5.078MB 起点）
 3. 核心段/扩展分层。
 
 ### 7.3 产品化清单

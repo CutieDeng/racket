@@ -340,3 +340,16 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - **验证**:B-only 冒烟绿;故障注入致命路径实测炸;3 对整对回归全绿(pair1-3 exit 0,zoclo 3 ok/0 MISS,核心 11/11,扩展 12/12,A 端两断言随 manifest 执行零触发)。
 - **陷阱备忘**:`(c-flush lp)` 在 manifest 循环/resolve 循环内不可用——`lp` 被命名 let 遮蔽为循环函数,FATAL 块须放循环外或省略 flush(o 每次自 flush)。
 - 剩余:§7.3 第 3 项(命名基座随 code 通道产品化改原生 fasl 名)依赖上游,判据不变。
+
+## 2026-09-15:7.2.1 预热实测反转(D128-D131)——none 预热 -45%,定向 force 证伪,方差定性升级
+**实现**(runner P33_PREHEAT=workload|force|both|none + naming.ss p33-syntax-force-plan):
+- 定向 force=Chez 侧按索引枚举 ns.f7 registry declarations(**rumble rtd 不带源字段名,首版按名查找全 #f**;改索引+rtd-name 校验:registry f0=declarations、module f12=force-bulk-binding,#:authentic 无父)→排序后把 (名 . force-bulk-binding 闭包) 交 runner,racket 侧 safe-eval 逐个调(纪律:racket raise 不能裸 Chez 帧接)。
+- env 读取在 A-only 分支内(mark 前读会造 A/B 分歧分配,段对 boot 指纹敏感)。
+- **方法论再验证(付学费)**:runner 改动后 B-only 冒烟必炸(新 runner mark 堆指纹 × 旧 A 产物=地址通道错解),runner 属 byte-identical 纪律件,任何改动只能整对验证。
+**测量裁决(配方线,整对)**:
+- workload 基线 9.26MB;**真 force 生效(353 模块 ok=353 err=0)但段涨到 9.44MB**——全量 force 反序列化超出工作负载触碰集,7.2.1"定向 force 省 4.2MB"的方向被证伪。
+- **none(零预热)5.078MB(-45%),验收全绿**:none6 六对 11/11+12/12 全过+矩阵 3 对+首轮意外等效对,共 10 对验收零 fail。历史"A 预热必要"(§5.1 kw.rkt #%app 分裂)已不复现;机制**未理解**(候选=D1 覆盖+h7+现通道集使 B 端惰性 force 自洽,§5.1 故障早于它们),列为待研问题。none 模式下 zoclo 命中=0(cell 闭包不再入图),扩展 stxparam/class 仍全过。
+**方差定性升级(重要)**:B invalid memory 崩溃 3 例/配方线 14 对(~21%):workload 对扩展诊断后、force 对 layer probes、none 对 CHEZ FORENSICS census——**全部在诊断性全量走查段,验收路径从不触雷**。⇒ 不是诊断抖动,是**段中存在解析错位的槽**,验收绿仅因未踩到,census 是意外金丝雀。P3.3b 清单④严重度上调为潜在正确性缺陷。三例现场已存(session scratchpad crash-forensics/)。
+**green-none 实验(D131)**:不设 RETAIN/LIBID+none 预热,3 对全净 11/11+**12/12**——zoclo 根除 class 族后,staddr/dwseq/retain 对验收面不再必要(历史 12/12 依赖里的 date/format 修复=rtd-uid 扩宽,非 LIBID 门控,仍在)。
+**🎯 D131 裁决(已验证):green-none 15/15 全净(3+12 对连续,全 exit 0、11/11+扩展 12/12、5.078MB 稳定)**。按配方线 ~21% 崩率,15 连净 P≈0.03 ⇒ **方差归因 retain/staddr 线成立(推断,强统计证据;非最终根因定位)**。裁决:**green-none 升为推荐线**(env 全不设+P33_PREHEAT=none):机制简化(卸 staddr/dwseq 通道与 RETAIN C 开关运行时依赖)+方差消失+段 -45% 三收。配方线降级为诊断/研究线(staddr 错位槽根因、"none 为何绿"机制两题留研)。zoclo 通道 none 线下命中=0(休眠),加固护栏原样保留。runner 默认 P33_PREHEAT 仍=workload(保历史脚本对照),推荐线脚本显式传 none(run-greennone*.sh)。C 两钩子(已提交 d2220e7fa0)默认零行为差,保留供诊断线。
+**剩余(7.2 续)**:5.078MB→数百 KB~2MB 还差一档,下一杠杆=7.2.2 fasl 图裁枝(rtdprops 全量→按需、zo 清单按需化)+7.2.3 分层;产品化清单见 handoff §7.3。
