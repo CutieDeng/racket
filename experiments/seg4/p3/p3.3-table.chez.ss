@@ -87,8 +87,16 @@
          [next 0])
     (define (pred v)
       (cond
+        ;; static code WITH a walk name externalizes (identity kept);
+        ;; a nameless static code falls through and INLINES natively --
+        ;; its reloc table is readable under RETAIN, and the measured
+        ;; alternative was a 3/3-poisoned address draw (B's same-delta
+        ;; objects were strings/vectors: the code area is not
+        ;; layout-isomorphic).  Without RETAIN the inline attempt dies
+        ;; loudly in wrf-code, making the RETAIN prerequisite explicit.
         [(and ($code? v)
-              (eqv? (try (lambda () (staddr-gen v)) #f) 7))
+              (eqv? (try (lambda () (staddr-gen v)) #f) 7)
+              (eq-hashtable-ref dw-codetab v #f))
          (set! exts (cons (cons 'scode v) exts))
          (set! next (fx+ next 1))
          #t]
@@ -288,7 +296,10 @@
                (set! nunnamed (fx+ nunnamed 1))
                (let ([sp (staddr-spec v)])
                  (if sp
-                     (vector-set! mv i (vector 'staddr (car sp) (cdr sp)))
+                     ;; distinct tag so B can TYPE-CHECK the resolved
+                     ;; object (must be a code): a wrong draw becomes a
+                     ;; loud identified FATAL instead of a poisoned read
+                     (vector-set! mv i (vector 'scode-addr (car sp) (cdr sp)))
                      (vector-set! mv i (vector 'sdummy (dw-code-key v)
                                                (try (lambda () (#%$code-free-count v)) 0)))))]))
           (lp (fx+ i 1) (cdr l))))
@@ -413,6 +424,19 @@
                      (set! nmiss (fx+ nmiss 1))
                      (when (fx<= nmiss 8)
                        (o "  codes-manifest RMP-MISS i=" i)))))]
+            [(scode-addr)
+             ;; static code by address, TYPE-CHECKED: resolving to a
+             ;; non-code identifies the layout draw loudly
+             (let ([r (staddr-resolve (vector-ref e 1) (vector-ref e 2))])
+               (if (and r ($code? r))
+                   (vector-set! extvec i r)
+                   (begin
+                     (set! nmiss (fx+ nmiss 1))
+                     (when (fx<= nmiss 8)
+                       (o "  codes-manifest SCODE-ADDR wrong-type i=" i
+                          " delta=" (vector-ref e 1)
+                          " tag=" (vector-ref e 2)
+                          " got=" (if r (obj-brief r) 'unresolved))))))]
             [(sdummy)
              ;; boot-static code with no cross-process name: wire an
              ;; identifiable dummy (calling it errors loudly)

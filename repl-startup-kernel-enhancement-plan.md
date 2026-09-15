@@ -394,3 +394,9 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 **② 抽签根因坐实(已验证,三方案全测)**:6 对批 4 崩全同死法(malformed fasl closure @ build-from-codes)=确定性 A/B 抽签非杂方差。根因=**bdw-unnamed 的 107 个 static code 走了 staddr——主段规则链本就显式排除 code 于地址身份((not ($code? v))),code 区跨进程不同构**。三方案实测:(a)staddr=4/6 抽签崩、绿轮 12/12;(b)响亮 dummy=确定性但 2/11 世界塌(kw.rkt 族 transformer 在这 107 里且**真被调用**——'#%app unbound 全家桶复现);(c)**RETAIN 路方向数据极好:unnamed 107→3**(walk reloc 穿透收编),但 B 在 mark walk 段 invalid memory(RETAIN 下 walk 穿透与 boot mmap 区/悬垂交互,闸门级新工程)且枚举面变化(codes 40289→51000,命名空间整体位移)。
 **当前定格**:恢复 (a) staddr 兜底(绿轮满分,抽签率~2/3 每对),'sdummy 通道保留为 spec-fail 兜底。**下一战役=RETAIN 支线**:修 B walk 的 invalid memory(dw-reloc-ok 闸门审计+新代码路径的 reloc 读检查)→unnamed→3→0,抽签根除;届时 codes 线 6/6 可期。
 **工具沉淀**:P33_CF_SELFRD=1(A 端同进程自读,写端/B 端故障二分利器)、run-cf6.sh/run-cf-quad.sh/run-codefasl-{pf,rt}.sh。
+
+## 🎯 2026-09-16:RETAIN 支线战役(D149-D152)——codes 线抽签根除,5/6 满分
+**定位链(B-only 15 秒迭代)**:同一 RETAIN A 产物 B-only 3/3 崩=确定性 A 产物侧;'scode-addr 独立标签+B 端 $code? 验型把哑弹变响弹→**三毒槽全指认**(B 同 delta 处=string×2/vector×1,tag 7)——code 区跨进程不同构 3/3 实锤,毒对象不再进 fasl-read。
+**杀招=孤岛内联(已验证)**:RETAIN 下无 bdw 名的 gen-7 code 自身 reloc 可读→pred 改「有 walk 名才外置,无名 fall through 原生内联」——bdw-unnamed **107→0**(104 收编+3 内联),地址通道对 code 全废('scode-addr/'sdummy 留作响亮护栏死代码)。非 RETAIN 下内联会在 wrf-code 响亮死→**RETAIN 成为 codes 线显式前提**。
+**稳定性(6 对 RETAIN 批)**:5/6 全满分 11/11+12/12;1 崩在 **codes 读之前的 mark walk 段**(invalid memory,与 codes 通道解耦)=RETAIN 下 B walk 穿透触雷类(2/8 观测,原配方线方差家族亲戚)。**判定:code 供给通道抽签已根除**——凡进到 codes 读的对全数满分。
+**下轮**:①RETAIN-walk 低频崩定位(walk 相 reloc 穿透与 boot mmap 区/收集时序;prog 相位抓取进 run-cfr6)②B 相位细测+32MB 构成③R3 微基准。
