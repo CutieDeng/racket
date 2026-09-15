@@ -194,8 +194,8 @@ CS `eq-hash-code` = rumble `codes` 弱表按首问序分配的**进程本地序�
 
 ### 7.2 段裁剪（9.2MB → 数百 KB~2MB）
 1. ✅ **预热裁除（2026-09-15，D128-D131，实测反转原设想）**：原计划"定向 force 替代工作负载预热"已实现（`P33_PREHEAT=force`，`p33-syntax-force-plan` 索引式枚举 registry+module f12 force-bulk-binding，353 模块 0 err）但**证伪**——全量 force 使段涨到 9.44MB。真解=**零预热**（`P33_PREHEAT=none`）：5.078MB（-45%），15/15 全净满分（见 §3 green-none 线）。"A 预热必要"（§5.1）已不复现，机制**未理解**（候选=D1 覆盖+h7+现通道集使 B 端惰性 force 自洽），列为待研。
-2. fasl 图裁枝：rtdprops 全量→按需、zo 清单按需化。（下一杠杆，基于 green-none 5.078MB 起点）
-3. 核心段/扩展分层。
+2. ❌ fasl 图裁枝（rtdprops/zo 清单按需化）——**2026-09-15 边际剖析证伪**（D132）：五槽独占合计仅 ~417KB，**~4.66MB（92%）是多槽共享核心图**（ns/expander 世界），容器按需化省不动。剖析装备=A 驱动 `P33_SEGPROF=1`（solo 写测"可达量"无效，须边际法：逐槽剔除重写取差）。
+3. 核心段/扩展分层（=动核心图，唯一真字节杠杆）。**降级缓做**：段字节不在 time-to-prompt 关键路径（fasl-read 14ms@5.08MB），只关 RSS/分发；green-none 计时外推 boot 37+read/install ~34+replay/hooks ~25 ≈ 96ms，目标已在线上成立，优先做 §7.3（首项 code 通道原生化，消 97ms zo 重放实验伪影）。
 
 ### 7.3 产品化清单
 - build.zuo 四段构建、embed-boot.rkt、boot.c（retain-reloc 钩子转正）、main.sps 条件装载。

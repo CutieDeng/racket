@@ -353,3 +353,11 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 **green-none 实验(D131)**:不设 RETAIN/LIBID+none 预热,3 对全净 11/11+**12/12**——zoclo 根除 class 族后,staddr/dwseq/retain 对验收面不再必要(历史 12/12 依赖里的 date/format 修复=rtd-uid 扩宽,非 LIBID 门控,仍在)。
 **🎯 D131 裁决(已验证):green-none 15/15 全净(3+12 对连续,全 exit 0、11/11+扩展 12/12、5.078MB 稳定)**。按配方线 ~21% 崩率,15 连净 P≈0.03 ⇒ **方差归因 retain/staddr 线成立(推断,强统计证据;非最终根因定位)**。裁决:**green-none 升为推荐线**(env 全不设+P33_PREHEAT=none):机制简化(卸 staddr/dwseq 通道与 RETAIN C 开关运行时依赖)+方差消失+段 -45% 三收。配方线降级为诊断/研究线(staddr 错位槽根因、"none 为何绿"机制两题留研)。zoclo 通道 none 线下命中=0(休眠),加固护栏原样保留。runner 默认 P33_PREHEAT 仍=workload(保历史脚本对照),推荐线脚本显式传 none(run-greennone*.sh)。C 两钩子(已提交 d2220e7fa0)默认零行为差,保留供诊断线。
 **剩余(7.2 续)**:5.078MB→数百 KB~2MB 还差一档,下一杠杆=7.2.2 fasl 图裁枝(rtdprops 全量→按需、zo 清单按需化)+7.2.3 分层;产品化清单见 handoff §7.3。
+
+## 2026-09-15 深夜:7.2.2 测量裁决(D132-D133)——容器按需化证伪,字节不在关键路径
+**装备**:A 驱动 P33_SEGPROF=1 段成分剖析(p3.3a.chez.ss,write 收敛后)。第一版 solo 写(单槽独写测尺寸)失效——图强连通,patch 单槽可达 4.98MB≈总量 5.08MB,solo 只测"可达量"。第二版**边际剖析**(root 逐槽剔除重写,总量−剔除后=独占字节;patch 按 tag 组同法)。
+**边际结果(green-none 5,078,478B,已验证)**:
+- 五槽独占合计 **~417KB**:patch 320K/rtdprops 37K/aux 31K/codes-delta 21K/tags 8K;patch 内 tag 组独占合计 ~282K(namespace-rec 95K/registry-table 93K/custodian 60K)。
+- **⇒ ~4.66MB(92%)是多槽共享核心图**(ns/expander 世界:patch ops 引用之,h7 codes-delta 的键即其对象,rtdprops/aux 亦可达)。砍任何容器都省不下;**7.2.2 原设想(rtdprops/zo 清单按需化)对字节证伪**(独占 37K/42K 级)。真裁剪须动核心图=7.2.3 分层领域。
+**计时(green-none P33_PROBES=0,prog 相位时间线,已验证)**:B 恢复主链 driver-entry→replay-done ≈193ms=zo 重放 **97ms**(330 事件/40289 codes;实验命名装置,产品归零)+bdw/cpb walk ~26+manifest/loc 7+resolve 3+fasl-read+install ~34(读本体 14ms@5.08MB)+hooks 1+replay 24。窗口内 GC ~71ms(zo 重放分配主导,产品同灭)。**产品外推:boot 37+read/install ~34+replay/hooks ~25 ≈ 96ms,80-100ms 目标在 green-none 线上成立**。
+**优先级重排(数据驱动)**:段字节(5.08MB)不在 time-to-prompt 关键路径(读 14ms),只关 RSS 红线与分发体积→7.2.3 图分层**降级缓做**;**下一里程碑=7.3 产品化**,首项=code 通道原生化(内核 closure-fasl 47 已在主线,消 97ms zo 重放=最大实验伪影,同时 zoclo 命名基座随动)。

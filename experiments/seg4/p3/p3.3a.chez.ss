@@ -425,6 +425,78 @@
                           [(and (or (fx> new 0) (fx> last-new-rtds 0)) (fx< iter 8))
                            (write-loop (fx+ iter 1))]
                           [else
+                           ;; ---- (P33_SEGPROF=1) per-root-slot fasl size profile ----
+                           ;; each slot written alone with the SAME rule chain
+                           ;; (silent printer); shared structure counts once per
+                           ;; slot, so sizes overlap and need not sum to the
+                           ;; total -- magnitude attribution only.  Runs after
+                           ;; the main write converged: every object here
+                           ;; already proved writable, so the rule-deriving
+                           ;; crash path inside iterate-write stays cold.
+                           ;; the graph is strongly shared: a slot written alone
+                           ;; measures its REACHABLE size (patch alone ~= total),
+                           ;; so attribution uses MARGINAL sizes instead --
+                           ;; total minus a rewrite with that slot dropped =
+                           ;; the slot's exclusive bytes
+                           (when (equal? (#%getenv "P33_SEGPROF") "1")
+                             (let* ([silent (lambda args (void))]
+                                    [full (c2-bvlen bv)]
+                                    [wr (lambda (v)
+                                          (let ([rr (iterate-write v silent 8)])
+                                            (and (eq? (car rr) 'ok)
+                                                 (c2-bvlen (cadr rr)))))]
+                                    [root-sans
+                                     (lambda (k)
+                                       (let ([v (vector 'p3-seg4
+                                                        (vector-ref root 1)
+                                                        (vector-ref root 2)
+                                                        (vector-ref root 3)
+                                                        (vector-ref root 4)
+                                                        (vector-ref root 5))])
+                                         (vector-set! v k '#())
+                                         v))])
+                               (o "  [segprof] total=" full)
+                               (for-each
+                                (lambda (k nm)
+                                  (let ([b (wr (root-sans k))])
+                                    (o "  [segprof/marginal] " nm ": exclusive="
+                                       (if b (fx- full b) 'ERR) " bytes")))
+                                '(1 2 3 4 5)
+                                '(patch tags aux rtdprops codes-delta))
+                               ;; patch by tag, marginal: rebuild patch/tags
+                               ;; without each tag group and re-measure
+                               (let ([tagset '()])
+                                 (let lp ([j 0])
+                                   (when (fx< j (vector-length tags))
+                                     (let ([tg (vector-ref tags j)])
+                                       (unless (member tg tagset)
+                                         (set! tagset (cons tg tagset))))
+                                     (lp (fx+ j 1))))
+                                 (for-each
+                                  (lambda (tg)
+                                    (let* ([keep '()]
+                                           [kt '()]
+                                           [n-drop 0])
+                                      (let lp ([j (fx- (vector-length patch) 1)])
+                                        (when (fx>= j 0)
+                                          (if (equal? (vector-ref tags j) tg)
+                                              (set! n-drop (fx+ n-drop 1))
+                                              (begin
+                                                (set! keep (cons (vector-ref patch j) keep))
+                                                (set! kt (cons (vector-ref tags j) kt))))
+                                          (lp (fx- j 1))))
+                                      (let* ([v (vector 'p3-seg4
+                                                        (list->vector keep)
+                                                        (list->vector kt)
+                                                        (vector-ref root 3)
+                                                        (vector-ref root 4)
+                                                        (vector-ref root 5))]
+                                             [b (wr v)])
+                                        (o "  [segprof/patch-marginal] "
+                                           (trunc (c-fmt "~s" tg) 60)
+                                           ": n=" n-drop "  exclusive="
+                                           (if b (fx- full b) 'ERR) " bytes"))))
+                                  tagset))))
                            ;; ---- flip-set tracer (P33_TRACE_ZO="ev:seq,ev:seq,...") ----
                            ;; for each known run-flipping (event,seq) code, print
                            ;; whether THIS run's graph holds it and the holder path
