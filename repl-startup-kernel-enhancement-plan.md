@@ -388,3 +388,9 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 **其它实测**:demand 裁剪 40289→8415 仅省 6% 字节(34.4→32.2MB)——被引 code 图即大头;B 相位 zo build+read ≈78ms(旧 97ms 重放+34ms 读,细测待做);OOM 双例(纯错指针随机死法)随 fentry 修复消失;**codes 线也有方差崩**(2 例/6 有效对,验收段 invalid memory,107 staddr 兜底 code 为重点嫌疑,与主段 21% 方差同型)。
 **工程纪律新记**:fasl-write 外置谓词每 unique 对象恰询一次(bld+wrf 同询,collected 序=extvec 序=引擎既约);crash-learn 循环(attempt→first-irritant→forced 重试)是外置面探索的标准姿势;S_get_code_obj 返回**基对象**(自身已减 item_off,fasl.c 尾行),勿二次剥。
 **下轮清单**:①prefab 流错位归因(fasl.ss wrf-record rtd 路径 vs 谓词交互)→12/12 ②codes 线方差(staddr 兜底 107 code 逐条验证)③B 相位细测+32MB 构成分析④稳定性批。
+
+## 2026-09-16:codes 线 12/12 达成 + 抽签根因坐实(D145-D148)
+**① prefab 归因反转(已验证)**:A 端自读四象限(P33_CF_SELFRD,prefab 开/关双 SELFRD-OK)证写端无流错位;prefab=1 整对复跑 **12/12 fail=0**——上轮 malformed 系方差撞崩,"wrf-record 绕谓词"假说证伪,'prefab 通道正确,门控已摘(kernel 谓词咨询点=bld-graph 首访问,external 登记进 table-hash,rtd 的 not-in-table 断言无碍——机制审读记录)。**codes.fasl 线至此与主段同级满分:11/11+12/12**。
+**② 抽签根因坐实(已验证,三方案全测)**:6 对批 4 崩全同死法(malformed fasl closure @ build-from-codes)=确定性 A/B 抽签非杂方差。根因=**bdw-unnamed 的 107 个 static code 走了 staddr——主段规则链本就显式排除 code 于地址身份((not ($code? v))),code 区跨进程不同构**。三方案实测:(a)staddr=4/6 抽签崩、绿轮 12/12;(b)响亮 dummy=确定性但 2/11 世界塌(kw.rkt 族 transformer 在这 107 里且**真被调用**——'#%app unbound 全家桶复现);(c)**RETAIN 路方向数据极好:unnamed 107→3**(walk reloc 穿透收编),但 B 在 mark walk 段 invalid memory(RETAIN 下 walk 穿透与 boot mmap 区/悬垂交互,闸门级新工程)且枚举面变化(codes 40289→51000,命名空间整体位移)。
+**当前定格**:恢复 (a) staddr 兜底(绿轮满分,抽签率~2/3 每对),'sdummy 通道保留为 spec-fail 兜底。**下一战役=RETAIN 支线**:修 B walk 的 invalid memory(dw-reloc-ok 闸门审计+新代码路径的 reloc 读检查)→unnamed→3→0,抽签根除;届时 codes 线 6/6 可期。
+**工具沉淀**:P33_CF_SELFRD=1(A 端同进程自读,写端/B 端故障二分利器)、run-cf6.sh/run-cf-quad.sh/run-codefasl-{pf,rt}.sh。

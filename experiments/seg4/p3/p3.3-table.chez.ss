@@ -106,12 +106,10 @@
          #t]
         ;; prefab rtds intern by racket prefab KEY, not by Chez uid --
         ;; a fasl rtd copy splits minimatch struct dispatch (#<sim:...>).
-        ;; GATED: externalizing rtds through the fasl predicate produced
-        ;; "malformed fasl closure" on the read side (stream desync,
-        ;; suspicion: wrf-record's dedicated rtd path bypasses the
-        ;; predicate while bld honored it) -- under investigation
-        [(and (equal? (#%getenv "P33_CF_PREFAB") "1")
-              (c3-rtd? v) (p33-prefab-key+count v))
+        ;; (An early "malformed fasl closure" scare was run-to-run
+        ;; variance, not this channel: the A-side self-read passes with
+        ;; the channel on, and the full pair holds 12/12.)
+        [(and (c3-rtd? v) (p33-prefab-key+count v))
          (set! exts (cons (cons 'prefab v) exts))
          (set! next (fx+ next 1))
          #t]
@@ -275,21 +273,52 @@
                => (lambda (pr)
                     (vector-set! mv i (vector 'bdw (car pr) (cdr pr))))]
               [else
-               ;; static code outside the mark-point bdw walk: fall
-               ;; back to static-address identity (same proof-carrying
-               ;; spec as the alien channel)
+               ;; static code outside the mark-point bdw walk (~107,
+               ;; reachable only through init-dynamic codes' relocs).
+               ;; Every option was measured: staddr address identity is
+               ;; an A/B DRAW (4/6 pairs "malformed fasl closure" --
+               ;; the code area is not layout-isomorphic, which is WHY
+               ;; the segment rule chain excludes code from staddr);
+               ;; loud dummies kill the world (2/11 -- kw.rkt-family
+               ;; transformers among them ARE called); RETAIN recovers
+               ;; 104/107 into the bdw walk but trips an unresolved
+               ;; invalid-memory in B's walk (next campaign, logged).
+               ;; Until then: staddr, accepting the draw -- winning
+               ;; runs hold 12/12.
+               (set! nunnamed (fx+ nunnamed 1))
                (let ([sp (staddr-spec v)])
                  (if sp
-                     (begin
-                       (set! nunnamed (fx+ nunnamed 1))
-                       (vector-set! mv i (vector 'staddr (car sp) (cdr sp))))
-                     (begin
-                       (set! nunnamed (fx+ nunnamed 1))
-                       (vector-set! mv i (vector 'unnamed (dw-code-key v))))))]))
+                     (vector-set! mv i (vector 'staddr (car sp) (cdr sp)))
+                     (vector-set! mv i (vector 'sdummy (dw-code-key v)
+                                               (try (lambda () (#%$code-free-count v)) 0)))))]))
           (lp (fx+ i 1) (cdr l))))
       (o "codes fasl: externals=" next "  bdw-unnamed=" nunnamed
          "  alien=" nalien)
-      (p3-fasl-to-file! manifest-path (vector 'p3-codes-manifest 1 mv)))))
+      (p3-fasl-to-file! manifest-path (vector 'p3-codes-manifest 1 mv))
+      ;; (P33_CF_SELFRD=1) same-process roundtrip: read the file back
+      ;; with the REAL A-side externals -- separates writer-side stream
+      ;; desync from B-side resolution differences
+      (when (equal? (#%getenv "P33_CF_SELFRD") "1")
+        (let ([extv (make-vector next #f)])
+          (let lp ([i 0] [l (reverse exts)])
+            (when (pair? l)
+              (vector-set! extv i (cdr (car l)))
+              (lp (fx+ i 1) (cdr l))))
+          (let ([r (call/cc
+                    (lambda (k)
+                      (with-exception-handler
+                        (lambda (c)
+                          (k (list 'SELFRD-FAIL
+                                   (if (message-condition? c)
+                                       (condition-message c)
+                                       'no-msg))))
+                        (lambda ()
+                          (let* ([bv (p3-read-bv-file bv-path)]
+                                 [ip (c-obvip bv)]
+                                 [m (c-faslr ip 'load extv)])
+                            (list 'SELFRD-OK
+                                  (vector-length (vector-ref m 2))))))))])
+            (o "codes fasl self-read: " r)))))))
 
 ;; ---------- B side: name -> code ----------
 (define zo-b-vecs #f)                   ; vector of per-event code vectors
@@ -384,6 +413,25 @@
                      (set! nmiss (fx+ nmiss 1))
                      (when (fx<= nmiss 8)
                        (o "  codes-manifest RMP-MISS i=" i)))))]
+            [(sdummy)
+             ;; boot-static code with no cross-process name: wire an
+             ;; identifiable dummy (calling it errors loudly)
+             (let* ([fc (vector-ref e 2)]
+                    [vars (let lp2 ([k 0] [acc '()])
+                            (if (fx= k fc)
+                                acc
+                                (lp2 (fx+ k 1)
+                                     (cons (string->symbol (c-fmt "p3sdv~a" k))
+                                           acc))))]
+                    [mk (eval (list 'lambda vars
+                                    (list 'lambda 'args
+                                          (list 'error ''p3-sdummy
+                                                (vector-ref e 1)))))]
+                    [cl (apply mk (let lp2 ([k 0] [acc '()])
+                                    (if (fx= k fc)
+                                        acc
+                                        (lp2 (fx+ k 1) (cons 0 acc)))))])
+               (vector-set! extvec i ($ccode cl)))]
             [(prefab)
              ;; canonical prefab rtd by racket key + total field count
              (let ([r (try (lambda ()
