@@ -305,6 +305,41 @@
           (lp (fx+ i 1) (cdr l))))
       (o "codes fasl: externals=" next "  bdw-unnamed=" nunnamed
          "  alien=" nalien)
+      ;; (P33_CF_K4=1) kind-4 immediate census over the kept codes:
+      ;; a c-entry miss falls through to a raw value shipped verbatim;
+      ;; if any of those are ADDRESSES (not small immediates), they are
+      ;; process-local poison on B -- the suspected acceptance-phase
+      ;; crash source under the codes supply
+      (when (equal? (#%getenv "P33_CF_K4") "1")
+        (let ([n4 0] [nbig 0] [samples '()]
+              [$fasl-code-info
+               (foreign-procedure "(cs)s_fasl_code_info" (ptr) ptr)])
+          (let lp ([i 0])
+            (when (fx< i (vector-length vecs))
+              (let ([cv (vector-ref vecs i)])
+                (let lp2 ([j 0])
+                  (when (fx< j (vector-length cv))
+                    (let ([c (vector-ref cv j)])
+                      (when ($code? c)
+                        (let ([info ($fasl-code-info c)])
+                          (when info
+                            (for-each
+                              (lambda (e)
+                                (when (eqv? (vector-ref e 4) 4)
+                                  (set! n4 (fx+ n4 1))
+                                  (let ([pv (vector-ref e 5)])
+                                    (when (> pv 65536)
+                                      (set! nbig (fx+ nbig 1))
+                                      (when (fx< (length samples) 10)
+                                        (set! samples
+                                              (cons (cons (code-name c) pv)
+                                                    samples)))))))
+                              (vector-ref info 4))))))
+                    (lp2 (fx+ j 1)))))
+              (lp (fx+ i 1))))
+          (o "kind-4 census: total=" n4 "  address-like(>65536)=" nbig)
+          (for-each (lambda (pr) (o "   k4-big: " (car pr) " val=" (cdr pr)))
+                    samples)))
       (p3-fasl-to-file! manifest-path (vector 'p3-codes-manifest 1 mv))
       ;; (P33_CF_SELFRD=1) same-process roundtrip: read the file back
       ;; with the REAL A-side externals -- separates writer-side stream

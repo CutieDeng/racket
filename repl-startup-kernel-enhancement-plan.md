@@ -400,3 +400,13 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 **杀招=孤岛内联(已验证)**:RETAIN 下无 bdw 名的 gen-7 code 自身 reloc 可读→pred 改「有 walk 名才外置,无名 fall through 原生内联」——bdw-unnamed **107→0**(104 收编+3 内联),地址通道对 code 全废('scode-addr/'sdummy 留作响亮护栏死代码)。非 RETAIN 下内联会在 wrf-code 响亮死→**RETAIN 成为 codes 线显式前提**。
 **稳定性(6 对 RETAIN 批)**:5/6 全满分 11/11+12/12;1 崩在 **codes 读之前的 mark walk 段**(invalid memory,与 codes 通道解耦)=RETAIN 下 B walk 穿透触雷类(2/8 观测,原配方线方差家族亲戚)。**判定:code 供给通道抽签已根除**——凡进到 codes 读的对全数满分。
 **下轮**:①RETAIN-walk 低频崩定位(walk 相 reloc 穿透与 boot mmap 区/收集时序;prog 相位抓取进 run-cfr6)②B 相位细测+32MB 构成③R3 微基准。
+
+## 2026-09-16:低频崩排查轮(D153-D156)——定性收窄为 RETAIN×codes 交互,四假说证伪
+**对照批裁决(已验证)**:B-only 12 次 codes=2 崩(均 acceptance 相位,invalid memory)、**zoreplay 同 RETAIN 12 次=0 崩**——纯 RETAIN 无罪,配方线 21% 方差另有其源;崩=**RETAIN×codes 供给交互**。附:lldb 下 40/40 零崩(禁/开 ASLR 皆然)=**环境敏感,布局抽签成分坐实**;复现只能裸跑。
+**四假说证伪(全部读源+实测)**:
+- kind-4 immediate 地址直传:census 实测 **kept 集 kind-4=0 条**——排除。
+- icache:fasl 读端纪律完备(fasl_entry/bv_fasl_entry 尾部 S_flush_instruction_cache+code-write 括号;flush 区间由 **S_code 分配器自身登记**(alloc.c:1105 S_record_code_mod))——排除。
+- 悬垂-dirty-sweep 统一模型:机理面成立(mkgc trace-code 对 retain 表全模式走表;static code 提升后表冻结)但 zoreplay 同 RETAIN 0/12 直接否定其为本崩主因——降级为背景隐患。
+- 枚举面错位:RETAIN 下 A/B 同为 51000 宽口径,count-mismatch=0——排除。
+**剩余差异面(下轮首查)**:codes 线独有=①3 个孤岛内联副本 code(B 执行的是 fasl 副本而非原生)②32MB 单图物化的对象代际/卡表形态③extvec 5278 外置解析对象与重放世界的等价性。**下轮设计=B 端 hybrid 交叉核对(P33_CF_XCHECK)**:B 同进程先 codes 建表、再 zo 重放建原生表,kept 槽位逐一对比解析对象类别/结构,确定性指认毒槽类(不再依赖 2/12 崩抽签)。
+**GC 机理档案(本轮读源沉淀)**:mkgc.ss:1150-1176=code sweep 时 reloc 表逐项 trace+重打,static 提升时 retain 分支迁移表到 space_data 并保留;此后 static code 不再被 sweep,表冻结——retain 表的"悬垂"仅当表内目标于提升后再移动(boot vfasl 整批 to_static 场景下目标同批固定,故常态无悬垂;例外面待查)。
