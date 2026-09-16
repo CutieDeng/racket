@@ -78,7 +78,10 @@
                                               (vector-set! fv j (vector-ref cv j))
                                               (lp2 (fx+ j 1) (fx+ k2 1)))
                                             (lp2 (fx+ j 1) k2))))])
-                         (vector-set! nv i fv)
+                         ;; an event with no demanded codes writes an
+                         ;; EMPTY vector, so a segmented merge can tell
+                         ;; "not mine" from "mine but sparse"
+                         (vector-set! nv i (if (fx= k2 kept) '#() fv))
                          (lp (fx+ i 1) k2 (fx+ dropped (fx- m (fx- k2 kept)))))))
                  nv)]
          [root (vector 'p3-codes 1 vecs)]
@@ -268,6 +271,15 @@
                    ;; address identity applies (gen 7 IS the static
                    ;; generation, unlike the FFI raw addresses)
                    [(and sp (eqv? (try (lambda () (staddr-gen v)) #f) 7))
+                    ;; forensics: if this is a tlc (top-level variable
+                    ;; cell living on a symbol-table bucket chain), its
+                    ;; address-identity legitimacy is the current crash
+                    ;; suspect -- print its identity
+                    (when (try (lambda () ($tlc? v)) #f)
+                      (o "  [static-tlc-extern] i=" i
+                         " delta=" (car sp) " tag=" (cdr sp)
+                         " keyval=" (trunc (c-fmt "~s" (try (lambda () ($tlc-keyval v)) '?)) 120)
+                         " next=" (trunc (c-fmt "~a" (try (lambda () (obj-brief ($tlc-next v))) '?)) 60)))
                     (vector-set! mv i (vector 'staddr (car sp) (cdr sp)))]
                    [else
                     (o "  [alien-residue] i=" i " brief=" (obj-brief v)
@@ -401,7 +413,7 @@
 
 (define (zo-b-build-from-codes! bv-path manifest-path zolist-path
                                 rkt-string->keyword rkt-bytes->path rkt-make-rmp
-                                rkt-prefab-rtd o)
+                                rkt-prefab-rtd merge? o)
   ;; single fasl-read replaces the 330-file zo replay.  The side
   ;; manifest names the externalized static codes (bdw keys) resolved
   ;; against B's own boot heap into the extvec BEFORE the read; any
@@ -554,6 +566,10 @@
              ;; static-generation code outside the bdw walk: same-layout
              ;; address identity (A-side spec carried a roundtrip proof)
              (let ([r (staddr-resolve (vector-ref e 1) (vector-ref e 2))])
+               (when (and r (try (lambda () ($tlc? r)) #f))
+                 (o "  [static-tlc-resolve] i=" i
+                    " keyval=" (trunc (c-fmt "~s" (try (lambda () ($tlc-keyval r)) '?)) 120)
+                    " next=" (trunc (c-fmt "~a" (try (lambda () (obj-brief ($tlc-next r))) '?)) 60)))
                (if r
                    (vector-set! extvec i r)
                    (begin
@@ -581,7 +597,16 @@
            [n (vector-length vecs)]
          [ncodes 0]
          [nbad 0])
-      (set! zo-b-vecs vecs)
+      (if (and merge? (vector? zo-b-vecs))
+          ;; segmented supply: fold this segment's non-empty event
+          ;; vectors into the accumulated table
+          (let lp ([i 0])
+            (when (fx< i (vector-length vecs))
+              (let ([cv (vector-ref vecs i)])
+                (when (fx> (vector-length cv) 0)
+                  (vector-set! zo-b-vecs i cv)))
+              (lp (fx+ i 1))))
+          (set! zo-b-vecs vecs))
       ;; deferred dispatch-table fill: zo names resolve now
       (let ([decode (lambda (x)
                       (if (and (vector? x)
@@ -606,7 +631,11 @@
         (when (fx< i n)
           (let ([m2 (vector-length (vector-ref vecs i))])
             (set! ncodes (fx+ ncodes m2))
-            (when (fx< i (vector-length evs))
+            ;; a merge segment is sparse: only its own event slot is
+            ;; populated, so the per-event count check only applies to
+            ;; non-empty slots there
+            (when (and (fx< i (vector-length evs))
+                       (or (not merge?) (fx> m2 0)))
               (unless (fx= m2 (vector-ref (vector-ref evs i) 2))
                 (set! nbad (fx+ nbad 1))
                 (o "  codes-fasl COUNT MISMATCH evt=" i

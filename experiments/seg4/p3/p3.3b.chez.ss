@@ -264,6 +264,24 @@
        (c-disp " gc=" prog) (c-disp (p32-gcms) prog) (c-nl prog) (c-flush prog))
      (define (o . xs) (for-each (lambda (x) (c-disp x lp)) xs) (c-nl lp) (c-flush lp))
      (o "==== P3.3b PROCESS B: load seg4z WITHOUT racket/init (zo code table) ====")
+     ;; forward-analysis: on any serious condition, dump the Scheme-level
+     ;; frame chain of the CRASHING continuation (handlers run before
+     ;; unwind) -- identifies who dereferenced the poison
+     (when (equal? (#%getenv "P33_CF_NECRO") "1")
+       (base-exception-handler
+        (let ([orig (base-exception-handler)])
+          (lambda (c)
+            (when (and (serious-condition? c)
+                       (try (lambda ()
+                              (and (message-condition? c)
+                                   (let ([m (condition-message c)])
+                                     (and (string? m)
+                                          (p33-substr? m "invalid memory")))))
+                            #f))
+              (o "==== NECROPSY (serious condition at crash point) ====")
+              (o "  condition: " (trunc (cond->string c) 200))
+              (p33-stack-necropsy o))
+            (orig c)))))
      (p "driver entered (kernel attach was done racket-side)... cpu=" (c-cpu))
      (let* ([pre-ns (vector-ref rootvec 0)]
             [codes-tab (find-eq-code-table)])
@@ -331,11 +349,34 @@
          (p "zo table build (fasl decode, no instantiation)... cpu=" (c-cpu))
          (if (equal? (#%getenv "P33_CODEFASL") "1")
              (begin
-               (zo-b-build-from-codes! (string-append P3 "/seg4z-codes.fasl")
-                                       (string-append P3 "/seg4z-codes.manifest")
-                                       (string-append P3 "/seg4z-zolist.fasl")
-                                       rkt-string->keyword rkt-bytes->path
-                                       rkt-make-rmp rkt-prefab-rtd o)
+               (if (equal? (#%getenv "P33_CF_SEGMENTED") "1")
+                   ;; segmented supply: one fasl per event, minor
+                   ;; collections between batches -- the zo-replay
+                   ;; materialization rhythm
+                   (let* ([segs (vector-ref
+                                 (p3-fasl-from-file
+                                  (string-append P3 "/seg4z-codes-segs.fasl"))
+                                 2)]
+                          [n (vector-length segs)])
+                     (let lp ([i 0])
+                       (when (fx< i n)
+                         (let ([e (vector-ref segs i)])
+                           (zo-b-build-from-codes!
+                            (string-append P3 "/seg4z-codes-"
+                                           (number->string e) ".fasl")
+                            (string-append P3 "/seg4z-codes-"
+                                           (number->string e) ".manifest")
+                            (string-append P3 "/seg4z-zolist.fasl")
+                            rkt-string->keyword rkt-bytes->path
+                            rkt-make-rmp rkt-prefab-rtd #t o))
+                         (when (fx= 0 (fxmodulo i 8)) (collect 0 1))
+                         (lp (fx+ i 1))))
+                     (o "segmented codes supply: " n " segments loaded"))
+                   (zo-b-build-from-codes! (string-append P3 "/seg4z-codes.fasl")
+                                           (string-append P3 "/seg4z-codes.manifest")
+                                           (string-append P3 "/seg4z-zolist.fasl")
+                                           rkt-string->keyword rkt-bytes->path
+                                           rkt-make-rmp rkt-prefab-rtd #f o))
                ;; hybrid cross-check: also replay natively and audit the
                ;; codes-supply slots against the native world, then put
                ;; the codes table back so the run stays on the codes line
@@ -1150,6 +1191,19 @@
                       ;; the poisoning agent)?
                       (when (equal? (#%getenv "P33_CF_GCEVO") "2")
                         (zo-b-gc-evolution-audit! o))
+                      ;; mitigation discipline (solution 3, measured
+                      ;; 8/8 crash-free): a full collection before the
+                      ;; first eval closes the known poison window --
+                      ;; an unswept heap meeting the eval's first minor
+                      ;; collections.  Default ON for the codes supply;
+                      ;; P33_CF_NOCLEAR=1 disables it for control runs.
+                      (when (and (equal? (#%getenv "P33_CODEFASL") "1")
+                                 (not (equal? (#%getenv "P33_CF_NOCLEAR") "1")))
+                        (let ([t0 (c-cpu)])
+                          (collect (collect-maximum-generation))
+                          (p "pre-eval clearing collection... cpu=" (c-cpu))
+                          (o "pre-eval clearing collection: "
+                             (- (c-cpu) t0) " ms")))
                       ;; ---- acceptance ----
                       (p "acceptance... cpu=" (c-cpu))
                       (o "")

@@ -797,9 +797,42 @@
                                                           (vector-ref e 2))
                                                     #t)))
                                      (lp (fx+ i 1))))
-                                 (zo-a-write-codes! (string-append P3 "/seg4z-codes.fasl")
-                                                    (string-append P3 "/seg4z-codes.manifest")
-                                                    used o)
+                                 (if (equal? (#%getenv "P33_CF_SEGMENTED") "1")
+                                     ;; segmented supply: one fasl+manifest per
+                                     ;; event -- aligns the materialization
+                                     ;; rhythm with the zo-replay line (small
+                                     ;; batches, natural collections between)
+                                     (let ([evts '()])
+                                       (let-values ([(ks vs) (hashtable-entries used)])
+                                         (let lp ([i (fx- (vector-length ks) 1)])
+                                           (when (fx>= i 0)
+                                             (let ([e (car (vector-ref ks i))])
+                                               (unless (memv e evts)
+                                                 (set! evts (cons e evts))))
+                                             (lp (fx- i 1)))))
+                                       (set! evts (sort < evts))
+                                       (for-each
+                                         (lambda (e)
+                                           (let ([used-e (c2-mkht c3-equalhash c3-equalpred)])
+                                             (let-values ([(ks vs) (hashtable-entries used)])
+                                               (let lp ([i (fx- (vector-length ks) 1)])
+                                                 (when (fx>= i 0)
+                                                   (when (eqv? (car (vector-ref ks i)) e)
+                                                     (c2-htset! used-e (vector-ref ks i) #t))
+                                                   (lp (fx- i 1)))))
+                                             (zo-a-write-codes!
+                                              (string-append P3 "/seg4z-codes-"
+                                                             (number->string e) ".fasl")
+                                              (string-append P3 "/seg4z-codes-"
+                                                             (number->string e) ".manifest")
+                                              used-e o)))
+                                         evts)
+                                       (p3-fasl-to-file!
+                                        (string-append P3 "/seg4z-codes-segs.fasl")
+                                        (vector 'p3-codes-segs 1 (list->vector evts))))
+                                     (zo-a-write-codes! (string-append P3 "/seg4z-codes.fasl")
+                                                        (string-append P3 "/seg4z-codes.manifest")
+                                                        used o))
                                  (o "codes fasl written in " (- (c-cpu) t0) " ms")))
                              ;; textual patch digest
                              (let ([dg (c-oof (string-append P3 "/seg4z-patch.rktd") 'replace)])

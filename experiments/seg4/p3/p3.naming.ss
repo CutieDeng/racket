@@ -1265,6 +1265,34 @@
                   (list->vector
                    (sort (lambda (a b) (string<? (car a) (car b))) prs)))))))
 
+(define (p33-stack-necropsy o)
+  ;; forward-analysis instrument: called from a base-exception-handler
+  ;; at the crash point (Chez handlers run ON the crashing continuation,
+  ;; before unwind) -- walk the frames via the inspector and print the
+  ;; Scheme-level code-name chain, identifying WHO dereferenced the
+  ;; poison.
+  (try
+   (lambda ()
+     (call/cc
+      (lambda (k)
+        (let lp ([f (inspect/object k)] [n 0])
+          (when (and f (fx< n 40))
+            (let ([nm (try (lambda ()
+                             (let ([c ((f 'code) 'value)])
+                               (code-name c)))
+                           '?)]
+                  [src (try (lambda ()
+                              (let ([s ((f 'code) 'source-path)])
+                                (call-with-values (lambda () s)
+                                  (case-lambda
+                                    [(path line char) (c-fmt "~a:~a" path line)]
+                                    [(path) (c-fmt "~a" path)]
+                                    [args '?]))))
+                            '?)])
+              (o "  [necropsy " n "] " nm "  " (trunc (c-fmt "~a" src) 120)))
+            (lp (try (lambda () (f 'link)) #f) (fx+ n 1)))))))
+   'necropsy-failed))
+
 (define (p33-zoclo-target? v)
   ;; the 'zoclo rule's object-side essence (sans mark-ht guard): would this
   ;; closure canonicalize through the zoclo channel?  Used by A's manifest
