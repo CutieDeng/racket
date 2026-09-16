@@ -445,5 +445,9 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - **方案 3 eval 前清场固化(缓解层)**:GCSTRESS 满收集前置=实测 8/8 消崩——作为 codes 线**运行时纪律**(B attach 后、首 eval 前 (collect (collect-maximum-generation)))成本一次 ~40ms,把已知毒窗关死。非根治但立即可用+有实测背书;可与 CI 崩率哨兵组合成完整看护。
 - **方案 4 产品管线(结构层)**:build 期 vfasl code 段,不经 runtime-faslin——结构性免疫,产品化 M2+ 的主线(已在进行)。
 **建议组合**:方案 3 立即落地(消实验线崩)+方案 2 继续根因定位+方案 4 主线推进。
+## 2026-09-16:方案 2 弱结构专项裁决(D173-D175)——弱槽线关闭,根因移交内核插桩战役
+**弱结构审计器**(p33-weak-audit!,毒窗开态挂载):全图覆盖(500 万预算,余 380 万)枚举 6866 弱结构(wp 6815/wht 若干;wp.bwp 773 正常死亡,wp.obj 6042 活),**GARBAGE 初报 4 例=假阳性**(全部为 black-hole 立即值 #0=#0#,位值 64,slot-class imm 家族漏列;siz-1 eqv 弱表 key=black-hole val=pair 是合法运行态形态)——修正后**弱 key/弱对槽全 clean,弱结构线关闭**。审计 run 本身仍崩(NOCLEAR 态)=毒不在弱槽。
+**正向定位总账(截至本轮,全部实测)**:已关闭=堆段槽(checker)/reloc 表×GC 演化(GCEVO 双挂载)/机器码字节(XCHECK v2)/patch 值(v3)/kw-rmp-prefab-fentry 通道/kind4/icache/枚举面/tlc-staddr/弱结构。**存活=①栈/续延根扫描路径(checker 与 Scheme 侧工具皆够不到;"context lost"崩+lldb 生成码 pair 解引用 x0=页界-1 形态是其面向)②eval 内短命窗口**。二者的下一步都需**GC 内核插桩**(mkgc 栈扫描 trace 日志/sweep per-object 验证)——立为下一战役档案;Scheme 侧正向工具已穷尽。
+**工程姿态**:方案 3 清场纪律(12/12 实证)+CI 哨兵护实验线;产品管线结构免疫。据此低频崩不再阻塞任何主线工作。
 **方案 3 已落地验证(D172)**:B 端首 eval 前满代收集(codes 线默认开,P33_CF_NOCLEAR=1 对照口),实测 30ms;**裸批 12/12 全净**(基线 ~17-25% 崩率;此前 8/8 是 checker 批,本轮裸批复证)。codes 线自此「满分+毒窗关死+CI 崩率哨兵」三层看护。
 **CI 看护入口(已验证)**:`experiments/seg4/ci-seg4.sh <racket> <wd> [L1-L4|all] [N]`——L1 内核电池+三套件/L2 gen-seg4 端到端(门禁=满分)/L3 稳定性批(green-none 门禁 0 崩基线,codes 线 WATCH 崩率漂移不设门)/L4 相位计时对基线。全层自测通过(L2 PASS 满分、L3 双线净、L4 时间线正常)。**对未打穿低频崩的看护姿势=崩率漂移哨兵**,不假装不存在。

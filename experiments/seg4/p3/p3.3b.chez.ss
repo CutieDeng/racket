@@ -1191,6 +1191,11 @@
                       ;; the poisoning agent)?
                       (when (equal? (#%getenv "P33_CF_GCEVO") "2")
                         (zo-b-gc-evolution-audit! o))
+                      ;; solution-2 forensics: weak-structure audit in
+                      ;; the open poison window (before the clearing
+                      ;; collection below)
+                      (when (equal? (#%getenv "P33_CF_WEAKAUDIT") "1")
+                        (p33-weak-audit! rootvec "post-replay" o))
                       ;; mitigation discipline (solution 3, measured
                       ;; 8/8 crash-free): a full collection before the
                       ;; first eval closes the known poison window --

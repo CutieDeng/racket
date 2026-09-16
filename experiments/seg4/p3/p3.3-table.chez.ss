@@ -646,6 +646,108 @@
          "  static-extvec=" nx "  count-mismatches=" nbad)
       n)))
 
+(define (p33-weak-audit! roots label o)
+  ;; solution-2 instrument: enumerate every weak structure reachable
+  ;; from the roots, classify each weak slot's value (live object /
+  ;; bwp / GARBAGE-shaped), then run a minor collection and re-classify
+  ;; -- catches a dangling bucket/chain pair in the act, in the exact
+  ;; window the crash forms in.
+  (let ([visited (make-eq-hashtable)]
+        [weaks '()]
+        [budget 5000000]
+        [stack (let lp ([i (fx- (vector-length roots) 1)] [acc '()])
+                 (if (fx< i 0) acc (lp (fx- i 1) (cons (vector-ref roots i) acc))))])
+    (define (walk!)
+      (unless (or (null? stack) (fx<= budget 0))
+        (let ([x (car stack)])
+          (set! stack (cdr stack))
+          (set! budget (fx- budget 1))
+          (when (and (or (heapish? x) ($code? x))
+                     (not (eq-hashtable-ref visited x #f)))
+            (eq-hashtable-set! visited x #t)
+            (cond
+              [(and (pair? x) (or (weak-pair? x) (ephemeron-pair? x)))
+               (set! weaks (cons (cons (if (weak-pair? x) 'wp 'eph) x) weaks))
+               (set! stack (cons (cdr x) stack))]
+              [(and (hashtable? x) (c3-htweak? x))
+               (set! weaks (cons (cons 'wht x) weaks))]
+              [else
+               (for-each (lambda (ch)
+                           (when (or (heapish? ch) ($code? ch))
+                             (set! stack (cons ch stack))))
+                         (try (lambda () (children x #f)) '()))])))
+        (walk!)))
+    (define (slot-class v)
+      (cond
+        [(bwp-object? v) 'bwp]
+        [(or (fixnum? v) (char? v) (null? v) (boolean? v) (eof-object? v)
+             (eq? v '#0=#0#) (eq? v (void))) 'imm]
+        [(or (symbol? v) (pair? v) (vector? v) ($rec? v) (procedure? v)
+             (string? v) (bytevector? v) (flonum? v) (hashtable? v)
+             ($code? v) (box? v) ($stvec? v)) 'obj]
+        [else
+         (let ([g (try (lambda () (staddr-gen v)) 'BAD)])
+           (if (or (eq? g 'BAD) (not g)) 'GARBAGE 'odd))]))
+    (define (audit tag)
+      (let ([counts (c2-mkht c3-equalhash c3-equalpred)]
+            [bad-samples '()])
+        (for-each
+          (lambda (pr)
+            (let ([kind (car pr)] [x (cdr pr)])
+              (case kind
+                [(wp eph)
+                 (let ([c (slot-class (car x))])
+                   (hashtable-update! counts (cons kind c)
+                                      (lambda (n) (fx+ n 1)) 0)
+                   (when (and (eq? c 'GARBAGE) (fx< (length bad-samples) 8))
+                     (set! bad-samples
+                           (cons (list kind (trunc (c-fmt "~s" (try (lambda () (car x)) '?)) 60))
+                                 bad-samples))))]
+                [(wht)
+                 (let ([ks (try (lambda () (c-htkeys x)) '#())])
+                   (let lp ([k 0])
+                     (when (fx< k (vector-length ks))
+                       (let* ([key (vector-ref ks k)]
+                              [c (slot-class key)])
+                         (hashtable-update! counts (cons 'wht-key c)
+                                            (lambda (n) (fx+ n 1)) 0)
+                         (when (and (eq? c 'GARBAGE) (fx< (length bad-samples) 8))
+                           (set! bad-samples
+                                 (cons (list 'wht-key k
+                                             'ht-size (try (lambda () (hashtable-size x)) '?)
+                                             'ht-kind (let ([hf (c2-hashfn x)])
+                                                        (cond [(not hf) 'eqv]
+                                                              [(eq? hf c3-equalhash) 'equal]
+                                                              [else 'eq/other]))
+                                             'key-fxaddr (try (lambda () (staddr-fxaddr key)) '?)
+                                             'key-tag (try (lambda ()
+                                                             (fxlogand
+                                                              (fxlogor (fxsll (staddr-fxaddr key) 3) 0)
+                                                              0))
+                                                           '?)
+                                             'key-raw (trunc (c-fmt "~s" (try (lambda () key) '?)) 80)
+                                             'val (trunc (c-fmt "~a" (obj-brief (c-htref x key #f))) 60)
+                                             'sibling (let ([sib (and (fx> (vector-length ks) 1)
+                                                                      (vector-ref ks (if (fx= k 0) 1 0)))])
+                                                        (trunc (c-fmt "~a" (obj-brief sib)) 60)))
+                                       bad-samples))))
+                       (lp (fx+ k 1)))))])))
+          weaks)
+        (o "WEAK-AUDIT " label "/" tag ": structures=" (length weaks)
+           " budget-left=" budget)
+        (let-values ([(ks vs) (hashtable-entries counts)])
+          (let lp ([i 0])
+            (when (fx< i (vector-length ks))
+              (o "   " (car (vector-ref ks i)) "." (cdr (vector-ref ks i))
+                 " = " (vector-ref vs i))
+              (lp (fx+ i 1)))))
+        (for-each (lambda (s) (o "   GARBAGE: " (trunc (c-fmt "~s" s) 120)))
+                  bad-samples)))
+    (walk!)
+    (audit "pre-gc")
+    (collect 0 1)
+    (audit "post-minor")))
+
 (define (zo-b-gc-evolution-audit! o)
   ;; forward-analysis probe (P33_CF_GCEVO): the one unverified link in
   ;; the crash's causal chain is what happens to fasl-rebuilt reloc
