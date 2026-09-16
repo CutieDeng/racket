@@ -9,7 +9,13 @@
   (#%require '#%linklet)
   (#%require '#%paramz)
   (define-values (SP)
-    "/private/tmp/claude-501/-Users-cutiedeng-Y2026-M08-D24-racket-feat-native-pvector/a95ca407-0dbc-4d46-a16a-c1769ee54cd5/scratchpad")
+    ;; portable: the engine/products root comes from P33_SP (set by every
+    ;; run script and the build pipeline); no baked-in scratchpad path
+    (let-values ([(v) (environment-variables-ref
+                       (current-environment-variables) #"P33_SP")])
+      (if v
+          (bytes->string/utf-8 v)
+          (error 'p3.3-run "P33_SP is not set (engine root directory)"))))
   (define-values (P3) (string-append SP "/p3"))
   (define-values (chez-eval) (primitive-lookup 'eval))
   (define-values (sysw) (primitive-lookup 'call-with-system-wind))

@@ -1,6 +1,7 @@
 #!/bin/bash
 SP=/private/tmp/claude-501/-Users-cutiedeng-Y2026-M08-D24-racket-feat-native-pvector/a95ca407-0dbc-4d46-a16a-c1769ee54cd5/scratchpad
 RK=/Users/cutiedeng/Y2026/M08/D24/racket-feat-native-pvector/racket/bin/racket
+export P33_SP=$SP
 cd $SP/p3
 rm -f /tmp/b12-mark /tmp/b12-sum
 for j in $(seq 1 12); do

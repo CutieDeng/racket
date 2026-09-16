@@ -423,3 +423,8 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - C 装备落地:gcwrapper checker 报告自带 from 邻域 9 词+目标残骸(自动取证),CHEZ_CHECK_HEAP_NO_ABORT=1 报告不杀模式。
 **批间强相关性**:同二进制同配置,一批 6 连绿/一批 4 连崩——批级共享状态(非 A 产物;系统级布局种子嫌疑),复现须裸跑多批。
 **定性收口(投入产出裁决)**:该崩=**实验装置(runtime-faslin code 供给)专属**;产品化 code 通道=build 期 vfasl 段装载,不经此管线,**产品形态下该 bug 自然消亡**。故记档存活候选与全套复现工具(run-f0/xcheck v1-3/hchk 系/lldb 取证脚本),不再无限深挖;codes 线以「5/6 满分+已定性低频 fail-stop 崩」状态服务后续实验,产品化推进优先。
+
+## 2026-09-16:产品化 M1 落地(D163-D164)——build 期段生成流水线
+**前置:装置解绑(已验证)**:runner/p3.3a/p3.3b 的 SP 硬编码全部参数化为 **P33_SP env**(未设响亮报错,无魔法默认);37 个 run 脚本批量补 export;**可移植性验证**=装置复制到全新目录跑对全绿 11/11+12/12——experiments/seg4 从「绑死某个旧 scratchpad」解放为可搬运构建件。
+**M1 本体(已验证)**:`experiments/seg4/gen-seg4.sh <racket> <out-dir>`——复制装置到 out、A 角色产段(green-none 配置)、B 角色冒烟验证,一条命令端到端:四件套落 out/p3/(state 5.078MB+manifest 178KB+zolist 40KB+digest),B 验收 11/11+扩展 12/12。**「构建期产第四段」从实验协议变成可调用构建命令**。
+**下一步(M2+)**:B 装载器自包含化(脱 runner 实验宿主,向 main.sps 条件装载靠拢)→boot.c 四段注册→计时实测对 256ms→(远期)code 段 vfasl 化。

@@ -1,7 +1,10 @@
 ;; ===== P3.3a process A driver: seg4z generation; code named by (zo-event, seq) =====
 ;; Racket-level operations arrive as bridged procedure arguments.
 
-(define SP "/private/tmp/claude-501/-Users-cutiedeng-Y2026-M08-D24-racket-feat-native-pvector/a95ca407-0dbc-4d46-a16a-c1769ee54cd5/scratchpad")
+(define SP
+  ;; portable: root from P33_SP, matching the runner
+  (let ([v (getenv "P33_SP")])
+    (or v (errorf 'seg4-driver "P33_SP is not set"))))
 (define P3 (string-append SP "/p3"))
 
 ;; ---- (h6) support: harvest by-value rtds and their rumble uid plists ----

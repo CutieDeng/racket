@@ -4,6 +4,7 @@
 # does workload mode carry a 1/3 late-diagnostic crash.
 SP=/private/tmp/claude-501/-Users-cutiedeng-Y2026-M08-D24-racket-feat-native-pvector/a95ca407-0dbc-4d46-a16a-c1769ee54cd5/scratchpad
 RK=/Users/cutiedeng/Y2026/M08/D24/racket-feat-native-pvector/racket/bin/racket
+export P33_SP=$SP
 cd $SP/p3
 rm -f /tmp/phm-sum /tmp/phm-mark
 for mode in workload none force; do

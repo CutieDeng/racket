@@ -3,6 +3,7 @@
 # Per config: full A+B pair, record verdicts + state.fasl size + preheat lines.
 SP=/private/tmp/claude-501/-Users-cutiedeng-Y2026-M08-D24-racket-feat-native-pvector/a95ca407-0dbc-4d46-a16a-c1769ee54cd5/scratchpad
 RK=/Users/cutiedeng/Y2026/M08/D24/racket-feat-native-pvector/racket/bin/racket
+export P33_SP=$SP
 cd $SP/p3
 rm -f /tmp/ph-sum /tmp/ph-mark
 for mode in workload force both; do
