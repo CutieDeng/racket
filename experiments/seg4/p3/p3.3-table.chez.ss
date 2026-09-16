@@ -536,8 +536,13 @@
                           " seq=" (vector-ref e 1))))))]
             [(fentry)
              ;; FFI target: re-resolve the foreign name in THIS
-             ;; process's address space
-             (let ([a (try (lambda () (foreign-entry (vector-ref e 1))) #f)])
+             ;; process's address space.
+             ;; (P33_CF_FENTRY0=1: bisection probe -- wire address 0
+             ;; instead; if the crash rate vanishes, this channel's
+             ;; image-region addresses are what the GC chokes on)
+             (let ([a (if (equal? (#%getenv "P33_CF_FENTRY0") "1")
+                          0
+                          (try (lambda () (foreign-entry (vector-ref e 1))) #f))])
                (if a
                    (vector-set! extvec i (staddr-a2o a 0))
                    (begin
@@ -611,6 +616,157 @@
       (o "zo table (native codes fasl): events=" n "  codes=" ncodes
          "  static-extvec=" nx "  count-mismatches=" nbad)
       n)))
+
+(define (zo-b-xcheck! codes-vecs native-vecs o)
+  ;; deterministic hybrid cross-check (P33_CF_XCHECK): for every slot
+  ;; the codes supply materialized, compare the fasl copy against the
+  ;; replay-native code -- structural fields, reloc classification
+  ;; sequence, and process-singleton identity (interned symbols and
+  ;; entry indices must agree; gensyms exempt).  Turns the 2/12 crash
+  ;; draw into a deterministic accusation.
+  (let ([fci (foreign-procedure "(cs)s_fasl_code_info" (ptr) ptr)]
+        [ndiff 0]
+        [nslot 0]
+        [samples '()])
+    (define (diff! evt seq why a b)
+      (set! ndiff (fx+ ndiff 1))
+      (when (fx< (length samples) 25)
+        (set! samples
+              (cons (list evt seq why (obj-brief a) (obj-brief b)) samples))))
+    (let lp ([i 0])
+      (when (fx< i (vector-length codes-vecs))
+        (let ([cv (vector-ref codes-vecs i)]
+              [nv (if (fx< i (vector-length native-vecs))
+                      (vector-ref native-vecs i)
+                      '#())])
+          (let lp2 ([j 0])
+            (when (fx< j (vector-length cv))
+              (let ([c (vector-ref cv j)])
+                (when ($code? c)
+                  (set! nslot (fx+ nslot 1))
+                  (let ([n (and (fx< j (vector-length nv)) (vector-ref nv j))])
+                    (cond
+                      [(not (and n ($code? n))) (diff! i j 'native-not-code c n)]
+                      [else
+                       (unless (equal? (code-name c) (code-name n))
+                         (diff! i j 'name c n))
+                       (let ([ic (try (lambda () (fci c)) #f)]
+                             [in (try (lambda () (fci n)) #f)])
+                         (cond
+                           [(not (and (vector? ic) (vector? in)))
+                            (diff! i j 'info-unavailable ic in)]
+                           [else
+                            (unless (eqv? (vector-ref ic 0) (vector-ref in 0))
+                              (diff! i j 'flags c n))
+                            (unless (eqv? (vector-ref ic 1) (vector-ref in 1))
+                              (diff! i j 'length c n))
+                            (unless (eqv? (vector-ref ic 3) (vector-ref in 3))
+                              (diff! i j 'free c n))
+                            ;; v2 (P33_CF_XCHECK=2): byte-compare the
+                            ;; machine code OUTSIDE the reloc spans; a
+                            ;; difference there is a reference the
+                            ;; reloc table does not cover -- the
+                            ;; hidden-pointer smoking gun
+                            (when (equal? (#%getenv "P33_CF_XCHECK") "2")
+                              (let* ([bc (vector-ref ic 2)]
+                                     [bn (vector-ref in 2)]
+                                     [nb (bytevector-length bc)]
+                                     [disp 0]
+                                     [spans
+                                      (let sp ([l (vector-ref ic 4)] [a 0] [acc '()])
+                                        (if (null? l)
+                                            acc
+                                            (let ([a2 (+ a (vector-ref (car l) 2))])
+                                              (sp (cdr l) a2 (cons a2 acc)))))]
+                                     [in-span?
+                                      (lambda (ix)
+                                        (let lp3 ([l spans])
+                                          (cond
+                                            [(null? l) #f]
+                                            ;; span values include
+                                            ;; code-data-disp while ix is a
+                                            ;; bv index: widen the window to
+                                            ;; absorb the unknown disp --
+                                            ;; misses are tolerable, false
+                                            ;; accusations are not
+                                            [(and (fx>= ix (fx- (car l) 88))
+                                                  (fx< ix (fx+ (car l) 24)))
+                                             #t]
+                                            [else (lp3 (cdr l))])))])
+                                (if (not (fx= nb (bytevector-length bn)))
+                                    (diff! i j 'bytes-length c n)
+                                    (let lp3 ([ix 0] [reported 0])
+                                      (when (and (fx< ix nb) (fx< reported 1))
+                                        (if (and (not (fx= (bytevector-u8-ref bc ix)
+                                                           (bytevector-u8-ref bn ix)))
+                                                 (not (in-span? ix)))
+                                            (begin
+                                              (diff! i j (cons 'bytes-at ix) c n)
+                                              (lp3 (fx+ ix 1) (fx+ reported 1)))
+                                            (lp3 (fx+ ix 1) reported)))))))
+                            (let cmp ([lc (vector-ref ic 4)]
+                                      [ln (vector-ref in 4)]
+                                      [k 0])
+                              (cond
+                                [(and (null? lc) (null? ln)) (void)]
+                                [(or (null? lc) (null? ln))
+                                 (diff! i j (cons 'reloc-count k) c n)]
+                                [else
+                                 (let ([ec (car lc)] [en (car ln)])
+                                   (unless (and (eqv? (vector-ref ec 0) (vector-ref en 0))
+                                                (equal? (vector-ref ec 2) (vector-ref en 2))
+                                                (equal? (vector-ref ec 3) (vector-ref en 3))
+                                                (eqv? (vector-ref ec 4) (vector-ref en 4)))
+                                     (diff! i j (cons 'reloc-shape k) ec en))
+                                   (when (eqv? (vector-ref ec 4) (vector-ref en 4))
+                                     (let ([pc (vector-ref ec 5)] [pn (vector-ref en 5)])
+                                       (case (vector-ref ec 4)
+                                         [(1 2 3)
+                                          (unless (eqv? pc pn)
+                                            (diff! i j (cons 'entry-idx k) pc pn))]
+                                         [(4)
+                                          (unless (eqv? pc pn)
+                                            (diff! i j (cons 'imm k) pc pn))]
+                                         [(0)
+                                          (cond
+                                            [(and (symbol? pn) (not (gensym? pn)))
+                                             (unless (eq? pc pn)
+                                               (diff! i j (cons 'sym-not-eq k) pc pn))]
+                                            [($code? pn)
+                                             (unless ($code? pc)
+                                               (diff! i j (cons 'obj-class k) pc pn))]
+                                            [(and (procedure? pn)
+                                                  (not (procedure? pc)))
+                                             (diff! i j (cons 'obj-class k) pc pn)]
+                                            [(and ($rec? pn)
+                                                  (not (and ($rec? pc)
+                                                            (eq? (try (lambda () (rtd-name pc)) '?)
+                                                                 (try (lambda () (rtd-name pn)) '??)))))
+                                             (diff! i j (cons 'rec-class k) pc pn)]
+                                            [else
+                                             ;; v3: neither side has a
+                                             ;; recognizable class -- the
+                                             ;; copy value must then MATCH
+                                             ;; the native bits (raw image
+                                             ;; addresses do); anything
+                                             ;; else is patch garbage
+                                             (unless (or (eqv? pc pn)
+                                                         (heapish? pc)
+                                                         ($code? pc)
+                                                         (symbol? pc)
+                                                         (fixnum? pc)
+                                                         (flonum? pc)
+                                                         (string? pc)
+                                                         (bytevector? pc)
+                                                         (char? pc))
+                                               (diff! i j (cons 'garbage k) pc pn))])]
+                                         [else (void)])))
+                                   (cmp (cdr lc) (cdr ln) (fx+ k 1)))]))]))])))
+                (lp2 (fx+ j 1)))))
+          (lp (fx+ i 1)))))
+    (o "XCHECK: slots=" nslot "  diffs=" ndiff)
+    (for-each (lambda (s) (o "   xdiff: " (trunc (c-fmt "~s" s) 220)))
+              (reverse samples))))
 
 (define (zo-b-lookup evt seq)
   (and zo-b-vecs

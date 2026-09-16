@@ -327,17 +327,44 @@
          ;; ---- code supply (P3.3: fasl-level zo loading, NO instantiation) ----
          (p "zo table build (fasl decode, no instantiation)... cpu=" (c-cpu))
          (if (equal? (#%getenv "P33_CODEFASL") "1")
-             (zo-b-build-from-codes! (string-append P3 "/seg4z-codes.fasl")
-                                     (string-append P3 "/seg4z-codes.manifest")
-                                     (string-append P3 "/seg4z-zolist.fasl")
-                                     rkt-string->keyword rkt-bytes->path
-                                     rkt-make-rmp rkt-prefab-rtd o)
+             (begin
+               (zo-b-build-from-codes! (string-append P3 "/seg4z-codes.fasl")
+                                       (string-append P3 "/seg4z-codes.manifest")
+                                       (string-append P3 "/seg4z-zolist.fasl")
+                                       rkt-string->keyword rkt-bytes->path
+                                       rkt-make-rmp rkt-prefab-rtd o)
+               ;; hybrid cross-check: also replay natively and audit the
+               ;; codes-supply slots against the native world, then put
+               ;; the codes table back so the run stays on the codes line
+               (when (member (#%getenv "P33_CF_XCHECK") '("1" "2"))
+                 (let ([codes-vecs zo-b-vecs])
+                   (zo-b-build! (string-append P3 "/seg4z-zolist.fasl")
+                                rkt-load-zo-event o)
+                   (zo-b-xcheck! codes-vecs zo-b-vecs o)
+                   (set! zo-b-vecs codes-vecs))))
              (zo-b-build! (string-append P3 "/seg4z-zolist.fasl") rkt-load-zo-event o))
          ;; Racket-level guarded eval (uses current-namespace at call time)
          (let* ([safe-eval-cell (box #f)]
+                [gcstress? (equal? (#%getenv "P33_CF_GCSTRESS") "1")]
                 [safe-eval (lambda (e)
                              (if do-probes?
                                  (begin
+                                   ;; crash amplifier v2: a full collection
+                                   ;; before the eval DEFUSED the crash
+                                   ;; (measured 8/8 green), so the trigger
+                                   ;; is a MINOR collection inside the
+                                   ;; eval -- shrink the trip so minors
+                                   ;; fire often, and turn on the heap
+                                   ;; checker so the poisoned pointer is
+                                   ;; caught in the collection that meets
+                                   ;; it, not at a later use
+                                   ;; (small trip + checker measured
+                                   ;; ~100% gc time -- checker alone
+                                   ;; keeps collection count natural)
+                                   (when gcstress?
+                                     (try (lambda ()
+                                            (($primitive $enable-check-heap) #t))
+                                          #f))
                                    (unless (unbox safe-eval-cell)
                                      (set-box! safe-eval-cell
                                                (try (lambda () (rkt-make-safe-eval)) #f)))

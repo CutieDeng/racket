@@ -410,3 +410,16 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 - 枚举面错位:RETAIN 下 A/B 同为 51000 宽口径,count-mismatch=0——排除。
 **剩余差异面(下轮首查)**:codes 线独有=①3 个孤岛内联副本 code(B 执行的是 fasl 副本而非原生)②32MB 单图物化的对象代际/卡表形态③extvec 5278 外置解析对象与重放世界的等价性。**下轮设计=B 端 hybrid 交叉核对(P33_CF_XCHECK)**:B 同进程先 codes 建表、再 zo 重放建原生表,kept 槽位逐一对比解析对象类别/结构,确定性指认毒槽类(不再依赖 2/12 崩抽签)。
 **GC 机理档案(本轮读源沉淀)**:mkgc.ss:1150-1176=code sweep 时 reloc 表逐项 trace+重打,static 提升时 retain 分支迁移表到 space_data 并保留;此后 static code 不再被 sweep,表冻结——retain 表的"悬垂"仅当表内目标于提升后再移动(boot vfasl 整批 to_static 场景下目标同批固定,故常态无悬垂;例外面待查)。
+
+## 2026-09-16:低频崩深挖二轮(D157-D162)——审计线穷尽,定性收口
+**新证据链(全已验证)**:
+- f0 二分:fentry 全置 0 地址仍 3/24 崩(同 oks=0 形态)——**fentry 洗清**;顺带证明验收路径不执行那批 FFI。
+- 崩位强聚集:oks=0(验收第一条 eval 内)为主体(5/6),尾段 1 例。
+- GC 放大器反向:eval 前满代收集=8/8 全绿(**清场消雷**——崩需特定代际窗口);小 trip+checker=GC 时间 100% 不可行。
+- **checker 现行抓捕 1 例**(gcs3#6):gen1 space-impure 槽→gen1 space-empty(整段已回收)"after gc"=堆内隐藏指针悬垂;from 邻域含 "<dummy" 字符串指纹(身份未定,resolver dummy 布线=0 排除该来源)。
+- **lldb 活现场 1 例**:崩指令=pair 解引用序(ldur x30,[x0,#1]),x0=0x10502ffff 落 Racket 映像区——可能是悬垂对象读出的垃圾内容(与 checker 型统一)。
+- **XCHECK v2/v3**(span 外机器码逐字节+span 内 patch 值合法性):8419 code **全零差**——静态可比面六维(结构/reloc 分类/单例 eq/字节/patch 值/间接类别)与原生完全等价。
+- **checker 12 次零报告但 4/12 崩**:毒不在段扫描可见面;读源证实 space_code 亦在 check 覆盖(1926 行注释过时)——存活候选收敛到**栈/tc 根槽漏 trace 类**(checker 不扫栈;吻合执行态崩+零报告),其上游(rp 头在 span 外=v2 已证同)审读未见缺口。
+- C 装备落地:gcwrapper checker 报告自带 from 邻域 9 词+目标残骸(自动取证),CHEZ_CHECK_HEAP_NO_ABORT=1 报告不杀模式。
+**批间强相关性**:同二进制同配置,一批 6 连绿/一批 4 连崩——批级共享状态(非 A 产物;系统级布局种子嫌疑),复现须裸跑多批。
+**定性收口(投入产出裁决)**:该崩=**实验装置(runtime-faslin code 供给)专属**;产品化 code 通道=build 期 vfasl 段装载,不经此管线,**产品形态下该 bug 自然消亡**。故记档存活候选与全套复现工具(run-f0/xcheck v1-3/hchk 系/lldb 取证脚本),不再无限深挖;codes 线以「5/6 满分+已定性低频 fail-stop 崩」状态服务后续实验,产品化推进优先。
