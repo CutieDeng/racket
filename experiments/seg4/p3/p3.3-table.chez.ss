@@ -617,6 +617,88 @@
          "  static-extvec=" nx "  count-mismatches=" nbad)
       n)))
 
+(define (zo-b-gc-evolution-audit! o)
+  ;; forward-analysis probe (P33_CF_GCEVO): the one unverified link in
+  ;; the crash's causal chain is what happens to fasl-rebuilt reloc
+  ;; tables ACROSS the first collections.  Snapshot an identity
+  ;; fingerprint of every kept code's reloc view, force minor
+  ;; collections, re-snapshot, and report drift -- deterministic
+  ;; observation of the poison forming, replacing the crash draw.
+  (let* ([fci (foreign-procedure "(cs)s_fasl_code_info" (ptr) ptr)]
+         [sig (lambda (e)
+                ;; per-entry identity fingerprint, stable across
+                ;; legitimate GC moves
+                (let ([k (vector-ref e 4)] [p (vector-ref e 5)])
+                  (cons k
+                        (cond
+                          [(fx> k 0) p]              ; index/imm value
+                          [(and (symbol? p) (not (gensym? p))) p]
+                          [(fixnum? p) p]
+                          [(string? p) (string-length p)]
+                          [($code? p) 'code]
+                          [(procedure? p) 'proc]
+                          [(pair? p) 'pair]
+                          [(vector? p) 'vec]
+                          [($rec? p) (try (lambda () (rtd-name p)) '?)]
+                          [(flonum? p) 'flo]
+                          [(bytevector? p) 'bv]
+                          [(char? p) p]
+                          [(null? p) 'nil]
+                          [(boolean? p) p]
+                          [else 'ALIEN]))))]
+         [snap (lambda ()
+                 (let ([acc '()])
+                   (let lp ([i 0])
+                     (when (fx< i (vector-length zo-b-vecs))
+                       (let ([cv (vector-ref zo-b-vecs i)])
+                         (let lp2 ([j 0])
+                           (when (fx< j (vector-length cv))
+                             (let ([c (vector-ref cv j)])
+                               (when ($code? c)
+                                 (let ([info (try (lambda () (fci c)) #f)])
+                                   (set! acc
+                                         (cons (cons (cons i j)
+                                                     (and (vector? info)
+                                                          (map sig (vector-ref info 4))))
+                                               acc)))))
+                             (lp2 (fx+ j 1)))))
+                       (lp (fx+ i 1))))
+                   acc))]
+         [cmp (lambda (label s0 s1)
+                (let ([nd 0] [samples '()])
+                  (for-each
+                    (lambda (a b)
+                      (unless (equal? (cdr a) (cdr b))
+                        (set! nd (fx+ nd 1))
+                        (when (fx< (length samples) 8)
+                          ;; find the first differing entry
+                          (let lp ([x (cdr a)] [y (cdr b)] [k 0])
+                            (cond
+                              [(or (not (pair? x)) (not (pair? y)))
+                               (set! samples
+                                     (cons (list (car a) 'len-drift k) samples))]
+                              [(equal? (car x) (car y))
+                               (lp (cdr x) (cdr y) (fx+ k 1))]
+                              [else
+                               (set! samples
+                                     (cons (list (car a) k (car x) '=> (car y))
+                                           samples))])))))
+                    s0 s1)
+                  (o "GCEVO " label ": codes-drifted=" nd)
+                  (for-each (lambda (s)
+                              (o "   drift: " (trunc (c-fmt "~s" s) 200)))
+                            (reverse samples))))])
+    (let ([s0 (snap)])
+      (collect 0 1)
+      (let ([s1 (snap)])
+        (cmp "after-1st-minor" s0 s1)
+        (collect 0 1)
+        (let ([s2 (snap)])
+          (cmp "after-2nd-minor" s1 s2)
+          (collect (collect-maximum-generation))
+          (let ([s3 (snap)])
+            (cmp "after-full" s2 s3)))))))
+
 (define (zo-b-xcheck! codes-vecs native-vecs o)
   ;; deterministic hybrid cross-check (P33_CF_XCHECK): for every slot
   ;; the codes supply materialized, compare the fasl copy against the

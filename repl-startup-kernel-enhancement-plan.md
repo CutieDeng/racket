@@ -428,3 +428,9 @@ scratchpad 全量(含全部修复)已同步回 experiments/seg4/(文件内 SP �
 **前置:装置解绑(已验证)**:runner/p3.3a/p3.3b 的 SP 硬编码全部参数化为 **P33_SP env**(未设响亮报错,无魔法默认);37 个 run 脚本批量补 export;**可移植性验证**=装置复制到全新目录跑对全绿 11/11+12/12——experiments/seg4 从「绑死某个旧 scratchpad」解放为可搬运构建件。
 **M1 本体(已验证)**:`experiments/seg4/gen-seg4.sh <racket> <out-dir>`——复制装置到 out、A 角色产段(green-none 配置)、B 角色冒烟验证,一条命令端到端:四件套落 out/p3/(state 5.078MB+manifest 178KB+zolist 40KB+digest),B 验收 11/11+扩展 12/12。**「构建期产第四段」从实验协议变成可调用构建命令**。
 **下一步(M2+)**:B 装载器自包含化(脱 runner 实验宿主,向 main.sps 条件装载靠拢)→boot.c 四段注册→计时实测对 256ms→(远期)code 段 vfasl 化。
+
+## 2026-09-16:正向定位一轮(D165-D168)——因果链环 b 关闭,CI 看护入口落地
+**方法论转向(用户定向)**:从撒网跑批转**正向因果链断言化**——毒必经链=[codes 引入 X]→[eval 期 minor GC 时位置 P 应更新未更新]→[X 移动 P 留旧址]→[执行解引用崩];P 候选分类(堆槽/reloc span/栈帧/tc)逐类确定性验证。
+**GCEVO 探针(新装备,确定性)**:全表身份指纹快照×三段收集(首 minor/二 minor/满代)对比漂移。**挂载点 1**(codes 读后、state 读前):三段全零漂移——**但该 run 仍崩(acceptance 3 oks 后)**⇒毒载体在 state 读入后才进堆(环 1 时序收窄)。**挂载点 2**(replay 后、验收前):三次×三段全零漂移且全绿 12/12(其满收集复刻 GCSTRESS 消雷)。
+**裁决**:**环 b(reloc 表/span×GC 演化)彻底关闭**——codes 表在两个时点、多段收集下全程纯净。毒形成窗口收窄至「**未清场堆+验收 eval 内的 minor 收集交互**」(GCSTRESS 每 eval 前满收集全绿=清过场的堆上 eval 内 minor 无毒);残余候选=环 c(栈/续延帧扫描路径)与 state 图对象级演化,二者均需新工具(栈帧审计器/图抽样指纹),记下轮。
+**CI 看护入口(已验证)**:`experiments/seg4/ci-seg4.sh <racket> <wd> [L1-L4|all] [N]`——L1 内核电池+三套件/L2 gen-seg4 端到端(门禁=满分)/L3 稳定性批(green-none 门禁 0 崩基线,codes 线 WATCH 崩率漂移不设门)/L4 相位计时对基线。全层自测通过(L2 PASS 满分、L3 双线净、L4 时间线正常)。**对未打穿低频崩的看护姿势=崩率漂移哨兵**,不假装不存在。

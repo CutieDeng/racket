@@ -339,6 +339,10 @@
                ;; hybrid cross-check: also replay natively and audit the
                ;; codes-supply slots against the native world, then put
                ;; the codes table back so the run stays on the codes line
+               ;; forward-analysis: GC-evolution audit of the rebuilt
+               ;; reloc tables (deterministic poison observation)
+               (when (equal? (#%getenv "P33_CF_GCEVO") "1")
+                 (zo-b-gc-evolution-audit! o))
                (when (member (#%getenv "P33_CF_XCHECK") '("1" "2"))
                  (let ([codes-vecs zo-b-vecs])
                    (zo-b-build! (string-append P3 "/seg4z-zolist.fasl")
@@ -1140,6 +1144,12 @@
                            (try (lambda () (rkt-analyze-syntax-fail '(#%require racket/base))) 'ERR))
                         (o "  racket/init: "
                            (try (lambda () (rkt-analyze-syntax-fail '(#%require racket/init))) 'ERR)))
+                      ;; forward-analysis mount 2: after the state world
+                      ;; is loaded and replayed, does GC evolution now
+                      ;; corrupt the codes tables (state-world writes as
+                      ;; the poisoning agent)?
+                      (when (equal? (#%getenv "P33_CF_GCEVO") "2")
+                        (zo-b-gc-evolution-audit! o))
                       ;; ---- acceptance ----
                       (p "acceptance... cpu=" (c-cpu))
                       (o "")
