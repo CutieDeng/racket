@@ -813,6 +813,40 @@
        (graph! v new-p vfi)
        (set-ptr!/no-record new-p (constant closure-code-disp) (vptr+ c-v offset) vfi)
        new-p)]
+    [(closure-freevars n c fv*)
+     ;; fasl2: a runtime closure with n free vars.  Mirrors the C reader's
+     ;; fasl_type_closure_freevars: allocate n free-var slots, point the code
+     ;; entry at code + code-data-disp, and fill the free-var slots.
+     ;; externalref extension: when the code `c` is an external (a
+     ;; negative-index indirect -- the language-layer case where a runtime
+     ;; closure's code is a boot-world code object), store a raw marker
+     ;; (>= #x40000000) in the entry slot instead of a code-vspace offset; the
+     ;; closure phase in "vfasl.c" resolves it to externals[j] via SETCLOSCODE
+     ;; (which adds code-data-disp).  Copying the code here would fail: `copy`
+     ;; turns the external into a vsingleton, and `vptr+` of a vsingleton is
+     ;; not a pointer.
+     (let* ([ext-idx (fasl-case* c
+                       [(indirect g i) (and (fx< i 0) (fx- -1 i))]
+                       [else #f])]
+            [c-v (and (not ext-idx) (copy c vfi))]
+            [new-p (find-room 'closure vfi
+                              (constant vspace-closure)
+                              (fx+ (constant header-size-closure)
+                                   (fx* n (constant ptr-bytes)))
+                              (constant type-closure))])
+       (graph! v new-p vfi)
+       (set-ptr!/no-record new-p (constant closure-code-disp)
+                           (if ext-idx
+                               (fx+ #x40000000 ext-idx)
+                               (vptr+ c-v (constant code-data-disp)))
+                           vfi)
+       (let loop ([i 0])
+         (unless (fx= i n)
+           (set-ptr! new-p (fx+ (constant closure-data-disp)
+                                (fx* i (constant ptr-bytes)))
+                     (copy (vector-ref fv* i) vfi) vfi)
+           (loop (fx+ i 1))))
+       new-p)]
     [(code flags free name arity-mask info pinfo* bytes m vreloc)
      (let* ([len (bytevector-length bytes)]
             [new-p (find-room 'code vfi
@@ -903,7 +937,16 @@
                        vfi)
              (loop (fx+ i 1)))))
        new-p)]
-    [(indirect g i) (copy (vector-ref g i) vfi)]
+    [(indirect g i)
+     ;; externalref extension (fasl2): a negative index (-1-j) marks an
+     ;; external literal in a DATA position.  Encode it as a marked
+     ;; "singleton" (index >= VFASL_EXTERNAL_BASE = #x40000000, matching
+     ;; "vfasl.c"): it rides the singletonref table and is resolved at load
+     ;; from the externals vector.  Code-reloc externals become an
+     ;; externalref reloc (see copy-reloc).
+     (if (fx< i 0)
+         (make-vsingleton (fx+ #x40000000 (fx- -1 i)))
+         (copy (vector-ref g i) vfi))]
     [else
      ($oops 'vfasl "unsupported ~s" v)]))
 
@@ -1072,6 +1115,15 @@
                                      [(fasl-type-library-code)
                                       (build-vfasl-reloc (constant vfasl-reloc-library-entry-code-tag) uptr)]
                                      [else #f])]
+                                  ;; externalref extension (fasl2): a
+                                  ;; negative-index indirect is an external
+                                  ;; literal referenced from CODE -> emit an
+                                  ;; externalref reloc, resolved at load from
+                                  ;; externals[j] (j = -1-i).
+                                  [(indirect g i)
+                                   (and (fx< i 0)
+                                        (build-vfasl-reloc (constant vfasl-reloc-external-tag)
+                                                           (fx- -1 i)))]
                                   [else #f])
                                 (let ([elem-addr (copy elem vfi)])
                                   (cond

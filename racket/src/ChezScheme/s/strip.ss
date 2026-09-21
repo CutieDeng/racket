@@ -43,6 +43,13 @@
       [(_ str arg ...) ($oops 'fasl-internal str arg ...)]))
 
   (module (read-entry)
+    ;; externalref extension (fasl2): while reading a standalone graph that
+    ;; declares external references, holds the graph index at which the
+    ;; external slots begin (graph-len - external-count), else #f.  A
+    ;; graph-ref at or past this base is an external, encoded as a
+    ;; fasl-indirect with a negative marker (-1-j) so vfasl.ss can tell it
+    ;; from an ordinary unresolved graph reference.
+    (define external-base #f)
     (define-syntax fasl-type-case
       (syntax-rules (else)
         [(_ e0 [(k ...) e1 e2 ...] ... [else ee1 ee2 ...])
@@ -227,6 +234,15 @@
            (let* ([offset (read-uptr p)]
                   [c (read-fasl p g)])
              (fasl-closure offset c))]
+          [(fasl-type-closure-freevars)
+           ;; fasl2: n free-var values + code (see wrf-closure in "fasl.ss")
+           (let* ([n (read-uptr p)]
+                  [c (read-fasl p g)]
+                  [fv* (let loop ([i 0] [acc '()])
+                         (if (fx= i n)
+                             (list->vector (reverse acc))
+                             (loop (fx+ i 1) (cons (read-fasl p g) acc))))])
+             (fasl-closure-freevars n c fv*))]
           [(fasl-type-flonum)
            (let* ([high (read-uptr p)]
                   [low (read-uptr p)])
@@ -281,17 +297,26 @@
              (fasl-code flags free name arity-mask info pinfo* bytes m vreloc))]
           [(fasl-type-immediate fasl-type-entry fasl-type-library fasl-type-library-code)
            (fasl-atom ty (read-uptr p))]
-          [(fasl-type-graph) (read-fasl p (let ([new-g (make-vector (read-uptr p) #f)])
-                                            (let ([n (read-uptr p)])
-                                              (unless (or (zero? n) (and g (>= (vector-length g) n)))
-                                                (bogus "incompatible external vector in ~a" (port-name p))))
-                                            (when g
-                                              (let ([delta (fx- (vector-length new-g) (vector-length g))])
-                                                (let loop ([i 0])
-                                                  (unless (fx= i (vector-length g))
-                                                    (vector-set! new-g (fx+ i delta) (vector-ref g i))
-                                                    (loop (fx+ i 1))))))
-                                            new-g))]
+          [(fasl-type-graph)
+           (let ([new-g (make-vector (read-uptr p) #f)])
+             (let ([n (read-uptr p)])
+               (cond
+                 [(or (zero? n) (and g (>= (vector-length g) n)))
+                  (when g
+                    (let ([delta (fx- (vector-length new-g) (vector-length g))])
+                      (let loop ([i 0])
+                        (unless (fx= i (vector-length g))
+                          (vector-set! new-g (fx+ i delta) (vector-ref g i))
+                          (loop (fx+ i 1))))))
+                  (read-fasl p new-g)]
+                 [else
+                  ;; externalref (fasl2): a standalone graph (g=#f) declaring
+                  ;; n externals.  Instead of the old "incompatible external
+                  ;; vector" bogus, allow it: external slots occupy the last
+                  ;; n graph indices, and graph-ref to an unfilled such slot
+                  ;; yields a fasl-indirect with a negative marker.
+                  (fluid-let ([external-base (fx- (vector-length new-g) n)])
+                    (read-fasl p new-g))])))]
           [(fasl-type-graph-def)
            (let ([n (read-uptr p)])
              (let ([x (read-fasl p g)])
@@ -301,7 +326,10 @@
           [(fasl-type-graph-ref)
            (let ([n (read-uptr p)])
              (or (vector-ref g n)
-                 (fasl-indirect g n)))]
+                 (if (and external-base (fx>= n external-base))
+                     ;; external slot j = n - external-base, marked negative
+                     (fasl-indirect g (fx- -1 (fx- n external-base)))
+                     (fasl-indirect g n))))]
           [(fasl-type-begin)
            (let loop ([n (read-uptr p)])
              (if (fx= n 1)
@@ -446,6 +474,10 @@
                      fld*))))]
           [rtd-ref (uid) (build-graph! x t (lambda () (build! uid #t)))]
           [closure (offset c) (build-graph! x t (lambda () (build! c t)))]
+          [closure-freevars (n c fv*)
+           (build-graph! x t (lambda ()
+                               (build! c t)
+                               (vector-for-each (lambda (fv) (build! fv t)) fv*)))]
           [flonum (high low) (build-graph! x t void)]
           [small-integer (iptr) (build-graph! x t void)]
           [large-integer (sign vuptr) (build-graph! x t void)]
@@ -612,6 +644,13 @@
                (put-u8 p (constant fasl-type-closure))
                (put-uptr p offset)
                (write-fasl p t c)))]
+          [closure-freevars (n c fv*)
+           (write-graph p t x
+             (lambda ()
+               (put-u8 p (constant fasl-type-closure-freevars))
+               (put-uptr p n)
+               (write-fasl p t c)
+               (vector-for-each (lambda (fv) (write-fasl p t fv)) fv*)))]
           [flonum (high low)
            (write-graph p t x
              (lambda ()
@@ -811,6 +850,11 @@
                        (vector 'CLOSURE
                                offset
                                (describe c))]
+              [closure-freevars (n c fv*)
+                       (vector 'CLOSURE-FREEVARS
+                               n
+                               (describe c)
+                               (vector-map describe fv*))]
               [flonum (high low) (build-flonum high low)]
               [large-integer (sign vuptr)
                (let loop ([v 0] [i 0])
@@ -1103,6 +1147,8 @@
                              (andmap fld=? fld*1 fld*2))]
                        [rtd-ref (uid) (eq? uid1 uid2)]
                        [closure (offset c) (and (eqv? offset1 offset2) (fasl=? c1 c2))]
+                       [closure-freevars (n c fv*)
+                        (and (eqv? n1 n2) (fasl=? c1 c2) (vandmap fasl=? fv*1 fv*2))]
                        [flonum (high low)
                         (and (eqv? high1 high2)
                              (eqv? low1 low2))]

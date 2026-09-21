@@ -101,6 +101,7 @@ static ptr s_set_collect_trip_bytes(ptr n);
 static void c_exit(I32 status);
 static ptr s_get_reloc(ptr co, IBOOL with_offsets);
 static ptr s_fasl_code_info(ptr co);
+static void s_set_vfasl_boot_mode(iptr m);
 #ifdef PTHREADS
 static s_thread_rv_t s_backdoor_thread_start(void *p);
 static iptr s_backdoor_thread(ptr p);
@@ -2223,6 +2224,7 @@ void S_prim5_init(void) {
 #endif /* LOG1P */
 
     Sforeign_symbol("(cs)s_get_reloc", (void *)s_get_reloc);
+    Sforeign_symbol("(cs)s_set_vfasl_boot_mode", (void *)s_set_vfasl_boot_mode);
     Sforeign_symbol("(cs)s_fasl_code_info", (void *)s_fasl_code_info);
     Sforeign_symbol("(cs)getenv", (void *)s_getenv);
     Sforeign_symbol("(cs)putenv", (void *)s_putenv);
@@ -2276,6 +2278,14 @@ void S_prim5_init(void) {
     S_install_c_entry(CENTRY_flsqrt, proc2ptr(s_sqrt));
 
     S_check_c_entry_vector();
+}
+
+/* fasl2 step 5 probe: set S_vfasl_boot_mode so a runtime vfasl load lands
+   in the static generation (to_static), exactly as a boot-time load does.
+   Used to validate zero-gen-0 state loading before the boot.c integration
+   supplies the boot-mode context naturally. */
+static void s_set_vfasl_boot_mode(iptr m) {
+  S_vfasl_boot_mode = (int)m;
 }
 
 static ptr s_get_reloc(ptr co, IBOOL with_offsets) {

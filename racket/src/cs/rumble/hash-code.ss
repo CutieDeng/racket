@@ -52,6 +52,16 @@
         ;; There was contention, so try again
         (eq-hash-code x)]))]))
 
+;; fasl2 boot-time seeding: pin x's eq-hash-code to a specific value (the
+;; build-time value recorded in a segment), so an IMAGED hasheq organized by
+;; build-time codes stays valid for keys that would otherwise get a fresh
+;; process-local counter code (rmp/keyword/opaque structs; symbols/numbers/
+;; chars are content-hashed and never need this).  Safe only single-threaded
+;; at boot, before x is first hashed -- like update-eq-hash-code-table-size!,
+;; this is the sole other sanctioned eq-hashtable-set! on `codes`.
+(define (set-eq-hash-code! x code)
+  (eq-hashtable-set! codes x code))
+
 (define (mix-hash-code hc)
   (let ([hc2 (fx+/wraparound hc (fxsll/wraparound (fx+/wraparound hc 1) 10))])
     (fxlogxor hc2 (fxsrl hc2 6))))

@@ -294,6 +294,7 @@
           object-name
 
           eq-hash-code
+          set-eq-hash-code! ; fasl2 boot-time eq-hash seeding
           eqv-hash-code
           equal-hash-code
           equal-hash-code/recur

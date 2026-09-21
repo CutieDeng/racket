@@ -74,6 +74,12 @@ static ISPC vspace_spaces[] = {
 
 #define segment_align(size) (((size)+bytes_per_segment-1) & ~(bytes_per_segment-1))
 
+/* externalref extension (fasl2): a singleton index >= this base means
+   "externals[index - base]" (an external literal in a DATA slot) rather
+   than a built-in singleton.  Must match #x40000000 in "vfasl.ss".  A plain
+   #define keeps the pb bootstrap (upstream headers) building. */
+#define VFASL_EXTERNAL_BASE 0x40000000
+
 static uptr symbol_pos_to_offset(uptr sym_pos) {
   uptr syms_per_segment = bytes_per_segment / size_symbol;
   uptr segs = sym_pos / syms_per_segment;
@@ -81,7 +87,7 @@ static uptr symbol_pos_to_offset(uptr sym_pos) {
   return (segs * bytes_per_segment) + (syms * size_symbol);
 }
 
-static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static);
+static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static, ptr externals);
 static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint);
 
 static ptr lookup_singleton(iptr which);
@@ -199,7 +205,7 @@ static void vfasl_mark_write(void *addr) {
 /************************************************************/
 /* Loading                                                  */
 
-ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
+ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
 {
   ptr vspaces[vspaces_count];
   uptr vspace_offsets[vspaces_count+1];
@@ -415,10 +421,18 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     for (i = 0; i < VFASLHEADER_SINGLETONREF_COUNT(header); i++) {
       uptr r_off;
       ptr *ref;
+      uptr which;
       r_off = singletonrefs[i];
       INC_SPACE_OFFSET(r_off);
       ref = SPACE_PTR(r_off);
-      VFASL_MARK(ref); *ref = lookup_singleton(UNFIX(*ref));
+      VFASL_MARK(ref);
+      which = UNFIX(*ref);
+      /* externalref extension (fasl2): a data-position external literal
+         rides the singletonref table with a high-index marker. */
+      if (which >= VFASL_EXTERNAL_BASE)
+        *ref = Svector_ref(externals, which - VFASL_EXTERNAL_BASE);
+      else
+        *ref = lookup_singleton(which);
     }
   }
 
@@ -588,17 +602,30 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     uptr code_delta = (uptr)ptr_subtract(vspaces[vspace_code], vspace_offsets[vspace_code]);
 
     while (cl != end_closures) {
-      ptr code = CLOSCODE(cl);
-      code = ptr_add(code, code_delta);
+      ptr entry = CLOSENTRY(cl);
+
+      /* externalref extension (fasl2): a runtime closure whose code is a
+         boot-world code object carries a marker (>= VFASL_EXTERNAL_BASE) in
+         its entry slot in place of a code-vspace offset.  Resolve it to the
+         external code object (SETCLOSCODE re-adds code_data_disp); the normal
+         case relocates the copied code by code_delta. */
+      if ((uptr)entry >= VFASL_EXTERNAL_BASE) {
+        ptr cod = Svector_ref(externals, (uptr)entry - VFASL_EXTERNAL_BASE);
+        VFASL_MARK(TO_VOIDP(UNTYPE(cl, type_closure)));
+        SETCLOSCODE(cl, cod);
+      } else {
+        ptr code = CLOSCODE(cl);
+        code = ptr_add(code, code_delta);
 
 #if 0
-      printf("%p ", code);
-      S_prin1(CODENAME(code));
-      printf("\n");
+        printf("%p ", code);
+        S_prin1(CODENAME(code));
+        printf("\n");
 #endif
 
-      VFASL_MARK(TO_VOIDP(UNTYPE(cl, type_closure)));
-      SETCLOSCODE(cl,code);
+        VFASL_MARK(TO_VOIDP(UNTYPE(cl, type_closure)));
+        SETCLOSCODE(cl,code);
+      }
       cl = ptr_add(cl, size_closure(CLOSLEN(cl)));
     }
   }
@@ -613,7 +640,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
     ptr code_end = TYPE(VSPACE_END(vspace_code), type_typed_object);
     S_record_code_mod(tc, (uptr)vspaces[vspace_code], (uptr)code_end - (uptr)code);
     while (code != code_end) {
-      relink_code(code, sym_base, vspaces, vspace_offsets, to_static);
+      relink_code(code, sym_base, vspaces, vspace_offsets, to_static, externals);
       code = ptr_add(code, size_code(CODELEN(code)));
     }
   }
@@ -639,7 +666,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len)
 
 ptr S_vfasl_to(ptr bv)
 {
-  return S_vfasl(bv, NULL, 0, Sbytevector_length(bv));
+  return S_vfasl(bv, NULL, 0, Sbytevector_length(bv), Sfalse);
 }
 
 /*************************************************************/
@@ -654,7 +681,7 @@ ptr S_vfasl_to(ptr bv)
 #define VFASL_RELOC_TAG(p) (UNFIX(p) & ((1 << vfasl_reloc_tag_bits) - 1))
 #define VFASL_RELOC_POS(p) (UNFIX(p) >> vfasl_reloc_tag_bits)
 
-static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static) {
+static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static, ptr externals) {
   int target_hint = 0;
     ptr t; iptr a, m, n;
 
@@ -704,7 +731,11 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
             int tag = VFASL_RELOC_TAG(obj);
             iptr pos = VFASL_RELOC_POS(obj);
             if (tag == vfasl_reloc_singleton_tag)
-              obj = lookup_singleton(pos);
+              /* externalref extension (fasl2): a data-position external
+                 rides the singleton path with a high-index marker. */
+              obj = ((uptr)pos >= VFASL_EXTERNAL_BASE)
+                    ? Svector_ref(externals, (uptr)pos - VFASL_EXTERNAL_BASE)
+                    : lookup_singleton(pos);
             else if (tag == vfasl_reloc_c_entry_tag)
               obj = S_lookup_c_entry(pos);
             else if ((tag == vfasl_reloc_library_entry_tag)
@@ -717,6 +748,14 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
               obj = TYPE(ptr_add(sym_base, symbol_pos_to_offset(pos)), type_symbol);
               if ((val = SYMVAL(obj)) != sunbound)
                 obj = val;
+#ifdef vfasl_reloc_external_tag
+            } else if (tag == vfasl_reloc_external_tag) {
+              /* externalref extension (fasl2): a code reloc referencing the
+                 per-load externals vector at position pos.  Guarded by
+                 #ifdef so the pb bootstrap kernel (upstream headers, no such
+                 tag) still builds; pb never emits externalref. */
+              obj = Svector_ref(externals, pos);
+#endif
             } else if (obj == FIX(0)) {
               /* leave as-is */
             } else {

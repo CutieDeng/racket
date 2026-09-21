@@ -97,6 +97,31 @@
      (apply startup-warning fmt args)
      (exit 1))
 
+   ;; fasl2 fourth-segment conditional load (PLT_SEG4=<vfasl-file>): at
+   ;; startup, before the language layer would be instantiated, load a
+   ;; pre-built state image straight into the STATIC generation (boot-mode
+   ;; load), so it never enters gen-0 and never triggers a promotion GC.
+   ;; This is the main.sps integration point for the zero-alloc/zero-GC
+   ;; boot-runtime loader; the externals-resolution + namespace install are
+   ;; supplied by the fasl2 domain layer (here a bare load + to-static check).
+   (define (maybe-load-seg4)
+     (let ([f (getenv-bytes "PLT_SEG4")])
+       (when f
+         (let* ([path (utf8->string f)]
+                [set-bm (foreign-procedure "(cs)s_set_vfasl_boot_mode" (iptr) void)]
+                [bv (call-with-port (open-file-input-port path) get-bytevector-all)]
+                [t0 (current-time 'time-monotonic)])
+           (set-bm 1)
+           (let ([v (fasl-read (open-bytevector-input-port bv) (quote load) (vector))])
+             (set-bm 0)
+             (let* ([t1 (current-time 'time-monotonic)]
+                    [d (time-difference t1 t0)]
+                    [ms (+ (* 1000.0 (time-second d)) (/ (time-nanosecond d) 1e6))])
+               (startup-warning "[seg4] ~a bytes -> static gen ~a in ~a ms"
+                                (bytevector-length bv)
+                                (($primitive $generation) v)
+                                ms)))))))
+
    (define builtin-argc 11)
    (seq
     (unless (>= (length the-command-line-arguments) builtin-argc)
@@ -107,7 +132,8 @@
 		      " `wm-is-gracket-or-x11-arg-count`, and `gracket-guid-or-x11-args`"
 		      " to start")))
     (set-exec-file! (->path (list-ref the-command-line-arguments/maybe-bytes 1)))
-    (set-run-file! (->path (list-ref the-command-line-arguments/maybe-bytes 2))))
+    (set-run-file! (->path (list-ref the-command-line-arguments/maybe-bytes 2)))
+    (maybe-load-seg4))
    (define embedded-interactive-mode? (string=? "true" (list-ref the-command-line-arguments 0)))
    (define-values (init-collects-dir collects-pre-extra)
      (let ([s (list-ref the-command-line-arguments/maybe-bytes 3)])

@@ -2328,7 +2328,10 @@
   vfasl-reloc-library-entry-tag
   vfasl-reloc-library-entry-code-tag
   vfasl-reloc-symbol-tag
-  vfasl-reloc-singleton-tag)
+  vfasl-reloc-singleton-tag
+  ;; externalref extension (fasl2): a code reloc that references
+  ;; externals[pos], the per-load externals vector.  7th of 8 (3-bit).
+  vfasl-reloc-external-tag)
 
 ;; ---------------------------------------------------------------------
 ;; General helpers for the compiler and runtime implementation:

@@ -360,6 +360,21 @@ ptr S_bv_fasl_read(ptr bv, int ty, uptr offset, uptr len, ptr path, ptr external
   return bv_fasl_entry(tc, bv, ty, offset, len, &ffo, externals);
 }
 
+/* fasl2 fourth-segment C-level boot loader: reads a vfasl state image from a
+   file and loads it straight into the STATIC generation (boot-mode load), so
+   it never enters gen-0 and never triggers a promotion GC.  Called from
+   boot.c after Sbuild_heap (before the language layer runs).  externals is
+   the empty vector here -- a C-level boot segment carries no externalref;
+   the fasl2 domain layer's externals resolution runs in main.sps. */
+ptr S_load_seg4_to_static(INT fd) {
+  ptr v; int save;
+  save = S_vfasl_boot_mode;
+  S_vfasl_boot_mode = 1;
+  v = S_fasl_read(fd, fasl_type_visit_revisit, Sfalse, S_G.null_vector);
+  S_vfasl_boot_mode = save;
+  return v;
+}
+
 ptr S_boot_read(faslFile f, const char *path) {
   ptr tc = get_thread_context();
 
@@ -501,7 +516,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
           faslin(tc, &x, externals, &strbuf, in_f);
           break;
         case fasl_type_vfasl:
-          x = S_vfasl(bv, in_f, 0, size);
+          x = S_vfasl(bv, in_f, 0, size, externals);
           break;
         default:
           S_error2("", "malformed fasl-object header (got ~s) found in ~a", FIX(ty), f->uf.path);
@@ -524,7 +539,7 @@ static ptr bv_fasl_entry(ptr tc, ptr bv, int ty, uptr offset, uptr len, faslFile
   S_thread_start_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
 
   if (ty == fasl_type_vfasl) {
-    x = S_vfasl(bv, f, offset, len);
+    x = S_vfasl(bv, f, offset, len, externals);
   } else if (ty == fasl_type_fasl) {
     f->next += offset;
     faslin(tc, &x, externals, &strbuf, f);
