@@ -524,6 +524,20 @@
   (or (eq-hashtable-ref (vfasl-info-graph vfi) v #f)
       (do-copy v vfi)))
 
+;; fasl2 externalref: encode external index j as the fixnum marker
+;; #x40000000+j (must match VFASL_EXTERNAL_BASE in "vfasl.c"), which rides the
+;; singletonref table.  The base only fits a fixnum on a >= 32-bit-fixnum
+;; target (61-bit on 64-bit builds); on a smaller target it is a bignum and the
+;; feature is unavailable.  meta-cond selects the encoding at compile time, so
+;; a 64-bit build expands to exactly the fx+ and is byte-identical, while a
+;; 32-bit build compiles (no bignum in fx+) and fails with a clear message only
+;; if an external is actually emitted -- the normal boot path emits none.
+(define-syntax vfasl-external-marker
+  (syntax-rules ()
+    [(_ j) (meta-cond
+            [(<= #x40000000 (constant most-positive-fixnum)) (fx+ #x40000000 j)]
+            [else (begin j ($oops 'vfasl "fasl2 externalref requires a 64-bit target"))])]))
+
 (define (do-copy v vfi)
   (fasl-case* v
     [(atom ty uptr)
@@ -846,7 +860,7 @@
        (graph! v new-p vfi)
        (set-ptr!/no-record new-p (constant closure-code-disp)
                            (if ext-idx
-                               (fx+ #x40000000 ext-idx)
+                               (vfasl-external-marker ext-idx)
                                (vptr+ c-v (constant code-data-disp)))
                            vfi)
        (let loop ([i 0])
@@ -954,7 +968,7 @@
      ;; from the externals vector.  Code-reloc externals become an
      ;; externalref reloc (see copy-reloc).
      (if (fx< i 0)
-         (make-vsingleton (fx+ #x40000000 (fx- -1 i)))
+         (make-vsingleton (vfasl-external-marker (fx- -1 i)))
          (copy (vector-ref g i) vfi))]
     [else
      ($oops 'vfasl "unsupported ~s" v)]))

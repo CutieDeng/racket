@@ -90,6 +90,19 @@ static uptr symbol_pos_to_offset(uptr sym_pos) {
 static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets, IBOOL to_static, ptr externals);
 static ptr find_pointer_from_offset(uptr p_off, ptr *vspaces, uptr *vspace_offsets, int *hint);
 
+/* externalref extension (fasl2): resolve an external index against the
+   per-load externals vector.  Svector_ref is unchecked, and an image that
+   declares more externals than the caller supplied (e.g. a length-0 vector)
+   would read off the end.  Fail loudly instead: on the normal boot path the
+   image declares no externals, so no external index is ever produced and this
+   is never reached; only a malformed/mismatched externals-bearing image trips
+   it, which is a load invariant violation like the bad-reloc-tag case below. */
+static ptr vfasl_external_ref(ptr externals, uptr idx) {
+  if (idx >= (uptr)Svector_length(externals))
+    S_error_abort("vfasl: external index out of range");
+  return Svector_ref(externals, idx);
+}
+
 static ptr lookup_singleton(iptr which);
 
 /* Set by the boot loader while the fasl stream's buffer is a
@@ -430,7 +443,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
       /* externalref extension (fasl2): a data-position external literal
          rides the singletonref table with a high-index marker. */
       if (which >= VFASL_EXTERNAL_BASE)
-        *ref = Svector_ref(externals, which - VFASL_EXTERNAL_BASE);
+        *ref = vfasl_external_ref(externals, which - VFASL_EXTERNAL_BASE);
       else
         *ref = lookup_singleton(which);
     }
@@ -610,7 +623,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
          external code object (SETCLOSCODE re-adds code_data_disp); the normal
          case relocates the copied code by code_delta. */
       if ((uptr)entry >= VFASL_EXTERNAL_BASE) {
-        ptr cod = Svector_ref(externals, (uptr)entry - VFASL_EXTERNAL_BASE);
+        ptr cod = vfasl_external_ref(externals, (uptr)entry - VFASL_EXTERNAL_BASE);
         VFASL_MARK(TO_VOIDP(UNTYPE(cl, type_closure)));
         SETCLOSCODE(cl, cod);
       } else {
@@ -734,7 +747,7 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
               /* externalref extension (fasl2): a data-position external
                  rides the singleton path with a high-index marker. */
               obj = ((uptr)pos >= VFASL_EXTERNAL_BASE)
-                    ? Svector_ref(externals, (uptr)pos - VFASL_EXTERNAL_BASE)
+                    ? vfasl_external_ref(externals, (uptr)pos - VFASL_EXTERNAL_BASE)
                     : lookup_singleton(pos);
             else if (tag == vfasl_reloc_c_entry_tag)
               obj = S_lookup_c_entry(pos);
@@ -754,7 +767,7 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
                  per-load externals vector at position pos.  Guarded by
                  #ifdef so the pb bootstrap kernel (upstream headers, no such
                  tag) still builds; pb never emits externalref. */
-              obj = Svector_ref(externals, pos);
+              obj = vfasl_external_ref(externals, pos);
 #endif
             } else if (obj == FIX(0)) {
               /* leave as-is */
