@@ -766,12 +766,21 @@
                                     (let ([parent (vector-ref vec (fx- (vector-length vec)
                                                                        (constant ancestry-parent-offset)))])
                                       (copy parent vfi))]
-                                   [(indirect g i) (loop (vector-ref g i))]
+                                   ;; externalref (fasl2): a negative index is an
+                                   ;; external (boot) parent rtd -- resolved at load,
+                                   ;; not copied, so no ordering to enforce here.
+                                   [(indirect g i) (unless (fx< i 0) (loop (vector-ref g i)))]
                                    [else ($oops 'vfasl "parent type not recognized ~s" elem)]))]
                           [else (safe-assert (not 'ptr)) (void)])))
           (let* ([vspc (cond
                          [maybe-uid
                           (constant vspace-rtd)]
+                         ;; externalref (fasl2): an external (boot) rtd copies to a
+                         ;; vsingleton, not a vptr -- its mpm cannot be read here.
+                         ;; Default to the impure record space (correct for any
+                         ;; record; the rtd is resolved from externals at load).
+                         [(vsingleton? rtd-p)
+                          (constant vspace-impure-record)]
                          [(eqv? 0 (let-values ([(bv offset) (vptr->bytevector+offset rtd-p vfi)])
                                     (ref-uptr bv (fx+ offset (constant record-type-mpm-disp)))))
                           (constant vspace-pure-typed)]
@@ -1062,7 +1071,9 @@
 (define (refers-back-to-self? v rtd)
   (or (eq? v rtd)
       (fasl-case* rtd
-        [(indirect g i) (refers-back-to-self? v (vector-ref g i))]
+        ;; externalref (fasl2): a negative index is an external (boot) rtd --
+        ;; it is not this record, so it never refers back to self.
+        [(indirect g i) (and (fx>= i 0) (refers-back-to-self? v (vector-ref g i)))]
         [else #f])))
 
 (define (reloc-addr n)
