@@ -2318,7 +2318,13 @@
   singleton-equal
   singleton-symbol=?
   singleton-symbol-symbol
-  singleton-symbol-ht-rtd)
+  singleton-symbol-ht-rtd
+  ;; fasl2 eq-hashtable imaging: the `eq` type symbol and $eq-ht-rtd, so an
+  ;; eq-hashtable can be imaged as a record whose type/rtd are named singletons
+  ;; (resolved at load) rather than copied.  Must stay LAST so the existing
+  ;; singleton indices are unchanged.
+  singleton-eq-symbol
+  singleton-eq-ht-rtd)
 
 (define-constant vfasl-reloc-tag-bits 3)
 

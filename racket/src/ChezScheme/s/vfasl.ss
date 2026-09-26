@@ -501,9 +501,12 @@
 (define (unpack-symbol v)
   (or (fasl-case* v
         [(string ty string)
-         (if (eq? ty (constant fasl-type-symbol))
-             (string->symbol string)
-             #f)]
+         ;; A `fasl-type-symbol` string is a symbol uid.  fasl2: any other
+         ;; string type is a plain-string uid -- some runtime rtds carry a
+         ;; non-symbol uid -- so intern it too.  unpack-symbol only produces
+         ;; the key for the rtd-dedup table (the rtd itself is copied), and an
+         ;; interned symbol is a stable eq? key for either spelling.
+         (string->symbol string)]
         [(gensym pname uname) (gensym pname uname)]
         [else #f])
       (error 'vfasl "expected a symbol: ~s" v)))
@@ -959,6 +962,67 @@
                        (vector-ref to-vec i)
                        vfi)
              (loop (fx+ i 1)))))
+       new-p)]
+    [(eq-hashtable mutable? subtype minlen veclen vpfasl)
+     ;; fasl2 eq-hashtable imaging.  eq-hash is address-based (segment.h), so
+     ;; buckets computed here (build addresses) are stale at load; we image
+     ;; every entry's TLC into ONE bucket (index 0) and rely on a post-load
+     ;; rehash (driven by the loader over the loaded state) to re-bucket by
+     ;; load-time eq-hash before the table is used.
+     ;;
+     ;; A weak/ephemeron table's entries ride weak/ephemeron pairs, which vfasl
+     ;; cannot image.  We image it as a `normal` table instead: the live
+     ;; entries captured at build time become strong TLCs, so the imaged table
+     ;; keeps exactly the snapshot's contents (correctness-safe).  It loses the
+     ;; weak/ephemeron collectability -- acceptable for a startup snapshot, and
+     ;; the alternative (externalize + rebuild empty) would lose the entries.
+     (let* ([flds (rtd-flds $eq-ht-rtd)]
+            [len (fx* (length flds) (constant ptr-bytes))]
+            [new-p (find-room 'eq-ht vfi
+                              (constant vspace-impure)
+                              (fx+ (constant header-size-record) len)
+                              (constant type-typed-object))]
+            [vec-p (find-room 'eq-ht-vector vfi
+                              (constant vspace-impure)
+                              (fx+ (constant header-size-vector) (fx* veclen (constant ptr-bytes)))
+                              (constant type-typed-object))])
+       (define (field-offset name)
+         (let loop ([flds flds] [addr (constant record-data-disp)])
+           (cond
+             [(null? flds) ($oops 'vfasl "could not find eq hash table field ~s" name)]
+             [(eq? (fld-name (car flds)) name) addr]
+             [else (loop (cdr flds) (fx+ addr (constant ptr-bytes)))])))
+       (graph! v new-p vfi)
+       (set-ptr! new-p (constant record-type-disp) (make-vsingleton (constant singleton-eq-ht-rtd)) vfi)
+       (set-ptr! new-p (field-offset 'type) (make-vsingleton (constant singleton-eq-symbol)) vfi)
+       (set-ptr! new-p (field-offset 'mutable?) (if mutable? (constant strue) (constant sfalse)) vfi)
+       ;; always image as a normal (strong) table -- see the weak/ephemeron note above
+       (set-ptr! new-p (field-offset 'subtype) (fix (constant eq-hashtable-subtype-normal)) vfi)
+       (set-ptr! new-p (field-offset 'minlen) (fix minlen) vfi)
+       (set-ptr! new-p (field-offset 'vec) vec-p vfi)
+       (set-ptr! new-p (field-offset 'size) (fix (vector-length vpfasl)) vfi)
+       (set-uptr! vec-p (constant vector-type-disp)
+                  (bitwise-ior (bitwise-arithmetic-shift-left veclen (constant vector-length-offset))
+                               (constant type-vector))
+                  vfi)
+       ;; every bucket empty (terminal sentinel FIX(i)); then thread all TLCs
+       ;; into bucket 0's chain, terminated by FIX(0).
+       (let loop ([i 0])
+         (unless (fx= i veclen)
+           (set-ptr! vec-p (fx+ (constant vector-data-disp) (fx* i (constant ptr-bytes))) (fix i) vfi)
+           (loop (fx+ i 1))))
+       (let loop ([i 0] [next (fix 0)])
+         (if (fx= i (vector-length vpfasl))
+             (set-ptr! vec-p (constant vector-data-disp) next vfi)
+             (let* ([p (vector-ref vpfasl i)]
+                    [kv (pair-copy (copy (car p) vfi) (copy (cdr p) vfi) vfi)]
+                    [tlc-p (find-room 'tlc vfi (constant vspace-impure)
+                                      (constant size-tlc) (constant type-typed-object))])
+               (set-uptr! tlc-p (constant tlc-type-disp) (constant type-tlc) vfi)
+               (set-ptr! tlc-p (constant tlc-keyval-disp) kv vfi)
+               (set-ptr! tlc-p (constant tlc-ht-disp) new-p vfi)
+               (set-ptr! tlc-p (constant tlc-next-disp) next vfi)
+               (loop (fx+ i 1) tlc-p))))
        new-p)]
     [(indirect g i)
      ;; externalref extension (fasl2): a negative index (-1-j) marks an

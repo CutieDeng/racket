@@ -842,7 +842,11 @@ static ptr *singleton_refs[] = { &S_G.null_string,
                                  &S_G.equalp,
                                  &S_G.symboleqp,
                                  &S_G.symbol_symbol,
-                                 &S_G.symbol_ht_rtd };
+                                 &S_G.symbol_ht_rtd,
+                                 /* fasl2 eq-hashtable imaging (order matches
+                                    the singleton enum tail in "cmacros.ss") */
+                                 &S_G.eq_symbol,
+                                 &S_G.eq_ht_rtd };
 
 static ptr lookup_singleton(iptr which) {
   ptr v;
@@ -856,6 +860,16 @@ static ptr lookup_singleton(iptr which) {
     } else if (which == singleton_eq) {
       S_G.eqp = SYMVAL(S_intern((const unsigned char *)"eq?"));
       if (!Sprocedurep(S_G.eqp)) S_error_abort("eq? has not been set");
+    } else if (singleton_refs[which-1] == &S_G.eq_ht_rtd) {
+      /* fasl2 eq-hashtable imaging: same lazy bind as $symbol-ht-rtd above.
+         Match on the ref slot rather than a named singleton_eq_ht_rtd macro so
+         the pb bootstrap (which compiles this file against a checked-in
+         equates.h that predates the new singleton) still builds; the enum
+         value only needs to exist on the Scheme side, which is compiled from
+         the current cmacros.ss.  (singleton_eq_symbol needs no lazy init:
+         S_G.eq_symbol is interned at fasl startup, so its ref is non-false.) */
+      S_G.eq_ht_rtd = SYMVAL(S_intern((const unsigned char *)"$eq-ht-rtd"));
+      if (!Srecordp(S_G.eq_ht_rtd)) S_error_abort("$eq-ht-rtd has not been set");
     } else
       S_error_abort("vfasl: singleton not ready");
     v = *(singleton_refs[which-1]);
