@@ -80,6 +80,19 @@ static ISPC vspace_spaces[] = {
    #define keeps the pb bootstrap (upstream headers) building. */
 #define VFASL_EXTERNAL_BASE 0x40000000
 
+/* optimization A: on platforms where CANNOT_READ_DIRECTLY_INTO_CODE forces the
+   code vspace to be read into a temporary and then memcpy'd into the real
+   (MAP_JIT) code space, that temp exists only for the fd-read() path: read()
+   cannot target a JIT-protected page.  When the vfasl source is a permanent
+   mapping with all the bytes present, S_fasl_bytesin degrades to a plain
+   memcpy (a userspace write), which can go straight into the code space under
+   the same write-enabled state the trailing memcpy already relies on.  So skip
+   the temp for the mapping case and copy the code space once instead of twice.
+   Define to 0 to disable (A/B). */
+#ifndef VFASL_CODE_DIRECT_FROM_MAPPING
+# define VFASL_CODE_DIRECT_FROM_MAPPING 1
+#endif
+
 static uptr symbol_pos_to_offset(uptr sym_pos) {
   uptr syms_per_segment = bytes_per_segment / size_symbol;
   uptr segs = sym_pos / syms_per_segment;
@@ -306,7 +319,17 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
       } else {
 	ptr dest;
 #ifdef CANNOT_READ_DIRECTLY_INTO_CODE
-	if (s == vspace_code)
+	/* optimization A: for the code space, use the temp only when the read
+	   really needs it (fd-read into a JIT page).  If the source is a
+	   permanent mapping with all `sz` bytes present, S_fasl_bytesin is a
+	   plain memcpy and can target the code space directly. */
+	if ((s == vspace_code)
+#if VFASL_CODE_DIRECT_FROM_MAPPING
+	    && !(S_vfasl_source_is_permanent_mapping
+	         && stream
+	         && ((iptr)(stream->end - stream->next) >= (iptr)sz))
+#endif
+	    )
 	  newspace_find_room(tc, type_untyped, sz, dest);
 	else
 	  dest = vspaces[s];
