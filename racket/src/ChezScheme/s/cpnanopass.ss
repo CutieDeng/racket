@@ -8477,6 +8477,56 @@
             (set! funcrel* (cons stuff funcrel*))
             (cons reloc stuff))))
 
+      ;; Per-code-object literal pool ("GOT"): backends that load heap/far
+      ;; literals PC-relatively (currently arm64) register each literal here
+      ;; and get back a slot index.  The pool is flushed as trailing `(abs
+      ;; ,offset ,target)` quads at the end of the code object, so the load
+      ;; patches data instead of instructions.  `stuff` pairs are shared with
+      ;; the reloc machinery (funcrels are mutated by resolve-funcrel!), so
+      ;; slots must hold the registered pair itself, never a copy.
+      (define-threaded literal-pool*)       ; slots, most recent first
+      (define-threaded literal-pool-n)
+      (define-threaded literal-pool-frozen?) ; set before munge: chunks regenerated
+                                             ; during munge must not add slots
+      (define literal-pool-slot!
+        ;; Allocate a fresh slot per literal occurrence — NO dedup.  Dedup by
+        ;; object identity is not safe here: the pb-hosted and self-hosted
+        ;; compiles intern some literal targets differently, so an eq?-keyed
+        ;; dedup makes codegen output host-dependent and breaks the boot
+        ;; fixpoint (sbb vs self-built) sharing check.  One slot per use
+        ;; mirrors the old one-reloc-per-literal path exactly.  (A host-stable
+        ;; dedup is a later optimization, not needed for P0.)
+        (lambda (stuff)
+          (safe-assert (not literal-pool-frozen?))
+          (let ([i literal-pool-n])
+            (set! literal-pool* (cons stuff literal-pool*))
+            (set! literal-pool-n (fx+ i 1))
+            i)))
+      (define flush-literal-pool
+        ;; append the pool as a trailing chunk of `(abs . stuff)` quads; the
+        ;; caller must force a munge pass so label offsets (measured from the
+        ;; code end) are rebased past the pool bytes
+        (lambda (chunk* offset)
+          (if (fx= literal-pool-n 0)
+              (values chunk* offset)
+              (let ([pool-chunk (make-chunk
+                                  (fold-right (lambda (stuff code*)
+                                                (aop-cons* `(asm "pool slot:" ,stuff)
+                                                  (cons 'abs stuff)
+                                                  code*))
+                                    '() (reverse literal-pool*)))])
+                (values (append chunk* (list pool-chunk))
+                        (fx+ offset (chunk-size pool-chunk)))))))
+      (define resolve-literal-pool-adrs
+        ;; rewrite each pc-relative pool-load placeholder into a real
+        ;; instruction now that all positions are final
+        (lambda (code* code-size)
+          (constant-case architecture
+            [(arm64) (if (fx= literal-pool-n 0)
+                         code*
+                         (asm-resolve-pool-adrs code* code-size literal-pool-n))]
+            [else code*])))
+
       ;; If unaligned integer access is not allowed, then we may need to
       ;; add nops to ensure that return-address data is word-aligned
       (define aligned?
@@ -8772,20 +8822,36 @@
                 (p-dot-graph block* (current-error-port))
                 (p-graph block* 'whatever (current-error-port) unparse-L16))
               (let ([block* (cons (car entry-block*) (remq (car entry-block*) block*))])
-                (for-each (lambda (block) (let ([l (block-label block)]) (when l (local-label-iteration-set! l 0) (local-label-func-set! l func)))) block*)
-                (fluid-let ([current-func func])
-                  (let loop ([block* (reverse block*)] [chunk* '()] [offset 0])
-                    (if (null? block*)
-                        (munge chunk* offset)
-                        (let ([block (car block*)])
-                          (let-values ([(code* chunk* offset) (Block block chunk* offset)])
-                            (let ([chunk (make-lchunk (block-label block) code*)])
-                              (let ([offset (fx+ (chunk-size chunk) offset)])
-                                (let ([l (block-label block)])
-                                  (when l
-                                    (local-label-offset-set! l offset)
-                                    (when (fx= (local-label-iteration l) 1) (set! munge-recur? #t))))
-                                (loop (cdr block*) (cons chunk chunk*) offset)))))))))))
+                ;; One code-generation attempt.  With pooled? #t, heap/far
+                ;; literals go through the per-object literal pool (adr;ldr);
+                ;; if any adr ends up out of +-1MB range (large objects),
+                ;; `resolve-literal-pool-adrs` returns #f and we return #f so
+                ;; the caller retries frozen.  With pooled? #f the pool stays
+                ;; empty (asm-move emits arm64-abs), which never fails.
+                (define (attempt pooled?)
+                  (for-each (lambda (block) (let ([l (block-label block)]) (when l (local-label-iteration-set! l 0) (local-label-func-set! l func)))) block*)
+                  (fluid-let ([current-func func]
+                              [literal-pool* '()]
+                              [literal-pool-n 0]
+                              [literal-pool-frozen? (not pooled?)])
+                    (let loop ([block* (reverse block*)] [chunk* '()] [offset 0])
+                      (if (null? block*)
+                          (let-values ([(chunk* offset) (flush-literal-pool chunk* offset)])
+                            (unless (fx= literal-pool-n 0) (set! munge-recur? #t))
+                            (set! literal-pool-frozen? #t)
+                            (let-values ([(code* trace* code-size) (munge chunk* offset)])
+                              (let ([code* (resolve-literal-pool-adrs code* code-size)])
+                                (and code* (list code* trace* code-size)))))
+                          (let ([block (car block*)])
+                            (let-values ([(code* chunk* offset) (Block block chunk* offset)])
+                              (let ([chunk (make-lchunk (block-label block) code*)])
+                                (let ([offset (fx+ (chunk-size chunk) offset)])
+                                  (let ([l (block-label block)])
+                                    (when l
+                                      (local-label-offset-set! l offset)
+                                      (when (fx= (local-label-iteration l) 1) (set! munge-recur? #t))))
+                                  (loop (cdr block*) (cons chunk chunk*) offset)))))))))
+                (apply values (or (attempt #t) (attempt #f))))))
           (define Block
             (lambda (block chunk* offset)
               (let f ([e* (block-effect* block)])

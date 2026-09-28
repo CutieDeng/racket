@@ -743,7 +743,7 @@
                      asm-activate-thread asm-deactivate-thread asm-unactivate-thread
                      asm-save-errno asm-save-last-error
                      ; machine dependent exports
-                     asm-kill)
+                     asm-kill asm-resolve-pool-adrs)
 
   (define ax-register?
     (case-lambda
@@ -1599,8 +1599,36 @@
     (lambda (x)
       (case (car x)
         [(asm arm64-abs arm64-jump arm64-call) 0]
-        [(long) 4]
+        [(long arm64-adr) 4]
         [else 8])))
+
+  ;; `(arm64-adr ,regcode ,slot)` is a placeholder for an `adr` that will
+  ;; address literal-pool slot `slot` at the end of the code object; the
+  ;; final displacement is only known once munge has converged, so
+  ;; asm-resolve-pool-adrs rewrites it into the encoded instruction then.
+  ;; `adr` reaches only +-1MB; if the pool is farther (large objects, e.g.
+  ;; whole-program-optimized racket.so), return #f so the caller recompiles
+  ;; the object with pooling disabled (falling back to the arm64-abs path).
+  (define asm-resolve-pool-adrs
+    (lambda (code* code-size nslots)
+      (define adr-word
+        (lambda (regcode disp)
+          (fxlogor (fxsll (fxlogand disp #b11) 29)
+                   (fxsll #b10000 24)
+                   (fxsll (fxlogand (fxsra disp 2) (fx- (fxsll 1 19) 1)) 5)
+                   regcode)))
+      (let ([pool-start (fx- code-size (fx* nslots 8))])
+        (let loop ([code* code*] [offset 0] [rcode* '()])
+          (if (null? code*)
+              (reverse rcode*)
+              (let ([x (car code*)])
+                (record-case x
+                  [(arm64-adr) (regcode slot)
+                   (let ([disp (fx- (fx+ pool-start (fx* slot 8)) offset)])
+                     (and (fx< -1 disp (fxsll 1 20))
+                          (loop (cdr code*) (fx+ offset 4)
+                            (cons (cons 'long (adr-word regcode disp)) rcode*))))]
+                  [else (loop (cdr code*) (fx+ offset (asm-size x)) (cons x rcode*))])))))))
 
   (define ax-mov64
     (lambda (dest n code*)
@@ -1654,8 +1682,18 @@
              [(imm) (n)
               (ax-movi dest n code*)]
              [(literal) stuff
-              (ax-mov64 dest 0
-                (asm-helper-relocation code* (cons 'arm64-abs stuff)))]
+              ;; Load heap/far literals from a per-code-object literal pool
+              ;; (trailing `(abs ...)` quads) via a pc-relative `adr`, so the
+              ;; loader patches the pool slot (data) instead of instructions.
+              ;; Once the pool is frozen (chunks regenerated during munge),
+              ;; fall back to the patched movz/movk sequence.
+              (if literal-pool-frozen?
+                  (ax-mov64 dest 0
+                    (asm-helper-relocation code* (cons 'arm64-abs stuff)))
+                  (let ([slot (literal-pool-slot! stuff)])
+                    (aop-cons* `(asm "pool load:" ,slot ,stuff)
+                      (cons `(arm64-adr ,(ax-ea-reg-code dest) ,slot)
+                            (emit ldri dest dest 0 code*)))))]
              [(disp) (n breg)
               (cond
                 [(aligned-offset? n)
@@ -2326,9 +2364,21 @@
   (define asm-helper-jump
     (lambda (code* reloc)
       (let ([jmp-tmp (cons 'reg %jmptmp)])
-        (ax-mov64 jmp-tmp 0
-          (emit br jmp-tmp
-            (asm-helper-relocation code* reloc))))))
+        ;; P1: a far call/jump target is also a heap/far reference; load it
+        ;; from the literal pool (adr;ldr;br) so no instruction is patched at
+        ;; load.  `reloc` is `(arm64-jump ,offset ,target)`; its cdr is the
+        ;; same `(offset target)` `stuff` shape asm-move pools, flushed as an
+        ;; `(abs . stuff)` quad.  Frozen (out-of-range object) falls back to
+        ;; the patched movz/movk path.
+        (if literal-pool-frozen?
+            (ax-mov64 jmp-tmp 0
+              (emit br jmp-tmp
+                (asm-helper-relocation code* reloc)))
+            (let ([slot (literal-pool-slot! (cdr reloc))])
+              (aop-cons* `(asm "pool jump:" ,slot ,(cdr reloc))
+                (cons `(arm64-adr ,(ax-ea-reg-code jmp-tmp) ,slot)
+                  (emit ldri jmp-tmp jmp-tmp 0
+                    (emit br jmp-tmp code*)))))))))
 
   (define asm-kill
     (lambda (code* dest)
@@ -2352,9 +2402,15 @@
                 (p code*))))
         (maybe-save-ra code*
           (lambda (code*)
-            (ax-mov64 jmp-tmp 0
-              (emit blr jmp-tmp
-                (asm-helper-relocation code* reloc))))))))
+            (if literal-pool-frozen?
+                (ax-mov64 jmp-tmp 0
+                  (emit blr jmp-tmp
+                    (asm-helper-relocation code* reloc)))
+                (let ([slot (literal-pool-slot! (cdr reloc))])
+                  (aop-cons* `(asm "pool call:" ,slot ,(cdr reloc))
+                    (cons `(arm64-adr ,(ax-ea-reg-code jmp-tmp) ,slot)
+                      (emit ldri jmp-tmp jmp-tmp 0
+                        (emit blr jmp-tmp code*)))))))))))
 
   (define asm-helper-relocation
     (lambda (code* reloc)
