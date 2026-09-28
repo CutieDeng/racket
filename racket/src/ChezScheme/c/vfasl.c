@@ -248,6 +248,9 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
   int s;
   void *bv_addr;
   IBOOL to_static = 0;
+#ifdef AARCH64
+  uptr got_len = 0, code_got_pad = 0;
+#endif
 
   used_len = sizeof(header);
   if (used_len > input_len)
@@ -288,6 +291,18 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
 
   to_static = (S_vfasl_boot_mode > 0);
 
+#ifdef AARCH64
+  /* arm64 PIC (P2.2b): a GOT-bearing image bakes each pool adrp/ldr pair
+     against the layout established below (code vspace 4096-aligned, GOT at
+     code start + code length rounded up to 4096) and leaves the in-object
+     pool quads dead, so its reloc entries cannot be replayed later: it is
+     only loadable straight to static with relocation dropped. */
+  got_len = VSPACE_LENGTH(vspace_got);
+  code_got_pad = (VSPACE_LENGTH(vspace_code) + 4095) & ~(uptr)4095;
+  if ((got_len > 0) && (!to_static || S_G.retain_static_relocation))
+    S_error_abort("vfasl: PIC GOT image requires boot-mode static load");
+#endif
+
   {
   uint64_t phase_t0 = VFASL_PHASE_BEGIN();
   for (s = 0; s < vspaces_count; s++) {
@@ -306,6 +321,24 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
         VFASL_PHASE_END(sub_t0, vfasl_phase_room);
         continue;
       }
+#ifdef AARCH64
+      if ((s == vspace_code) && (got_len > 0)) {
+        /* arm64 PIC (P2.2b): reproduce the layout the writer baked the
+           adrp/ldr pairs against: one code-space block holding the code
+           vspace at a 4096-aligned base and the GOT vspace at base +
+           code_got_pad.  The GOT rides in space_code memory (static and
+           never swept; slot pointers stay valid because everything a boot
+           image references is itself static, the same argument as today's
+           in-code patches), and relink_code writes every slot. */
+        ptr blk;
+        find_room(tc, space_code, (to_static ? static_generation : 0), type_untyped,
+                  ptr_align(code_got_pad + got_len + 4096), blk);
+        vspaces[s] = TO_PTR(((uptr)blk + 4095) & ~(uptr)4095);
+        vspaces[vspace_got] = ptr_add(vspaces[s], code_got_pad);
+      } else if ((s == vspace_got) && (got_len > 0)) {
+        /* placed with the code vspace above; fall through to fill it */
+      } else
+#endif
       if ((s == vspace_reloc) && to_static && !S_G.retain_static_relocation) {
         newspace_find_room(tc, type_untyped, sz, vspaces[s]);
       } else {
@@ -324,7 +357,14 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
 	   really needs it (fd-read into a JIT page).  If the source is a
 	   permanent mapping with all `sz` bytes present, S_fasl_bytesin is a
 	   plain memcpy and can target the code space directly. */
-	if ((s == vspace_code)
+	if (((s == vspace_code)
+#ifdef AARCH64
+	     /* arm64 PIC (P2.2b): a co-allocated GOT sits in the same
+	        (possibly MAP_JIT) code-space block, so a plain read()
+	        cannot target it either */
+	     || ((s == vspace_got) && (got_len > 0))
+#endif
+	     )
 #if VFASL_CODE_DIRECT_FROM_MAPPING
 	    && !(S_vfasl_source_is_permanent_mapping
 	         && stream
@@ -826,6 +866,27 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
           }
         }
 
+#ifdef AARCH64
+        if ((RELOC_TYPE(entry) == reloc_arm64_got)
+            && ((vspace_offsets[vspace_got+1] - vspace_offsets[vspace_got]) > 0)
+            && ((CODETYPE(co) & (code_flag_template << code_flags_offset)) == 0)) {
+          /* arm64 PIC (P2.2b): this pool quad was relocated into the GOT
+             vspace; the writer rewrote its adr/ldr pair to address
+             GOT[slot] and stashed the slot's byte offset in the now-dead
+             high half of the in-object quad.  Write the resolved pointer
+             into the GOT slot and leave the code page untouched.  (A
+             template code object keeps its pool in-object -- the writer
+             skips it -- because S_instantiate_code_object replays the
+             retained reloc table against the in-object quads.) */
+          I32 got_off;
+          uptr *slot;
+          memcpy(&got_off, TO_VOIDP((ptr)((uptr)co + a + sizeof(I32))), sizeof(I32));
+          slot = TO_VOIDP(ptr_add(vspaces[vspace_got], (uptr)(U32)got_off));
+          *slot = (uptr)obj + item_off;
+          VFASL_MARK(slot);
+          continue;
+        }
+#endif
         VFASL_MARK(TO_VOIDP((uptr)UNTYPE(co, type_typed_object) + a));
         S_set_code_obj("vfasl", RELOC_TYPE(entry), co, a, obj, item_off);
     }

@@ -170,14 +170,43 @@ Safe staged plan (each stage builds+boots+self-hosts+differential before next):
   boot 42, battery 0 failures, code-write% still 87%. NOTE: the prf0 fasl-write
   path is a THIRD code-list consumer beyond c-mkcode — missing it was the first
   failure.
-- **P2.2b TODO** transform: in `vfasl.ss` decode each code object to find the
-  `adr` targeting each `arm64-got` quad (unambiguous — asm-return-address adrs
-  target code labels, not pool-quad offsets), allocate a GOT-vspace slot, rewrite
-  `adr`→`adrp`+ldr-offset from the final layout, redirect relink to write
-  `GOT[slot]` (in-object quad left dead → clean code page). Needs the loader to
-  page-align the vspaces (adrp immediate is page-relative). Verify code-write%
-  drops (PLT_VFASL_WRITES) on tarm64le. High-risk: modifies the shared vfasl
-  writer every boot depends on.
+- **P2.2b DONE** transform (vfasl.ss writer + vfasl.c loader):
+  * Writer: per code object, count its `reloc-arm64-got` entries and reserve a
+    contiguous block of 8-byte slots in `vspace-got` (both passes allocate
+    identically); stash each slot's GOT byte offset in the **dead high half of
+    the in-object quad** (low half stays the usual vfasl marker) so no reloc
+    format change is needed; in the second pass decode the object to find each
+    pool `adr Xt,quad; ldr Xt,[Xt,#0]` pair and rewrite it to
+    `adrp Xt,page; ldr Xt,[Xt,#lo12]`.
+  * Layout contract baked into the immediates: loader places the code vspace
+    4096-aligned and the GOT at code start + roundup(code-vspace-size, 4096)
+    (one co-allocated space_code block), so page delta and lo12 are
+    load-address-invariant. Loader abort if a GOT-bearing image is loaded
+    without boot-mode-static (its relocs can't be replayed later).
+  * relink redirects `reloc_arm64_got` entries to write `GOT[off]` (offset read
+    from the quad's high half) and leaves the code page untouched.
+  * **Template code objects opt out** on both sides (pool stays in-object):
+    S_instantiate_code_object replays their retained reloc tables against the
+    in-object quads.
+  * **ORPHAN pool slots exist by design** (found the hard way: first build
+    died on "pool quad has no adr" at petite.boot): a regenerating chunk
+    (asm-return-address rachunk pre-munge falls back to a pooled asm-move,
+    then munges to a short `adr` to the code label) registers a slot whose
+    load sequence is discarded. Unmatched quad ⇔ orphan (all instructions sit
+    below the pool, so the scan cannot miss a live adr); relink still writes
+    the dead GOT slot, nothing loads it.
+  * Verified tarm64osx: full build rc=0 (only the two pre-existing
+    sharing1@entry518 fixpoint warnings), boot + raco setup, codegen battery
+    ok, PLT_VFASL_WRITES **code 87% → 79.0%** (4898/6203 pages), got 929
+    pages 100% written (relink fills every slot), PLT_VFASL_TIMES unchanged
+    (~7.5ms room+copy / 2.6ms relink — the time win is P2.3's, this stage
+    only cleans the pages). Verified tarm64le (docker, native aarch64):
+    full build rc=0 incl. self-host fixpoint, Chez battery 0 failures,
+    Racket battery ok, **code 87% → 78.8%** (4889/6201), got 928 pages
+    100%. Cost: GOT adds ~3.8MB resident (929 pages; no dedup + orphans —
+    a host-stable dedup is a later optimization); image bytes are zeros
+    (compress away). Remaining ~21% code writes = code-object header
+    writes (P3), frozen out-of-range objects, rp-header abs quads.
 - **P2.3** loader: code-vspace zero-copy on tarm64le; measure vfasl phase delta
   (target room+copy + relink ↓ ≈7ms) with PLT_VFASL_TIMES A/B.
 - **P3** headers: code-object header refs (reloc ptr, name) still dirty first
