@@ -182,6 +182,16 @@
                                 (let ([x* (cons (mkcode x) x*)])
                                   (let ([r ($reloc (constant reloc-arm64-jump) n (fx- a1 ra))])
                                     (mkc0 (cdr c*) a (cons r r*) a1 x*))))]
+                             [(arm64-got) (n x)
+                              ;; literal-pool slot: an 8-byte data quad (like `abs`),
+                              ;; addressed pc-relatively by an `adr` in the code.  Plain
+                              ;; fasl writes the resolved pointer in place (reloc-arm64-got
+                              ;; == reloc-abs here); the vfasl writer relocates it to the GOT.
+                              (let ([x* (cons (mkcode x) x*)])
+                                (let ([r ($reloc (constant reloc-arm64-got) n (fx- a ra))])
+                                  (constant-case ptr-bits
+                                    [(64) (mkc0 (cdr c*) (fx+ a 8) (cons r r*) a x*)]
+                                    [(32) (mkc0 (cdr c*) (fx+ a 4) (cons r r*) a x*)])))]
                              [else (c-assembler-output-error c)])]
                           [(ppc32)
                            (record-case c
@@ -326,7 +336,7 @@
                             [else (void)])]
                          [(arm64)
                           (record-case x
-                            [(arm64-abs arm64-call arm64-jump) (n x) (build x d)]
+                            [(arm64-abs arm64-call arm64-jump arm64-got) (n x) (build x d)]
                             [else (void)])]
                          [(ppc32)
                           (record-case x
@@ -478,6 +488,15 @@
                              (let ([a1 (fx- a 20)]) ; movz, movk, movk, movk, b
                                (let ([r ($reloc (constant reloc-arm64-jump) n (fx- a1 ra))])
                                  (prf0 (cdr c*) a (cons r r*) a1 (cons x x*))))]
+                            [(arm64-got) (n x) ; literal-pool slot: 8-byte data quad (like abs)
+                             (let ([r ($reloc (constant reloc-arm64-got) n (fx- a ra))])
+                               (constant-case ptr-bits
+                                 [(64)
+                                  (put64 p 0)
+                                  (prf0 (cdr c*) (fx+ a 8) (cons r r*) a (cons x x*))]
+                                 [(32)
+                                  (put32 p 0)
+                                  (prf0 (cdr c*) (fx+ a 4) (cons r r*) a (cons x x*))]))]
                             [else (c-assembler-output-error c)])]
                          [(ppc32)
                           (record-case c

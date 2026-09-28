@@ -64,6 +64,7 @@ static ISPC vspace_spaces[] = {
   space_pure_typed_object,
   space_impure_record,
   space_code,
+  space_data, /* got --- 8-byte PIC slots, updated via the reloc table, not GC-scanned */
   space_data,
   space_data /* reloc --- but not really, since relocs are never in static */
 };
@@ -170,15 +171,15 @@ static void vfasl_times_init(void) {
 /* attribution aid: distinct pages written after the initial copy,
    per vspace, gated by PLT_VFASL_WRITES */
 static int vfasl_writes_on = -1;
-static uptr vfasl_w_base[9], vfasl_w_end[9];
-static unsigned char *vfasl_w_bits[9];
-static uptr vfasl_pages_total[9], vfasl_pages_written[9];
+static uptr vfasl_w_base[vspaces_count], vfasl_w_end[vspaces_count];
+static unsigned char *vfasl_w_bits[vspaces_count];
+static uptr vfasl_pages_total[vspaces_count], vfasl_pages_written[vspaces_count];
 static void vfasl_writes_report(void) {
   static const char *names[] =
     { "symbol", "rtd", "closure", "impure", "pure-typed",
-      "impure-record", "code", "data", "reloc" };
+      "impure-record", "code", "got", "data", "reloc" };
   int s;
-  for (s = 0; s < 9; s++)
+  for (s = 0; s < vspaces_count; s++)
     if (vfasl_pages_total[s])
       fprintf(stderr, ";; vfasl writes %-14s %6ld / %6ld pages (%.1f%%)\n",
               names[s], (long)vfasl_pages_written[s], (long)vfasl_pages_total[s],
@@ -191,7 +192,7 @@ static void vfasl_writes_begin(ptr *vspaces, uptr *vspace_offsets) {
     if (vfasl_writes_on) atexit(vfasl_writes_report);
   }
   if (!vfasl_writes_on) return;
-  for (s = 0; s < 9; s++) {
+  for (s = 0; s < vspaces_count; s++) {
     uptr len = vspace_offsets[s+1] - vspace_offsets[s];
     uptr npages = (len + 4095) >> 12;
     vfasl_w_base[s] = (uptr)vspaces[s];
@@ -203,7 +204,7 @@ static void vfasl_writes_begin(ptr *vspaces, uptr *vspace_offsets) {
 static void vfasl_writes_end(void) {
   int s;
   if (vfasl_writes_on != 1) return;
-  for (s = 0; s < 9; s++) {
+  for (s = 0; s < vspaces_count; s++) {
     if (vfasl_w_bits[s]) {
       uptr npages = (vfasl_w_end[s] - vfasl_w_base[s] + 4095) >> 12, i;
       for (i = 0; i < npages; i++)
@@ -219,7 +220,7 @@ static void vfasl_mark_write(void *addr) {
   uptr a = (uptr)addr;
   int s;
   if (vfasl_writes_on != 1) return;
-  for (s = 0; s < 9; s++)
+  for (s = 0; s < vspaces_count; s++)
     if (a >= vfasl_w_base[s] && a < vfasl_w_end[s] && vfasl_w_bits[s]) {
       uptr pg = (a - vfasl_w_base[s]) >> 12;
       vfasl_w_bits[s][pg >> 3] |= (1 << (pg & 7));
@@ -273,7 +274,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
   if (getenv("PLT_VFASL_STATS")) {
     static const char *vspace_names[] =
       { "symbol", "rtd", "closure", "impure", "pure-typed",
-        "impure-record", "code", "data", "reloc" };
+        "impure-record", "code", "got", "data", "reloc" };
     fprintf(stderr, ";; vfasl block: total %ld", (long)VFASLHEADER_DATA_SIZE(header));
     for (s = 0; s < vspaces_count; s++) {
       long sz = (long)(vspace_offsets[s+1] - vspace_offsets[s]);

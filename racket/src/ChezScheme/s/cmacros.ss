@@ -600,7 +600,7 @@
   (ppc reloc-ppccall reloc-ppcload)
   (x86_64 reloc-x86_64-call reloc-x86_64-jump reloc-x86_64-popcount)
   (arm32 reloc-arm32-abs reloc-arm32-call reloc-arm32-jump)
-  (arm64 reloc-arm64-abs reloc-arm64-call reloc-arm64-jump)
+  (arm64 reloc-arm64-abs reloc-arm64-call reloc-arm64-jump reloc-arm64-got)
   (ppc32 reloc-ppc32-abs reloc-ppc32-call reloc-ppc32-jump)
   (riscv64 reloc-riscv64-abs reloc-riscv64-call reloc-riscv64-jump)
   (loongarch64 reloc-loongarch64-abs reloc-loongarch64-call reloc-loongarch64-jump)
@@ -2284,6 +2284,11 @@
   ;; rest rest are at then end to make the pointer bitmap
   ;; end with zeros (that can be dropped):
   vspace-code
+  ;; GOT: 8-byte slots holding heap/far references for PIC code (arm64).
+  ;; Written at load via the reloc table (like code), not GC-scanned; placed
+  ;; adjacent to code so the loader can keep [code][got] together in the boot
+  ;; mapping (code pages clean/shared, got pages COW on relink).
+  vspace-got
   vspace-data
   vspace-reloc ;; can be dropped after direct to static generation
   vspaces-count)

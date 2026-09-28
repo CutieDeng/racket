@@ -1500,6 +1500,9 @@ void S_set_code_obj(char *who, IFASLCODE typ, ptr p, iptr n, ptr x, iptr o) {
     item = (uptr)x + o;
     switch (typ) {
         case reloc_abs:
+#ifdef AARCH64
+        case reloc_arm64_got: /* literal-pool slot: a plain 8-byte pointer store, not an instruction patch */
+#endif
             STORE_UNALIGNED_UPTR(address, item);
             break;
 #ifdef PORTABLE_BYTECODE
@@ -1613,6 +1616,9 @@ ptr S_get_code_obj(IFASLCODE typ, ptr p, iptr n, iptr o) {
     address = TO_VOIDP((uptr)p + n);
     switch (typ) {
         case reloc_abs:
+#ifdef AARCH64
+        case reloc_arm64_got: /* literal-pool slot: plain 8-byte pointer load */
+#endif
             item = LOAD_UNALIGNED_UPTR(address);
             break;
 #ifdef PORTABLE_BYTECODE

@@ -8512,7 +8512,12 @@
               (let ([pool-chunk (make-chunk
                                   (fold-right (lambda (stuff code*)
                                                 (aop-cons* `(asm "pool slot:" ,stuff)
-                                                  (cons 'abs stuff)
+                                                  ;; tag pool quads `arm64-got` (not plain `abs`)
+                                                  ;; so the vfasl writer can recognize them and
+                                                  ;; relocate the slot into the GOT vspace; the
+                                                  ;; plain-fasl path treats reloc-arm64-got as
+                                                  ;; reloc-abs (in-object quad), i.e. exactly P0/P1.
+                                                  (cons 'arm64-got stuff)
                                                   code*))
                                     '() (reverse literal-pool*)))])
                 (values (append chunk* (list pool-chunk))

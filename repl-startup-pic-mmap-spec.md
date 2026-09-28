@@ -125,6 +125,66 @@ So: **content→GOT, layout→file, index→per-unit-compile-time.** No part dep
   adrp's page-relative immediate is load-address-dependent → must be baked under
   the mmap fixed `[code][GOT]` layout, or relocated (dynamic code path).
 
+## P2 CONCRETE DESIGN (decision-locked 2026-09-28)
+Derived hard conclusion: an adr/adrp immediate to an **out-of-object** GOT
+depends on the object's position in the code vspace, which is assigned only at
+**layout time** — so the immediate MUST be baked at layout time. Compile-time
+baking works ONLY for the in-object pool (P0/P1), which is exactly what dirties
+code pages. There is no compile-time shortcut. This is the core new machinery.
+
+Chosen addressing: **`adr` to consolidated GOT islands** (not `adrp`).
+`adr` is PC-relative by BYTE → load-address-independent → the baked immediate
+needs NO page-alignment guarantee from the loader (adrp would). Place GOT
+island(s) in the code vspace every <1MB so `adr` (±1MB) always reaches the
+nearest island. Islands are consolidated (few pages) not per-object (thousands
+of COW pages — rejected). Code (non-island) pages stay clean → shareable;
+island pages COW (written by relink). On MAP_JIT platforms (Apple Silicon) code
+is copied into MAP_JIT regardless, so the win is Linux-only; codegen correctness
+is still verified on both.
+
+Codegen contract: arm64.ss emits `adr Xtmp,<slot-placeholder>; ldr Xn,[Xtmp]`
+plus a reloc that records (this object, GOT-slot-index). The layout stage (a)
+assigns each object's slots into a consolidated island, (b) bakes the `adr`
+byte displacement into the code, (c) emits the slot as an `(abs)` reloc into the
+island. Two layout stages: `to-vfasl.ss` (racket.boot — the win target) and the
+plain-fasl load path (compile.ss/fasl.c for petite/scheme.boot + .zo). Plain
+fasl MAY keep the P0/P1 in-object pool initially (it is not the mmap target);
+only vfasl needs the consolidated-island + code-clean treatment.
+
+Loader (vfasl.c): keep the code vspace in the permanent mmap (extend the reloc
+zero-copy at 296-307 to vspace_code) on non-MAP_JIT platforms; relink writes
+only the island (abs) slots → COW only island pages. GC must scan the island
+slots (they hold live object pointers) — either a sub-region of code vspace
+walked by the reloc table, or a distinct GOT vspace (cmacros.ss enum at 2277,
+pointer-bitmap ordering: GOT holds pointers so it cannot sit after reloc).
+
+Safe staged plan (each stage builds+boots+self-hosts+differential before next):
+- **P2.1 DONE** infra: added a `vspace-got` (cmacros.ss enum, adjacent to code)
+  + `reloc-arm64-got` type (index 4, fits the 3-bit field), C vspace tables
+  updated (hardcoded 9→vspaces_count). Inert (size-0 vspace); builds+boots+
+  self-hosts, code-write% unchanged 87%.
+- **P2.2a DONE** marker: codegen tags pool quads `arm64-got`; all four fasl
+  consumers handle it (c-mkcode, prf0 fasl-write, fasl-write build-target, vfasl
+  relink) and `fasl.c` S_set/S_get_code_obj treat reloc-arm64-got as a plain
+  pointer store/load (== reloc-abs, in-object quad). Verified inert: build rc=0,
+  boot 42, battery 0 failures, code-write% still 87%. NOTE: the prf0 fasl-write
+  path is a THIRD code-list consumer beyond c-mkcode — missing it was the first
+  failure.
+- **P2.2b TODO** transform: in `vfasl.ss` decode each code object to find the
+  `adr` targeting each `arm64-got` quad (unambiguous — asm-return-address adrs
+  target code labels, not pool-quad offsets), allocate a GOT-vspace slot, rewrite
+  `adr`→`adrp`+ldr-offset from the final layout, redirect relink to write
+  `GOT[slot]` (in-object quad left dead → clean code page). Needs the loader to
+  page-align the vspaces (adrp immediate is page-relative). Verify code-write%
+  drops (PLT_VFASL_WRITES) on tarm64le. High-risk: modifies the shared vfasl
+  writer every boot depends on.
+- **P2.3** loader: code-vspace zero-copy on tarm64le; measure vfasl phase delta
+  (target room+copy + relink ↓ ≈7ms) with PLT_VFASL_TIMES A/B.
+- **P3** headers: code-object header refs (reloc ptr, name) still dirty first
+  pages — PIC or separate them, else the win is capped.
+Correctness is high-stakes (wrong slot/immediate = silent bad code): differential
++ full-suite gate every stage; codegen battery + self-host fixpoint each build.
+
 ## Phasing (each phase builds + boots + passes tests before the next)
 - **P0 (prove codegen) — refined + de-risked (localized to arm64.ss)**:
   Investigation results that shrink P0:
