@@ -86,6 +86,8 @@
     [else (void)])
   (let ([v (ensure-reference v)]
         [vfi (new-vfasl-info)])
+    (when got-stats-on?
+      (set! got-stat-image-keys (make-hashtable equal-hash equal?)))
     ;; First pass: determine sizes
     (copy v vfi)
 
@@ -173,6 +175,13 @@
             (sort-offsets! bv (vfasl-info-symrefs vfi) (vfasl-info-symref-count vfi))
             (sort-offsets! bv (vfasl-info-rtdrefs vfi) (vfasl-info-rtdref-count vfi))
             (sort-offsets! bv (vfasl-info-singletonrefs vfi) (vfasl-info-singletonref-count vfi))
+
+            (when got-stats-on?
+              (set! got-stat-distinct (+ got-stat-distinct (hashtable-size got-stat-image-keys)))
+              (fprintf (console-error-port)
+                       ";; vfasl got-stats total=~s live=~s orphans=~s distinct-live=~s\n"
+                       got-stat-total got-stat-live
+                       (- got-stat-total got-stat-live) got-stat-distinct))
 
             bv))))))
 
@@ -1176,6 +1185,18 @@
 ;; S_instantiate_code_object replays its retained reloc table against the
 ;; in-object quads.
 
+;; PLT_VFASL_GOT_STATS (attribution aid): cumulative GOT slot accounting
+;; across all to-vfasl calls in this process -- total allocated slots,
+;; slots an adr actually addresses (the rest are orphans), and the sum of
+;; per-image distinct (elem . addend) keys among live slots (the upper
+;; bound a vfasl-time dedup could shrink the GOT to; dedup cannot cross
+;; images, so distinct counts are per image and summed).
+(define got-stats-on? (and (getenv "PLT_VFASL_GOT_STATS") #t))
+(define got-stat-total 0)
+(define got-stat-live 0)
+(define got-stat-distinct 0)
+(define got-stat-image-keys #f) ; per-image table, reset per to-vfasl call
+
 ;; Reserve one 8-byte GOT slot per reloc-arm64-got entry (contiguous per
 ;; code object; both passes allocate identically) and return an alist
 ;; from each such entry's reloc offset `a` to its GOT-vspace byte offset,
@@ -1222,7 +1243,7 @@
 ;; Runs only in the second pass, where the final code-vspace size that
 ;; fixes the GOT page delta is known (the first pass only sizes, and its
 ;; buffer content is discarded).
-(define (rewrite-pool-adrs! code-p bytes got-alist vfi)
+(define (rewrite-pool-adrs! code-p bytes got-alist got-keys vfi)
   (constant-case architecture
     [(arm64)
      (let ([lim (vfasl-chunk-limit (vector-ref (vfasl-info-spaces vfi) (constant vspace-code)))])
@@ -1240,6 +1261,8 @@
              (set-int32! code-p (fx+ (constant code-data-disp) o)
                          (if (fx>= w #x80000000) (fx- w #x100000000) w)
                          vfi))
+           (when got-stats-on?
+             (set! got-stat-total (fx+ got-stat-total (length quads))))
            (let scan ([o 0])
              (when (fx<= (fx+ o 8) pool-start)
                (let ([w (u32 o)])
@@ -1253,6 +1276,11 @@
                               [got-off (cdr q)]
                               [slot (fx+ got-base got-off)]
                               [pd (fx- (fxsra slot 12) (fxsra (fx+ pc0 o) 12))])
+                         (when got-stats-on?
+                           (set! got-stat-live (fx+ got-stat-live 1))
+                           (let ([k (assv (fx+ (car q) (constant code-data-disp)) got-keys)])
+                             (when (and k got-stat-image-keys)
+                               (hashtable-set! got-stat-image-keys (cdr k) #t))))
                          (unless (fx= (u32 (fx+ o 4)) (fxlogor #xF9400000 (fxsll rd 5) rd))
                            ($oops 'vfasl "pool adr at offset ~s is not followed by its ldr" o))
                          (unless (fx<= 0 pd #x0FFFFF)
@@ -1274,7 +1302,8 @@
                            (constant vspace-reloc)
                            (fx+ (constant header-size-reloc-table) (fx* m (constant ptr-bytes)))
                            (constant type-untyped))]
-         [got-alist (reserve-got-slots m vreloc flags vfi)])
+         [got-alist (reserve-got-slots m vreloc flags vfi)]
+         [got-keys (box '())]) ; stats only: reloc offset -> (elem-marker . addend)
     (set-uptr! new-p (constant reloc-table-size-disp) m vfi)
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
     (let loop ([n 0] [a 0] [i 0])
@@ -1348,11 +1377,15 @@
              ;; relink to redirect the write
              (when got-alist
                (let ([g (assv a got-alist)])
-                 (when g (set-int32! code-p (fx+ a 4) (cdr g) vfi))))
+                 (when g
+                   (set-int32! code-p (fx+ a 4) (cdr g) vfi)
+                   (when got-stats-on?
+                     (set-box! got-keys (cons (cons a (cons new-elem item-offset))
+                                              (unbox got-keys)))))))
              (loop n a (fx+ i 1)))]
           [else ($oops 'vfasl "expected a relocation")])))
     (when got-alist
-      (rewrite-pool-adrs! code-p bytes got-alist vfi))
+      (rewrite-pool-adrs! code-p bytes got-alist (unbox got-keys) vfi))
     new-p))
 
 (set! $fasl-to-vfasl to-vfasl)
