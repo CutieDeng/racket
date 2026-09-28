@@ -203,10 +203,25 @@ Safe staged plan (each stage builds+boots+self-hosts+differential before next):
     only cleans the pages). Verified tarm64le (docker, native aarch64):
     full build rc=0 incl. self-host fixpoint, Chez battery 0 failures,
     Racket battery ok, **code 87% → 78.8%** (4889/6201), got 928 pages
-    100%. Cost: GOT adds ~3.8MB resident (929 pages; no dedup + orphans —
-    a host-stable dedup is a later optimization); image bytes are zeros
-    (compress away). Remaining ~21% code writes = code-object header
-    writes (P3), frozen out-of-range objects, rp-header abs quads.
+    100%. Remaining ~21% code writes = code-object header writes (P3),
+    frozen out-of-range objects, rp-header abs quads.
+  * **GOT dedup (vfasl-time) DONE**: measured first with
+    PLT_VFASL_GOT_STATS — orphan slots are noise (0.9% of 408,546 uses
+    across the three boot files) and duplication is the bulk (distinct
+    (elem . addend) = 18.1%), so `got-slot!` now dedups per image on a
+    **pass-invariant key** (the resolved marker, or (vspace . vptr-v) for
+    the raw-address branch — pass-1 image offsets lack base/vspace
+    prefixes and would collide across vspaces, breaking two-pass
+    allocation identity), handing slots out of 16-byte find-room blocks
+    with a spare-half cursor (c-alloc-align would otherwise waste 8B per
+    slot). relink is untouched: multiple entries write the same slot with
+    the same value (idempotent). Codegen stays one-slot-per-use
+    (host-independence); the vfasl transform is a deterministic function
+    of the input fasl. Measured: slots 408,546 → 77,188 (petite 5.0×,
+    scheme 6.9×, racket 4.9×; 0.59MB of slot bytes), PLT_VFASL_WRITES got
+    **929 → 258 pages** (1.06MB — the excess over 0.59MB is per-block
+    page granularity across 116 vfasl blocks), code 79.0% unchanged,
+    battery ok both platforms.
 - **P2.3** loader: code-vspace zero-copy on tarm64le; measure vfasl phase delta
   (target room+copy + relink ↓ ≈7ms) with PLT_VFASL_TIMES A/B.
 - **P3** headers: code-object header refs (reloc ptr, name) still dirty first
