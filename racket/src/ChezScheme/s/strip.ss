@@ -1008,11 +1008,45 @@
         (lambda (ifn ofn bootfile*)
           (convert-fasl-file who ifn ofn (fasl-strip-options)
                              (lambda (script-header mode entry* op)
+                               ;; arm64 PIC (P2.3): pad the boot stream so the next
+                               ;; entry's vfasl image DATA (past the entry framing and
+                               ;; the vfasl header) starts on a 4096-aligned file
+                               ;; offset; the loader can then keep the code+got vspaces
+                               ;; in the boot mapping with their baked adrp/ldr
+                               ;; immediates valid (it checks the alignment at run time
+                               ;; and copies otherwise).  The pad is a fasl-type-padding
+                               ;; entry: type byte, uptr length written in two bytes
+                               ;; (the reader accepts a redundant continuation byte,
+                               ;; which makes the entry's total length exactly
+                               ;; controllable), and that many zero bytes.
+                               (define pad-boot-vfasl-alignment
+                                 (lambda (op payload-size)
+                                   (constant-case architecture
+                                     [(arm64)
+                                      (unless (and (>= payload-size 100) (fasl-compressed)) ; mirrors $write-fasl-bytevectors
+                                        (let* ([uptr-length (lambda (n)
+                                                              (let loop ([n (ash n -7)] [k 1])
+                                                                (if (eqv? n 0) k (loop (ash n -7) (fx+ k 1)))))]
+                                               [pos (port-position op)]
+                                               ;; entry framing: situation u8, uptr size,
+                                               ;; compression u8, kind u8
+                                               [data-off (+ pos 1 (uptr-length (+ payload-size 2)) 2
+                                                            (constant size-vfasl-header))]
+                                               [pad (bitwise-and (- data-off) 4095)])
+                                          (unless (eqv? pad 0)
+                                            (let* ([pad (if (< pad 3) (+ pad 4096) pad)]
+                                                   [n (- pad 3)])
+                                              (put-u8 op (constant fasl-type-padding))
+                                              (put-u8 op (fxior #x80 (fxsrl n 7)))
+                                              (put-u8 op (fxand n #x7F))
+                                              (put-bytevector op (make-bytevector n 0))))))]
+                                     [else (void)])))
                                (when bootfile*
                                  ($emit-boot-header op (constant machine-type-name) bootfile*))
                                (let* ([write-out
                                        (lambda (x situation)
                                          (let ([bv ($fasl-to-vfasl x)])
+                                           (pad-boot-vfasl-alignment op (bytevector-length bv))
                                            ($write-fasl-bytevectors op (list bv) (bytevector-length bv)
                                                                     ;; see "promoting" below:
                                                                     (constant fasl-type-visit-revisit)

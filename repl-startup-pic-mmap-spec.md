@@ -246,8 +246,43 @@ Safe staged plan (each stage builds+boots+self-hosts+differential before next):
   37.83→34.96MB (standalone conversion), slots=38539 =
   old distinct-live minus orphan-only keys (exact cross-check),
   battery ok.
-- **P2.3** loader: code-vspace zero-copy on tarm64le; measure vfasl phase delta
-  (target room+copy + relink ↓ ≈7ms) with PLT_VFASL_TIMES A/B.
+- **P2.3a DONE** loader code-vspace zero-copy (tarm64le), mechanism complete,
+  **default OFF pending P3** (enable: PLT_VFASL_CODE_ZC=1):
+  * Bake basis generalized: adrp/lo12 come from raw image data-relative
+    positions (no roundup-D layout contract); valid wherever code+got keep
+    their image-relative distance and land ≡ their image offsets mod 4096.
+    Copy path places congruently; zero-copy gets it from the file.
+  * File alignment: new `fasl-type-padding` (48) top-level entry (u8 type +
+    forced-2-byte uptr length + zeros) inserted by vfasl-convert-file
+    (strip.ss, arm64 + uncompressed only) so each vfasl entry's image data
+    starts on a 4096-aligned file offset; fasl_entry skips it (#ifdef-guarded
+    for the pb bootstrap); adjust-compress.rkt copies it through verbatim.
+    Cost ~0.3MB per boot file.
+  * **Zero-copy MUST stay inside managed segments**: first attempt kept code
+    at `stream->next` in the boot mapping and died in sweep_thread — the
+    GENERATED GC dereferences SegInfo unchecked on its fast paths, so code
+    outside the segment table is fatal, not skipped-like-foreign.  The
+    working design: find_room a code-space block as usual (real static
+    space_code seginfo), then mmap(MAP_PRIVATE|MAP_FIXED, RWX) the boot
+    file's pages over a page-aligned window inside it (fd/base published by
+    scheme.c; gotcha: read the fd BEFORE S_fasl_init_bytes repurposes the
+    uf union).  Page-size independent (window page-aligned; 4096 divides
+    every page size).  Runtime checks alignment/mapping and falls back to
+    copying (also on mmap/W^X failure).
+  * Verified on tarm64le (raw_racketcs with external -v.boot files: fd-mmap
+    path): 111 RWX MAP_FIXED file-backed windows in /proc/self/maps,
+    batteries 0 failures both modes, full build rc=0.  racketcs's embedded
+    boots are lz4-compressed by embed-boot → bv path, no zero-copy (P2.3b:
+    uncompressed embedding + section alignment).
+  * **Measured A/B (min-of-5, sum of room+copy + ptr-sweep + relink)**:
+    zc ON 12.6ms vs OFF 10.1ms — room+copy drops 7.3→2.9ms but COW faults
+    on the ~82% of code pages sweep/relink still write add ~6.5ms
+    (≈4400 pages × ~1.5µs).  NET TIME LOSS ~2ms until P3 unblocks the
+    header writes; resident/shared win stands (~973 clean code pages ≈ 4MB
+    stay file-backed).  Hence default OFF; flip after P3.
+- **P2.3b TODO**: uncompressed boot embedding (adjust-compress pass-through
+  keeps pads byte-identical) + embed section alignment so racketcs's
+  self-exe fd-mmap path qualifies; then re-measure end-to-end startup.
 - **P3** headers: code-object header refs (reloc ptr, name) still dirty first
   pages — PIC or separate them, else the win is capped.
 Correctness is high-stakes (wrong slot/immediate = silent bad code): differential

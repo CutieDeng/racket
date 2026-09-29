@@ -444,6 +444,16 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
       case fasl_type_revisit:
       case fasl_type_visit_revisit:
         break;
+#ifdef fasl_type_padding
+      case fasl_type_padding:
+        /* arm64 PIC boot alignment: a converter-inserted gap so the next
+           entry's vfasl image data starts on a 4096-aligned file offset
+           (see vfasl.c); guarded by #ifdef so the pb bootstrap kernel
+           (checked-in equates.h without the constant) still builds --
+           pb boots carry no padding entries */
+        skipbytes(sizein(f), f);
+        continue;
+#endif
       case fasl_type_terminator:
         return Seof_object;
       default:

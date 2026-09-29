@@ -81,6 +81,42 @@ static ISPC vspace_spaces[] = {
    #define keeps the pb bootstrap (upstream headers) building. */
 #define VFASL_EXTERNAL_BASE 0x40000000
 
+/* arm64 PIC (P2.3): on platforms whose code space is plain memory (no
+   MAP_JIT), a PIC (GOT-bearing) image's code+got vspaces need not be
+   copied out of the boot file: the loader takes a code-space block from
+   find_room as usual -- so the range has ordinary static space_code
+   seginfo and the GC cannot tell the difference (the generated GC
+   dereferences SegInfo unchecked on its fast paths, so code must never
+   live outside managed segments) -- and then maps the boot file's pages
+   over it with MAP_PRIVATE|MAP_FIXED.  The baked adrp/ldr pairs are
+   valid because the code lands congruent to its image offset mod 4096
+   (the converter pads each image's data start to a 4096-aligned file
+   offset; checked at run time, copied otherwise -- this also makes the
+   placement page-size-independent, since the window base is page-aligned
+   and 4096 divides every supported page size).  Only the pages relink
+   and the pointer sweep actually write get COW'd; clean code pages stay
+   shared with the file.
+
+   DEFAULT OFF (set PLT_VFASL_CODE_ZC to enable): measured on tarm64le at
+   P2.2c, the COW faults relink and the pointer sweep take on the ~82% of
+   code pages they still write cost more (~+2ms) than the upfront copy
+   they replace (~-4.4ms of room+copy against ~+6.5ms of faulting), so
+   until P3 separates the code-object headers out of the code pages the
+   zero-copy path trades a little time for ~4MB of file-shared resident
+   pages.  Flip the default when P3 lands. */
+#if defined(AARCH64) && !defined(CANNOT_READ_DIRECTLY_INTO_CODE) && !defined(WIN32)
+# define VFASL_CODE_ZERO_COPY 1
+# include <sys/mman.h>
+# include <unistd.h>
+#endif
+
+/* Set by the boot loader ("scheme.c") while the fasl stream reads from
+   the permanent boot-file mapping: the file descriptor and the mapping
+   base, so the code-space file mapping above can be created.  The fd is
+   only valid during the load (it may be closed afterward). */
+int S_vfasl_mapping_fd = -1;
+uptr S_vfasl_mapping_base = 0;
+
 /* optimization A: on platforms where CANNOT_READ_DIRECTLY_INTO_CODE forces the
    code vspace to be read into a temporary and then memcpy'd into the real
    (MAP_JIT) code space, that temp exists only for the fd-read() path: read()
@@ -249,7 +285,10 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
   void *bv_addr;
   IBOOL to_static = 0;
 #ifdef AARCH64
-  uptr got_len = 0, code_got_pad = 0;
+  uptr got_len = 0;
+#endif
+#ifdef VFASL_CODE_ZERO_COPY
+  IBOOL code_in_mapping = 0;
 #endif
 
   used_len = sizeof(header);
@@ -292,13 +331,11 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
   to_static = (S_vfasl_boot_mode > 0);
 
 #ifdef AARCH64
-  /* arm64 PIC (P2.2b): a GOT-bearing image bakes each pool adrp/ldr pair
-     against the layout established below (code vspace 4096-aligned, GOT at
-     code start + code length rounded up to 4096) and leaves the in-object
-     pool quads dead, so its reloc entries cannot be replayed later: it is
-     only loadable straight to static with relocation dropped. */
+  /* arm64 PIC (P2.2b/c): a GOT-bearing image bakes each pool adrp/ldr
+     pair against the image layout (reproduced below) and truncates the
+     in-object pool quads, so its reloc entries cannot be replayed later:
+     it is only loadable straight to static with relocation dropped. */
   got_len = VSPACE_LENGTH(vspace_got);
-  code_got_pad = (VSPACE_LENGTH(vspace_code) + 4095) & ~(uptr)4095;
   if ((got_len > 0) && (!to_static || S_G.retain_static_relocation))
     S_error_abort("vfasl: PIC GOT image requires boot-mode static load");
 #endif
@@ -323,19 +360,78 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
       }
 #ifdef AARCH64
       if ((s == vspace_code) && (got_len > 0)) {
-        /* arm64 PIC (P2.2b): reproduce the layout the writer baked the
-           adrp/ldr pairs against: one code-space block holding the code
-           vspace at a 4096-aligned base and the GOT vspace at base +
-           code_got_pad.  The GOT rides in space_code memory (static and
-           never swept; slot pointers stay valid because everything a boot
-           image references is itself static, the same argument as today's
-           in-code patches), and relink_code writes every slot. */
-        ptr blk;
-        find_room(tc, space_code, (to_static ? static_generation : 0), type_untyped,
-                  ptr_align(code_got_pad + got_len + 4096), blk);
-        vspaces[s] = TO_PTR(((uptr)blk + 4095) & ~(uptr)4095);
-        vspaces[vspace_got] = ptr_add(vspaces[s], code_got_pad);
+        /* arm64 PIC (P2.2b/c): the writer bakes the adrp/ldr pairs from
+           the image layout, so code+got must keep their image-relative
+           distance and land congruent to their image offsets mod 4096.
+           Zero-copy (P2.3, non-MAP_JIT platforms): both vspaces stay in
+           the permanent boot mapping when the converter's alignment pad
+           is in place; the mapping range is made writable+executable, the
+           pages relink and the pointer sweep write get COW'd, and clean
+           code pages stay shared with the file.  Otherwise: one code-space
+           block at a congruent base (static and never swept; slot pointers
+           stay valid because everything a boot image references is itself
+           static), and relink_code fills the slots. */
+        uptr code_to_got = vspace_offsets[vspace_got] - vspace_offsets[vspace_code];
+        uptr span = code_to_got + got_len;
+#ifdef VFASL_CODE_ZERO_COPY
+        {
+          static int zc_off = -1;
+          if (zc_off < 0) zc_off = (getenv("PLT_VFASL_CODE_ZC") == NULL);
+          if (getenv("PLT_VFASL_ZC_DEBUG"))
+            fprintf(stderr, ";; zc? map=%d fd=%d bv=%d stream=%d align=%ld/%ld span-ok=%d\n",
+                    S_vfasl_source_is_permanent_mapping, S_vfasl_mapping_fd,
+                    (bv != (ptr)0), (stream != NULL),
+                    stream ? (long)(((uptr)stream->next) & 4095) : -1,
+                    (long)(vspace_offsets[vspace_code] & 4095),
+                    stream ? ((iptr)(stream->end - stream->next) >= (iptr)span) : -1);
+          if (!zc_off
+              && S_vfasl_source_is_permanent_mapping && (S_vfasl_mapping_fd >= 0)
+              && !bv && stream
+              && ((((uptr)stream->next) & 4095) == (vspace_offsets[vspace_code] & 4095))
+              && ((iptr)(stream->end - stream->next) >= (iptr)span)) {
+            uptr pagesz = (uptr)getpagesize();
+            uptr file_off = (uptr)stream->next - S_vfasl_mapping_base;
+            uptr f0 = file_off & ~(pagesz - 1);
+            uptr head = file_off - f0;
+            uptr maplen = (head + span + (pagesz - 1)) & ~(pagesz - 1);
+            ptr blk; uptr w;
+            find_room(tc, space_code, (to_static ? static_generation : 0), type_untyped,
+                      ptr_align(maplen + 2 * pagesz), blk);
+            w = ((uptr)blk + (pagesz - 1)) & ~(pagesz - 1);
+            /* failure (W^X policy, etc.) falls back to copying into the
+               block just allocated -- congruence still holds below */
+            if (mmap(TO_VOIDP(w), maplen, PROT_READ|PROT_WRITE|PROT_EXEC,
+                     MAP_PRIVATE|MAP_FIXED, S_vfasl_mapping_fd, (off_t)f0) != MAP_FAILED) {
+              vspaces[s] = TO_PTR(w + head);
+              vspaces[vspace_got] = ptr_add(vspaces[s], code_to_got);
+              stream->next += sz;
+              code_in_mapping = 1;
+              VFASL_PHASE_END(sub_t0, vfasl_phase_room);
+              continue;
+            }
+            /* MAP_FAILED (W^X policy, etc.): fall through to the plain
+               copying path below; the block just allocated is abandoned */
+          }
+        }
+#endif
+        {
+          ptr blk;
+          find_room(tc, space_code, (to_static ? static_generation : 0), type_untyped,
+                    ptr_align(span + 2 * 4096), blk);
+          vspaces[s] = TO_PTR(((((uptr)blk + 4095) & ~(uptr)4095)
+                               + (vspace_offsets[vspace_code] & 4095)));
+          vspaces[vspace_got] = ptr_add(vspaces[s], code_to_got);
+        }
       } else if ((s == vspace_got) && (got_len > 0)) {
+#ifdef VFASL_CODE_ZERO_COPY
+        if (code_in_mapping) {
+          /* the slots (carrying their markers) stay in the mapping too;
+             relink resolves them in place and only those pages COW */
+          stream->next += sz;
+          VFASL_PHASE_END(sub_t0, vfasl_phase_room);
+          continue;
+        }
+#endif
         /* placed with the code vspace above; fall through to fill it */
       } else
 #endif

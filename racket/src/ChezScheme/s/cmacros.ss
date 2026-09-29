@@ -547,6 +547,11 @@
 (define-constant fasl-type-gzip 45)
 (define-constant fasl-type-lz4 46)
 (define-constant fasl-type-closure-freevars 47)
+;; arm64 PIC boot alignment: a converter-inserted top-level gap entry
+;; (type byte, uptr length, that many ignored bytes) so the following
+;; entry's vfasl image data starts on a 4096-aligned file offset,
+;; letting the loader keep the code+got vspaces in the boot mapping
+(define-constant fasl-type-padding 48)
 
 (define-constant fasl-type-fasl 100)
 (define-constant fasl-type-vfasl 101)

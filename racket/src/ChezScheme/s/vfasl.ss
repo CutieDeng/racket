@@ -1274,12 +1274,20 @@
             (fold-left (lambda (k c w) (if (null? (cdr c)) (fx+ k w) k)) 0 alist w*)
             alist)))
 
-;; second-pass discriminator and the GOT's baked base offset (code
-;; vspace size rounded up to 4096, per the layout contract); #f in the
-;; sizing pass
-(define (got-layout-base vfi)
-  (let ([lim (vfasl-chunk-limit (vector-ref (vfasl-info-spaces vfi) (constant vspace-code)))])
-    (and lim (fxlogand (fx+ lim 4095) (fxlognot 4095)))))
+;; second-pass discriminator and the adrp/ldr bake bases: the code and
+;; GOT vspaces' offsets relative to the image DATA start (the coordinate
+;; system of the loader's vspace_offsets).  The baked page deltas and
+;; lo12 values are valid wherever the loader keeps code+got at their
+;; image-relative distance AND congruent to their image offsets mod 4096
+;; -- which zero-copy gets for free once the boot converter pads the
+;; image data start to a 4096-aligned file offset, and the copying path
+;; reproduces with a congruent base.  #f in the sizing pass.
+(define (got-bake-bases vfi)
+  (let ([code-vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
+    (and (vfasl-chunk-limit code-vc)
+         (let ([got-vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-got))])
+           (cons (fx- (vfasl-chunk-offset code-vc) (vfasl-info-base-addr vfi))
+                 (fx- (vfasl-chunk-offset got-vc) (vfasl-info-base-addr vfi)))))))
 
 ;; a GOT slot carries its vfasl marker until relink resolves it in place
 (define (got-slot-set! off marker vfi)
@@ -1287,17 +1295,18 @@
     (set-iptr! (vfasl-chunk-bv vc) (fx+ (vfasl-chunk-offset vc) off) marker)))
 
 ;; Rewrite one pool `adr Xt,quad; ldr Xt,[Xt,#0]` pair (at byte offset o)
-;; into `adrp Xt,page; ldr Xt,[Xt,#lo12]` addressing GOT slot `got-off`;
+;; into `adrp Xt,page; ldr Xt,[Xt,#lo12]` addressing GOT slot `got-off`,
+;; with positions taken data-relative via `bases` (see got-bake-bases);
 ;; the mandatory ldr pairing is enforced.  Second pass only.
-(define (bake-pool-adr! code-p bytes o got-base got-off vfi)
+(define (bake-pool-adr! code-p bytes o bases got-off vfi)
   (define (put-u32! o w)
     (set-int32! code-p (fx+ (constant code-data-disp) o)
                 (if (fx>= w #x80000000) (fx- w #x100000000) w)
                 vfi))
   (let* ([w (bytevector-u32-ref bytes o (constant native-endianness))]
          [rd (fxlogand w 31)]
-         [slot (fx+ got-base got-off)]
-         [pc (fx+ (vptr-v code-p) (constant code-data-disp) o)]
+         [slot (fx+ (cdr bases) got-off)]
+         [pc (fx+ (car bases) (vptr-v code-p) (constant code-data-disp) o)]
          [pd (fx- (fxsra slot 12) (fxsra pc 12))])
     (unless (fx= (bytevector-u32-ref bytes (fx+ o 4) (constant native-endianness))
                  (fxlogor #xF9400000 (fxsll rd 5) rd))
@@ -1371,7 +1380,7 @@
                            (fx+ (constant header-size-reloc-table) (fx* out-m (constant ptr-bytes)))
                            (constant type-untyped))]
          [adr-alist (and got-info (vector-ref got-info 2))]
-         [got-base (and got-info (got-layout-base vfi))]) ; #f in the sizing pass
+         [got-base (and got-info (got-bake-bases vfi))]) ; #f in the sizing pass
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
     (let ([end-nout
            (let loop ([n 0] [nout 0] [a 0] [i 0])
