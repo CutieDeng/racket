@@ -390,11 +390,25 @@
         (run-interpret s)
         (compile* (lambda->linklet-lambda s) realm unsafe?)))
 
+  ;; arm64/startup experiment: optionally emit linklet code as a vfasl
+  ;; image, which loads ~5x faster than per-object fasl (the memory
+  ;; image is memcpy'd and relocated instead of deserialized object by
+  ;; object); external literals ride the vfasl externalref machinery.
+  ;; Gated by PLT_LINKLET_VFASL while the pipeline is validated; any
+  ;; conversion failure falls back to the fasl bytevector unchanged.
+  (define vfasl-code-enabled?
+    (and (getenv "PLT_LINKLET_VFASL") #t))
+  (define (maybe-vfasl-code bv)
+    (if vfasl-code-enabled?
+        (guard (c [#t bv])
+          (#%$vfasl-convert-bytevector bv))
+        bv))
+
   ;; returns code bytevector and literals vector
   (define (compile*-to-bytevector s quoteds realm unsafe?)
     (let-values ([(o get) (open-bytevector-output-port)])
       (let ([literals (compile-to-port* (list s) quoteds o realm unsafe?)])
-        (values (get) literals))))
+        (values (maybe-vfasl-code (get)) literals))))
 
   ;; returns code bytevector and literals vector
   (define (compile-to-bytevector s quoteds format realm unsafe?)

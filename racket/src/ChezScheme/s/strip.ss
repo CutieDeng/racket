@@ -1004,6 +1004,37 @@
                                 (lambda ()
                                   (when script-header (put-bytevector op script-header))
                                   (for-each (lambda (entry) (write-entry op entry)) entry*)))))))
+      ;; In-memory vfasl conversion for compiled-code bytevectors (the
+      ;; ".zo" code path): parse the fasl stream, convert each entry to a
+      ;; vfasl image, and re-emit the stream.  No boot header, no
+      ;; alignment padding, and no GOT relocation -- the result is loaded
+      ;; into generation 0 by load-compiled-from-port, whose GC replays
+      ;; reloc tables against in-object pool quads.  External references
+      ;; (linklet literals) ride the externalref machinery and are
+      ;; resolved from the externals vector at load.
+      (set-who! $vfasl-convert-bytevector
+        (lambda (bv)
+          (unless (bytevector? bv) ($oops who "~s is not a bytevector" bv))
+          (fluid-let ([strip-inspector-information? #f]
+                      [strip-profile-information? #f]
+                      [strip-source-annotations? #f]
+                      [strip-compile-time-information? #f]
+                      [fasl-who who]
+                      [fasl-count 0])
+            (let-values ([(script-header mode entry*)
+                          (read-and-strip-from-port (open-bytevector-input-port bv) #f '#())])
+              (let-values ([(op get) (open-bytevector-output-port)])
+                (for-each (lambda (entry)
+                            (handle-entry
+                             entry
+                             (lambda (write-k) (write-k op))
+                             (lambda (situation x)
+                               (let ([vbv ($fasl-to-vfasl x)])
+                                 ($write-fasl-bytevectors op (list vbv) (bytevector-length vbv)
+                                                          (constant fasl-type-visit-revisit)
+                                                          (constant fasl-type-vfasl))))))
+                          entry*)
+                (get))))))
       (set-who! vfasl-convert-file
         (lambda (ifn ofn bootfile*)
           (convert-fasl-file who ifn ofn (fasl-strip-options)
@@ -1045,7 +1076,7 @@
                                  ($emit-boot-header op (constant machine-type-name) bootfile*))
                                (let* ([write-out
                                        (lambda (x situation)
-                                         (let ([bv ($fasl-to-vfasl x)])
+                                         (let ([bv ($fasl-to-vfasl x #t)]) ; boot-mode static load: GOT on
                                            (pad-boot-vfasl-alignment op (bytevector-length bv))
                                            ($write-fasl-bytevectors op (list bv) (bytevector-length bv)
                                                                     ;; see "promoting" below:

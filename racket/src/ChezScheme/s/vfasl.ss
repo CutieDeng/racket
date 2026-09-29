@@ -44,6 +44,11 @@
           (mutable rtds)       ; intern rtds (same reason)
           (mutable strings)    ; intern certain strings (for code names)
 
+          got-enabled?         ; arm64 PIC: relocate pool quads into the GOT vspace?  Only
+                               ; sound for boot-mode static loads (the loader aborts otherwise),
+                               ; so the boot converter turns it on and everyone else -- e.g.
+                               ; vfasl .zo code loaded into generation 0, whose GC replays
+                               ; reloc tables against in-object quads -- keeps it off.
           (mutable got-dedup)  ; arm64 PIC: per-image (elem . addend) -> GOT offset, reset per pass
           (mutable got-spare)  ; arm64 PIC: second half of the last 16-byte GOT find-room, or #f
           (mutable dirty-pages) ; arm64 PIC: eq table of data-relative 4K page indexes relink will write
@@ -51,7 +56,7 @@
           (mutable installs-library-entry?)) ; to determine whether vfasls can be combined
   (nongenerative))
 
-(define (new-vfasl-info)
+(define (new-vfasl-info got-enabled?)
   (make-vfasl-info #f
 
                    0
@@ -80,6 +85,7 @@
                    (make-eq-hashtable)
                    (make-hashtable string-hash string=?)
 
+                   got-enabled?
                    #f ; got-dedup
                    #f ; got-spare
                    #f ; dirty-pages
@@ -87,13 +93,15 @@
                    #f)) ; installs-library-entry?
 
 ;; Creates a vfasl image for the fasl content `v` (as read by "strip.ss").
-;; The target endianness must be statically known.
-(define (to-vfasl v)
+;; The target endianness must be statically known.  `got?` opts into the
+;; arm64 PIC GOT relocation, which is only loadable boot-mode-static;
+;; images for ordinary (generation-0) loads must leave it off.
+(define (to-vfasl v got?)
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
   (let ([v (ensure-reference v)]
-        [vfi (new-vfasl-info)])
+        [vfi (new-vfasl-info got?)])
     ;; First pass: determine sizes
     (copy v vfi)
 
@@ -225,7 +233,7 @@
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
-  (let ([vfi (new-vfasl-info)])
+  (let ([vfi (new-vfasl-info #f)])
     ;; Run a "first pass"
     (copy v vfi)
     (not (vfasl-info-installs-library-entry? vfi))))
@@ -909,7 +917,7 @@
            (loop (fx+ i 1))))
        new-p)]
     [(code flags free name arity-mask info pinfo* bytes m vreloc)
-     (let* ([got-info (got-code-info m vreloc flags bytes)]
+     (let* ([got-info (got-code-info m vreloc flags bytes vfi)]
             ;; arm64 PIC (P2.2c): the pool quads are relocated into the
             ;; GOT vspace, so the copied code object drops the trailing
             ;; quads entirely
@@ -1246,10 +1254,11 @@
 ;; here, and both load-bearing: the writer truncates the quads away and
 ;; re-targets the surviving entries at the GOT without disturbing the
 ;; preceding entries' code-offset chain.
-(define (got-code-info m vreloc flags bytes)
+(define (got-code-info m vreloc flags bytes vfi)
   (constant-case architecture
     [(arm64)
-     (and (not (fxlogtest flags (constant code-flag-template)))
+     (and (vfasl-info-got-enabled? vfi)
+          (not (fxlogtest flags (constant code-flag-template)))
           (let scan ([n 0] [a 0] [i 0] [ra* '()] [rw* '()])
             (if (fx= n m)
                 (and (pair? ra*)
@@ -1490,7 +1499,8 @@
          [dirty-base (constant-case architecture
                        [(arm64)
                         (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
-                          (and (vfasl-chunk-limit vc)
+                          (and (vfasl-info-got-enabled? vfi) ; bitmap only serves the boot mapping
+                               (vfasl-chunk-limit vc)
                                (fx- (vfasl-chunk-offset vc) (vfasl-info-base-addr vfi))))]
                        [else #f])])
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
@@ -1648,5 +1658,8 @@
       (set-uptr! new-p (constant reloc-table-size-disp) end-nout vfi))
     new-p))
 
-(set! $fasl-to-vfasl to-vfasl)
+(set! $fasl-to-vfasl
+  (case-lambda
+   [(v) (to-vfasl v #f)]
+   [(v got?) (to-vfasl v got?)]))
 (set! $fasl-can-combine? fasl-can-combine?))
