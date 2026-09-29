@@ -222,6 +222,30 @@ Safe staged plan (each stage builds+boots+self-hosts+differential before next):
     **929 → 258 pages** (1.06MB — the excess over 0.59MB is per-block
     page granularity across 116 vfasl blocks), code 79.0% unchanged,
     battery ok both platforms.
+- **P2.2c DONE** dead-quad truncation: the copied code object drops its
+  trailing pool quads entirely (code vspace −3.26MB / −796 pages).
+  Mechanics: pool relocs are the reloc table's SUFFIX (pool chunk trails
+  the code) and the quads are exactly the last ngot*8 bytes — both
+  asserted; the GOT slot itself carries the vfasl marker until relink
+  resolves it in place, and ONE reloc entry per slot (from its
+  allocating use) carries the slot's absolute GOT byte offset in its
+  code-offset field (short format still fits: 26-bit field vs <1MB GOT;
+  hijacking the chain in the suffix disturbs nothing, and relink skips
+  the `a` cursor advance for got entries).  Every use still gets its
+  adrp/ldr baked at the shared slot; orphan entries are dropped
+  wholesale (their elems never copied — deterministic in both passes).
+  Found the hard way: entry-per-USE double-resolves a shared slot — the
+  first relink write replaces the marker with the resolved pointer and
+  the second decodes that pointer as a marker ("external index out of
+  range" at first racket startup); entry-per-SLOT is load-bearing, not
+  an optimization.  The reloc find-room keeps the pre-dedup upper bound
+  (dup-ness is known only mid-walk; the actual count lands in the size
+  field, slack words stay zero) so the reloc vspace does not shrink —
+  only its content.  Measured tarm64osx: code pages 6203→5407 (total)
+  and 4900→4434 (written, 82.0%), got 252 pages, racket.boot
+  37.83→34.96MB (standalone conversion), slots=38539 =
+  old distinct-live minus orphan-only keys (exact cross-check),
+  battery ok.
 - **P2.3** loader: code-vspace zero-copy on tarm64le; measure vfasl phase delta
   (target room+copy + relink ↓ ≈7ms) with PLT_VFASL_TIMES A/B.
 - **P3** headers: code-object header refs (reloc ptr, name) still dirty first

@@ -788,6 +788,9 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
     n = 0;
     while (n < m) {
       uptr entry, item_off, code_off; ptr obj; I32 saved_off;
+#ifdef AARCH64
+      uptr *got_slot = NULL;
+#endif
 
         entry = RELOCIT(t, n); n += 1;
         if (RELOC_EXTENDED_FORMAT(entry)) {
@@ -797,11 +800,31 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
             item_off = RELOC_ITEM_OFFSET(entry);
             code_off = RELOC_CODE_OFFSET(entry);
         }
+#ifdef AARCH64
+        if ((RELOC_TYPE(entry) == reloc_arm64_got)
+            && ((vspace_offsets[vspace_got+1] - vspace_offsets[vspace_got]) > 0)
+            && ((CODETYPE(co) & (code_flag_template << code_flags_offset)) == 0)) {
+          /* arm64 PIC (P2.2c): the pool quad was truncated from the code
+             object; this entry's code-offset field carries the absolute GOT
+             byte offset of its (deduped) slot, and the slot holds the vfasl
+             marker until resolved below and written back in place -- the
+             code page is never touched.  Pool entries are the reloc table's
+             suffix, so not advancing the `a` cursor disturbs nothing.  (A
+             template code object keeps its pool in-object -- the writer
+             skips it -- because S_instantiate_code_object replays the
+             retained reloc table against the in-object quads.) */
+          got_slot = TO_VOIDP(ptr_add(vspaces[vspace_got], code_off));
+          obj = (ptr)*got_slot;
+        } else {
+#endif
         a += code_off;
 
         /* offset is stored in place of constant-loading code: */
         memcpy(&saved_off, TO_VOIDP((ptr)((uptr)co + a)), sizeof(I32));
         obj = (ptr)(iptr)saved_off;
+#ifdef AARCH64
+        }
+#endif
 
         if (FIXMEDIATE(obj)) {
           if (Sfixnump(obj)) {
@@ -867,23 +890,9 @@ static void relink_code(ptr co, ptr sym_base, ptr *vspaces, uptr *vspace_offsets
         }
 
 #ifdef AARCH64
-        if ((RELOC_TYPE(entry) == reloc_arm64_got)
-            && ((vspace_offsets[vspace_got+1] - vspace_offsets[vspace_got]) > 0)
-            && ((CODETYPE(co) & (code_flag_template << code_flags_offset)) == 0)) {
-          /* arm64 PIC (P2.2b): this pool quad was relocated into the GOT
-             vspace; the writer rewrote its adr/ldr pair to address
-             GOT[slot] and stashed the slot's byte offset in the now-dead
-             high half of the in-object quad.  Write the resolved pointer
-             into the GOT slot and leave the code page untouched.  (A
-             template code object keeps its pool in-object -- the writer
-             skips it -- because S_instantiate_code_object replays the
-             retained reloc table against the in-object quads.) */
-          I32 got_off;
-          uptr *slot;
-          memcpy(&got_off, TO_VOIDP((ptr)((uptr)co + a + sizeof(I32))), sizeof(I32));
-          slot = TO_VOIDP(ptr_add(vspaces[vspace_got], (uptr)(U32)got_off));
-          *slot = (uptr)obj + item_off;
-          VFASL_MARK(slot);
+        if (got_slot) {
+          *got_slot = (uptr)obj + item_off;
+          VFASL_MARK(got_slot);
           continue;
         }
 #endif
