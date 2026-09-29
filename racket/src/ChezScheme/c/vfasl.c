@@ -97,13 +97,19 @@ static ISPC vspace_spaces[] = {
    and the pointer sweep actually write get COW'd; clean code pages stay
    shared with the file.
 
-   DEFAULT OFF (set PLT_VFASL_CODE_ZC to enable): measured on tarm64le at
-   P2.2c, the COW faults relink and the pointer sweep take on the ~82% of
-   code pages they still write cost more (~+2ms) than the upfront copy
-   they replace (~-4.4ms of room+copy against ~+6.5ms of faulting), so
-   until P3 separates the code-object headers out of the code pages the
-   zero-copy path trades a little time for ~4MB of file-shared resident
-   pages.  Flip the default when P3 lands. */
+   DEFAULT OFF (set PLT_VFASL_CODE_ZC to enable), and that is a MEASURED
+   verdict, not a temporary one: the pages the pointer sweep and relink
+   write are fixed by the object model (a header per code object), so a
+   PIC image dirties ~82% of its code pages no matter how they are
+   backed.  Their page-frame allocation + data movement is unavoidable,
+   and the plain copy path pays it as one warm sequential memcpy -- close
+   to optimal.  Zero-copy variants measured on tarm64le: pure COW +2.5ms,
+   anonymous-overmap+memcpy +4ms (first touch of anonymous pages faults
+   too), MADV_POPULATE_WRITE batching (kept below) +1.8ms -- the residue
+   is kernel-side per-page COW plus read faults on the clean pages the
+   sweep visits.  What zero-copy buys is ~970 clean pages (~4MB) of
+   file-backed, cross-process-shared memory; enable it when that matters
+   more than ~2ms of load time. */
 #if defined(AARCH64) && !defined(CANNOT_READ_DIRECTLY_INTO_CODE) && !defined(WIN32)
 # define VFASL_CODE_ZERO_COPY 1
 # include <sys/mman.h>
@@ -116,6 +122,83 @@ static ISPC vspace_spaces[] = {
    only valid during the load (it may be closed afterward). */
 int S_vfasl_mapping_fd = -1;
 uptr S_vfasl_mapping_base = 0;
+
+#ifdef VFASL_CODE_ZERO_COPY
+/* P3 dirty-extent hybrid: the writer appends a dirty-page bitmap (one
+   bit per 4K page over the 4096-aligned [code, got-end) envelope, then
+   a trailing uptr length) to the reloc vspace.  Pages relink and the
+   pointer sweep will write are backed with copied anonymous memory up
+   front -- one bulk memcpy instead of a COW fault per page -- while
+   clean runs of at least ZC_KEEP_PAGES OS pages stay file-backed and
+   shared.  The bitmap is a prediction: a page it misses just COWs. */
+# define ZC_KEEP_PAGES 2
+
+static int zc_os_page_dirty(const octet *dbm, uptr env_pages, uptr env_file_base,
+                            uptr pos, uptr pagesz) {
+  uptr end = pos + pagesz, i, iend;
+  uptr env_file_end = env_file_base + (env_pages << 12);
+  if (end <= env_file_base || pos >= env_file_end) return 0;
+  i = (pos > env_file_base) ? ((pos - env_file_base) >> 12) : 0;
+  iend = ((end < env_file_end ? end : env_file_end) - env_file_base) >> 12;
+  for (; i < iend; i++)
+    if (dbm[i >> 3] & (1 << (i & 7))) return 1;
+  return 0;
+}
+
+static void zc_copy_dirty_extents(uptr w, uptr maplen, uptr pagesz, uptr f0,
+                                  faslFile stream, uptr *vspace_offsets, uptr got_len) {
+  uptr image_rest = vspace_offsets[vspaces_count] - vspace_offsets[vspace_code];
+  uptr env_base, env_pages, bmlen, env_file_base, wpages, j;
+  const octet *dbm; octet *tail;
+  if ((iptr)(stream->end - stream->next) < (iptr)image_rest) return;
+  tail = stream->next + image_rest;
+  env_base = vspace_offsets[vspace_code] & ~(uptr)4095;
+  env_pages = ((vspace_offsets[vspace_got] + got_len) - env_base + 4095) >> 12;
+  memcpy(&bmlen, tail - sizeof(uptr), sizeof(uptr));
+  if (bmlen != ((env_pages + 7) >> 3)) return; /* absent/foreign bitmap: pure COW */
+  dbm = tail - sizeof(uptr) - bmlen;
+  /* 4K-aligned because the caller verified stream->next mod 4096 ==
+     vspace_offsets[vspace_code] mod 4096 */
+  env_file_base = ((uptr)stream->next - S_vfasl_mapping_base)
+                  - (vspace_offsets[vspace_code] - env_base);
+  wpages = maplen / pagesz;
+  j = 0;
+  while (j < wpages) {
+    uptr j0, jend;
+    if (!zc_os_page_dirty(dbm, env_pages, env_file_base, f0 + j * pagesz, pagesz)) {
+      j++;
+      continue;
+    }
+    j0 = j;
+    jend = j + 1;
+    while (jend < wpages) {
+      if (zc_os_page_dirty(dbm, env_pages, env_file_base, f0 + jend * pagesz, pagesz)) {
+        jend++;
+      } else {
+        uptr c = jend;
+        while (c < wpages
+               && !zc_os_page_dirty(dbm, env_pages, env_file_base, f0 + c * pagesz, pagesz))
+          c++;
+        if (((c - jend) < ZC_KEEP_PAGES) && (c < wpages))
+          jend = c + 1; /* swallow a short clean gap; c itself is dirty */
+        else
+          break;
+      }
+    }
+    {
+      /* pre-COW the extent in one kernel pass: anonymous overmap +
+         memcpy would fault per page anyway (zero-fill on first touch),
+         so batch the unavoidable page copies without the per-page trap.
+         On kernels without MADV_POPULATE_WRITE the extent just COWs. */
+#ifdef MADV_POPULATE_WRITE
+      (void)madvise(TO_VOIDP(w + j0 * pagesz), (jend - j0) * pagesz,
+                    MADV_POPULATE_WRITE);
+#endif
+    }
+    j = jend;
+  }
+}
+#endif
 
 /* optimization A: on platforms where CANNOT_READ_DIRECTLY_INTO_CODE forces the
    code vspace to be read into a temporary and then memcpy'd into the real
@@ -210,6 +293,11 @@ static int vfasl_writes_on = -1;
 static uptr vfasl_w_base[vspaces_count], vfasl_w_end[vspaces_count];
 static unsigned char *vfasl_w_bits[vspaces_count];
 static uptr vfasl_pages_total[vspaces_count], vfasl_pages_written[vspaces_count];
+/* clean/dirty run-length accounting for the code vspace (planning aid for
+   the dirty-extent hybrid mapping): counts of maximal clean runs by
+   length bucket, and of dirty runs */
+static uptr vfasl_code_clean_runs[5]; /* >=1, >=2, >=4, >=8, >=16 pages */
+static uptr vfasl_code_dirty_runs, vfasl_code_clean_pages_ge4;
 static void vfasl_writes_report(void) {
   static const char *names[] =
     { "symbol", "rtd", "closure", "impure", "pure-typed",
@@ -220,6 +308,12 @@ static void vfasl_writes_report(void) {
       fprintf(stderr, ";; vfasl writes %-14s %6ld / %6ld pages (%.1f%%)\n",
               names[s], (long)vfasl_pages_written[s], (long)vfasl_pages_total[s],
               100.0 * vfasl_pages_written[s] / vfasl_pages_total[s]);
+  if (vfasl_code_dirty_runs)
+    fprintf(stderr, ";; vfasl code runs: dirty %ld; clean >=1 %ld >=2 %ld >=4 %ld >=8 %ld >=16 %ld; clean pages in >=4 runs %ld\n",
+            (long)vfasl_code_dirty_runs,
+            (long)vfasl_code_clean_runs[0], (long)vfasl_code_clean_runs[1],
+            (long)vfasl_code_clean_runs[2], (long)vfasl_code_clean_runs[3],
+            (long)vfasl_code_clean_runs[4], (long)vfasl_code_clean_pages_ge4);
 }
 static void vfasl_writes_begin(ptr *vspaces, uptr *vspace_offsets) {
   int s;
@@ -246,6 +340,25 @@ static void vfasl_writes_end(void) {
       for (i = 0; i < npages; i++)
         if (vfasl_w_bits[s][i >> 3] & (1 << (i & 7)))
           vfasl_pages_written[s]++;
+      if (s == vspace_code) {
+        uptr run = 0; int dirty_prev = -1;
+        for (i = 0; i <= npages; i++) {
+          int d = (i < npages) ? ((vfasl_w_bits[s][i >> 3] >> (i & 7)) & 1) : -1;
+          if (d != dirty_prev) {
+            if (dirty_prev == 0) {
+              vfasl_code_clean_runs[0]++;
+              if (run >= 2) vfasl_code_clean_runs[1]++;
+              if (run >= 4) { vfasl_code_clean_runs[2]++; vfasl_code_clean_pages_ge4 += run; }
+              if (run >= 8) vfasl_code_clean_runs[3]++;
+              if (run >= 16) vfasl_code_clean_runs[4]++;
+            } else if (dirty_prev == 1)
+              vfasl_code_dirty_runs++;
+            run = 0;
+            dirty_prev = d;
+          }
+          run++;
+        }
+      }
       free(vfasl_w_bits[s]);
       vfasl_w_bits[s] = NULL;
     }
@@ -402,6 +515,7 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
                block just allocated -- congruence still holds below */
             if (mmap(TO_VOIDP(w), maplen, PROT_READ|PROT_WRITE|PROT_EXEC,
                      MAP_PRIVATE|MAP_FIXED, S_vfasl_mapping_fd, (off_t)f0) != MAP_FAILED) {
+              zc_copy_dirty_extents(w, maplen, pagesz, f0, stream, vspace_offsets, got_len);
               vspaces[s] = TO_PTR(w + head);
               vspaces[vspace_got] = ptr_add(vspaces[s], code_to_got);
               stream->next += sz;

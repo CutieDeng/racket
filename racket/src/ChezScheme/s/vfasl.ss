@@ -46,6 +46,7 @@
 
           (mutable got-dedup)  ; arm64 PIC: per-image (elem . addend) -> GOT offset, reset per pass
           (mutable got-spare)  ; arm64 PIC: second half of the last 16-byte GOT find-room, or #f
+          (mutable dirty-pages) ; arm64 PIC: eq table of data-relative 4K page indexes relink will write
 
           (mutable installs-library-entry?)) ; to determine whether vfasls can be combined
   (nongenerative))
@@ -81,6 +82,7 @@
 
                    #f ; got-dedup
                    #f ; got-spare
+                   #f ; dirty-pages
 
                    #f)) ; installs-library-entry?
 
@@ -94,6 +96,18 @@
         [vfi (new-vfasl-info)])
     ;; First pass: determine sizes
     (copy v vfi)
+
+    ;; arm64 PIC (P3): reserve room at the reloc vspace's tail for the
+    ;; dirty-page bitmap and its trailing length word (16-byte aligned
+    ;; so the following ref tables keep their alignment)
+    (constant-case architecture
+      [(arm64)
+       (let ([bmbytes (dirty-bitmap-bytes vfi)])
+         (when bmbytes
+           (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-reloc))])
+             (vfasl-chunk-alloc-set! vc (fx+ (vfasl-chunk-alloc vc)
+                                             (c-alloc-align (fx+ bmbytes (constant ptr-bytes))))))))]
+      [else (void)])
 
     ;; Setup for second pass: allocate to contiguous bytes
     (let* ([data-size (let loop ([i 0])
@@ -162,6 +176,7 @@
           ;; assignments from offset 0
           (vfasl-info-got-dedup-set! vfi #f)
           (vfasl-info-got-spare-set! vfi #f)
+          (vfasl-info-dirty-pages-set! vfi #f)
 
           ;; Write data
           (let ([v (copy v vfi)])
@@ -183,6 +198,11 @@
             (sort-offsets! bv (vfasl-info-symrefs vfi) (vfasl-info-symref-count vfi))
             (sort-offsets! bv (vfasl-info-rtdrefs vfi) (vfasl-info-rtdref-count vfi))
             (sort-offsets! bv (vfasl-info-singletonrefs vfi) (vfasl-info-singletonref-count vfi))
+
+            ;; arm64 PIC (P3): dirty-page bitmap at the reloc vspace tail
+            (constant-case architecture
+              [(arm64) (emit-dirty-bitmap! vfi bv)]
+              [else (void)])
 
             (when got-stats-on?
               (fprintf (console-error-port)
@@ -1368,6 +1388,92 @@
          (hashtable-set! ht full-key off)
          (values off #t))])))
 
+;; arm64 PIC (P3): record the data-relative byte range [pos, pos+len) as
+;; load-time-written.  The final stage turns these ranges (plus the
+;; pointer bitmap's code-range bits and the whole GOT) into a dirty-page
+;; bitmap appended to the reloc vspace; the zero-copy loader backs those
+;; pages with copied anonymous memory up front instead of paying a COW
+;; fault per page while the pointer sweep and relink write them.  The
+;; set is a prediction, not a proof: a missed page just COWs.
+(define (mark-dirty-range! vfi pos len)
+  (let ([ht (or (vfasl-info-dirty-pages vfi)
+                (let ([ht (make-eq-hashtable)])
+                  (vfasl-info-dirty-pages-set! vfi ht)
+                  ht))])
+    (let loop ([p (fxsra pos 12)])
+      (eq-hashtable-set! ht p #t)
+      (when (fx< p (fxsra (fx+ pos len -1) 12))
+        (loop (fx+ p 1))))))
+
+;; Size of the dirty-page bitmap: one bit per 4K page over the
+;; 4096-aligned envelope of [code vspace start, got vspace end),
+;; computed from the first-pass chunk sizes (identical in both passes);
+;; #f when the image carries no GOT (nothing zero-copies it).
+(define (dirty-bitmap-bytes vfi)
+  (let* ([spaces (vfasl-info-spaces vfi)]
+         [got-alloc (vfasl-chunk-alloc (vector-ref spaces (constant vspace-got)))])
+    (and (fx> got-alloc 0)
+         (let* ([code-off (let loop ([i 0] [off 0])
+                            (if (fx= i (constant vspace-code))
+                                off
+                                (loop (fx+ i 1)
+                                      (fx+ off (vfasl-chunk-alloc (vector-ref spaces i))))))]
+                [end-off (fx+ code-off
+                              (vfasl-chunk-alloc (vector-ref spaces (constant vspace-code)))
+                              got-alloc)]
+                [pages (fxsra (fx+ (fx- end-off (fxlogand code-off (fxlognot 4095))) 4095) 12)])
+           (fxsra (fx+ pages 7) 3)))))
+
+;; Emit the dirty-page bitmap at the reloc vspace's tail (bitmap, then a
+;; trailing uptr holding its byte length at the vspace's very end).
+;; Dirty = pages the loader will write: the pointer bitmap's bits in the
+;; code range (header fixups by the pointer sweep), the ranges collected
+;; by mark-dirty-range! (relink patch sites and header reloc fields),
+;; and the whole GOT (relink resolves every slot).  Second pass only.
+(define (emit-dirty-bitmap! vfi bv)
+  (let ([bmbytes (dirty-bitmap-bytes vfi)])
+    (when bmbytes
+      (let* ([spaces (vfasl-info-spaces vfi)]
+             [base-addr (vfasl-info-base-addr vfi)]
+             [code-vc (vector-ref spaces (constant vspace-code))]
+             [got-vc (vector-ref spaces (constant vspace-got))]
+             [reloc-vc (vector-ref spaces (constant vspace-reloc))]
+             [code-off (fx- (vfasl-chunk-offset code-vc) base-addr)]
+             [got-off (fx- (vfasl-chunk-offset got-vc) base-addr)]
+             [got-len (vfasl-chunk-limit got-vc)]
+             [base-page (fxsra code-off 12)]
+             [bm-pos (fx- (fx+ (vfasl-chunk-offset reloc-vc) (vfasl-chunk-limit reloc-vc))
+                          (constant ptr-bytes) bmbytes)])
+        (define (set-page! p)
+          (let ([i (fx- p base-page)])
+            (when (and (fx>= i 0) (fx< i (fx* bmbytes 8)))
+              (let ([b (fx+ bm-pos (fxsra i 3))])
+                (bytevector-u8-set! bv b (fxlogor (bytevector-u8-ref bv b)
+                                                  (fxsll 1 (fxand i 7))))))))
+        ;; pointer-sweep writes: bitmap bits within the code range
+        (let ([pbm (vfasl-info-ptr-bitmap vfi)])
+          (let loop ([j (fxsra code-off 6)]) ; bitmap byte covers 8 words = 64 data bytes
+            (when (fx< j (fxsra (fx+ got-off 63) 6))
+              (let ([byte (bytevector-u8-ref bv (fx+ pbm j))])
+                (unless (fx= byte 0)
+                  (let bit ([k 0])
+                    (when (fx< k 8)
+                      (when (fxlogtest byte (fxsll 1 k))
+                        (set-page! (fxsra (fx* (fx+ (fx* j 8) k) 8) 12)))
+                      (bit (fx+ k 1))))))
+              (loop (fx+ j 1)))))
+        ;; relink patch sites and header reloc fields
+        (let ([ht (vfasl-info-dirty-pages vfi)])
+          (when ht
+            (vector-for-each set-page! (hashtable-keys ht))))
+        ;; the whole GOT
+        (let loop ([p (fxsra got-off 12)])
+          (when (fx<= p (fxsra (fx+ got-off got-len -1) 12))
+            (set-page! p)
+            (loop (fx+ p 1))))
+        ;; trailing length word locates the bitmap for the loader
+        (set-uptr! bv (fx+ bm-pos bmbytes) bmbytes)))))
+
 (define (copy-reloc m vreloc code-p bytes got-info vfi)
   ;; out-m is an UPPER bound on the emitted table words (dup pool uses
   ;; sharing an already-entered slot are dropped during the walk, and
@@ -1380,8 +1486,18 @@
                            (fx+ (constant header-size-reloc-table) (fx* out-m (constant ptr-bytes)))
                            (constant type-untyped))]
          [adr-alist (and got-info (vector-ref got-info 2))]
-         [got-base (and got-info (got-bake-bases vfi))]) ; #f in the sizing pass
+         [got-base (and got-info (got-bake-bases vfi))] ; #f in the sizing pass
+         [dirty-base (constant-case architecture
+                       [(arm64)
+                        (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
+                          (and (vfasl-chunk-limit vc)
+                               (fx- (vfasl-chunk-offset vc) (vfasl-info-base-addr vfi))))]
+                       [else #f])])
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
+    (when dirty-base
+      ;; relink writes the header's reloc field (cleared, or the retained copy)
+      (mark-dirty-range! vfi (fx+ dirty-base (vptr-v code-p) (constant code-reloc-disp))
+                         (constant ptr-bytes)))
     (let ([end-nout
            (let loop ([n 0] [nout 0] [a 0] [i 0])
              (if (fx= n m)
@@ -1520,6 +1636,11 @@
                         ;; that, possibly using later instructions to infer the
                         ;; right repair:
                         (set-int32! code-p a new-elem vfi)
+                        ;; relink patches at this site (abs quad, movz/movk
+                        ;; run, or a template's in-object pool quad); 24
+                        ;; bytes covers every arm64 patch shape
+                        (when dirty-base
+                          (mark-dirty-range! vfi (fx+ dirty-base (vptr-v code-p) a) 24))
                         (loop n nout a (fx+ i 1)))]))))]
                    [else ($oops 'vfasl "expected a relocation")])))])
       (unless (fx<= end-nout out-m)

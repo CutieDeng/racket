@@ -283,6 +283,32 @@ Safe staged plan (each stage builds+boots+self-hosts+differential before next):
 - **P2.3b TODO**: uncompressed boot embedding (adjust-compress pass-through
   keeps pads byte-identical) + embed section alignment so racketcs's
   self-exe fd-mmap path qualifies; then re-measure end-to-end startup.
+- **P3 CLOSED (measured verdict, 2026-09-29)**: the original "make headers
+  PIC / separate them" is infeasible in the object model — a code pointer
+  IS its header address and `CLOSCODE = entry - code_data_disp` is baked
+  into GC/runtime, and the header's name/info/pinfo fields are absolute
+  heap pointers that cannot be pre-baked without fixed-address loading of
+  every vspace (conflicts with interning/ASLR).  So the ~82% written code
+  pages are FIXED by the object model, and their page-frame allocation +
+  data movement is unavoidable; the plain copy path pays it as one warm
+  sequential memcpy, which is near-optimal.  What was built instead
+  (kept, opt-in): the writer knows every load-time write (its own pointer
+  bitmap ∩ code range, relink patch sites collected during the reloc
+  walk, header reloc fields, the whole GOT) and appends a dirty-page
+  bitmap to the reloc vspace tail (trailing uptr length; ~KBs); the
+  zero-copy loader batches the unavoidable COW of dirty extents with
+  MADV_POPULATE_WRITE, keeping clean runs >= 2 OS pages file-backed.
+  Run histogram (le, all blocks): 421 dirty runs, 122 clean runs >= 2
+  pages, 570 clean pages in >= 4-page runs.  Same-round A/B of
+  copy+sweep+relink sums: pure COW +2.5ms, anonymous-overmap+memcpy +4ms
+  (first touch of anonymous pages faults exactly like COW), POPULATE_WRITE
+  hybrid +1.8ms vs the copy path; residue = kernel-side per-page COW plus
+  read faults on clean pages the sweep visits.  Structural ceiling of the
+  whole zero-copy line: ~1ms (the 18% untouched pages).  VERDICT:
+  PLT_VFASL_CODE_ZC stays opt-in — it trades ~2ms of load time for ~970
+  clean pages (~4MB) of file-backed cross-process-shared memory; the
+  time-to-prompt budget is better spent elsewhere (P2.3b only if the
+  sharing matters for a deployment, not for latency).
 - **P3** headers: code-object header refs (reloc ptr, name) still dirty first
   pages — PIC or separate them, else the win is capped.
 Correctness is high-stakes (wrong slot/immediate = silent bad code): differential
