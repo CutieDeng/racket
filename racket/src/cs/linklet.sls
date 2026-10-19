@@ -426,12 +426,12 @@
       [else (cross-compile machine (lambda->linklet-lambda s) quoteds realm unsafe?)]))
 
   (define (eval-from-bytevector bv literals format)
-    (add-performance-memory! 'faslin-code (bytevector-length bv))
+    (add-performance-memory! 'faslin-code (code-length bv))
     (cond
       [(eq? format 'interpret)
        (let ([r (performance-region
                  'faslin-code
-                 (fasl-read (open-bytevector-input-port bv) 'load literals))])
+                 (fasl-read (code-input-port bv) 'load literals))])
          (run-interpret r))]
       [else
        (performance-region
@@ -439,8 +439,31 @@
         (code-from-bytevector bv literals))]))
 
   (define (code-from-bytevector bv literals)
-    (let ([i (open-bytevector-input-port bv)])
-      (load-compiled-from-port i literals)))
+    (cond
+      [(code-slice? bv)
+       ;; Run the fasl objects in the slice the way `load-compiled-from-port`
+       ;; would, stopping at the end of the slice instead of the end of the port
+       (let ([p (code-input-port bv)]
+             [end (fx+ (code-slice-start bv) (code-slice-len bv))])
+         (let loop ([x (fasl-read p 'load literals)])
+           (let ([v (run-code-object x)])
+             (if (fx< (port-position p) end)
+                 (loop (fasl-read p 'load literals))
+                 v))))]
+      [else
+       (let ([i (open-bytevector-input-port bv)])
+         (load-compiled-from-port i literals))]))
+
+  (define (run-code-object x)
+    (cond
+      [(procedure? x) (x)]
+      [(vector? x) ; a vfasl combination
+       (let loop ([i 0] [v (void)])
+         (if (fx= i (vector-length x))
+             v
+             (loop (fx+ i 1) (run-code-object (vector-ref x i)))))]
+      [(eq? x #t) (void)]
+      [else (#%error 'code-from-bytevector "unexpected value ~s in linklet code" x)]))
 
   (define (extract-literals v)
     (performance-region
@@ -544,6 +567,31 @@
             importss       ; list of list of import symbols
             exports)       ; list of export symbol-or-pair, pair is (cons export-symbol src-symbol)
     (nongenerative #{linklet Zuquy0g9bh5vmeespyap4g-3}))
+
+  ;; Code that still lives in the bytevector holding a bundle's code
+  ;; area, as `read-linklet-bundle-hash` leaves it until it is needed
+  (define-record-type code-slice
+    (fields bv start len)
+    (nongenerative #{code-slice p0fpq5m3isy0jpj3kbl3fs9td-0})
+    (sealed #t))
+
+  (define (code-length code)
+    (if (code-slice? code) (code-slice-len code) (bytevector-length code)))
+
+  (define (code-input-port code)
+    (if (code-slice? code)
+        (let ([p (open-bytevector-input-port (code-slice-bv code))])
+          (set-port-position! p (code-slice-start code))
+          p)
+        (open-bytevector-input-port code)))
+
+  ;; For tools that want the bytes of a linklet's code
+  (define (code->bytevector code)
+    (if (code-slice? code)
+        (let ([bv (make-bytevector (code-slice-len code))])
+          (bytevector-copy! (code-slice-bv code) (code-slice-start code) bv 0 (code-slice-len code))
+          bv)
+        code))
 
   (define (linklet->vector l)
     (vector '|#%linklet|
@@ -958,7 +1006,7 @@
       (raise-argument-error 'linklet-fasled-code+arguments "linklet?" linklet))
     (case (linklet-preparation linklet)
       [(faslable faslable-strict faslable-unsafe lazy)
-       (values (linklet-format linklet) (linklet-code linklet) (extract-literals (linklet-literals linklet)))]
+       (values (linklet-format linklet) (code->bytevector (linklet-code linklet)) (extract-literals (linklet-literals linklet)))]
       [else (values #f #f #f #f)]))
 
   (define (linklet-interpret-jitified? v)

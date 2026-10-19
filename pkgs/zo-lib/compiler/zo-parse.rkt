@@ -867,19 +867,30 @@
      
      (make-reader-graph (read-compact cp))]
     [else
-     ;; assume Chez Scheme
-     (define len (read-simple-number port))
+     ;; assume Chez Scheme: a length and that many bytes of fasl-encoded
+     ;; structure; when the high bit of the length is set, the linklets'
+     ;; code follows as another length and that many bytes
+     (define raw-len (read-simple-number port))
+     (define sliced? (bitwise-bit-set? raw-len 31))
+     (define len (bitwise-and raw-len #x7fffffff))
      (define bstr (read-bytes len port))
+     (define code-bstr (and sliced? (read-bytes (read-simple-number port) port)))
+     ;; the opaque content is the whole of it, lengths included
+     (define all (if sliced?
+                     (bytes-append (integer->integer-bytes raw-len 4 #f #f)
+                                   bstr
+                                   (integer->integer-bytes (bytes-length code-bstr) 4 #f #f)
+                                   code-bstr)
+                     (bytes-append (integer->integer-bytes len 4 #f #f)
+                                   bstr)))
      (cond
        [(eq? 'chez-scheme (system-type 'vm))
         (hash-set ((vm-primitive 'read-linklet-bundle-hash)
-                   (open-input-bytes (bytes-append
-                                      (integer->integer-bytes len 4 #f #f)
-                                      bstr))
+                   (open-input-bytes all)
                    #f)
-                  'opaque (opaque bstr))]
+                  'opaque (opaque all))]
        [else
-        (hash 'opaque bstr)])]))
+        (hash 'opaque all)])]))
 
 ;; ----------------------------------------
 
