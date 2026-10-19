@@ -64,6 +64,41 @@
 ;; thread scheduler may be in atomic mode. In fact, the engine
 ;; and control layer may be in uninterrupted mode, so don't
 ;; do anything that might use "control.ss" (especially in logging).
+;; Startup window (REPL boot to prompt): collect only generation 0 and
+;; promote survivors exactly once -- no gen-1+ or major collections and
+;; no counter advance -- so startup state is copied at most once.  The
+;; normal policy resumes when `set-startup-gc-mode!` turns it off.
+(define startup-gc-mode? #f)
+;; When the window closes, optionally run one major collection that
+;; promotes everything live -- the startup state -- in a single pass:
+;; 'major = to the maximum generation, 'static = to the static
+;; generation (never traversed or copied again), 'none = nothing.
+;; `startup-finish-target` is #f normally; 'max or 'static during the
+;; single closing collection, which then promotes every survivor to
+;; that generation in one pass instead of one generation per major.
+(define startup-finish-target #f)
+(define (major-collect gen roots)
+  (let ([min-tg (case startup-finish-target [(max) gen] [(static) 'static] [else 1])]
+        [max-tg (case startup-finish-target [(static) 'static] [else gen])])
+    (if roots
+        (collect gen min-tg max-tg roots)
+        (collect gen min-tg max-tg))))
+(define set-startup-gc-mode!
+  (case-lambda
+   [(on?) (set-startup-gc-mode! on? 'none)]
+   [(on? finish)
+    (cond
+     [on? (set! startup-gc-mode? #t)]
+     [else
+      (set! startup-gc-mode? #f)
+      (case finish
+        [(none) (void)]
+        [(major static)
+         (set! startup-finish-target (if (eq? finish 'major) 'max 'static))
+         (collect-garbage 'major)
+         (set! startup-finish-target #f)]
+        [else (raise-argument-error 'set-startup-gc-mode! "(or/c 'none 'major 'static)" finish)])])]))
+
 (define (collect/report g)
   ;; If you get "$collect-rendezvous: cannot return to the collect-request-handler", then
   ;; probably something here is trying to raise an exception. To get more information try
@@ -76,10 +111,14 @@
         [pre-time (current-inexact-milliseconds)]
         [pre-cpu-time (cpu-time)])
     (set! peak-mem (max peak-mem pre-allocated))
-    (if (> (add1 this-counter) (bitwise-arithmetic-shift-left 1 (* log-collect-generation-radix (sub1 (collect-maximum-generation)))))
-        (set! gc-counter 1)
-        (set! gc-counter (add1 this-counter)))
+    (unless (and startup-gc-mode? (not g))
+      (if (> (add1 this-counter) (bitwise-arithmetic-shift-left 1 (* log-collect-generation-radix (sub1 (collect-maximum-generation)))))
+          (set! gc-counter 1)
+          (set! gc-counter (add1 this-counter))))
     (let* ([req-gen (cond
+                      [(and startup-gc-mode? (not g))
+                       ;; Startup window: generation 0 only, survivors to generation 1
+                       0]
                       [(and (not g)
                             (or (>= pre-allocated trigger-major-gc-allocated)
                                 (>= pre-allocated+overhead trigger-major-gc-allocated+overhead)
@@ -112,12 +151,12 @@
                    (cond
                      [(null? roots)
                       ;; Plain old collection, after all:
-                      (collect gen 1 gen)
+                      (major-collect gen #f)
                       #f]
                      [else
                       (let ([domains (weaken-accounting-domains domains)])
                         ;; Accounting collection:
-                        (let ([counts (collect gen 1 gen (weaken-accounting-roots roots))])
+                        (let ([counts (major-collect gen (weaken-accounting-roots roots))])
                           (lambda ()
                             (call-with-accounting-domains k counts domains))))])))]
                [(and request-incremental?
@@ -130,8 +169,9 @@
                 (collect 0 1 1)
                 #f]
                [(fx= gen (collect-maximum-generation))
-                ;; Plain old major collection:
-                (collect gen 1 gen)
+                ;; Plain old major collection (or the startup window's
+                ;; closing promotion, see `major-collect`):
+                (major-collect gen #f)
                 #f]
                [else
                 ;; Plain old collection that does not necessairy promote to `gen`+1:

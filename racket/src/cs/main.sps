@@ -197,6 +197,31 @@
    (define compiled-roots-path-list-string (getenv "PLTCOMPILEDROOTS"))
    (define embedded-load-in-places '())
 
+   ;; Startup GC window: default on for the text REPL (boot to prompt);
+   ;; PLT_STARTUP_GC_MODE=off disables it, =all applies it to any run
+   (define (startup-gc-mode-enabled?)
+     (let ([v (getenv "PLT_STARTUP_GC_MODE")])
+       (cond
+         [(not v) (and repl? text-repl?)]
+         [(equal? v "off") #f]
+         [(equal? v "all") #t]
+         [(equal? v "repl") (and repl? text-repl?)]
+         [else (startup-error "unrecognized value for PLT_STARTUP_GC_MODE: ~a" v)])))
+
+   (define startup-gc-window? #f) ; set when the window is opened
+
+   ;; How the window closes: PLT_STARTUP_GC_FINISH=none|major|static;
+   ;; the default promotes the whole startup state to the static
+   ;; generation in one collection, so it is never copied again
+   (define (startup-gc-finish-mode)
+     (let ([v (getenv "PLT_STARTUP_GC_FINISH")])
+       (cond
+         [(not v) 'static]
+         [(equal? v "none") 'none]
+         [(equal? v "major") 'major]
+         [(equal? v "static") 'static]
+         [else (startup-error "unrecognized value for PLT_STARTUP_GC_FINISH: ~a" v)])))
+
    (define init-compiled-file-check (let ([s (getenv "PLT_COMPILED_FILE_CHECK")])
                                       (cond
                                         [(not s) (use-compiled-file-check)]
@@ -994,6 +1019,10 @@
             (|#%app| (dynamic-require 'compiler/private/cm-minimal
                                       'make-compilation-manager-load/use-compiled-handler))))
 
+         (set! startup-gc-window? (startup-gc-mode-enabled?))
+         (when startup-gc-window?
+           (set-startup-gc-mode! #t))
+
          (when init-library
            (namespace-require+ init-library))
 
@@ -1011,7 +1040,10 @@
             ;; Let the actual default handler report an arity mismatch, etc.
             (call-with-continuation-prompt
              (lambda () (abort-current-continuation (default-continuation-prompt-tag) proc)))))
-         
+
+         (when (and startup-gc-window? (not repl?))
+           (set-startup-gc-mode! #f))
+
          (when repl?
            (set! exit-value 0)
            (when repl-init?
@@ -1021,6 +1053,9 @@
                   (lambda () (dynamic-require m 0))
                   (default-continuation-prompt-tag)
                   (lambda args (set! exit-value 1))))))
+           ;; End of the startup window: loading is done, the REPL takes over
+           (when startup-gc-window?
+             (set-startup-gc-mode! #f (startup-gc-finish-mode)))
            (|#%app| (if text-repl?
                         (dynamic-require 'racket/base 'read-eval-print-loop)
                         (dynamic-require 'racket/gui/init 'graphical-read-eval-print-loop)))
