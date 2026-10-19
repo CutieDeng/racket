@@ -372,7 +372,12 @@
                      (when deserialize-syntax
                        (deserialize-syntax bulk-binding-registry))
                      (define vec (unbox (instance-variable-value i deserialized-syntax-vector-id)))
-                     (box-cas! vec-box #f vec)
+                     ;; Publish the way the real linklet does: a CAS can fail
+                     ;; spuriously, and the box must not be left empty
+                     (let loop ()
+                       (unless (or (box-cas! vec-box #f vec)
+                                   (unbox vec-box))
+                         (loop)))
                      ;; Like the real linklet, drop the procedure once deserialization is done
                      (instance-set-variable-value! (unbox proxy-box) deserialize-syntax-id #f)
                      (unbox vec-box))))

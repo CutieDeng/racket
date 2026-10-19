@@ -46438,7 +46438,22 @@
                                      i_0
                                      deserialized-syntax-vector-id))))
                               (begin
-                                (unsafe-box*-cas! vec-box_0 #f vec_0)
+                                (letrec*
+                                 ((loop_0
+                                   (|#%name|
+                                    loop
+                                    (lambda ()
+                                      (if (let ((or-part_0
+                                                 (unsafe-box*-cas!
+                                                  vec-box_0
+                                                  #f
+                                                  vec_0)))
+                                            (if or-part_0
+                                              or-part_0
+                                              (unbox vec-box_0)))
+                                        (void)
+                                        (loop_0))))))
+                                 (loop_0))
                                 (instance-set-variable-value!
                                  (unbox proxy-box_0)
                                  deserialize-syntax-id
