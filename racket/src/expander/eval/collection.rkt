@@ -168,16 +168,23 @@
 (define stamp-prompt-tag (make-continuation-prompt-tag 'stamp))
 
 (define (file->stamp path old-stamp)
-  ;; Using just the file's modification date almost works as a stamp,
-  ;; but 1-second granularity isn't fine enough. A stamp is therefore
-  ;; the file content paired with a filesystem-change event (where
-  ;; supported), and the event lets us recycle the old stamp almost
-  ;; always.
+  ;; Using just the file's modification date in seconds almost works
+  ;; as a stamp, but 1-second granularity isn't fine enough. A stamp
+  ;; is therefore the file content paired with a key derived from
+  ;; `file-or-directory-stat`: inode, size, and modification and
+  ;; change times in nanoseconds. The key lets us recycle the old
+  ;; stamp (and its cached table) almost always, at the cost of one
+  ;; `stat` per lookup. The previous approach polled a
+  ;; filesystem-change event instead, but polling one costs a
+  ;; `kevent` system call of about 12 microseconds on macOS, and the
+  ;; poll happens once per links file for every collection lookup.
+  (define key (file->stamp-key path))
   (cond
     [(and old-stamp
-          (cdr old-stamp)
-          (not (filesystem-change-evt-ready? (cdr old-stamp))))
+          (equal? key (cdr old-stamp)))
      old-stamp]
+    [(not key)
+     (cons #f #f)]
     [else
      (call-with-continuation-prompt
       (lambda ()
@@ -189,24 +196,31 @@
                 (lambda () #f)
                 (lambda () (raise exn)))))
          (lambda ()
-           (define dir-evt
-             (and (vector-ref (system-type 'fs-change) 2) ; 'low-latency ?
-                  (let loop ([path path])
-                    (let-values ([(base name dir?) (split-path path)])
-                      (and (path? base)
-                           (if (directory-exists? base)
-                               (filesystem-change-evt base (lambda () #f))
-                               (loop base)))))))
-           (cond
-             [(not (file-exists? path))
-              (cons #f dir-evt)]
-             [else
-              (define evt (and (vector-ref (system-type 'fs-change) 2) ; 'low-latency ?
-                               (filesystem-change-evt path (lambda () #f))))
-              (when dir-evt (filesystem-change-evt-cancel dir-evt))
-              (cons (file->bytes path)
-                    evt)]))))
+           (cons (file->bytes path)
+                 key))))
       stamp-prompt-tag)]))
+
+;; Returns #f if the file does not exist (or cannot be inspected),
+;; otherwise a vector that changes whenever the file is replaced,
+;; rewritten, or has its attributes changed
+(define (file->stamp-key path)
+  (and (file-exists? path)
+       (call-with-continuation-prompt
+        (lambda ()
+          (call-with-exception-handler
+           (lambda (exn)
+             (abort-current-continuation 
+              stamp-prompt-tag
+              (if (exn:fail:filesystem? exn)
+                  (lambda () #f)
+                  (lambda () (raise exn)))))
+           (lambda ()
+             (define st (file-or-directory-stat path))
+             (vector (hash-ref st 'inode)
+                     (hash-ref st 'size)
+                     (hash-ref st 'modify-time-nanoseconds)
+                     (hash-ref st 'change-time-nanoseconds)))))
+        stamp-prompt-tag)))
 
 (define (file->bytes path)
   (call-with-input-file*

@@ -61252,12 +61252,25 @@
 (define stamp-prompt-tag (make-continuation-prompt-tag 'stamp))
 (define file->stamp
   (lambda (path_0 old-stamp_0)
-    (if (if old-stamp_0
-          (if (cdr old-stamp_0)
-            (not (filesystem-change-evt-ready? (cdr old-stamp_0)))
-            #f)
-          #f)
-      old-stamp_0
+    (let ((key_0 (file->stamp-key path_0)))
+      (if (if old-stamp_0 (equal? key_0 (cdr old-stamp_0)) #f)
+        old-stamp_0
+        (if (not key_0)
+          (cons #f #f)
+          (call-with-continuation-prompt
+           (lambda ()
+             (call-with-exception-handler
+              (lambda (exn_0)
+                (abort-current-continuation
+                 stamp-prompt-tag
+                 (if (exn:fail:filesystem? exn_0)
+                   (lambda () #f)
+                   (lambda () (raise exn_0)))))
+              (lambda () (cons (file->bytes path_0) key_0))))
+           stamp-prompt-tag))))))
+(define file->stamp-key
+  (lambda (path_0)
+    (if (file-exists? path_0)
       (call-with-continuation-prompt
        (lambda ()
          (call-with-exception-handler
@@ -61268,35 +61281,17 @@
                (lambda () #f)
                (lambda () (raise exn_0)))))
           (lambda ()
-            (let ((dir-evt_0
-                   (if (vector-ref (system-type 'fs-change) 2)
-                     (letrec*
-                      ((loop_0
-                        (|#%name|
-                         loop
-                         (lambda (path_1)
-                           (call-with-values
-                            (lambda () (split-path path_1))
-                            (lambda (base_0 name_0 dir?_0)
-                              (if (path? base_0)
-                                (if (directory-exists? base_0)
-                                  (filesystem-change-evt base_0 (lambda () #f))
-                                  (loop_0 base_0))
-                                #f)))))))
-                      (loop_0 path_0))
-                     #f)))
-              (if (not (file-exists? path_0))
-                (cons #f dir-evt_0)
-                (let ((evt_0
-                       (if (vector-ref (system-type 'fs-change) 2)
-                         (filesystem-change-evt path_0 (lambda () #f))
-                         #f)))
-                  (begin
-                    (if dir-evt_0
-                      (filesystem-change-evt-cancel dir-evt_0)
-                      (void))
-                    (cons (file->bytes path_0) evt_0))))))))
-       stamp-prompt-tag))))
+            (let ((st_0 (file-or-directory-stat path_0)))
+              (let ((app_0 (hash-ref st_0 'inode)))
+                (let ((app_1 (hash-ref st_0 'size)))
+                  (let ((app_2 (hash-ref st_0 'modify-time-nanoseconds)))
+                    (vector
+                     app_0
+                     app_1
+                     app_2
+                     (hash-ref st_0 'change-time-nanoseconds)))))))))
+       stamp-prompt-tag)
+      #f)))
 (define file->bytes
   (lambda (path_0)
     (let ((temp16_0
