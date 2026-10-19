@@ -45572,11 +45572,16 @@
                         c7_0)
                        (let ((l_0 (hash-ref h_0 'stx-data #f)))
                          (if l_0
-                           (let ((app_0
-                                  (eval-linklet (force-compile-linklet l_0))))
-                             (instantiate-linklet
-                              app_0
-                              (list deserialize-instance data-instance_0)))
+                           (if (eager-syntax-literals-data?)
+                             (let ((app_0
+                                    (eval-linklet
+                                     (force-compile-linklet l_0))))
+                               (instantiate-linklet
+                                app_0
+                                (list deserialize-instance data-instance_0)))
+                             (make-lazy-syntax-literals-data-instance
+                              l_0
+                              data-instance_0))
                            (if (eq?
                                 (hash-ref h_0 'module->namespace #f)
                                 'empty)
@@ -46380,6 +46385,66 @@
                       (set-box!
                        (namespace-root-expand-ctx ns_0)
                        root-ctx_0))))))))))))
+(define eager-syntax-literals-data?
+  (lambda ()
+    (if (environment-variables-ref
+         (current-environment-variables)
+         #vu8(80 76 84 95 69 65 71 69 82 95 83 84 88 95 68 65 84 65))
+      #t
+      #f)))
+(define make-lazy-syntax-literals-data-instance
+  (lambda (l_0 data-instance_0)
+    (let ((vec-box_0 (box #f)))
+      (let ((real-instance_0 #f))
+        (let ((force-real-instance!_0
+               (|#%name|
+                force-real-instance!
+                (lambda ()
+                  (let ((or-part_0 real-instance_0))
+                    (if or-part_0
+                      or-part_0
+                      (let ((i_0
+                             (let ((app_0
+                                    (eval-linklet
+                                     (force-compile-linklet l_0))))
+                               (instantiate-linklet
+                                app_0
+                                (list deserialize-instance data-instance_0)))))
+                        (begin (set! real-instance_0 i_0) i_0))))))))
+          (let ((proxy-box_0 (box #f)))
+            (let ((proxy_0
+                   (make-instance
+                    'syntax-literals-data
+                    #f
+                    #f
+                    deserialized-syntax-vector-id
+                    vec-box_0
+                    deserialize-syntax-id
+                    (lambda (bulk-binding-registry_0)
+                      (let ((i_0 (force-real-instance!_0)))
+                        (let ((deserialize-syntax_0
+                               (instance-variable-value
+                                i_0
+                                deserialize-syntax-id)))
+                          (begin
+                            (if deserialize-syntax_0
+                              (|#%app|
+                               deserialize-syntax_0
+                               bulk-binding-registry_0)
+                              (void))
+                            (let ((vec_0
+                                   (unbox
+                                    (instance-variable-value
+                                     i_0
+                                     deserialized-syntax-vector-id))))
+                              (begin
+                                (unsafe-box*-cas! vec-box_0 #f vec_0)
+                                (instance-set-variable-value!
+                                 (unbox proxy-box_0)
+                                 deserialize-syntax-id
+                                 #f)
+                                (unbox vec-box_0))))))))))
+              (begin (set-box! proxy-box_0 proxy_0) proxy_0))))))))
 (define force-syntax-deserialize
   (lambda (syntax-literals-data-instance_0 bulk-binding-registry_0)
     (if (let ((or-part_0
