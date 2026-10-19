@@ -45552,13 +45552,15 @@
   (lambda (hash-code_0)
     (if hash-code_0
       (string->symbol
-       (format
-        "~s"
-        (list
-         hash-code_0
-         (path->directory-path
-          (let ((or-part_0 (current-load-relative-directory)))
-            (if or-part_0 or-part_0 (current-directory)))))))
+       (bytes->string/latin-1
+        (let ((app_0 (bytes (unsafe-bytes-length hash-code_0))))
+          (bytes-append
+           app_0
+           hash-code_0
+           (path->bytes
+            (path->directory-path
+             (let ((or-part_0 (current-load-relative-directory)))
+               (if or-part_0 or-part_0 (current-directory)))))))))
       #f)))
 (define module-cache-set!
   (lambda (key_0 proc_0)
