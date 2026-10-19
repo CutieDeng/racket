@@ -425,7 +425,20 @@
       [(eq? format 'interpret) (cross-fasl-to-string machine s quoteds 'code)]
       [else (cross-compile machine (lambda->linklet-lambda s) quoteds realm unsafe?)]))
 
+  ;; During the startup window, the objects that the fasl read creates
+  ;; are allocated into the window's generation; see "rumble/memory.ss"
   (define (eval-from-bytevector bv literals format)
+    (let ([g (startup-fasl-generation)])
+      (if (fx= g 0)
+          (eval-from-bytevector* bv literals format)
+          (begin
+            (set-fasl-generation! g startup-fasl-mask)
+            (dynamic-wind
+             void
+             (lambda () (eval-from-bytevector* bv literals format))
+             (lambda () (set-fasl-generation! 0 0)))))))
+
+  (define (eval-from-bytevector* bv literals format)
     (add-performance-memory! 'faslin-code (code-length bv))
     (cond
       [(eq? format 'interpret)

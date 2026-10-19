@@ -416,6 +416,24 @@ void S_dirty_set(ptr *loc, ptr x) {
   }
 }
 
+/* Register objects allocated directly into an older generation (see
+   "fasl.c"); "gc.c" sweeps the list as roots */
+void S_young_ref_add(ptr *v, iptr n) {
+  alloc_mutex_acquire();
+  if (S_G.young_ref_n + n > S_G.young_ref_cap) {
+    iptr cap = (S_G.young_ref_cap == 0) ? 4096 : S_G.young_ref_cap;
+    ptr *nv;
+    while (S_G.young_ref_n + n > cap) cap *= 2;
+    nv = realloc(S_G.young_ref, cap * sizeof(ptr));
+    if (nv == NULL) S_error_abort("out of memory for the young-reference list");
+    S_G.young_ref = nv;
+    S_G.young_ref_cap = cap;
+  }
+  memcpy(S_G.young_ref + S_G.young_ref_n, v, n * sizeof(ptr));
+  S_G.young_ref_n += n;
+  alloc_mutex_release();
+}
+
 /* only called by GC, so no other thread is running */
 void S_mark_card_dirty(uptr card, IGEN to_g) {
   uptr loc = card << card_offset_bits;

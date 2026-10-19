@@ -106,6 +106,11 @@ ptr S_create_thread_object(const char *who, ptr p_tc) {
       tgc->dirty_segments[i] = NULL;
     tgc->queued_fire = 0;
     tgc->preserve_ownership = 0;
+    tgc->fasl_gen = 0;
+    tgc->fasl_gen_mask = (uptr)-1;
+    tgc->fasl_log = NULL;
+    tgc->fasl_log_n = 0;
+    tgc->fasl_log_cap = 0;
 
     v = S_vector_in(tc, space_new, 0, n);
 

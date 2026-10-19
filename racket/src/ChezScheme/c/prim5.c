@@ -102,6 +102,7 @@ static void c_exit(I32 status);
 static ptr s_get_reloc(ptr co, IBOOL with_offsets);
 static ptr s_fasl_code_info(ptr co);
 static void s_set_vfasl_boot_mode(iptr m);
+static void s_set_fasl_gen(iptr g, iptr mask);
 #ifdef PTHREADS
 static s_thread_rv_t s_backdoor_thread_start(void *p);
 static iptr s_backdoor_thread(ptr p);
@@ -2225,6 +2226,7 @@ void S_prim5_init(void) {
 
     Sforeign_symbol("(cs)s_get_reloc", (void *)s_get_reloc);
     Sforeign_symbol("(cs)s_set_vfasl_boot_mode", (void *)s_set_vfasl_boot_mode);
+    Sforeign_symbol("(cs)s_set_fasl_gen", (void *)s_set_fasl_gen);
     Sforeign_symbol("(cs)s_fasl_code_info", (void *)s_fasl_code_info);
     Sforeign_symbol("(cs)getenv", (void *)s_getenv);
     Sforeign_symbol("(cs)putenv", (void *)s_putenv);
@@ -2286,6 +2288,14 @@ void S_prim5_init(void) {
    supplies the boot-mode context naturally. */
 static void s_set_vfasl_boot_mode(iptr m) {
   S_vfasl_boot_mode = (int)m;
+}
+
+/* generation into which this thread's fasl reads allocate; see "fasl.c" */
+static void s_set_fasl_gen(iptr g, iptr mask) {
+  ptr tc = get_thread_context();
+  if ((g < 0) || (g > static_generation)) g = 0;
+  THREAD_GC(tc)->fasl_gen = (IGEN)g;
+  THREAD_GC(tc)->fasl_gen_mask = (uptr)mask;
 }
 
 static ptr s_get_reloc(ptr co, IBOOL with_offsets) {

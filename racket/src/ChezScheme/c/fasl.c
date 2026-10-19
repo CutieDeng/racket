@@ -209,6 +209,265 @@
 
 #define PREPARE_BYTEVECTOR(bv,n) {if (bv == Sfalse || Sbytevector_length(bv) < (n)) bv = S_bytevector(n);}
 
+/* Objects created by `faslin` normally go to generation 0. When the
+   thread's `fasl_gen` is set (see `s_set_fasl_gen` in "prim5.c"),
+   they are allocated directly into that generation, so that a startup
+   window that loads a lot of code does not copy it through the young
+   generations first. Such objects can refer to younger objects
+   (symbols interned on the way, external literals, existing record
+   types), so every pointer-holding object is logged and, when the
+   read completes, registered for the collector to sweep as a root
+   until its targets are no longer younger (see "gc.c"). Dirty cards
+   would not do for that: they skip immutable record fields and a
+   closure's code pointer, and code segments have none. The strings
+   used as scratch buffers, the graph table, weak pairs, ephemerons
+   and hashtable cells stay in generation 0. */
+#define FASL_GEN(tc) (THREAD_GC(tc)->fasl_gen)
+/* kinds of object, each enabled by a bit of `fasl_gen_mask` */
+#define FG_PAIR 1
+#define FG_BOX 2
+#define FG_VECTOR 4
+#define FG_STENCIL 8
+#define FG_RECORD 16
+#define FG_CLOSURE 32
+#define FG_TLC 64
+#define FG_NUMBER 128
+#define FG_DATA 256
+#define FG_CODE 512
+#define FASL_GEN_K(tc, bit) ((THREAD_GC(tc)->fasl_gen_mask & (bit)) ? THREAD_GC(tc)->fasl_gen : 0)
+
+static void fasl_gen_begin(ptr tc) {
+  THREAD_GC(tc)->fasl_log_n = 0;
+}
+
+static void fasl_gen_log(ptr tc, ptr p) {
+  thread_gc *tgc = THREAD_GC(tc);
+  if (tgc->fasl_log_n == tgc->fasl_log_cap) {
+    iptr cap = (tgc->fasl_log_cap == 0) ? 1024 : tgc->fasl_log_cap * 2;
+    ptr *v = realloc(tgc->fasl_log, cap * sizeof(ptr));
+    if (v == NULL) S_error_abort("out of memory for the fasl allocation log");
+    tgc->fasl_log = v;
+    tgc->fasl_log_cap = cap;
+  }
+  tgc->fasl_log[tgc->fasl_log_n++] = p;
+}
+
+static void fasl_gen_finish(ptr tc) {
+  thread_gc *tgc = THREAD_GC(tc);
+  if (tgc->fasl_log_n > 0)
+    S_young_ref_add(tgc->fasl_log, tgc->fasl_log_n);
+  tgc->fasl_log_n = 0;
+}
+
+/* allocation into the read's generation; each falls back to the usual
+   allocator when that generation is 0 */
+
+static ptr fasl_cons(ptr tc, ptr car, ptr cdr) {
+  IGEN g = FASL_GEN_K(tc, FG_PAIR); ptr p;
+  if (g == 0) return Scons(car, cdr);
+  find_room(tc, space_impure, g, type_pair, size_pair, p);
+  INITCAR(p) = car;
+  INITCDR(p) = cdr;
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_weak_cons(ptr tc) {
+  return S_cons_in(tc, space_weakpair, 0, FIX(0), FIX(0));
+}
+
+static ptr fasl_ephemeron(ptr tc) {
+  return S_ephemeron_cons_in(0, FIX(0), FIX(0));
+}
+
+static ptr fasl_box(ptr tc) {
+  IGEN g = FASL_GEN_K(tc, FG_BOX); ptr p;
+  if (g == 0) return Sbox(FIX(0));
+  find_room(tc, space_impure, g, type_typed_object, size_box, p);
+  BOXTYPE(p) = type_box;
+  INITBOXREF(p) = FIX(0);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_vector(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_VECTOR); ptr p;
+  if (g == 0) return S_vector(n);
+  if (n == 0) return S_G.null_vector;
+  p = S_vector_in(tc, space_impure, g, n);
+  /* the collector zero-pads objects it copies into impure spaces, since
+     a dirty-card sweep scans every word there; do the same */
+  if ((n & 1) == 0) INITVECTIT(p, n) = FIX(0);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_stencil_vector(ptr tc, uptr type, uptr mask) {
+  IGEN g = FASL_GEN_K(tc, FG_STENCIL); ptr p; iptr n, d;
+  if (g == 0)
+    return (type == type_stencil_vector) ? S_stencil_vector(mask) : S_system_stencil_vector(mask);
+  if (mask >= ((uptr)1 << stencil_vector_mask_bits))
+    S_error("", "invalid stencil vector mask request");
+  n = Spopcount(mask);
+  d = size_stencil_vector(n);
+  find_room(tc, space_impure, g, type_typed_object, d, p);
+  VECTTYPE(p) = (mask << stencil_vector_mask_offset) | type;
+  if ((n & 1) == 0) INITSTENVECTIT(p, n) = FIX(0);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_record_alloc(ptr tc, iptr bytes) {
+  IGEN g = FASL_GEN_K(tc, FG_RECORD); ptr p;
+  if (g == 0) return S_record(bytes);
+  find_room(tc, space_impure_record, g, type_typed_object, bytes, p);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_closure(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_CLOSURE); ptr p; iptr d;
+  if (g == 0) return S_closure((ptr)0, n);
+  d = size_closure(n);
+  find_room(tc, space_closure, g, type_closure, d, p);
+  CLOSENTRY(p) = (ptr)0;
+  if ((n & 1) == 0) CLOSIT(p, n) = FIX(0);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_tlc(ptr tc, ptr keyval, ptr ht, ptr next) {
+  (void)tc;
+  return S_tlc(keyval, ht, next);
+}
+
+static ptr fasl_ratnum(ptr tc) {
+  IGEN g = FASL_GEN_K(tc, FG_NUMBER); ptr p;
+  if (g == 0) return S_rational(FIX(0), FIX(0));
+  find_room(tc, space_impure, g, type_typed_object, size_ratnum, p);
+  RATTYPE(p) = type_ratnum;
+  RATNUM(p) = FIX(0);
+  RATDEN(p) = FIX(0);
+  ((ptr *)TO_VOIDP(UNTYPE(p, type_typed_object)))[3] = FIX(0); /* padding */
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_exactnum(ptr tc) {
+  IGEN g = FASL_GEN_K(tc, FG_NUMBER); ptr p;
+  if (g == 0) return S_exactnum(FIX(0), FIX(0));
+  find_room(tc, space_impure, g, type_typed_object, size_exactnum, p);
+  EXACTNUM_TYPE(p) = type_exactnum;
+  EXACTNUM_REAL_PART(p) = FIX(0);
+  EXACTNUM_IMAG_PART(p) = FIX(0);
+  ((ptr *)TO_VOIDP(UNTYPE(p, type_typed_object)))[3] = FIX(0); /* padding */
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_inexactnum(ptr tc, double rp, double ip) {
+  IGEN g = FASL_GEN_K(tc, FG_NUMBER); ptr p;
+  if (g == 0) return S_inexactnum(rp, ip);
+  find_room(tc, space_data, g, type_typed_object, size_inexactnum, p);
+  INEXACTNUM_TYPE(p) = type_inexactnum;
+  INEXACTNUM_REAL_PART(p) = rp;
+  INEXACTNUM_IMAG_PART(p) = ip;
+  return p;
+}
+
+static ptr fasl_flonum(ptr tc, double x) {
+  IGEN g = FASL_GEN_K(tc, FG_NUMBER); ptr p;
+  if (g == 0) return Sflonum(x);
+  find_room(tc, space_data, g, type_flonum, size_flonum, p);
+  FLODAT(p) = x;
+  return p;
+}
+
+static ptr fasl_string(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_DATA); ptr p; iptr d;
+  if (g == 0) return S_string((char *)0, n);
+  if (n == 0) return S_G.null_string;
+  if ((uptr)n > (uptr)maximum_string_length)
+    S_error("", "invalid string size request");
+  d = size_string(n);
+  find_room(tc, space_data, g, type_typed_object, d, p);
+  STRTYPE(p) = (n << string_length_offset) | type_string;
+  return p;
+}
+
+static ptr fasl_fxvector(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_DATA); ptr p; iptr d;
+  if (g == 0) return S_fxvector(n);
+  if (n == 0) return S_G.null_fxvector;
+  if ((uptr)n > (uptr)maximum_fxvector_length)
+    S_error("", "invalid fxvector size request");
+  d = size_fxvector(n);
+  find_room(tc, space_data, g, type_typed_object, d, p);
+  FXVECTOR_TYPE(p) = (n << fxvector_length_offset) | type_fxvector;
+  return p;
+}
+
+static ptr fasl_flvector(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_DATA); ptr p; iptr d;
+  if (g == 0) return S_flvector(n);
+  if (n == 0) return S_G.null_flvector;
+  if ((uptr)n > (uptr)maximum_flvector_length)
+    S_error("", "invalid flvector size request");
+  d = size_flvector(n);
+  find_room(tc, space_data, g, type_typed_object, d, p);
+  FLVECTOR_TYPE(p) = (n << flvector_length_offset) | type_flvector;
+  return p;
+}
+
+static ptr fasl_bytevector(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_DATA); ptr p; iptr d;
+  if (g == 0) return S_bytevector(n);
+  if (n == 0) return S_G.null_bytevector;
+  if ((uptr)n > (uptr)maximum_bytevector_length)
+    S_error("", "invalid bytevector size request");
+  d = size_bytevector(n);
+  find_room(tc, space_data, g, type_typed_object, d, p);
+  BYTEVECTOR_TYPE(p) = (n << bytevector_length_offset) | type_bytevector;
+  return p;
+}
+
+static ptr fasl_bignum(ptr tc, iptr n, IBOOL sign) {
+  IGEN g = FASL_GEN_K(tc, FG_NUMBER); ptr p; iptr d;
+  if (g == 0) return S_bignum(tc, n, sign);
+  if ((uptr)n > (uptr)maximum_bignum_length)
+    S_error("", "invalid bignum size request");
+  USE_TRAP_FUEL(tc, n);
+  d = size_bignum(n);
+  find_room(tc, space_data, g, type_typed_object, d, p);
+  BIGTYPE(p) = (uptr)n << bignum_length_offset | sign << bignum_sign_offset | type_bignum;
+  return p;
+}
+
+static ptr fasl_code(ptr tc, iptr type, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_CODE); ptr p; iptr d;
+  if (g == 0) return S_code(tc, type, n);
+  if ((uptr)n > (uptr)most_positive_fixnum)
+    S_error("", "invalid code size request");
+  d = size_code(n);
+  find_room(tc, space_code, g, type_typed_object, d, p);
+  CODETYPE(p) = type;
+  CODELEN(p) = n;
+  S_record_code_mod(tc, (uptr)TO_PTR(&CODEIT(p,0)), (uptr)n);
+  fasl_gen_log(tc, p);
+  return p;
+}
+
+static ptr fasl_relocation_table(ptr tc, iptr n) {
+  IGEN g = FASL_GEN_K(tc, FG_CODE); ptr p; iptr d;
+  if (g == 0) return S_relocation_table(n);
+  if ((uptr)n > (uptr)most_positive_fixnum)
+    S_error("", "invalid relocation table size request");
+  d = size_reloc_table(n);
+  find_room(tc, space_data, g, type_untyped, d, p);
+  RELOCSIZE(p) = n;
+  return p;
+}
+
 /* locally defined functions */
 static iptr uf_read(unbufFaslFile uf, octet *s, iptr n);
 static void uf_skipbytes(unbufFaslFile uf, iptr n);
@@ -478,7 +737,11 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
         Scompact_heap();
       }
 
-      S_thread_start_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
+      {
+        IGEN cwg = S_vfasl_boot_mode ? static_generation : FASL_GEN(tc);
+        S_thread_start_code_write(tc, cwg, cwg == 0, NULL, 0);
+      }
+      fasl_gen_begin(tc);
 
       switch (ty) {
         case fasl_type_gzip:
@@ -534,8 +797,12 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
       }
       if (old_mode == FASL_BUFFER_READ_MINIMAL)
         in_f->buffer_mode = old_mode;
+      fasl_gen_finish(tc);
       S_flush_instruction_cache(tc);
-      S_thread_end_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
+      {
+        IGEN cwg = S_vfasl_boot_mode ? static_generation : FASL_GEN(tc);
+        S_thread_end_code_write(tc, cwg, cwg == 0, NULL, 0);
+      }
       return x;
     } else {
       skipbytes(size, f);
@@ -545,8 +812,10 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
 
 static ptr bv_fasl_entry(ptr tc, ptr bv, int ty, uptr offset, uptr len, faslFile f, ptr externals) {
   ptr x; ptr strbuf = S_G.null_string;
+  IGEN cwg = S_vfasl_boot_mode ? static_generation : FASL_GEN(tc);
 
-  S_thread_start_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
+  S_thread_start_code_write(tc, cwg, cwg == 0, NULL, 0);
+  fasl_gen_begin(tc);
 
   if (ty == fasl_type_vfasl) {
     x = S_vfasl(bv, f, offset, len, externals);
@@ -557,8 +826,9 @@ static ptr bv_fasl_entry(ptr tc, ptr bv, int ty, uptr offset, uptr len, faslFile
     S_error2("", "bad fasl entry type ~d found in ~a", FIX(ty), f->uf.path);
   }
 
+  fasl_gen_finish(tc);
   S_flush_instruction_cache(tc);
-  S_thread_end_code_write(tc, S_vfasl_boot_mode ? static_generation : 0, 1, NULL, 0);
+  S_thread_end_code_write(tc, cwg, cwg == 0, NULL, 0);
 
   return x;
 }
@@ -808,10 +1078,10 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_pair: {
             iptr n; ptr p;
             n = sizein(f);
-            *x = p = Scons(FIX(0), FIX(0));
+            *x = p = fasl_cons(tc, FIX(0), FIX(0));
             faslin(tc, &INITCAR(p), t, pstrbuf, f);
             while (--n) {
-                INITCDR(p) = Scons(FIX(0), FIX(0));
+                INITCDR(p) = fasl_cons(tc, FIX(0), FIX(0));
                 p = INITCDR(p);
                 faslin(tc, &INITCAR(p), t, pstrbuf, f);
             }
@@ -820,7 +1090,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         }
         case fasl_type_box:
         case fasl_type_immutable_box:
-            *x = Sbox(FIX(0));
+            *x = fasl_box(tc);
             faslin(tc, &INITBOXREF(*x), t, pstrbuf, f);
             if (ty == fasl_type_immutable_box)
               BOXTYPE(*x) = type_immutable_box;
@@ -842,19 +1112,19 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             iptr i, n;
             ptr str;
             n = sizein(f);
-            str = S_string((char *)0, n);
+            str = fasl_string(tc, n);
             for (i = 0; i != n; i += 1) Sstring_set(str, i, uptrin(f));
             STRTYPE(str) |= string_immutable_flag;
             *x = S_uninterned(str);
             return;
         }
         case fasl_type_ratnum:
-            *x = S_rational(FIX(0), FIX(0));
+            *x = fasl_ratnum(tc);
             faslin(tc, &RATNUM(*x), t, pstrbuf, f);
             faslin(tc, &RATDEN(*x), t, pstrbuf, f);
             return;
         case fasl_type_exactnum:
-            *x = S_exactnum(FIX(0), FIX(0));
+            *x = fasl_exactnum(tc);
             faslin(tc, &EXACTNUM_REAL_PART(*x), t, pstrbuf, f);
             faslin(tc, &EXACTNUM_IMAG_PART(*x), t, pstrbuf, f);
             return;
@@ -862,7 +1132,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_immutable_vector: {
             iptr n; ptr *p;
             n = sizein(f);
-            *x = S_vector(n);
+            *x = fasl_vector(tc, n);
             p = &INITVECTIT(*x, 0);
             while (--n >= 0) faslin(tc, p++, t, pstrbuf, f);
             if (ty == fasl_type_immutable_vector) {
@@ -876,7 +1146,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_fxvector: {
             iptr n; ptr *p;
             n = sizein(f);
-            *x = S_fxvector(n);
+            *x = fasl_fxvector(tc, n);
             p = &FXVECTIT(*x, 0);
             while (--n >= 0) {
               iptr t = iptrin(f);
@@ -888,7 +1158,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_flvector: {
             iptr n; double *p;
             n = sizein(f);
-            *x = S_flvector(n);
+            *x = fasl_flvector(tc, n);
             p = &FLVECTIT(*x, 0);
             while (--n >= 0) {
               ptr fl;
@@ -903,7 +1173,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_immutable_bytevector: {
             iptr n;
             n = sizein(f);
-            *x = S_bytevector(n);
+            *x = fasl_bytevector(tc, n);
             S_fasl_bytesin(&BVIT(*x,0), n, f);
             if (ty == fasl_type_immutable_bytevector) {
               if (Sbytevector_length(*x) == 0)
@@ -917,10 +1187,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_system_stencil_vector: {
             uptr mask; iptr n; ptr *p;
             mask = uptrin(f);
-            if (ty == fasl_type_stencil_vector)
-              *x = S_stencil_vector(mask);
-            else
-              *x = S_system_stencil_vector(mask);
+            *x = fasl_stencil_vector(tc, (ty == fasl_type_stencil_vector) ? type_stencil_vector : type_sys_stencil_vector, mask);
             p = &INITSTENVECTIT(*x, 0);
             n = Spopcount(mask);
             while (--n >= 0) faslin(tc, p++, t, pstrbuf, f);
@@ -984,7 +1251,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
               S_G.eq_ht_rtd = rtd = SYMVAL(S_intern((const unsigned char *)"$eq-ht-rtd"));
               if (!Srecordp(rtd)) S_error_abort("$eq-ht-rtd has not been set");
             }
-            *x = ht = S_record(size_record_inst(UNFIX(RECORDDESCSIZE(rtd))));
+            *x = ht = fasl_record_alloc(tc, size_record_inst(UNFIX(RECORDDESCSIZE(rtd))));
             RECORDINSTTYPE(ht) = rtd;
             INITPTRFIELD(ht,eq_hashtable_type_disp) = S_G.eq_symbol;
             INITPTRFIELD(ht,eq_hashtable_mutablep_disp) = bytein(f) ? Strue : Sfalse;
@@ -999,7 +1266,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             }
             INITPTRFIELD(ht,eq_hashtable_minlen_disp) = FIX(sizein(f));
             veclen = sizein(f);
-            INITPTRFIELD(ht,eq_hashtable_vec_disp) = v = S_vector(veclen);
+            INITPTRFIELD(ht,eq_hashtable_vec_disp) = v = fasl_vector(tc, veclen);
             n = sizein(f);
             INITPTRFIELD(ht,eq_hashtable_size_disp) = FIX(n);
             for (i = 0; i < veclen ; i += 1) { INITVECTIT(v, i) = FIX(i); }
@@ -1007,20 +1274,20 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
               ptr keyval;
               switch (subtype) {
               case eq_hashtable_subtype_normal:
-                keyval = Scons(FIX(0), FIX(0));
+                keyval = fasl_cons(tc, FIX(0), FIX(0));
                 break;
               case eq_hashtable_subtype_weak:
-                keyval = S_cons_in(tc, space_weakpair, 0, FIX(0), FIX(0));
+                keyval = fasl_weak_cons(tc);
                 break;
               case eq_hashtable_subtype_ephemeron:
               default:
-                keyval = S_ephemeron_cons_in(0, FIX(0), FIX(0));
+                keyval = fasl_ephemeron(tc);
                 break;
               }
               faslin(tc, &INITCAR(keyval), t, pstrbuf, f);
               faslin(tc, &INITCDR(keyval), t, pstrbuf, f);
               i = eq_hash(Scar(keyval)) & (veclen - 1);
-              INITVECTIT(v, i) = S_tlc(keyval, ht, Svector_ref(v, i));
+              INITVECTIT(v, i) = fasl_tlc(tc, keyval, ht, Svector_ref(v, i));
               n -= 1;
             }
             return;
@@ -1031,7 +1298,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
               S_G.symbol_ht_rtd = rtd = SYMVAL(S_intern((const unsigned char *)"$symbol-ht-rtd"));
               if (!Srecordp(rtd)) S_error_abort("$symbol-ht-rtd has not been set");
             }
-            *x = ht = S_record(size_record_inst(UNFIX(RECORDDESCSIZE(rtd))));
+            *x = ht = fasl_record_alloc(tc, size_record_inst(UNFIX(RECORDDESCSIZE(rtd))));
             RECORDINSTTYPE(ht) = rtd;
             INITPTRFIELD(ht,symbol_hashtable_type_disp) = S_G.symbol_symbol;
             INITPTRFIELD(ht,symbol_hashtable_mutablep_disp) = bytein(f) ? Strue : Sfalse;
@@ -1069,19 +1336,19 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             }
             INITPTRFIELD(ht,symbol_hashtable_equivp_disp) = equiv;
             veclen = sizein(f);
-            INITPTRFIELD(ht,symbol_hashtable_vec_disp) = v = S_vector(veclen);
+            INITPTRFIELD(ht,symbol_hashtable_vec_disp) = v = fasl_vector(tc, veclen);
             n = sizein(f);
             INITPTRFIELD(ht,symbol_hashtable_size_disp) = FIX(n);
             for (i = 0; i < veclen ; i += 1) { INITVECTIT(v, i) = Snil; }
             while (n > 0) {
               ptr keyval;
-              keyval = Scons(FIX(0), FIX(0));
+              keyval = fasl_cons(tc, FIX(0), FIX(0));
               faslin(tc, &INITCAR(keyval), t, pstrbuf, f);
               if (!Ssymbolp(Scar(keyval)))
                 S_error1("", "invalid fasl symbol-hashtable key found in ~a", f->uf.path);
               faslin(tc, &INITCDR(keyval), t, pstrbuf, f);
               i = UNFIX(SYMHASH(Scar(keyval))) & (veclen - 1);
-              INITVECTIT(v, i) = Scons(keyval, Svector_ref(v, i));
+              INITVECTIT(v, i) = fasl_cons(tc, keyval, Svector_ref(v, i));
               n -= 1;
             }
             return;
@@ -1089,7 +1356,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_closure: {
             ptr cod; iptr offset;
             offset = uptrin(f);
-            *x = S_closure((ptr)0, 0);
+            *x = fasl_closure(tc, 0);
             faslin(tc, &cod, t, pstrbuf, f);
             if (offset != code_data_disp || !Scodep(cod))
               S_error1("", "malformed fasl closure found in ~a", f->uf.path);
@@ -1099,7 +1366,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
         case fasl_type_closure_freevars: {
             ptr cod; iptr n, i;
             n = (iptr)uptrin(f);
-            *x = S_closure((ptr)0, n);
+            *x = fasl_closure(tc, n);
             faslin(tc, &cod, t, pstrbuf, f);
             if (!Scodep(cod))
               S_error1("", "malformed fasl closure found in ~a", f->uf.path);
@@ -1109,7 +1376,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             return;
         }
         case fasl_type_flonum: {
-            *x = Sflonum(doublein(f));
+            *x = fasl_flonum(tc, doublein(f));
             return;
         }
         case fasl_type_inexactnum: {
@@ -1118,14 +1385,14 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             faslin(tc, &ip, t, pstrbuf, f);
             if (!Sflonump(rp) || !Sflonump(ip))
               S_error1("", "malformed fasl inexactnum found in ~a", f->uf.path);
-            *x = S_inexactnum(FLODAT(rp), FLODAT(ip));
+            *x = fasl_inexactnum(tc, FLODAT(rp), FLODAT(ip));
             return;
         }
         case fasl_type_string:
         case fasl_type_immutable_string: {
             iptr i, n; ptr str;
             n = sizein(f);
-            str = S_string((char *)0, n);
+            str = fasl_string(tc, n);
             for (i = 0; i != n; i += 1) Sstring_set(str, i, uptrin(f));
             if (ty == fasl_type_immutable_string) {
               if (n == 0)
@@ -1143,19 +1410,19 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             IBOOL sign; iptr n; ptr t; bigit *p;
             sign = bytein(f);
             n = sizein(f);
-            t = S_bignum(tc, n, sign);
+            t = fasl_bignum(tc, n, sign);
             p = &BIGIT(t, 0);
             while (--n >= 0) *p++ = (bigit)uptrin(f);
             *x = S_normalize_bignum(t);
             return;
         }
         case fasl_type_weak_pair:
-            *x = S_cons_in(tc, space_weakpair, 0, FIX(0), FIX(0));
+            *x = fasl_weak_cons(tc);
             faslin(tc, &INITCAR(*x), t, pstrbuf, f);
             faslin(tc, &INITCDR(*x), t, pstrbuf, f);
             return;
         case fasl_type_ephemeron:
-            *x = S_ephemeron_cons_in(0, FIX(0), FIX(0));
+            *x = fasl_ephemeron(tc);
             faslin(tc, &INITCAR(*x), t, pstrbuf, f);
             faslin(tc, &INITCDR(*x), t, pstrbuf, f);
             return;
@@ -1165,7 +1432,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             flags = bytein(f);
             free = sizein(f);
             n = sizein(f) /* length in bytes of code */;
-            *x = co = S_code(tc, type_code | (flags << code_flags_offset), n);
+            *x = co = fasl_code(tc, type_code | (flags << code_flags_offset), n);
             CODEFREE(co) = free;
             faslin(tc, &name, t, pstrbuf, f);
             if (Sstringp(name)) name = SYMNAME(S_intern_sc(&STRIT(name, 0), Sstring_length(name), name));
@@ -1182,7 +1449,7 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             swap_code_endian((octet *)&CODEIT(co, 0), n);
 #endif
             m = sizein(f);
-            CODERELOC(co) = reloc = S_relocation_table(m);
+            CODERELOC(co) = reloc = fasl_relocation_table(tc, m);
             RELOCCODE(reloc) = co;
             a = 0;
             n = 0;
@@ -1276,7 +1543,7 @@ static void fasl_record(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f, iptr si
   iptr n; uptr addr; ptr p; UINT padty;
 
   n = sizein(f);
-  *x = p = S_record(size_record_inst(size));
+  *x = p = fasl_record_alloc(tc, size_record_inst(size));
   faslin(tc, &RECORDINSTTYPE(p), t, pstrbuf, f);
   addr = (uptr)TO_PTR(&RECORDINSTIT(p, 0));
   for (; n != 0; n -= 1) {

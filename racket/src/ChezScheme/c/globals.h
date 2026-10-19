@@ -93,6 +93,14 @@ EXTERN struct S_G_struct {
     ptr make_load_binary_id;
     ptr load_binary;
     ptr profile_counters;
+  /* fasl.c: objects allocated directly into an older generation that
+     may still refer to younger objects; "gc.c" sweeps them as roots
+     until that is no longer so. Dirty cards would not do: they skip
+     immutable record fields and closure code pointers, and code
+     segments have none. */
+    ptr *young_ref;
+    iptr young_ref_n;
+    iptr young_ref_cap;
 
   /* foreign.c */
     ptr foreign_static;
