@@ -328,6 +328,8 @@
           unsafe-hash-seal!    ; not exported to racket
           unsafe-make-hasheq   ; not exported to racket
           unsafe-make-weak-hasheq   ; not exported to racket
+          unsafe-hasheq-from-vectors
+          unsafe-hasheqv-from-vectors
 
           hash? hash-eq? hash-equal? hash-eqv? hash-equal-always? hash-strong? hash-weak? hash-ephemeron?
           immutable-hash?

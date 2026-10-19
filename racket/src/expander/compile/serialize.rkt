@@ -1,6 +1,7 @@
 #lang racket/base
 (require (for-syntax racket/base)
          racket/fasl
+         (only-in '#%unsafe unsafe-hasheq-from-vectors unsafe-hasheqv-from-vectors)
          (only-in '#%kernel
                   core-pvector?
                   core-pvector-length
@@ -882,19 +883,30 @@
                [(#:pvector) (core-fresh-vector->pvector r)]
                [else (vector->immutable-vector r)])
              next-pos)]
-    [(#:hash #:hasheq #:hasheqv)
-     (define ht (case (vector*-ref vec pos)
-                  [(#:hash) (hash)]
-                  [(#:hasheq) (hasheq)]
-                  [(#:hasheqv) (hasheqv)]))
+    [(#:hash)
      (define len (vector*-ref vec (add1 pos)))
-     (for/fold ([ht ht] [pos (+ pos 2)]) ([i (in-range len)])
+     (for/fold ([ht (hash)] [pos (+ pos 2)]) ([i (in-range len)])
        (decodes #:pos pos (k v) (hash-set ht k v)))]
-    [(#:hasheqv/phase+space)
-     (define ht (hasheqv))
+    [(#:hasheq #:hasheqv #:hasheqv/phase+space)
+     ;; Decode the entries into vectors and build the table from them in
+     ;; one pass: adding entries one at a time path-copies the trie, which
+     ;; allocates several times the table's size, and a module's provides
+     ;; tables run to thousands of entries
+     (define tag (vector*-ref vec pos))
      (define len (vector*-ref vec (add1 pos)))
-     (for/fold ([ht ht] [pos (+ pos 2)]) ([i (in-range len)])
-       (decodes #:pos pos (k v) (hash-set ht (intern-phase+space k) v)))]
+     (define keys (make-vector len #f))
+     (define vals (make-vector len #f))
+     (define next-pos
+       (for/fold ([pos (+ pos 2)]) ([i (in-range len)])
+         (define-values (k k-pos) (decodes #:pos pos (k) k))
+         (define-values (v v-pos) (decodes #:pos k-pos (v) v))
+         (vector-set! keys i (if (eq? tag '#:hasheqv/phase+space) (intern-phase+space k) k))
+         (vector-set! vals i v)
+         v-pos))
+     (values (if (eq? tag '#:hasheq)
+                 (unsafe-hasheq-from-vectors keys vals)
+                 (unsafe-hasheqv-from-vectors keys vals))
+             next-pos)]
     [(#:set #:seteq #:seteqv)
      (define s (case (vector*-ref vec pos)
                  [(#:set) (set)]

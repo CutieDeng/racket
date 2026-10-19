@@ -201,6 +201,8 @@ static Scheme_Object *unsafe_hash_table_iterate_key_value(int argc, Scheme_Objec
 
 /* unsafe_hash_tree */
 static Scheme_Object *unsafe_hash_tree_iterate_start(int argc, Scheme_Object *argv[]);
+static Scheme_Object *unsafe_hasheq_from_vectors(int argc, Scheme_Object *argv[]);
+static Scheme_Object *unsafe_hasheqv_from_vectors(int argc, Scheme_Object *argv[]);
 static Scheme_Object *unsafe_hash_tree_iterate_next(int argc, Scheme_Object *argv[]);
 static Scheme_Object *unsafe_hash_tree_iterate_key(int argc, Scheme_Object *argv[]);
 static Scheme_Object *unsafe_hash_tree_iterate_value(int argc, Scheme_Object *argv[]);
@@ -1082,6 +1084,30 @@ scheme_init_unsafe_list (Scheme_Startup_Env *env)
   scheme_addto_prim_instance("unsafe-box*-cas!", p, env);
 }
 
+static Scheme_Object *hash_tree_from_vectors(int kind, Scheme_Object *keys, Scheme_Object *vals)
+{
+  Scheme_Hash_Tree *tree;
+  intptr_t i, n;
+
+  tree = scheme_make_hash_tree(kind);
+  n = SCHEME_VEC_SIZE(keys);
+  for (i = 0; i < n; i++) {
+    tree = scheme_hash_tree_set(tree, SCHEME_VEC_ELS(keys)[i], SCHEME_VEC_ELS(vals)[i]);
+  }
+
+  return (Scheme_Object *)tree;
+}
+
+static Scheme_Object *unsafe_hasheq_from_vectors(int argc, Scheme_Object *argv[])
+{
+  return hash_tree_from_vectors(SCHEME_hashtr_eq, argv[0], argv[1]);
+}
+
+static Scheme_Object *unsafe_hasheqv_from_vectors(int argc, Scheme_Object *argv[])
+{
+  return hash_tree_from_vectors(SCHEME_hashtr_eqv, argv[0], argv[1]);
+}
+
 void
 scheme_init_unsafe_hash (Scheme_Startup_Env *env)
 {
@@ -1228,6 +1254,15 @@ scheme_init_unsafe_hash (Scheme_Startup_Env *env)
                                                       "unsafe-impersonate-hash",
                                                       6, -1),
                              env);
+  /* unsafe-hasheq-from-vectors ---------------------------------------- */
+  p = scheme_make_immed_prim(unsafe_hasheq_from_vectors,
+			     "unsafe-hasheq-from-vectors", 2, 2);
+  scheme_addto_prim_instance ("unsafe-hasheq-from-vectors", p, env);
+
+  p = scheme_make_immed_prim(unsafe_hasheqv_from_vectors,
+			     "unsafe-hasheqv-from-vectors", 2, 2);
+  scheme_addto_prim_instance ("unsafe-hasheqv-from-vectors", p, env);
+
 }
 
 Scheme_Object *scheme_make_pair(Scheme_Object *car, Scheme_Object *cdr)

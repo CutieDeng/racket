@@ -209,6 +209,8 @@
   [unsafe-vector*-copy (known-procedure/succeeds 14)]
   [unsafe-vector*-length (known-procedure/then-pure 2)]
   [unsafe-vector*-ref (known-procedure/succeeds 4)]
+  [unsafe-hasheq-from-vectors (known-procedure 4)]
+  [unsafe-hasheqv-from-vectors (known-procedure 4)]
   [unsafe-vector*-set! (known-procedure/succeeds 8)]
   [unsafe-vector*-set/copy (known-procedure/succeeds 8)]
   [unsafe-vector*->immutable-vector! (known-procedure/succeeds 2)]

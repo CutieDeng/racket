@@ -136,7 +136,7 @@
 (define kw2531 (string->keyword "set-box!"))
 (define kw3046 (string->keyword "set-vector!"))
 (define kw2194 (string->keyword "set-hash!"))
-(define hash2427
+(define hash1768
   (hasheq
    kw2525
    '10
@@ -155,9 +155,9 @@
    kw2582
    '13
    kw2796
-   '13
+   '14
    kw3245
-   '13
+   '14
    kw2406
    '14
    kw1932
@@ -27389,7 +27389,7 @@
     (let ((tmp_0 (unsafe-vector*-ref vec_0 pos_0)))
       (let ((index_0
              (if (keyword? tmp_0)
-               (hash-ref hash2427 tmp_0 (lambda () 0))
+               (hash-ref hash1768 tmp_0 (lambda () 0))
                0)))
         (if (unsafe-fx< index_0 15)
           (if (unsafe-fx< index_0 7)
@@ -27720,101 +27720,124 @@
                                (vector->immutable-vector r_0))))
                          next-pos_0))))
                   (if (unsafe-fx< index_0 14)
-                    (let ((ht_0
-                           (let ((tmp_1 (unsafe-vector*-ref vec_0 pos_0)))
-                             (if (eq? tmp_1 kw2582)
-                               (hash)
-                               (if (eq? tmp_1 kw2796)
-                                 (hasheq)
-                                 (if (eq? tmp_1 kw3245)
-                                   (hasheqv)
-                                   (void)))))))
-                      (let ((len_0 (unsafe-vector*-ref vec_0 (add1 pos_0))))
+                    (let ((len_0 (unsafe-vector*-ref vec_0 (add1 pos_0))))
+                      (let ((ht_0 (let ((ht_0 (hash))) ht_0)))
                         (let ((pos_1 (let ((pos_1 (+ pos_0 2))) pos_1)))
-                          (letrec*
-                           ((for-loop_0
-                             (|#%name|
-                              for-loop
-                              (lambda (ht_1 pos_2 pos_3)
-                                (if (< pos_3 len_0)
-                                  (call-with-values
-                                   (lambda ()
-                                     (call-with-values
-                                      (lambda ()
-                                        (call-with-values
-                                         (lambda ()
-                                           (decode
-                                            vec_0
-                                            pos_2
-                                            mpis_0
-                                            inspector_0
-                                            bulk-binding-registry_0
-                                            shared_0))
-                                         (lambda (k_0 next-pos_0)
-                                           (call-with-values
-                                            (lambda ()
-                                              (decode
-                                               vec_0
-                                               next-pos_0
-                                               mpis_0
-                                               inspector_0
-                                               bulk-binding-registry_0
-                                               shared_0))
-                                            (lambda (v_0 next-pos_1)
-                                              (values
-                                               (hash-set ht_1 k_0 v_0)
-                                               next-pos_1))))))
-                                      (lambda (ht_2 pos_4)
-                                        (values ht_2 pos_4))))
-                                   (lambda (ht_2 pos_4)
-                                     (for-loop_0 ht_2 pos_4 (+ pos_3 1))))
-                                  (values ht_1 pos_2))))))
-                           (for-loop_0 ht_0 pos_1 0)))))
-                    (let ((ht_0 (hasheqv)))
+                          (let ((ht_1 ht_0))
+                            (letrec*
+                             ((for-loop_0
+                               (|#%name|
+                                for-loop
+                                (lambda (ht_2 pos_2 pos_3)
+                                  (if (< pos_3 len_0)
+                                    (call-with-values
+                                     (lambda ()
+                                       (call-with-values
+                                        (lambda ()
+                                          (call-with-values
+                                           (lambda ()
+                                             (decode
+                                              vec_0
+                                              pos_2
+                                              mpis_0
+                                              inspector_0
+                                              bulk-binding-registry_0
+                                              shared_0))
+                                           (lambda (k_0 next-pos_0)
+                                             (call-with-values
+                                              (lambda ()
+                                                (decode
+                                                 vec_0
+                                                 next-pos_0
+                                                 mpis_0
+                                                 inspector_0
+                                                 bulk-binding-registry_0
+                                                 shared_0))
+                                              (lambda (v_0 next-pos_1)
+                                                (values
+                                                 (hash-set ht_2 k_0 v_0)
+                                                 next-pos_1))))))
+                                        (lambda (ht_3 pos_4)
+                                          (values ht_3 pos_4))))
+                                     (lambda (ht_3 pos_4)
+                                       (for-loop_0 ht_3 pos_4 (+ pos_3 1))))
+                                    (values ht_2 pos_2))))))
+                             (for-loop_0 ht_1 pos_1 0))))))
+                    (let ((tag_0 (unsafe-vector*-ref vec_0 pos_0)))
                       (let ((len_0 (unsafe-vector*-ref vec_0 (add1 pos_0))))
-                        (let ((pos_1 (let ((pos_1 (+ pos_0 2))) pos_1)))
-                          (letrec*
-                           ((for-loop_0
-                             (|#%name|
-                              for-loop
-                              (lambda (ht_1 pos_2 pos_3)
-                                (if (< pos_3 len_0)
-                                  (call-with-values
-                                   (lambda ()
-                                     (call-with-values
-                                      (lambda ()
-                                        (call-with-values
-                                         (lambda ()
-                                           (decode
-                                            vec_0
-                                            pos_2
-                                            mpis_0
-                                            inspector_0
-                                            bulk-binding-registry_0
-                                            shared_0))
-                                         (lambda (k_0 next-pos_0)
-                                           (call-with-values
-                                            (lambda ()
-                                              (decode
-                                               vec_0
-                                               next-pos_0
-                                               mpis_0
-                                               inspector_0
-                                               bulk-binding-registry_0
-                                               shared_0))
-                                            (lambda (v_0 next-pos_1)
-                                              (values
-                                               (hash-set
-                                                ht_1
-                                                (intern-phase+space k_0)
-                                                v_0)
-                                               next-pos_1))))))
-                                      (lambda (ht_2 pos_4)
-                                        (values ht_2 pos_4))))
-                                   (lambda (ht_2 pos_4)
-                                     (for-loop_0 ht_2 pos_4 (+ pos_3 1))))
-                                  (values ht_1 pos_2))))))
-                           (for-loop_0 ht_0 pos_1 0))))))))))
+                        (let ((keys_0 (make-vector len_0 #f)))
+                          (let ((vals_0 (make-vector len_0 #f)))
+                            (let ((next-pos_0
+                                   (let ((pos_1
+                                          (let ((pos_1 (+ pos_0 2))) pos_1)))
+                                     (letrec*
+                                      ((for-loop_0
+                                        (|#%name|
+                                         for-loop
+                                         (lambda (pos_2 pos_3)
+                                           (if (< pos_3 len_0)
+                                             (let ((pos_4
+                                                    (let ((pos_4
+                                                           (call-with-values
+                                                            (lambda ()
+                                                              (call-with-values
+                                                               (lambda ()
+                                                                 (decode
+                                                                  vec_0
+                                                                  pos_2
+                                                                  mpis_0
+                                                                  inspector_0
+                                                                  bulk-binding-registry_0
+                                                                  shared_0))
+                                                               (lambda (k_0
+                                                                        next-pos_0)
+                                                                 (values
+                                                                  k_0
+                                                                  next-pos_0))))
+                                                            (lambda (k_0
+                                                                     k-pos_0)
+                                                              (call-with-values
+                                                               (lambda ()
+                                                                 (call-with-values
+                                                                  (lambda ()
+                                                                    (decode
+                                                                     vec_0
+                                                                     k-pos_0
+                                                                     mpis_0
+                                                                     inspector_0
+                                                                     bulk-binding-registry_0
+                                                                     shared_0))
+                                                                  (lambda (v_0
+                                                                           next-pos_0)
+                                                                    (values
+                                                                     v_0
+                                                                     next-pos_0))))
+                                                               (lambda (v_0
+                                                                        v-pos_0)
+                                                                 (begin
+                                                                   (vector-set!
+                                                                    keys_0
+                                                                    pos_3
+                                                                    (if (eq?
+                                                                         tag_0
+                                                                         kw2406)
+                                                                      (intern-phase+space
+                                                                       k_0)
+                                                                      k_0))
+                                                                   (vector-set!
+                                                                    vals_0
+                                                                    pos_3
+                                                                    v_0)
+                                                                   v-pos_0)))))))
+                                                      (values pos_4))))
+                                               (for-loop_0 pos_4 (+ pos_3 1)))
+                                             pos_2)))))
+                                      (for-loop_0 pos_1 0)))))
+                              (values
+                               (if (eq? tag_0 kw2796)
+                                 (unsafe-hasheq-from-vectors keys_0 vals_0)
+                                 (unsafe-hasheqv-from-vectors keys_0 vals_0))
+                               next-pos_0)))))))))))
           (if (unsafe-fx< index_0 23)
             (if (unsafe-fx< index_0 18)
               (if (unsafe-fx< index_0 16)

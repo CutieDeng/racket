@@ -1295,6 +1295,188 @@
   hamt-key-hash-code (lambda (k) (eqv-hash-code k))
   hamt-wrapped-key-hash-code (lambda (n k) (eqv-hash-code k)))
 
+;; ----------------------------------------
+;; Bulk construction for eq- and eqv-based tables: builds the trie for
+;; `keys`/`vals` (vectors of the same length) in one pass, allocating
+;; each node once, instead of path-copying through `intmap-set` for
+;; every entry. The result is the tree that inserting the entries in
+;; order with `intmap-set` builds, so iteration order and `equal?`
+;; agree with that; a repeated key keeps its last value. A value of #t
+;; stays implicit, as in `bnode-add-key`.
+
+;; Below this many entries, inserting one at a time allocates less
+;; than the sort's scratch space:
+(define INTMAP-BUILD-MIN 8)
+
+(define (intmap-build eqtype keys vals)
+  (let ([n (vector-length keys)]
+        [hash-code (if (fx= eqtype HAMT-EQTYPE-EQ) eq-hash-code eqv-hash-code)]
+        [key=? (if (fx= eqtype HAMT-EQTYPE-EQ) eq? eqv?)])
+    (cond
+     [(fx< n INTMAP-BUILD-MIN)
+      (let loop ([i 0] [h (if (fx= eqtype HAMT-EQTYPE-EQ) empty-hasheq empty-hasheqv)])
+        (if (fx= i n)
+            h
+            (loop (fx+ i 1) (intmap-set h (vector-ref keys i) (vector-ref vals i)))))]
+     [else
+      (let ([hashes (make-fxvector n 0)]
+            ;; entry indices, sorted level by level: the first half and
+            ;; the second half alternate as source and destination
+            [order (make-fxvector (fx* 2 n) 0)]
+            ;; per-level scratch, allocated when a level is reached:
+            [levels (make-vector (fx+ 2 (fxquotient HASHCODE-BITS BNODE-BITS)) #f)])
+        (let loop ([i 0])
+          (when (fx< i n)
+            (fxvector-set! hashes i (hash-code (vector-ref keys i)))
+            (fxvector-set! order i i)
+            (loop (fx+ i 1))))
+        (build-bnode eqtype keys vals hashes key=? order 0 n levels 0 n 0))])))
+
+;; A level's scratch vector holds bucket counts at [0, W), bucket ends
+;; at [W, 2W), and the children built for the node at [2W, 3W):
+(define-syntax level-count (syntax-rules () [(_ lv b) (vector-ref lv b)]))
+(define-syntax level-end (syntax-rules () [(_ lv b) (vector-ref lv (fx+ HAMT-WIDTH b))]))
+(define-syntax level-child (syntax-rules () [(_ lv b) (vector-ref lv (fx+ (fx* 2 HAMT-WIDTH) b))]))
+
+;; The entries `order[src+lo..src+hi)` agree on their hash digits below
+;; `shift`; returns the bnode for them. `src` and `dst` are the offsets of
+;; the two halves of `order`, and they swap roles at each level.
+(define (build-bnode eqtype keys vals hashes key=? order src dst levels lo hi shift)
+  (let ([lv (let ([d (fxquotient shift BNODE-BITS)])
+              (or (vector-ref levels d)
+                  (let ([lv (make-vector (fx* 3 HAMT-WIDTH) 0)])
+                    (vector-set! levels d lv)
+                    lv)))])
+    ;; stable counting sort by the hash digit at `shift`, from src into dst
+    (let loop ([b 0])
+      (when (fx< b HAMT-WIDTH)
+        (vector-set! lv b 0)
+        (loop (fx+ b 1))))
+    (let loop ([i lo])
+      (when (fx< i hi)
+        (let ([b (bnode-mask (fxvector-ref hashes (fxvector-ref order (fx+ src i))) shift)])
+          (vector-set! lv b (fx+ 1 (level-count lv b))))
+        (loop (fx+ i 1))))
+    (let loop ([b 0] [pos lo])
+      (when (fx< b HAMT-WIDTH)
+        (vector-set! lv (fx+ HAMT-WIDTH b) pos)
+        (loop (fx+ b 1) (fx+ pos (level-count lv b)))))
+    (let loop ([i lo])
+      (when (fx< i hi)
+        (let* ([ix (fxvector-ref order (fx+ src i))]
+               [b (bnode-mask (fxvector-ref hashes ix) shift)]
+               [pos (level-end lv b)])
+          (fxvector-set! order (fx+ dst pos) ix)
+          (vector-set! lv (fx+ HAMT-WIDTH b) (fx+ pos 1)))
+        (loop (fx+ i 1))))
+    ;; a bucket that holds one key several times is a single entry with
+    ;; the last of its values
+    (let loop ([b 0])
+      (when (fx< b HAMT-WIDTH)
+        (let ([c (level-count lv b)])
+          (when (fx> c 1)
+            (let* ([end (level-end lv b)]
+                   [start (fx- end c)]
+                   [k (vector-ref keys (fxvector-ref order (fx+ dst start)))])
+              (when (let same? ([j (fx+ start 1)])
+                      (or (fx= j end)
+                          (and (key=? k (vector-ref keys (fxvector-ref order (fx+ dst j))))
+                               (same? (fx+ j 1)))))
+                (fxvector-set! order (fx+ dst start) (fxvector-ref order (fx+ dst (fx- end 1))))
+                (vector-set! lv b 1)
+                (vector-set! lv (fx+ HAMT-WIDTH b) (fx+ start 1))))))
+        (loop (fx+ b 1))))
+    ;; build the children, and find the node's mask, count, and size
+    (let cloop ([b 0] [mask HAMT-COUNT+EQTYPE-BIT] [count 0] [size 1])
+      (cond
+       [(fx< b HAMT-WIDTH)
+        (let ([c (level-count lv b)])
+          (cond
+           [(fx= c 0) (cloop (fx+ b 1) mask count size)]
+           [(fx= c 1)
+            (if (eq? #t (vector-ref vals (fxvector-ref order (fx+ dst (fx- (level-end lv b) 1)))))
+                (cloop (fx+ b 1)
+                       (fxior mask (fxsll 1 (fx+ b HAMT-KEY-OFFSET)))
+                       (fx+ count 1)
+                       (fx+ size 1))
+                (cloop (fx+ b 1)
+                       (fxior mask (fxsll 1 (fx+ b HAMT-KEY-OFFSET)) (fxsll 1 (fx+ b HAMT-VAL-OFFSET)))
+                       (fx+ count 1)
+                       (fx+ size 2)))]
+           [else
+            (let* ([end (level-end lv b)]
+                   [start (fx- end c)]
+                   [down (bnode-down shift)]
+                   [child (if (fx< HASHCODE-BITS down)
+                              ;; the hash is exhausted: a collision node
+                              (build-cnode keys vals hashes key=? order dst start end)
+                              (build-bnode eqtype keys vals hashes key=? order dst src levels start end down))])
+              (vector-set! lv (fx+ (fx* 2 HAMT-WIDTH) b) child)
+              (cloop (fx+ b 1)
+                     (fxior mask (fxsll 1 (fx+ b HAMT-CHILD-OFFSET)))
+                     (fx+ count (node-count child))
+                     (fx+ size 1)))]))]
+       [else
+        ;; allocate the node and fill it: children, then keys, then
+        ;; explicit values, each in digit order. The node is uninitialized
+        ;; until the fill completes, so interrupts stay disabled in between
+        ;; to keep a collection from running; the fill stores need no write
+        ;; barrier because the node is the youngest object.
+        (disable-interrupts)
+        (let ([node (#3%$make-system-stencil-vector size mask)])
+           (#3%$stencil-vector-fill-set! node 0 (count+eqtype count eqtype))
+           (let child-loop ([b 0] [i 1])
+             (cond
+              [(fx< b HAMT-WIDTH)
+               (if (fx> (level-count lv b) 1)
+                   (begin
+                     (#3%$stencil-vector-fill-set! node i (level-child lv b))
+                     (child-loop (fx+ b 1) (fx+ i 1)))
+                   (child-loop (fx+ b 1) i))]
+              [else
+               (let key-loop ([b 0] [i i])
+                 (cond
+                  [(fx< b HAMT-WIDTH)
+                   (if (fx= (level-count lv b) 1)
+                       (begin
+                         (#3%$stencil-vector-fill-set! node i (vector-ref keys (fxvector-ref order (fx+ dst (fx- (level-end lv b) 1)))))
+                         (key-loop (fx+ b 1) (fx+ i 1)))
+                       (key-loop (fx+ b 1) i))]
+                  [else
+                   (let val-loop ([b 0] [i i])
+                     (cond
+                      [(fx< b HAMT-WIDTH)
+                       (if (fx= (level-count lv b) 1)
+                           (let ([v (vector-ref vals (fxvector-ref order (fx+ dst (fx- (level-end lv b) 1))))])
+                             (if (eq? v #t)
+                                 (val-loop (fx+ b 1) i)
+                                 (begin
+                                   (#3%$stencil-vector-fill-set! node i v)
+                                   (val-loop (fx+ b 1) (fx+ i 1)))))
+                           (val-loop (fx+ b 1) i))]
+                      [else
+                       (enable-interrupts)
+                       node]))]))])))]))))
+
+;; The entries `order[dst+start..dst+end)` all have the same hash: a
+;; collision node listing them in first-occurrence order, a repeated key
+;; keeping its last value, as `cnode-set` does.
+(define (build-cnode keys vals hashes key=? order dst start end)
+  (let loop ([j start] [alist '()])
+    (cond
+     [(fx= j end)
+      (make-cnode (fxvector-ref hashes (fxvector-ref order (fx+ dst start))) alist)]
+     [else
+      (let* ([ix (fxvector-ref order (fx+ dst j))]
+             [k (vector-ref keys ix)]
+             [p (cons k (vector-ref vals ix))])
+        (loop (fx+ j 1)
+              (let add ([l alist])
+                (cond
+                 [(null? l) (list p)]
+                 [(key=? (caar l) k) (cons p (cdr l))]
+                 [else (cons (car l) (add (cdr l)))]))))])))
+
 (define (equal:hamt-wrap-key k k-hash)
   (if (fast-equal-hash-code? k) ; must not include pairs
       k
