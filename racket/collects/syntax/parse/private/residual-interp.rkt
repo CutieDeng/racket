@@ -1,5 +1,6 @@
 #lang racket/base
-(require racket/list
+(require (only-in '#%kernel core-pvector? core-pvector->list)
+         racket/list
          racket/syntax
          "residual.rkt"
          "minimatch.rkt"
@@ -243,6 +244,12 @@
   (define d (stx-e x))
   (if (vector? d)
       (sp (vector->list d) cx (ps-add-unvector pr) es renv)
+      (fail (failure* pr es))))
+
+(define ((s-pvector sp) x cx pr es renv)
+  (define d (stx-e x))
+  (if (core-pvector? d)
+      (sp (core-pvector->list d) cx (ps-add-unpvector pr) es renv)
       (fail (failure* pr es))))
 
 (define ((s-box sp) x cx pr es renv)

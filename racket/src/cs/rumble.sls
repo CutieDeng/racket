@@ -467,6 +467,7 @@
           core-pvector-install-struct-property!
           core-pvector-literal-emit!
           core-pvector-literal->pvector
+          core-pvector-structure-table
 
           ;; ordered integer map runtime candidate
           core-intmap?

@@ -1,6 +1,10 @@
 #lang racket/base
 (require racket/unsafe/undefined
          racket/extflonum
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-empty?
+                  core-pvector-for-each)
          "wrap.rkt")
 
 (provide literal?
@@ -117,5 +121,16 @@
        ;; optimization might expose the structure type by itself:
        (let-values ([(st skipped?) (struct-info q)])
          (check-register st seen))]
+      [(core-pvector? q)
+       ;; like a vector: the pvector itself is serialized natively,
+       ;; keeping its shape and shared subtrees, while elements that
+       ;; need `racket/fasl` are registered individually; the empty
+       ;; pvector is registered so that it loads as the runtime's
+       ;; singleton instead of as a fresh record
+       (when (core-pvector-empty? q)
+         (register! q))
+       (check-cycle
+        seen
+        (core-pvector-for-each q (lambda (e) (check-register e seen))))]
       [else
        (register! q)])))

@@ -1,6 +1,11 @@
 #lang racket/base
 (require (for-syntax racket/base)
          racket/fasl
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-length
+                  core-pvector-for-each
+                  core-fresh-vector->pvector)
          "serialize-property.rkt"
          "serialize-state.rkt"
          "../common/set.rkt"
@@ -383,6 +388,9 @@
               (begin
                 (hash-set! mutables v (hash-count mutables))
                 (add-frontier! (unbox v))))]
+         [(core-pvector? v)
+          ;; immutable, like a vector that needs no shell
+          (core-pvector-for-each v (lambda (e) (loop e)))]
          [(hash? v)
           (if (immutable? v)
               (for ([k (in-list (sorted-hash-keys v))])
@@ -535,6 +543,20 @@
           (ser-push! i)
           (and all-quoted?
                (quoted? i-pos))))
+      (when all-quoted?
+        (ser-reset! start-pos)
+        (ser-push-optional-quote!)
+        (ser-push! 'exact v))]
+     [(core-pvector? v)
+      (define start-pos (next-push-position))
+      (ser-push! 'tag '#:pvector)
+      (ser-push! 'exact (core-pvector-length v))
+      (define all-quoted? #t)
+      (core-pvector-for-each v (lambda (i)
+                                 (define i-pos (next-push-position))
+                                 (ser-push! i)
+                                 (unless (quoted? i-pos)
+                                   (set! all-quoted? #f))))
       (when all-quoted?
         (ser-reset! start-pos)
         (ser-push-optional-quote!)
@@ -847,7 +869,7 @@
      (decode* (box-immutable v))]
     [(#:cons)
      (decode* (cons a d))]
-    [(#:list #:vector)
+    [(#:list #:vector #:pvector)
      (define len (vector*-ref vec (add1 pos)))
      (define r (make-vector len))
      (define next-pos
@@ -855,9 +877,10 @@
          (define-values (v next-pos) (decodes #:pos pos (v) v))
          (vector-set! r i v)
          next-pos))
-     (values (if (eq? (vector*-ref vec pos) '#:list)
-                 (vector->list r)
-                 (vector->immutable-vector r))
+     (values (case (vector*-ref vec pos)
+               [(#:list) (vector->list r)]
+               [(#:pvector) (core-fresh-vector->pvector r)]
+               [else (vector->immutable-vector r)])
              next-pos)]
     [(#:hash #:hasheq #:hasheqv)
      (define ht (case (vector*-ref vec pos)

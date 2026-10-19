@@ -49,6 +49,8 @@
 
 (tc (syntax #(aa ... done))
     '#(a b c done))
+(tc (syntax #pvector(aa ... done))
+    '#pvector(a b c done))
 (tc (syntax #s(blah xx ...))
     '#s(blah x y z))
 

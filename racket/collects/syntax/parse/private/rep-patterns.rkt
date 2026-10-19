@@ -28,6 +28,7 @@
 ;; | (pat:or (listof IAttr) (listof SinglePattern) (listof (listof IAttr)))
 ;; | (pat:not SinglePattern)
 ;; | (pat:vector SinglePattern)
+;; | (pat:pvector SinglePattern)
 ;; | (pat:box SinglePattern)
 ;; | (pat:pstruct key SinglePattern)
 ;; | (pat:describe SinglePattern Expr[String/#f] Boolean Expr[Role])
@@ -168,6 +169,7 @@
 (define-struct pat:not (pattern) #:prefab)
 (define-struct pat:pair (head tail) #:prefab)
 (define-struct pat:vector (pattern) #:prefab)
+(define-struct pat:pvector (pattern) #:prefab)
 (define-struct pat:box (pattern) #:prefab)
 (define-struct pat:pstruct (key pattern) #:prefab)
 (define-struct pat:describe (pattern description transparent? role) #:prefab)
@@ -250,6 +252,7 @@
       (pat:not? x)
       (pat:pair? x)
       (pat:vector? x)
+      (pat:pvector? x)
       (pat:box? x)
       (pat:pstruct? x)
       (pat:describe? x)
@@ -324,6 +327,7 @@
     [(pat:not sp) (wf-S? sp)]
     [(pat:pair headp tailp) (and (wf-S? headp) (wf-S? tailp))]
     [(pat:vector sp) (wf-S? sp)]
+    [(pat:pvector sp) (wf-S? sp)]
     [(pat:box sp) (wf-S? sp)]
     [(pat:pstruct key sp) (wf-S? sp)]
     [(pat:describe sp description transparent? role) (wf-S? sp)]
@@ -610,6 +614,7 @@
           [(pat:not? p) AF-SUB]
           [(pat:pair? p) AF-SUB]
           [(pat:vector? p) AF-SUB]
+          [(pat:pvector? p) AF-SUB]
           [(pat:box? p) AF-SUB]
           [(pat:pstruct? p) AF-SUB]
           [(pat:reflect? p) AF-ANY]

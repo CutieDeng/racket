@@ -1,5 +1,6 @@
 #lang racket/base
-(require (for-syntax racket/base
+(require (only-in '#%kernel core-pvector? core-pvector->list)
+         (for-syntax racket/base
                      syntax/stx
                      syntax/private/id-table
                      racket/syntax
@@ -440,6 +441,14 @@ Conventions:
                 (let ([datum (vector->list datum)]
                       [vcx (if (syntax? x) x cx)] ;; FIXME: (vector? datum) => (syntax? x) ???
                       [pr* (ps-add-unvector pr)])
+                  (parse:S datum vcx subpattern pr* es k))
+                (fail (failure* pr es))))]
+       [#s(pat:pvector subpattern)
+        #`(let ([datum (if (syntax? x) (syntax-e x) x)])
+            (if (core-pvector? datum)
+                (let ([datum (core-pvector->list datum)]
+                      [vcx (if (syntax? x) x cx)]
+                      [pr* (ps-add-unpvector pr)])
                   (parse:S datum vcx subpattern pr* es k))
                 (fail (failure* pr es))))]
        [#s(pat:box subpattern)

@@ -789,6 +789,37 @@ content is also wrapped as a syntax object, and the box is immutable.
 "#&17"
 ]
 
+@section[#:tag "parse-pvector"]{Reading Pvectors}
+
+When the reader encounters @as-index{@litchar{#pvector(}},
+@as-index{@litchar{#pvector[}}, or @as-index{@litchar["#pvector{"]},
+it starts parsing a @tech{pvector}; see @secref["pvector"] for
+information on pvectors. The @litchar{#pvector[} and
+@litchar["#pvector{"] forms can be disabled through the
+@racket[read-square-bracket-as-paren] and
+@racket[read-curly-brace-as-paren] @tech{parameters}, and every
+@litchar{#pvector} form is disabled when the
+@racket[read-accept-pvector] parameter is @racket[#f].
+
+The elements of the pvector are recursively read until a matching
+@litchar{)}, @litchar{]}, or @litchar["}"] is found, just as for
+vectors (see @secref["parse-vector"]). Two body shapes are reserved
+for the structural output of @racketidfont{write-pvector-literal}: a
+body of the form @litchar{((}@nonterm{elem} @litchar{...) #f)} holds
+the elements explicitly, and a body that is a definition table is
+accepted only when @racket[read-accept-pvector-raw] is true.
+
+In @racket[read-syntax] mode, each recursive read for pvector elements
+is also in @racket[read-syntax] mode, so that the wrapped pvector's
+elements are also wrapped as syntax objects; the elements of the
+reserved body shapes are wrapped with the location of the whole
+literal.
+
+@reader-examples[
+"#pvector(1 apple 3)"
+"#pvector()"
+]
+
 @section[#:tag "parse-character"]{Reading Characters}
 
 @guideintro["characters"]{the syntax of characters}

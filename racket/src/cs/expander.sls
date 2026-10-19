@@ -65,6 +65,13 @@
      [(key table)
       (hash-set! user-installed-tables key table)]))
 
+  ;; Expose the pvector structure table to `racket/fasl`, both the
+  ;; copy flattened into this layer and the one in collects; as a
+  ;; definition, it takes effect in order with the definitions that
+  ;; follow, before the flattened code looks the table up
+  (define pvector-structure-table-registered
+    (primitive-table '|#%pvector-structure| (core-pvector-structure-table)))
+
   (define-syntax redirect-primitive
     (syntax-rules (call-with-values apply)
       [(_ call-with-values) |#%call-with-values|]

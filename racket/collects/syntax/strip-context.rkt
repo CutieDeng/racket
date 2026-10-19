@@ -1,4 +1,5 @@
 #lang racket/base
+(require (only-in '#%kernel core-pvector? core-pvector-map))
 
 (provide strip-context
          replace-context)
@@ -18,6 +19,7 @@
    [(vector? e) (list->vector
                  (map (lambda (e) (replace-context ctx e))
                       (vector->list e)))]
+   [(core-pvector? e) (core-pvector-map e (lambda (e) (replace-context ctx e)))]
    [(box? e) (box (replace-context ctx (unbox e)))]
    [(prefab-struct-key e)
     => (lambda (k)

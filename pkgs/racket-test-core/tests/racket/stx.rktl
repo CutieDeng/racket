@@ -2936,6 +2936,120 @@
 (test #f check-duplicate-identifier (list #'a ((make-syntax-introducer) #'a)))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; pvectors are syntax content like vectors: the reader wraps their
+;; elements, `datum->syntax` and `syntax->datum` convert them, scopes
+;; propagate into them, and patterns, templates, quasisyntax, and
+;; quasiquote recognize them
+
+(require racket/pvector syntax/strip-context)
+
+(test #t pvector? (syntax-e #'#pvector(1 2)))
+(test #t syntax? (pvector-ref (syntax-e #'#pvector(a b)) 0))
+(test 'b syntax-e (pvector-ref (syntax-e #'#pvector(a b)) 1))
+(test (pvector 1 2 '(+ 3 4)) syntax->datum #'#pvector(1 2 (+ 3 4)))
+(test (pvector) syntax->datum #'#pvector())
+(let ([s (read-syntax 'src (open-input-string "#pvector(abc de)"))])
+  (test 'src syntax-source (pvector-ref (syntax-e s) 0))
+  (test 10 syntax-position (pvector-ref (syntax-e s) 0))
+  (test 14 syntax-position (pvector-ref (syntax-e s) 1))
+  (test 2 syntax-span (pvector-ref (syntax-e s) 1))
+  (test 1 syntax-position s)
+  (test 16 syntax-span s))
+;; the escape forms wrap their elements, too
+(test #t syntax? (pvector-ref (syntax-e (read-syntax 'src (open-input-string "#pvector((a b) #f)"))) 1))
+(test (pvector 'a 'b) syntax->datum (read-syntax 'src (open-input-string "#pvector((a b) #f)")))
+(parameterize ([read-accept-pvector-raw #t])
+  (let ([s (read-syntax 'src (open-input-string "#pvector(0 ((0 (Single/val a))))"))])
+    (test #t syntax? (pvector-ref (syntax-e s) 0))
+    (test (pvector 'a) syntax->datum s)))
+(test #f syntax? (pvector-ref (read (open-input-string "#pvector(a b)")) 0))
+(err/rt-test (read (open-input-string "#pvector\"a\"")) exn:fail:read?)
+;; `datum->syntax` wraps elements, recursively, and `syntax->datum`
+;; strips them, so a syntax object inside a pvector is no longer a
+;; special case
+(let ([s (datum->syntax #f (pvector 'a (vector 'b) (pvector 'c) (datum->syntax #f 'd)))])
+  (test #t syntax? (pvector-ref (syntax-e s) 0))
+  (test #t syntax? (vector-ref (syntax-e (pvector-ref (syntax-e s) 1)) 0))
+  (test #t syntax? (pvector-ref (syntax-e (pvector-ref (syntax-e s) 2)) 0))
+  (test (pvector 'a (vector 'b) (pvector 'c) 'd) syntax->datum s))
+;; scopes propagate into elements: an element introduced by a macro
+;; has the same scopes as a vector element would, and not those of a
+;; use-site identifier
+(define-syntax (pv-and-vector-elements stx)
+  #'(list (quote-syntax #pvector(x)) (quote-syntax #(x))))
+(let ([v (pv-and-vector-elements)])
+  (define pv-x (pvector-ref (syntax-e (car v)) 0))
+  (define vec-x (vector-ref (syntax-e (cadr v)) 0))
+  (test #t bound-identifier=? pv-x vec-x)
+  (test #f bound-identifier=? pv-x #'x))
+;; patterns
+(test '(1 3) 'pvector-pattern
+      (syntax-case #'#pvector(1 (2 3)) ()
+        [#pvector(a (b c)) (list (syntax-e #'a) (syntax-e #'c))]))
+(test '(1 (2 3)) 'pvector-pattern+ellipsis
+      (syntax-case #'#pvector(1 2 3) ()
+        [#pvector(a b ...) (list (syntax-e #'a) (syntax->datum #'(b ...)))]))
+(test 'no 'pvector-pattern-length
+      (syntax-case #'#pvector(1 2 3) ()
+        [#pvector(a b) 'yes]
+        [_ 'no]))
+(test 'no 'pvector-pattern-vs-vector
+      (syntax-case #'#(1 2) ()
+        [#pvector(a b) 'yes]
+        [_ 'no]))
+(test 'no 'vector-pattern-vs-pvector
+      (syntax-case #'#pvector(1 2) ()
+        [#(a b) 'yes]
+        [_ 'no]))
+;; templates
+(test (pvector 1 2 3 4) syntax->datum
+      (syntax-case '(1 2 3) ()
+        [(a ...) #'#pvector(a ... 4)]))
+(test (list (pvector 1) (pvector 2 3)) syntax->datum
+      (syntax-case '((1) (2 3)) ()
+        [((a ...) ...) #'(#pvector(a ...) ...)]))
+(with-syntax ([a #'1] [(c ...) #'(3 4 5)])
+  (let ([b #'2] [ds (list #'3 #'4 #'5)])
+    (test (pvector 1 2) syntax->datum (quasisyntax #pvector(a (unsyntax b))))
+    (test (pvector 1 2 3 4 5) syntax->datum (quasisyntax #pvector(a (unsyntax b) c ...)))
+    (test (pvector 1 2 3 4 5) syntax->datum (quasisyntax #pvector(a (unsyntax b) (unsyntax-splicing ds))))
+    (test (pvector 3 4 5) syntax->datum (quasisyntax #pvector((unsyntax-splicing ds))))))
+;; quasiquote
+(test (pvector 10 5 2 4 3 8) 'quasiquote `#pvector(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8))
+(test (pvector 1 (pvector 2 3)) 'quasiquote-nested `#pvector(1 #pvector(,(+ 1 1) 3)))
+(test (pvector 'a 'b) 'quasiquote-constant `#pvector(a b))
+;; strip-context
+(test #f identifier-binding (pvector-ref (syntax-e (strip-context #'#pvector(car))) 0))
+(test (pvector 'car) syntax->datum (strip-context #'#pvector(car)))
+;; compiled code keeps the elements as syntax objects with their
+;; source locations
+(let ([s (read-syntax 'pv-src (open-input-string "#pvector(abc de)"))])
+  (define o (open-output-bytes))
+  (write (compile `(quote-syntax ,s)) o)
+  (define s2 (parameterize ([read-accept-compiled #t])
+               (eval (read (open-input-bytes (get-output-bytes o))))))
+  (test #t syntax? (pvector-ref (syntax-e s2) 0))
+  (test 'pv-src syntax-source (pvector-ref (syntax-e s2) 0))
+  (test 14 syntax-position (pvector-ref (syntax-e s2) 1))
+  (test (pvector 'abc 'de) syntax->datum s2))
+;; a preserved property can hold a pvector
+(let ([s (syntax-property #'x 'pv (pvector 1 "two") #t)])
+  (define o (open-output-bytes))
+  (write (compile `(quote-syntax ,s)) o)
+  (define s2 (parameterize ([read-accept-compiled #t])
+               (eval (read (open-input-bytes (get-output-bytes o))))))
+  (test (pvector 1 "two") syntax-property s2 'pv))
+;; a cross-phase persistent module can quote a pvector
+(let ([ns (make-base-namespace)])
+  (parameterize ([current-namespace ns])
+    (eval '(module cross-phase-pvector '#%kernel
+             (#%declare #:cross-phase-persistent)
+             (define-values (pv) '#pvector(1 2))
+             (#%provide pv)))
+    (test (pvector 1 2) dynamic-require ''cross-phase-pvector 'pv)))
+
+
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (report-errs)

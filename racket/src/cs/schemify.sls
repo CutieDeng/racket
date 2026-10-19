@@ -52,6 +52,9 @@
              'syntax-column rumble:correlated-column
              'syntax-position rumble:correlated-position
              'syntax-span rumble:correlated-span)]
+      [(|#%pvector-structure|)
+       ;; for the flattened "racket/fasl" used to serialize literals
+       (core-pvector-structure-table)]
       [else #f]))
 
   ;; For direct access by schemified schemify:

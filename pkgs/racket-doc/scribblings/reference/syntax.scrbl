@@ -3072,14 +3072,14 @@ multiple values place of the @racket[(#,unquote-splicing-id _expr)].
 
 An @|unquote-id| or @|unquote-splicing-id| form is recognized in any
 of the following escaping positions within @racket[datum]: in a pair,
-in a vector, in a box, in a @tech{prefab} structure field after the
-name position, and in hash table value position (but not in a hash
-table key position). Such escaping positions can be nested to an
+in a vector, in a @tech{pvector}, in a box, in a @tech{prefab} structure
+field after the name position, and in hash table value position (but
+not in a hash table key position). Such escaping positions can be nested to an
 arbitrary depth.
 
 An @|unquote-splicing-id| form must appear as the @racket[car] of a
-quoted pair, as an element of a quoted vector, or as an element of a
-quoted @tech{prefab} structure. In the case of a pair, if the
+quoted pair, as an element of a quoted vector or @tech{pvector}, or as
+an element of a quoted @tech{prefab} structure. In the case of a pair, if the
 @racket[cdr] of the relevant quoted pair is empty, then @racket[_expr]
 need not produce a list, and its result is used directly in place of
 the quoted pair (in the same way that @racket[append] accepts a

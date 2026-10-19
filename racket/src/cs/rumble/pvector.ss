@@ -118,7 +118,9 @@
   empty-core-pvector)
 
 (define (core-pvector-empty? pv)
-  (eq? pv empty-core-pvector))
+  ;; by record type, not identity: an empty pvector can also arrive
+  ;; as a fresh record from a fasl stream or a boot image
+  (core-pvector-empty-record? pv))
 
 (define (core-check-pvector who pv)
   (unless (core-pvector? pv)
@@ -4960,6 +4962,7 @@
      variant
      size
      (core-pvector-literal-node-list-measure nodes))
+    (core-check-pvector-measure 'pvector-literal->pvector size)
     (cond
      [(fx= len 2)
       (core-pvector-node-link2 (car nodes) (cadr nodes))]
@@ -5059,6 +5062,7 @@
                                       0)
                                   (core-pvector-literal-digit-length right)))])
          (core-pvector-literal-check-size 'Deep/val size expected)
+         (core-check-pvector-measure 'pvector-literal->pvector size)
          (core-pvector-literal-make-large size left inner right))]
       [(Deep)
        (unless (and (pair? args)
@@ -5077,6 +5081,7 @@
                              (cdr right))]
               [expected (core-pvector-literal-node-list-measure nodes)])
          (core-pvector-literal-check-size 'Deep size expected)
+         (core-check-pvector-measure 'pvector-literal->pvector size)
          (core-build-node-tree/nodes (reverse nodes)))]
       [else
        (core-pvector-literal-error
@@ -5246,6 +5251,134 @@
       (core-pvector-literal-forward-raw->pvector head (cadr tail))]
      [else
       (core-pvector-literal-raw->pvector head tail)])))
+
+;; Structural access and construction for `racket/fasl`.  A pvector
+;; is encoded by its shape (edge digits and middle node tree) and a
+;; node by its arity, with leaf nodes holding elements, so a decoded
+;; pvector has the shape of the original and shared subtrees stay
+;; shared.  Construction validates like the literal parser: a link
+;; node's children must be nodes, a deep pvector's edge digits hold
+;; one to four elements, and measures and levels are recomputed.
+
+(define (core-check-pvector-deep who pv)
+  (unless (core-pvector-large-finger? pv)
+    (raise-argument-error who "(and/c pvector? (lambda (pv) (>= (pvector-length pv) 2)))" pv))
+  pv)
+
+(define (core-pvector-deep-middle pv)
+  (core-pvector-large-finger-middle
+   (core-check-pvector-deep 'pvector-deep-middle pv)))
+
+(define (core-pvector-deep-edge-length pv prefix?)
+  (core-pvector-large-finger-edge-length
+   (core-check-pvector-deep 'pvector-deep-edge-length pv)
+   prefix?))
+
+(define (core-pvector-deep-edge-ref pv prefix? index)
+  (let ([pv (core-check-pvector-deep 'pvector-deep-edge-ref pv)])
+    (unless (and (fixnum? index)
+                 (fx>= index 0)
+                 (fx< index (core-pvector-large-finger-edge-length pv prefix?)))
+      (raise-argument-error 'pvector-deep-edge-ref "index within the edge digit" index))
+    (core-pvector-large-finger-edge-ref pv prefix? index)))
+
+(define (core-pvector-node? v)
+  (core-pvector-literal-node? v))
+
+(define (core-check-pvector-node who v)
+  (unless (core-pvector-literal-node? v)
+    (raise-argument-error who "pvector-node?" v))
+  v)
+
+;; a node's kind is its arity plus 4 for a leaf node, whose children
+;; are elements rather than nodes: 2, 3, 6, or 7
+(define (core-pvector-node-kind node)
+  (let ([node (core-check-pvector-node 'pvector-node-kind node)])
+    (fx+ (if (core-pvector-node3? node) 3 2)
+         (if (fx= (core-pvector-node-level node) 1) 4 0))))
+
+(define (core-pvector-node-children node)
+  (let ([node (core-check-pvector-node 'pvector-node-children node)])
+    (if (core-pvector-node2? node)
+        (values (core-pvector-node2-a node)
+                (core-pvector-node2-b node))
+        (values (core-pvector-node3-a node)
+                (core-pvector-node3-b node)
+                (core-pvector-node3-c node)))))
+
+(define core-make-pvector-leaf-node
+  (case-lambda
+   [(a b) (core-make-leaf-node2 a b)]
+   [(a b c) (core-make-leaf-node3 a b c)]))
+
+;; every constructor, including the literal parser's, bounds the
+;; measure, so by induction a child's measure is below
+;; `core-pvector-max-length` and a sum of three stays a fixnum;
+;; checking before packing keeps an overflowing stream or literal from
+;; wrapping the measure silently
+(define (core-check-pvector-measure who measure)
+  (unless (fx<= measure core-pvector-max-length)
+    (raise-arguments-error who "pvector too large" "length" measure))
+  measure)
+
+(define core-make-pvector-link-node
+  (case-lambda
+   [(a b)
+    (let ([a (core-check-pvector-node 'make-pvector-link-node a)]
+          [b (core-check-pvector-node 'make-pvector-link-node b)])
+      (core-check-pvector-measure
+       'make-pvector-link-node
+       (fx+ (core-pvector-node-measure a) (core-pvector-node-measure b)))
+      (core-pvector-node-link2 a b))]
+   [(a b c)
+    (let ([a (core-check-pvector-node 'make-pvector-link-node a)]
+          [b (core-check-pvector-node 'make-pvector-link-node b)]
+          [c (core-check-pvector-node 'make-pvector-link-node c)])
+      (core-check-pvector-measure
+       'make-pvector-link-node
+       (fx+ (core-pvector-node-measure a)
+            (fx+ (core-pvector-node-measure b) (core-pvector-node-measure c))))
+      (core-pvector-node-link3 a b c))]))
+
+(define (core-check-pvector-edge-vector who v)
+  (unless (and (#%vector? v)
+               (fx>= (#%vector-length v) 1)
+               (fx<= (#%vector-length v) core-pvector-digit-max))
+    (raise-argument-error who "(and/c vector? (lambda (v) (<= 1 (vector-length v) 4)))" v))
+  v)
+
+(define (core-make-pvector-deep prefix middle suffix)
+  (core-check-pvector-edge-vector 'make-pvector-deep prefix)
+  (core-check-pvector-edge-vector 'make-pvector-deep suffix)
+  (unless (or (not middle) (core-pvector-literal-node? middle))
+    (raise-argument-error 'make-pvector-deep "(or/c #f pvector-node?)" middle))
+  (make-core-pvector-large-finger
+   (core-check-pvector-measure
+    'make-pvector-deep
+    (fx+ (#%vector-length prefix)
+         (fx+ (if middle (core-pvector-node-measure middle) 0)
+              (#%vector-length suffix))))
+   prefix
+   middle
+   suffix))
+
+;; Registered as the `#%pvector-structure` primitive table, through
+;; which `racket/fasl` takes a pvector apart and rebuilds it.  A host
+;; without the table cannot write pvectors and decodes them flattened.
+;; The table is an internal interface: the constructors check their
+;; arguments' kinds, but a leaf node built with node objects as its
+;; elements would let nodes escape as values, so nothing but a
+;; serializer that feeds back what it read should use it.
+(define (core-pvector-structure-table)
+  (hasheq 'pvector-deep-middle core-pvector-deep-middle
+          'pvector-deep-edge-length core-pvector-deep-edge-length
+          'pvector-deep-edge-ref core-pvector-deep-edge-ref
+          'pvector-node? core-pvector-node?
+          'pvector-node-kind core-pvector-node-kind
+          'pvector-node-children core-pvector-node-children
+          'make-pvector-leaf-node core-make-pvector-leaf-node
+          'make-pvector-link-node core-make-pvector-link-node
+          'make-pvector-deep core-make-pvector-deep))
 
 (define (core-pvector-shape-stats pv)
   (let ([h (make-hasheq)]

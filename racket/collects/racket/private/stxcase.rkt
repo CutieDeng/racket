@@ -135,6 +135,31 @@
                                                   m
                                                   (append m body))
                                               body)))))))])))]
+              [(eq? i 'pveclist)
+               (and (if s-exp?
+                        (core-pvector? e)
+                        (stx-pvector? e #f))
+                    (loop (vector-ref pat 1) (core-pvector->list (if s-exp? e (syntax-e e))) cap))]
+              [(eq? i 'pvector)
+               (and (if s-exp?
+                        (and (core-pvector? e) (= (core-pvector-length e) (vector-ref pat 1)))
+                        (stx-pvector? e (vector-ref pat 1)))
+                    (let vloop ([p (vector-ref pat 2)][pos 0])
+                      (cond
+                       [(null? p) null]
+                       [else 
+                        (let ([clause (car p)])
+                          (let ([match-elem (car clause)]
+                                [elem-did-var? (cdr clause)])
+                            (let ([m (loop match-elem (if s-exp? (core-pvector-ref e pos) (stx-pvector-ref e pos)) cap)])
+                              (and m
+                                   (let ([body (vloop (cdr p) (add1 pos))])
+                                     (and body
+                                          (if elem-did-var?
+                                              (if (null? body)
+                                                  m
+                                                  (append m body))
+                                              body)))))))])))]
               [(eq? i 'box)
                (let ([match-content (vector-ref pat 1)])
                  (and (if s-exp?

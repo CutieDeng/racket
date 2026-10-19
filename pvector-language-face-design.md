@@ -35,3 +35,19 @@
 ## 排期建议
 
 B1 甲 + B2 读入兼容 = 一个分支一周期可齐；B2 输出策略随裁决走；乙/丙按需后置。
+
+## v2：pvector 升为语法一级公民（2026-10-19）
+
+**动机**：v1 把 `#pvector` 字面量在语法对象中当作不透明数据（reader 禁包装、`datum-map` 不下探、序列化器整体 quote），导致两类静默/晚报错：模板 `#'#pvector(x 1)` 不替换模式变量、`(datum->syntax ctx (pvector #'a))` 直到写 .zo 才报 "cannot marshal"。v2 把 pvector 与 vector 对齐为语法容器。
+
+**语义**：
+- reader（`read/pvector-literal.rkt`）：`#pvector(` / `#pvector[` / `#pvector{` 后用 `read-unwrapped-sequence` 读元素，`read-syntax` 模式下逐元素包装并带各自 srcloc；两种转义体（`((e ...) #f)` 与 raw 定义表）在去包装 datum 上识别，元素事后以整个字面量位置包装。
+- `datum-map`：pvector 进入慢路径，`core-pvector-map` 保形重建；`datum-has-elements?` 对非空 pvector 为真。由此 `datum->syntax`/`syntax->datum`/scope 惰性传播（`non-syntax-map`）/taint 自动覆盖。
+- `compile/serialize.rkt`：`#:pvector` 标签（含 all-quoted 快路径），解码经 `core-fresh-vector->pvector`；共享检测遍历元素。
+- `cross-phase.rkt` 允许 pvector 作 cross-datum；`preserved.rkt` 允许 pvector 作保留属性值。
+- `syntax-case`：`sc.rkt` 模式编译器新增 `'pvector`/`'pveclist`（定长逐元素 / 含省略号按列表），`stxcase.rkt` 解释器同步；`stx.rkt` 加 `stx-pvector?`/`stx-pvector-ref`。模板（`template.rkt`）新增 `t-pvector` guide，映射到 `core-list->pvector`。
+- `quasisyntax`（`qqstx.rkt`）与 `quasiquote`（`core-syntax.rkt`）按 vector 同款：转列表递归、`core-list->pvector` 重建，`unsyntax-splicing`/`unquote-splicing` 可用。
+- `syntax/parse`：`pat:pvector` 贯穿 rep/rep-patterns/parse-classic/parse-interp/residual(-interp)/opt(-interp)，进度帧 `ps-add-unpvector`。
+- `syntax/strip-context` 下探 pvector。
+
+**可观察变化**：`(syntax-e #'#pvector(a))` 由裸符号的 pvector 变为语法对象的 pvector；`quote` 中含语法对象元素的 pvector 与 vector 一样被 `syntax->datum` 剥离。BC 侧只用既有 `#%kernel` 原语（`core-pvector?`/`-map`/`->list`/`-length`/`-ref`、`core-list->pvector`、`core-fresh-vector->pvector`），无新原语。

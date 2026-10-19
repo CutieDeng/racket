@@ -702,10 +702,12 @@
 							     (normal l old-l))))))))
 					    (qq-list x level))))))
 			  (if (if (syntax? x) 
-				  (vector? (syntax-e x))
+				  (if (vector? (syntax-e x)) #t (core-pvector? (syntax-e x)))
 				  #f)
 			      (let-values
-				  (((l) (vector->list (syntax-e x))))
+				  (((l) (if (vector? (syntax-e x))
+                                            (vector->list (syntax-e x))
+                                            (core-pvector->list (syntax-e x)))))
                                 ;; special case: disallow #(unquote <e>)
                                 (if (stx-pair? l)
                                     (let-values ([(first) (stx-car l)])
@@ -723,7 +725,10 @@
 				    (((l2) (qq l level)))
                                   (if (eq? l l2)
                                       x
-                                      (list (quote-syntax list->vector) l2))))
+                                      (list (if (vector? (syntax-e x))
+                                                (quote-syntax list->vector)
+                                                (quote-syntax core-list->pvector))
+                                            l2))))
 			      (if (if (syntax? x) (box? (syntax-e x)) #f)
 				  (let-values
 				      (((v) (unbox (syntax-e x))))

@@ -1,5 +1,6 @@
 #lang racket/base
 (require (only-in racket/extflonum extflonum?)
+         (only-in '#%kernel core-pvector? core-pvector->list)
          "../syntax/syntax.rkt"
          "../syntax/scope.rkt"
          "../syntax/match.rkt"
@@ -152,6 +153,8 @@
       (and (vector? d)
            (immutable? d)
            (for/and ([v (in-vector d)]) (recur v)))
+      (and (core-pvector? d)
+           (for/and ([v (in-list (core-pvector->list d))]) (recur v)))
       (and (hash? d)
            (hash-eq? d)
            (immutable? d)

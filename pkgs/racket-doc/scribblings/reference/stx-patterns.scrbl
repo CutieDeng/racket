@@ -136,6 +136,17 @@ A syntax object matches a @racket[pattern] as follows:
  but matching a vector syntax object whose elements match the
  corresponding sub-@racket[pattern]s.}
 
+ @specsubform[(code:line #,(tt "#pvector")(pattern ...))]{
+
+ Like a @racket[(pattern @#,meta-dots)] pattern, but matching a @tech{pvector}
+ syntax object whose elements match the corresponding sub-@racket[pattern]s.}
+
+ @specsubform[(code:line #,(tt "#pvector")(pattern ... pattern ellipsis pattern ...))]{
+
+ Like a @racket[(pattern ... pattern ellipsis pattern ...)] pattern,
+ but matching a @tech{pvector} syntax object whose elements match the
+ corresponding sub-@racket[pattern]s.}
+
  @specsubform[(code:line #,(tt "#&")pattern)]{
 
  Matches a box syntax object whose content matches the
@@ -342,6 +353,11 @@ A @svar[template] produces a syntax object as follows:
 
    Like the @racket[(head-template ...)] form, but producing a syntax
    object whose datum is a vector instead of a list.}
+
+ @specsubform[(code:line #,(tt "#pvector")(head-template ...))]{
+
+   Like the @racket[(head-template ...)] form, but producing a syntax
+   object whose datum is a @tech{pvector} instead of a list.}
 
  @specsubform[(code:line #,(tt "#&")template)]{
 

@@ -11,8 +11,9 @@
 | rest 形参收集（被调方） | `dorest0..5` 手写入口 | ✗ 无对应 |
 | 变参构造（n 值 → 容器） | 即 rest 机制，零额外代码 | ⚠ 112 条 arity 子句 ×2 份（adapter 296KB + pvector.rkt 289KB .zo，∝n²；>112 退化收 list） |
 | 多值接收 `(call-with-values g pvector)` | 对偶天然 | ⚠ 走同一批子句 |
-| 字面量/quote/.zo fasl | 天然 | ☑ `#pvector` 读写、literal-pool、zo |
+| 字面量/quote/.zo fasl | 天然 | ☑ `#pvector` 读写、literal-pool；quote 字面量进 .zo 与 `racket/fasl` 于 2026-10-14 补齐（此前所有编译产物写出路径均报 cannot marshal/cannot write，本行原 ☑ 失实；现 `s-exp->fasl` 结构化编码：tag 45=pvector 形状、tag 46=节点，节点经 fasl 图引用去重，解码经受检构造器直接建树（原语经 `#%pvector-structure` primitive table，无表的宿主写拒绝/读摊平）；MD .zo 走 Chez 原生 fasl，空 pvector 注册回单例；解码 65536 元素 1.3ms vs raw 读模式 74ms，MD/MI/syntax 字面量全部往返；两 subagent 评审后修 5 项，见 .commit） |
 | match/for/sequence/stream/serialize/place 消息/equal+hash/打印 | — | ☑ |
+| 语法一级公民（read-syntax 逐元素包装、datum->syntax/syntax->datum、syntax-case 模式/模板、quasisyntax、quasiquote、syntax/parse、strip-context） | 天然 | ☑ 2026-10-19 B 方案落地，见 pvector-language-face-design.md v2 |
 | 内存表示 | pair 无头字（2 字/节点） | ✗ 记录节点带 rtd 头字（类型常数化可省 17~20%） |
 | 库面组合子 | sort/reverse/filter/fold/member/… | ✗ 缺 sort/reverse/filter/andmap/ormap/foldl/foldr/member/index-of/count/partition；map 仅单序列 |
 | keyword-apply 序列位 | list | ✗（独立接口路线下有意未覆盖） |
