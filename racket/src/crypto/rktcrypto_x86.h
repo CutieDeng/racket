@@ -78,6 +78,8 @@ void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned cha
 struct rktcrypto_poly1305_ctx_t;
 void rktcrypto_poly1305_export64(const struct rktcrypto_poly1305_ctx_t *ctx, uint64_t hr[6]);
 void rktcrypto_poly1305_import64(struct rktcrypto_poly1305_ctx_t *ctx, const uint64_t hr[6]);
+/* rktasm/x86 kernel (rktcrypto_keccak_avx512.S): Keccak-f[1600] in place */
+void keccak_f1600_x86(uint64_t s[25]);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

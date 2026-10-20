@@ -8,6 +8,9 @@
 
 #include "rktcrypto_digest.h"
 #include "rktcrypto_cpu.h"
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_x86.h"
+#endif
 
 #define ROTL64(x, n) (((x) << (n)) | ((x) >> (64 - (n))))
 
@@ -128,6 +131,9 @@ static void keccak_f(uint64_t s[25])
 {
 #if defined(__ARM_FEATURE_SHA3)
   keccak_f_sha3(s);
+#elif defined(__x86_64__) && defined(__ELF__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x86(s);   /* rktasm/x86 kernel */
+  else keccak_f_portable(s);
 #else
   keccak_f_portable(s);
 #endif

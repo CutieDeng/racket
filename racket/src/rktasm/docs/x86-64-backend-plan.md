@@ -198,6 +198,16 @@ vs 参考 27；pubkey 134.4 vs 30.2 kops/s（4.45×）；integration 77/77；基
 ecdsa sign 18.5→12.3、verify 63.5→37.9（vs OpenSSL 41.3k/95.8k/31.2k ops/s → 0.80/0.85/0.85×）。
 待做 X3-3b：标量阶 `mont_mul_x86(ctx)`、sqrn 专用、点运算内核（ARM 侧 jac_double_hw/mixed_add_hw 经验 ~12%）。
 
+**X3-4a 已落地（2026-10-21，已验证）**——`crypto/asm/x86/keccak_avx512.asm`：Keccak-f[1600]，5 个 zmm 各装一个平面
+（lane x = s[x+5y]，lane 5–7 闲置，掩码装载/存储），theta=2 条 vpternlogq(0x96)+2 条 vpermq+vprolq，rho=5 条
+vprolvq（偏移表入 rodata），pi=5×5 掩码 vpermq（输出平面 Y' 的索引向量 = 按 3Y' mod 5 的 lane 旋转，掩码 k0–k4
+选 lane），chi=2 条 vpermq+vpternlogq(0xd2)，iota=掩码广播 xor；两轮一迭代交替两组寄存器免拷贝。接入
+`keccak_f()`（AVX512 位）。数据：gate 0/20001（20k 随机/全 0·全 1 状态 vs 便携置换 + FIPS 202
+SHA3-256("abc")）；harness 532 vs 272 MB/s（1.96×，按 136 B/置换折算）；integration 77/77；基准 sha3-256
+313→498 MB/s、sha3-512 263（OpenSSL sha3-256 ≈760 → 0.65×）。分析（推断）：单流置换为延迟界——pi 的 5 次
+掩码 vpermq 串行（~15 周期）+theta/chi 链 → 每轮 ~35 周期、每置换 ~1300 周期；可改 vpermt2q 两两合并树
+（深度 3，约 −11%）；ML-KEM/ML-DSA 的 `keccak_f1600_x2` 双态交错可得近 2× 吞吐（下一步）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
