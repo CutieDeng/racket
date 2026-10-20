@@ -23,6 +23,24 @@
   .quad 4, 0, 1, 2, 3, 0, 0, 0                  ; pi3: lane x <- x-1 (theta C[x-1])
   .quad 2, 3, 4, 0, 1, 0, 0, 0                  ; pi4: lane x <- x+2 (chi c)
 .end
+.rodata keccak_x86_pi align=64                  ; vpermi2q indices: 0-7 first table, 8-15 second
+  .quad 0, 9, 0, 0, 0, 0, 0, 0          ; +0 pi0: planes 0,1
+  .quad 0, 0, 2, 11, 0, 0, 0, 0          ; +64 pi0: planes 2,3
+  .quad 0, 1, 2, 3, 12, 0, 0, 0          ; +128 pi0: plane 4 onto the merged four
+  .quad 3, 12, 0, 0, 0, 0, 0, 0          ; +192 pi1: planes 0,1
+  .quad 0, 0, 0, 9, 0, 0, 0, 0          ; +256 pi1: planes 2,3
+  .quad 0, 1, 2, 3, 10, 0, 0, 0          ; +320 pi1: plane 4 onto the merged four
+  .quad 1, 10, 0, 0, 0, 0, 0, 0          ; +384 pi2: planes 0,1
+  .quad 0, 0, 3, 12, 0, 0, 0, 0          ; +448 pi2: planes 2,3
+  .quad 0, 1, 2, 3, 8, 0, 0, 0          ; +512 pi2: plane 4 onto the merged four
+  .quad 4, 8, 0, 0, 0, 0, 0, 0          ; +576 pi3: planes 0,1
+  .quad 0, 0, 1, 10, 0, 0, 0, 0          ; +640 pi3: planes 2,3
+  .quad 0, 1, 2, 3, 11, 0, 0, 0          ; +704 pi3: plane 4 onto the merged four
+  .quad 2, 11, 0, 0, 0, 0, 0, 0          ; +768 pi4: planes 0,1
+  .quad 0, 0, 4, 8, 0, 0, 0, 0          ; +832 pi4: planes 2,3
+  .quad 0, 1, 2, 3, 9, 0, 0, 0          ; +896 pi4: plane 4 onto the merged four
+  .quad 0, 1, 10, 11, 0, 0, 0, 0           ; +960 merge of the two pairs
+.end
 .rodata keccak_x86_rho align=64                 ; rotation offsets, plane y lane x
   .quad 0, 1, 62, 28, 27, 0, 0, 0
   .quad 36, 44, 6, 55, 20, 0, 0, 0
@@ -37,13 +55,11 @@
   .simd avx512
   mov d.t, 0x1f
   kmovw k.m5, d.t
-.for y, 0, 5
-  mov d.t, ${1 << y}
-  kmovw k.m${y}, d.t
-.endfor
-.for i, 0, 5
-  vmovdqa64 zmm.pi${i}, zmmword ptr [rip + keccak_x86_idx + ${64 * i}]
-.endfor
+  mov d.t, 1
+  kmovw k.m0, d.t
+  vmovdqa64 zmm.pi2, zmmword ptr [rip + keccak_x86_idx + 128]
+  vmovdqa64 zmm.pi3, zmmword ptr [rip + keccak_x86_idx + 192]
+  vmovdqa64 zmm.pi4, zmmword ptr [rip + keccak_x86_idx + 256]
 .for y, 0, 5
   vmovdqu64 zmm.s${y}{k.m5}{z}, zmmword ptr [q.s + ${40 * y}]
 .endfor
@@ -66,11 +82,17 @@ round2:
   .for y, 0, 5
   vprolvq zmm.s${5 * h + y}, zmm.s${5 * h + y}, zmmword ptr [rip + keccak_x86_rho + ${64 * y}]
   .endfor
-  ;; pi into the other register set: output plane yo, lane y <- input plane y, lane 3(yo-3y) mod 5
+  ;; pi into the other register set: output plane yo, lane y <- input plane y, lane 3(yo-3y) mod 5,
+  ;; as a merge tree of two-table permutes (planes 0,1 | planes 2,3 | both | plane 4)
   .for yo, 0, 5
-    .for y, 0, 5
-  vpermq zmm.s${5 * (1 - h) + yo}{k.m${y}}, zmm.pi${yo}, zmm.s${5 * h + y}
-    .endfor
+  vmovdqa64 zmm.ta, zmmword ptr [rip + keccak_x86_pi + ${192 * yo}]
+  vpermi2q zmm.ta, zmm.s${5 * h}, zmm.s${5 * h + 1}
+  vmovdqa64 zmm.tb, zmmword ptr [rip + keccak_x86_pi + ${192 * yo + 64}]
+  vpermi2q zmm.tb, zmm.s${5 * h + 2}, zmm.s${5 * h + 3}
+  vmovdqa64 zmm.tm, zmmword ptr [rip + keccak_x86_pi + 960]
+  vpermi2q zmm.tm, zmm.ta, zmm.tb
+  vmovdqa64 zmm.s${5 * (1 - h) + yo}, zmmword ptr [rip + keccak_x86_pi + ${192 * yo + 128}]
+  vpermi2q zmm.s${5 * (1 - h) + yo}, zmm.tm, zmm.s${5 * h + 4}
   .endfor
   ;; chi: a ^= ~b & c with b = lane x+1, c = lane x+2
   .for yo, 0, 5
