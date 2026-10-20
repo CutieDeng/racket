@@ -1,11 +1,9 @@
 ;; SHA-256 block compression on SHA-NI (x86-64, SysV). First kernel of the x86
-;; module: physical registers, transcribed one-to-one from the verified
-;; intrinsics in rktcrypto_x86.c (rktcrypto_sha256_block_shani), state kept in
-;; registers across all nblk blocks.
+;; module, transcribed one-to-one from the verified intrinsics in
+;; rktcrypto_x86.c (rktcrypto_sha256_block_shani); state kept in registers
+;; across all nblk blocks. Virtual registers except xmm0, which is the implicit
+;; third operand (wk) of sha256rnds2.
 ;;   void rktcrypto_sha256_blocks_x86(uint32_t state[8], const unsigned char *data, intptr_t nblk)
-;; Register plan: xmm0 = wk (implicit operand of sha256rnds2), xmm1 = STATE0 (abef),
-;; xmm2 = STATE1 (cdgh), xmm3-xmm6 = MSG0-MSG3, xmm7 = TMP, xmm8/xmm9 = saved state,
-;; xmm10 = byte-swap mask.
 ;; Oracle: rktcrypto_sha256_block_shani; gate: asm/tests/test_sha256_x86.c.
 
 .rodata sha256_x86_k align=64
@@ -24,63 +22,59 @@
 .end
 
 .function rktcrypto_sha256_blocks_x86 export (
-  in: rdi, rsi, rdx
+  in: q.state, q.data, q.n
 )
 entry:
-  test rdx, rdx
+  test q.n, q.n
   jz done
-  movdqa xmm10, xmmword ptr [rip + sha256_x86_shuf]
-  movdqu xmm7, xmmword ptr [rdi]            ; a b c d
-  movdqu xmm2, xmmword ptr [rdi + 16]       ; e f g h
-  pshufd xmm7, xmm7, 0xb1                   ; c d a b
-  pshufd xmm2, xmm2, 0x1b                   ; h g f e
-  movdqa xmm1, xmm7
-  palignr xmm1, xmm2, 8                     ; STATE0 = a b e f
-  pblendw xmm2, xmm7, 0xf0                  ; STATE1 = c d g h
+  movdqa xmm.mask, xmmword ptr [rip + sha256_x86_shuf]
+  movdqu xmm.t, xmmword ptr [q.state]               ; a b c d
+  movdqu xmm.s1, xmmword ptr [q.state + 16]         ; e f g h
+  pshufd xmm.t, xmm.t, 0xb1                         ; c d a b
+  pshufd xmm.s1, xmm.s1, 0x1b                       ; h g f e
+  movdqa xmm.s0, xmm.t
+  palignr xmm.s0, xmm.s1, 8                         ; STATE0 = a b e f
+  pblendw xmm.s1, xmm.t, 0xf0                       ; STATE1 = c d g h
 blk:
-  movdqa xmm8, xmm1
-  movdqa xmm9, xmm2
-  movdqu xmm3, xmmword ptr [rsi]
-  pshufb xmm3, xmm10
-  movdqu xmm4, xmmword ptr [rsi + 16]
-  pshufb xmm4, xmm10
-  movdqu xmm5, xmmword ptr [rsi + 32]
-  pshufb xmm5, xmm10
-  movdqu xmm6, xmmword ptr [rsi + 48]
-  pshufb xmm6, xmm10
+  movdqa xmm.save0, xmm.s0
+  movdqa xmm.save1, xmm.s1
+.for i, 0, 4
+  movdqu xmm.m${i}, xmmword ptr [q.data + ${16 * i}]
+  pshufb xmm.m${i}, xmm.mask
+.endfor
   ;; rounds 0-15: wk = MSGi + K[4i..4i+3]
 .for i, 0, 4
-  movdqa xmm0, xmm${3 + i}
+  movdqa xmm0, xmm.m${i}
   paddd xmm0, xmmword ptr [rip + sha256_x86_k + ${16 * i}]
-  sha256rnds2 xmm2, xmm1
+  sha256rnds2 xmm.s1, xmm.s0
   pshufd xmm0, xmm0, 0x0e
-  sha256rnds2 xmm1, xmm2
+  sha256rnds2 xmm.s0, xmm.s1
 .endfor
-  ;; rounds 16-63: schedule MSGa = msg2(msg1(MSGa, MSGb) + alignr(MSGd, MSGc, 4), MSGd), then 4 rounds
+  ;; rounds 16-63: MSGa = msg2(msg1(MSGa, MSGb) + alignr(MSGd, MSGc, 4), MSGd), then 4 rounds
 .for r, 4, 16
-  sha256msg1 xmm${3 + (r % 4)}, xmm${3 + ((r + 1) % 4)}
-  movdqa xmm7, xmm${3 + ((r + 3) % 4)}
-  palignr xmm7, xmm${3 + ((r + 2) % 4)}, 4
-  paddd xmm${3 + (r % 4)}, xmm7
-  sha256msg2 xmm${3 + (r % 4)}, xmm${3 + ((r + 3) % 4)}
-  movdqa xmm0, xmm${3 + (r % 4)}
+  sha256msg1 xmm.m${r % 4}, xmm.m${(r + 1) % 4}
+  movdqa xmm.t, xmm.m${(r + 3) % 4}
+  palignr xmm.t, xmm.m${(r + 2) % 4}, 4
+  paddd xmm.m${r % 4}, xmm.t
+  sha256msg2 xmm.m${r % 4}, xmm.m${(r + 3) % 4}
+  movdqa xmm0, xmm.m${r % 4}
   paddd xmm0, xmmword ptr [rip + sha256_x86_k + ${16 * r}]
-  sha256rnds2 xmm2, xmm1
+  sha256rnds2 xmm.s1, xmm.s0
   pshufd xmm0, xmm0, 0x0e
-  sha256rnds2 xmm1, xmm2
+  sha256rnds2 xmm.s0, xmm.s1
 .endfor
-  paddd xmm1, xmm8
-  paddd xmm2, xmm9
-  add rsi, 64
-  sub rdx, 1
+  paddd xmm.s0, xmm.save0
+  paddd xmm.s1, xmm.save1
+  add q.data, 64
+  sub q.n, 1
   jnz blk
-  pshufd xmm7, xmm1, 0x1b                   ; f e b a
-  pshufd xmm2, xmm2, 0xb1                   ; d c h g
-  movdqa xmm1, xmm7
-  pblendw xmm1, xmm2, 0xf0                  ; a b c d
-  palignr xmm2, xmm7, 8                     ; e f g h
-  movdqu xmmword ptr [rdi], xmm1
-  movdqu xmmword ptr [rdi + 16], xmm2
+  pshufd xmm.t, xmm.s0, 0x1b                        ; f e b a
+  pshufd xmm.s1, xmm.s1, 0xb1                       ; d c h g
+  movdqa xmm.s0, xmm.t
+  pblendw xmm.s0, xmm.s1, 0xf0                      ; a b c d
+  palignr xmm.s1, xmm.t, 8                          ; e f g h
+  movdqu xmmword ptr [q.state], xmm.s0
+  movdqu xmmword ptr [q.state + 16], xmm.s1
 done:
   ret
 .end

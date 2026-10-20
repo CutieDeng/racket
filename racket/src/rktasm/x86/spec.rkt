@@ -109,10 +109,13 @@
                      (or (not w) (eq? w 'v) (equal? w (cadr i))
                          ;; `v` gpr operand sizes: 16/32/64
                          (and (eq? cls 'gpr) (eq? w 'v) (memv (cadr i) '(16 32 64))))))))]
-    [('reg (list 'vreg cls _))
+    [('reg (list* 'vreg cls _ view _))
      (define c (operand-shape-class shape))
-     (or (eq? c 'any) (eq? c cls)
-         (and (eq? cls 'gpr) (eq? c 'gpr)))]
+     (define w (operand-shape-width shape))
+     (define vw (case view [(q) 64] [(d) 32] [(w) 16] [(b) 8] [(xmm) 128] [(ymm) 256] [(zmm) 512] [(k) 64]))
+     (and (not (operand-shape-fixed shape))
+          (or (eq? c 'any) (eq? c cls))
+          (or (not w) (equal? w vw) (and (eq? w 'v) (memv vw '(16 32 64)))))]
     [('mem (cons 'mem _)) #t]
     [('imm (list 'imm _)) #t]
     [('rel (list 'label _)) #t]
@@ -125,7 +128,7 @@
     (for/or ([u u-ops])
       (match u
         [(list 'reg n) (let ([i (reg-name-info n)]) (and i (or (eq? (car i) 'zmm) (eq? (car i) 'k) (and (memq (car i) '(xmm ymm)) (>= (caddr i) 16)))))]
-        [(list 'vreg cls _) (memq cls '(zmm k))]
+        [(list* 'vreg cls _) (memq cls '(zmm k))]
         [_ #f])))
   (+ (if (regexp-match? #rx"APX" isa) 100 0)
      (if (and (not needs-evex?) (regexp-match? #rx"AVX512|AVX10" isa)) 10 0)
@@ -158,7 +161,7 @@
       [else (void)])
     ;; memory operands read their address registers
     (when (and (pair? u) (eq? (car u) 'mem))
-      (for ([r (cdr u)] #:when (and (pair? r) (eq? (car r) 'reg))) (set! uses (cons r uses)))))
+      (for ([r (cdr u)] #:when (and (pair? r) (memq (car r) '(reg vreg)))) (set! uses (cons r uses)))))
   (for ([op (form-operands form)] #:when (list-ref op 5))
     (define lk (list-ref op 1)) (define action (list-ref op 2))
     (define sh (classify-lookup lk #f))

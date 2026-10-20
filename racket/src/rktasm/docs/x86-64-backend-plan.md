@@ -101,6 +101,13 @@ x86-64 模块需要的部件（对应 ARM 侧的层，但独立实现）：
 - 未做（X1-2/X1-3）：虚拟寄存器 + 图着色分配、SysV 自动序幕/`.frame`/`.alloca`、两地址改写、
   Zen 5 调度模型；编码器 X4 仍后置。
 
+**X1-2a 已落地（2026-10-21，已验证）**——`rktasm/x86/regalloc.rkt`：指令级活跃性 + 含物理寄存器的干涉图 +
+拷贝合并 + Chaitin-Briggs 着色，无溢出；SysV 入参预着色。`sha256.asm` 改为虚拟寄存器（xmm0 物理，
+为 `sha256rnds2` 隐式操作数）；分配结果 10 个向量寄存器（t 复用 xmm0 的空闲区间）。lan-11 gate 0/3001，
+harness asm 2666 MB/s（物理版 2665），integration 77/77，基准 sha256 2678 MB/s。主机端
+`tests/alloc-tests.rkt` 7 组断言（预着色/视图、隐式 xmm0 干涉与复用、拷贝合并删除、压力点报错、
+循环活跃性、视图宽度选形）。
+
 ### X2 — 调度模型（1 周）
 - xlsx/XML → `data/latency-znver5.rktd` 转换器；调度器加 §2.6 规则；对照 `llvm-mca` 与 `perf stat` 周期数（±5% 内视为模型可用）。
 

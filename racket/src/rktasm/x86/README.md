@@ -25,6 +25,14 @@
 （`regen <kernel>` / `check [kernel]`（字节级再生稳定）/ `gate [kernel]`（仅 x86-64 Linux：
 gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH` 行））。
 
-现状（X1-1，2026-10-21）：物理寄存器模式；首个内核 `sha256`（SHA-NI，`rktcrypto_sha256_blocks_x86`）
-已由 `rktcrypto_sha256.c` 在 x86-64 ELF 上分派。虚拟寄存器分配 / SysV 自动序幕 / 两地址改写 /
-Zen 5 调度模型为 X1-2、X1-3。
+- `regalloc.rkt`：虚拟寄存器 → 物理寄存器。指令级活跃性（标号/跳转构成的控制流）、含显式与隐式物理
+  寄存器的干涉图（vreg 不会落在正承载 `sha256rnds2` 隐式操作数的 xmm0 上，但 xmm0 空闲时可复用）、
+  拷贝合并（Briggs/George，合并后的自拷贝删除）、Chaitin-Briggs simplify-select；不溢出（寄存器不够时
+  报错并指出压力点）。`in:`/`inout:` 按 SysV 位置预着色 rdi rsi rdx rcx r8 r9，`out:` 首个 rax；
+  一个 vreg 全函数一个物理寄存器（不切分活跃区间）；节点顺序=首次出现顺序，再生字节稳定。
+  池：GPR 15 个（无 rsp）、向量 xmm0–15、掩码 k1–k7。`as.rkt --dump-alloc` 打印映射。
+  主机端检查 `tests/alloc-tests.rkt`（不需 x86 硬件）。
+
+现状（X1-2a，2026-10-21）：`sha256.asm` 已改为虚拟寄存器（只有 xmm0 保持物理），lan-11 gate 0/3001、
+性能与物理寄存器版持平。待做：`.simd avx512`（xmm16–31/zmm 池）、`.frame/.alloca`、`.call` 破坏集、
+两地址改写（三操作数糖）、Zen 5 调度模型（X1-3）。

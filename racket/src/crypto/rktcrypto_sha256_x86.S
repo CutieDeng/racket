@@ -29,177 +29,177 @@ rktcrypto_sha256_blocks_x86:
 .Lrktcrypto_sha256_blocks_x86_entry:
         test rdx, rdx
         jz .Lrktcrypto_sha256_blocks_x86_done
-        movdqa xmm10, xmmword ptr [rip + sha256_x86_shuf]
-        movdqu xmm7, xmmword ptr [rdi]
-        movdqu xmm2, xmmword ptr [rdi + 16]
-        pshufd xmm7, xmm7, 0xb1
-        pshufd xmm2, xmm2, 0x1b
-        movdqa xmm1, xmm7
-        palignr xmm1, xmm2, 0x8
-        pblendw xmm2, xmm7, 0xf0
+        movdqa xmm9, xmmword ptr [rip + sha256_x86_shuf]
+        movdqu xmm0, xmmword ptr [rdi]
+        movdqu xmm8, xmmword ptr [rdi + 16]
+        pshufd xmm0, xmm0, 0xb1
+        pshufd xmm8, xmm8, 0x1b
+        movdqa xmm7, xmm0
+        palignr xmm7, xmm8, 0x8
+        pblendw xmm8, xmm0, 0xf0
 .Lrktcrypto_sha256_blocks_x86_blk:
-        movdqa xmm8, xmm1
-        movdqa xmm9, xmm2
-        movdqu xmm3, xmmword ptr [rsi]
-        pshufb xmm3, xmm10
-        movdqu xmm4, xmmword ptr [rsi + 16]
-        pshufb xmm4, xmm10
-        movdqu xmm5, xmmword ptr [rsi + 32]
-        pshufb xmm5, xmm10
-        movdqu xmm6, xmmword ptr [rsi + 48]
-        pshufb xmm6, xmm10
-        movdqa xmm0, xmm3
+        movdqa xmm6, xmm7
+        movdqa xmm5, xmm8
+        movdqu xmm4, xmmword ptr [rsi]
+        pshufb xmm4, xmm9
+        movdqu xmm3, xmmword ptr [rsi + 16]
+        pshufb xmm3, xmm9
+        movdqu xmm2, xmmword ptr [rsi + 32]
+        pshufb xmm2, xmm9
+        movdqu xmm1, xmmword ptr [rsi + 48]
+        pshufb xmm1, xmm9
+        movdqa xmm0, xmm4
         paddd xmm0, xmmword ptr [rip + sha256_x86_k]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        movdqa xmm0, xmm4
+        sha256rnds2 xmm7, xmm8
+        movdqa xmm0, xmm3
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 16]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        movdqa xmm0, xmm5
+        sha256rnds2 xmm7, xmm8
+        movdqa xmm0, xmm2
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 32]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        movdqa xmm0, xmm6
+        sha256rnds2 xmm7, xmm8
+        movdqa xmm0, xmm1
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 48]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm3, xmm4
-        movdqa xmm7, xmm6
-        palignr xmm7, xmm5, 0x4
-        paddd xmm3, xmm7
-        sha256msg2 xmm3, xmm6
-        movdqa xmm0, xmm3
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm4, xmm3
+        movdqa xmm0, xmm1
+        palignr xmm0, xmm2, 0x4
+        paddd xmm4, xmm0
+        sha256msg2 xmm4, xmm1
+        movdqa xmm0, xmm4
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 64]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm4, xmm5
-        movdqa xmm7, xmm3
-        palignr xmm7, xmm6, 0x4
-        paddd xmm4, xmm7
-        sha256msg2 xmm4, xmm3
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm3, xmm2
         movdqa xmm0, xmm4
+        palignr xmm0, xmm1, 0x4
+        paddd xmm3, xmm0
+        sha256msg2 xmm3, xmm4
+        movdqa xmm0, xmm3
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 80]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm5, xmm6
-        movdqa xmm7, xmm4
-        palignr xmm7, xmm3, 0x4
-        paddd xmm5, xmm7
-        sha256msg2 xmm5, xmm4
-        movdqa xmm0, xmm5
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm2, xmm1
+        movdqa xmm0, xmm3
+        palignr xmm0, xmm4, 0x4
+        paddd xmm2, xmm0
+        sha256msg2 xmm2, xmm3
+        movdqa xmm0, xmm2
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 96]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm6, xmm3
-        movdqa xmm7, xmm5
-        palignr xmm7, xmm4, 0x4
-        paddd xmm6, xmm7
-        sha256msg2 xmm6, xmm5
-        movdqa xmm0, xmm6
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm1, xmm4
+        movdqa xmm0, xmm2
+        palignr xmm0, xmm3, 0x4
+        paddd xmm1, xmm0
+        sha256msg2 xmm1, xmm2
+        movdqa xmm0, xmm1
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 112]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm3, xmm4
-        movdqa xmm7, xmm6
-        palignr xmm7, xmm5, 0x4
-        paddd xmm3, xmm7
-        sha256msg2 xmm3, xmm6
-        movdqa xmm0, xmm3
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm4, xmm3
+        movdqa xmm0, xmm1
+        palignr xmm0, xmm2, 0x4
+        paddd xmm4, xmm0
+        sha256msg2 xmm4, xmm1
+        movdqa xmm0, xmm4
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 128]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm4, xmm5
-        movdqa xmm7, xmm3
-        palignr xmm7, xmm6, 0x4
-        paddd xmm4, xmm7
-        sha256msg2 xmm4, xmm3
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm3, xmm2
         movdqa xmm0, xmm4
-        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 144]
-        sha256rnds2 xmm2, xmm1
-        pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm5, xmm6
-        movdqa xmm7, xmm4
-        palignr xmm7, xmm3, 0x4
-        paddd xmm5, xmm7
-        sha256msg2 xmm5, xmm4
-        movdqa xmm0, xmm5
-        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 160]
-        sha256rnds2 xmm2, xmm1
-        pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm6, xmm3
-        movdqa xmm7, xmm5
-        palignr xmm7, xmm4, 0x4
-        paddd xmm6, xmm7
-        sha256msg2 xmm6, xmm5
-        movdqa xmm0, xmm6
-        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 176]
-        sha256rnds2 xmm2, xmm1
-        pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm3, xmm4
-        movdqa xmm7, xmm6
-        palignr xmm7, xmm5, 0x4
-        paddd xmm3, xmm7
-        sha256msg2 xmm3, xmm6
+        palignr xmm0, xmm1, 0x4
+        paddd xmm3, xmm0
+        sha256msg2 xmm3, xmm4
         movdqa xmm0, xmm3
-        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 192]
-        sha256rnds2 xmm2, xmm1
+        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 144]
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm4, xmm5
-        movdqa xmm7, xmm3
-        palignr xmm7, xmm6, 0x4
-        paddd xmm4, xmm7
-        sha256msg2 xmm4, xmm3
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm2, xmm1
+        movdqa xmm0, xmm3
+        palignr xmm0, xmm4, 0x4
+        paddd xmm2, xmm0
+        sha256msg2 xmm2, xmm3
+        movdqa xmm0, xmm2
+        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 160]
+        sha256rnds2 xmm8, xmm7
+        pshufd xmm0, xmm0, 0xe
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm1, xmm4
+        movdqa xmm0, xmm2
+        palignr xmm0, xmm3, 0x4
+        paddd xmm1, xmm0
+        sha256msg2 xmm1, xmm2
+        movdqa xmm0, xmm1
+        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 176]
+        sha256rnds2 xmm8, xmm7
+        pshufd xmm0, xmm0, 0xe
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm4, xmm3
+        movdqa xmm0, xmm1
+        palignr xmm0, xmm2, 0x4
+        paddd xmm4, xmm0
+        sha256msg2 xmm4, xmm1
         movdqa xmm0, xmm4
+        paddd xmm0, xmmword ptr [rip + sha256_x86_k + 192]
+        sha256rnds2 xmm8, xmm7
+        pshufd xmm0, xmm0, 0xe
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm3, xmm2
+        movdqa xmm0, xmm4
+        palignr xmm0, xmm1, 0x4
+        paddd xmm3, xmm0
+        sha256msg2 xmm3, xmm4
+        movdqa xmm0, xmm3
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 208]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm5, xmm6
-        movdqa xmm7, xmm4
-        palignr xmm7, xmm3, 0x4
-        paddd xmm5, xmm7
-        sha256msg2 xmm5, xmm4
-        movdqa xmm0, xmm5
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm2, xmm1
+        movdqa xmm0, xmm3
+        palignr xmm0, xmm4, 0x4
+        paddd xmm2, xmm0
+        sha256msg2 xmm2, xmm3
+        movdqa xmm0, xmm2
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 224]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        sha256msg1 xmm6, xmm3
-        movdqa xmm7, xmm5
-        palignr xmm7, xmm4, 0x4
-        paddd xmm6, xmm7
-        sha256msg2 xmm6, xmm5
-        movdqa xmm0, xmm6
+        sha256rnds2 xmm7, xmm8
+        sha256msg1 xmm1, xmm4
+        movdqa xmm0, xmm2
+        palignr xmm0, xmm3, 0x4
+        paddd xmm1, xmm0
+        sha256msg2 xmm1, xmm2
+        movdqa xmm0, xmm1
         paddd xmm0, xmmword ptr [rip + sha256_x86_k + 240]
-        sha256rnds2 xmm2, xmm1
+        sha256rnds2 xmm8, xmm7
         pshufd xmm0, xmm0, 0xe
-        sha256rnds2 xmm1, xmm2
-        paddd xmm1, xmm8
-        paddd xmm2, xmm9
+        sha256rnds2 xmm7, xmm8
+        paddd xmm7, xmm6
+        paddd xmm8, xmm5
         add rsi, 0x40
         sub rdx, 0x1
         jnz .Lrktcrypto_sha256_blocks_x86_blk
-        pshufd xmm7, xmm1, 0x1b
-        pshufd xmm2, xmm2, 0xb1
-        movdqa xmm1, xmm7
-        pblendw xmm1, xmm2, 0xf0
-        palignr xmm2, xmm7, 0x8
-        movdqu xmmword ptr [rdi], xmm1
-        movdqu xmmword ptr [rdi + 16], xmm2
+        pshufd xmm0, xmm7, 0x1b
+        pshufd xmm8, xmm8, 0xb1
+        movdqa xmm7, xmm0
+        pblendw xmm7, xmm8, 0xf0
+        palignr xmm8, xmm0, 0x8
+        movdqu xmmword ptr [rdi], xmm7
+        movdqu xmmword ptr [rdi + 16], xmm8
 .Lrktcrypto_sha256_blocks_x86_done:
         ret
         .size   rktcrypto_sha256_blocks_x86, .-rktcrypto_sha256_blocks_x86

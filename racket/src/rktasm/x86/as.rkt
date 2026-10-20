@@ -4,20 +4,23 @@
 ;; --roundtrip assembles the output for x86_64-linux with clang (no execution) and
 ;; checks that llvm-objdump reads back the same mnemonic sequence.
 (require racket/cmdline racket/string racket/list racket/match racket/port racket/system racket/file racket/path
-         "parse.rkt" "spec.rkt" "emit.rkt")
+         "parse.rkt" "spec.rkt" "emit.rkt" "regalloc.rkt")
 
 (define out-path (make-parameter #f))
 (define roundtrip? (make-parameter #f))
 (define dump-usedef? (make-parameter #f))
+(define dump-alloc? (make-parameter #f))
 (define in-path
   (command-line
    #:once-each
    [("-o") file "output .S path" (out-path file)]
    [("--roundtrip") "assemble with clang --target=x86_64-unknown-linux-gnu and compare disassembly" (roundtrip? #t)]
    [("--dump-usedef") "print the use/def of every instruction" (dump-usedef? #t)]
+   [("--dump-alloc") "print the virtual -> physical register mapping of every function" (dump-alloc? #t)]
    #:args (input) input))
 
-(define items (parse-file in-path))
+(define parsed-items (parse-file in-path))
+(define items parsed-items)
 
 ;; ---- validation: every instruction must match a form; record use/def
 (define errors 0)
@@ -43,6 +46,18 @@
           (printf "~a: ~a | isa ~a | uses ~a defs ~a flags-r ~a flags-w ~a\n" (instr-line x) (instr->text x) (form-isa-set f)
                   (map operand->text u) (map operand->text d) fr fw)])])))
 (when (> errors 0) (eprintf "~a error(s)\n" errors) (exit 1))
+
+;; ---- register allocation (virtual -> physical); functions without vregs pass through unchanged
+(set! items
+  (for/list ([it parsed-items])
+    (cond
+      [(fn? it)
+       (define r (allocate-fn it))
+       (when (and (dump-alloc?) (pair? (alloc-result-mapping r)))
+         (printf "~a: ~a\n" (fn-name it)
+                 (string-join (for/list ([m (alloc-result-mapping r)]) (format "~a=~a" (car m) (cdr m))) " ")))
+       (alloc-result-fn r)]
+      [else it])))
 
 ;; ---- emit
 (define text (with-output-to-string (lambda () (emit-module items (current-output-port) #:provenance (format "source ~a" (let-values ([(b n d) (split-path in-path)]) n))))))

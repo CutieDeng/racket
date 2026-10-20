@@ -1,0 +1,123 @@
+#lang racket/base
+;; Host-side checks for the x86 module (no x86 hardware needed):
+;;   racket tests/alloc-tests.rkt
+;; Parser + spec matching + register allocation on small kernels, asserting the
+;; properties the SHA-256 bring-up relies on.
+(require racket/list racket/match racket/string rackunit "../parse.rkt" "../spec.rkt" "../regalloc.rkt" "../emit.rkt")
+
+(define (alloc src)
+  (define items (parse-string src 'test))
+  (define f (findf fn? items))
+  (allocate-fn f))
+(define (mapping-ref r name) (cdr (assq name (alloc-result-mapping r))))
+(define (emitted r)
+  (define o (open-output-string))
+  (emit-module (list (alloc-result-fn r)) o)
+  (get-output-string o))
+
+;; 1. arguments are precolored by SysV position; q./d. views share one register
+(let ([r (alloc "
+.function f export (
+  in: q.a, q.b
+  out: q.r
+)
+  mov q.r, q.a
+  add d.r, d.b
+  ret
+.end")])
+  (check-equal? (mapping-ref r 'a) 'rdi)
+  (check-equal? (mapping-ref r 'b) 'rsi)
+  (check-equal? (mapping-ref r 'r) 'rax)
+  (check-true (regexp-match? #rx"add eax, esi" (emitted r))))
+
+;; 2. a vreg live across a redefinition of xmm0 (sha256rnds2's implicit operand) never lands on xmm0;
+;;    a vreg whose value xmm0 merely carries may share it (the copy is then removed)
+(let ([r (alloc "
+.function g export (
+  in: q.p
+)
+  movdqu xmm.keep, xmmword ptr [q.p]
+  movdqa xmm.s1, xmmword ptr [q.p + 16]
+  movdqa xmm.s0, xmmword ptr [q.p + 32]
+  movdqa xmm0, xmm.s1
+  sha256rnds2 xmm.s1, xmm.s0
+  movdqa xmm0, xmm.s0
+  sha256rnds2 xmm.s0, xmm.s1
+  paddd xmm.s1, xmm.keep
+  movdqu xmmword ptr [q.p], xmm.s1
+  ret
+.end")])
+  (check-not-equal? (mapping-ref r 'keep) 'xmm0)
+  (check-not-equal? (mapping-ref r 's0) 'xmm0)
+  (check-not-equal? (mapping-ref r 's1) 'xmm0))
+
+;; 3. a dead-by-then vreg may reuse xmm0 (liveness is instruction-level, not whole-function)
+(let ([r (alloc "
+.function h export (
+  in: q.p
+)
+  movdqu xmm.t, xmmword ptr [q.p]
+  paddd xmm.t, xmm.t
+  movdqu xmmword ptr [q.p + 16], xmm.t
+  movdqa xmm0, xmmword ptr [q.p]
+  movdqa xmm.s1, xmmword ptr [q.p + 16]
+  movdqa xmm.s0, xmmword ptr [q.p + 32]
+  sha256rnds2 xmm.s1, xmm.s0
+  movdqu xmmword ptr [q.p], xmm.s1
+  ret
+.end")])
+  (check-equal? (mapping-ref r 't) 'xmm0))
+
+;; 4. copies coalesce when the source dies at the copy
+(let ([r (alloc "
+.function c export (
+  in: q.p
+)
+  mov q.x, qword ptr [q.p]
+  mov q.y, q.x
+  add q.y, 1
+  mov qword ptr [q.p], q.y
+  ret
+.end")])
+  (check-equal? (mapping-ref r 'x) (mapping-ref r 'y))
+  ;; the coalesced copy is gone: only one mov from memory, one add, one store remain
+  (check-equal? (length (filter instr? (fn-body (alloc-result-fn r)))) 4))
+
+;; 5. out of registers is an error that names the pressure point
+(check-exn #rx"out of vec registers.*17 vec registers live"
+  (lambda ()
+    (alloc (string-append "
+.function big export (
+  in: q.p
+)
+"
+      (string-join (for/list ([i 17]) (format "  movdqu xmm.v~a, xmmword ptr [q.p + ~a]" i (* 16 i))) "\n")
+      "\n"
+      (string-join (for/list ([i 17]) (format "  movdqu xmmword ptr [q.p + ~a], xmm.v~a" (* 16 i) i)) "\n")
+      "\n  ret\n.end"))))
+
+;; 6. loop liveness: a value defined before a loop and used after it stays allocated across the body
+(let ([r (alloc "
+.function l export (
+  in: q.p, q.n
+)
+  movdqa xmm.acc, xmmword ptr [q.p]
+  pxor xmm.zero, xmm.zero
+top:
+  movdqu xmm.x, xmmword ptr [q.p]
+  paddd xmm.acc, xmm.x
+  add q.p, 16
+  sub q.n, 1
+  jnz top
+  paddd xmm.acc, xmm.zero
+  movdqu xmmword ptr [q.p], xmm.acc
+  ret
+.end")])
+  (check-not-equal? (mapping-ref r 'zero) (mapping-ref r 'x))
+  (check-not-equal? (mapping-ref r 'acc) (mapping-ref r 'x)))
+
+;; 7. width views select the form: a 32-bit vreg view must not match a 64-bit-only operand
+(check-false (match-form 'movq (list '(vreg gpr a d) '(vreg xmm b xmm))))
+(check-true (and (match-form 'movq (list '(vreg gpr a q) '(vreg xmm b xmm))) #t))
+
+(displayln "alloc-tests: all checks passed")
