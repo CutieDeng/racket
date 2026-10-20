@@ -95,7 +95,7 @@
   (define got* (filter (lambda (m) (not (or (memq m '(push pop vzeroupper)) (regexp-match? #rx"^(nop|data16|cs|xchg)" (symbol->string m))))) got))
   (define (norm m)
     (string->symbol (regexp-replace #rx"^vpcmp(eq|lt|le|neq|nlt|nle)(u?)([bwdq])$"
-                                    (regexp-replace #rx"^(j[a-z]+)$" (symbol->string m) "jcc")
+                                    (regexp-replace #rx"^(j[a-z]+)$" (symbol->string (canonical-mnemonic m)) "jcc")
                                     "vpcmp\\2\\3")))
   (define a (map norm want)) (define b (map norm got*))
   (cond

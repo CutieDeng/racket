@@ -43,5 +43,5 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
 
 现状（X3-2a，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR）、`ghash_vpclmul`
 （VPCLMULQDQ GHASH）、`gcm_vaes`（AES-GCM 单趟融合，上下文结构体传参）、`chacha20_avx512`（16 块/单元，
-`.simd avx512`）、`poly1305_x86`（MULX radix-2^64）、`chacha20poly1305_x86`（向量 ChaCha + 标量 Poly 融合）已落地并由 C 分派；lan-11 gate 全部 0 mismatch。待做：P-256、Poly 双路、GCM 16 KB 固定开销
+`.simd avx512`）、`poly1305_x86`（MULX radix-2^64）、`chacha20poly1305_x86`（向量 ChaCha + 标量 Poly 融合）、`p256_mul_x86`（MULX/ADX 蒙哥马利乘）已落地并由 C 分派；lan-11 gate 全部 0 mismatch。待做：Keccak AVX-512、P-256 标量阶/点运算、Poly 双路、GCM 16 KB 固定开销
 （2-clmul 约简、轮密钥常驻）、`.frame/.alloca`、`.call` 破坏集、两地址改写、Zen 5 调度模型（X1-3）。

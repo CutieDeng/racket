@@ -6,7 +6,7 @@
 (require racket/list racket/string racket/runtime-path racket/match)
 (provide load-spec spec-forms match-form form-isa-set form-flags form-operands
          (struct-out operand-shape) classify-lookup instr-use-def
-         reg-name->class reg-name-info gpr64-names form-evex? operands-need-evex?)
+         reg-name->class reg-name-info gpr64-names form-evex? operands-need-evex? canonical-mnemonic)
 
 (define-runtime-path data-dir "data")
 
@@ -21,9 +21,21 @@
   the-table)
 ;; Intel-syntax mnemonics whose XED class name differs
 (define iclass-aliases '((ret . RET_NEAR) (call . CALL_NEAR) (retf . RET_FAR)))
+;; condition-code spellings: XED names each condition once (B NB Z NZ BE NBE L NL LE NLE O NO P NP S NS)
+(define cc-aliases '(("c" . "b") ("nae" . "b") ("nc" . "nb") ("ae" . "nb") ("e" . "z") ("ne" . "nz")
+                     ("na" . "be") ("a" . "nbe") ("nge" . "l") ("ge" . "nl") ("ng" . "le") ("g" . "nle")
+                     ("pe" . "p") ("po" . "np")))
+(define (canonical-mnemonic mnemonic)
+  (define s (symbol->string mnemonic))
+  (cond
+    [(regexp-match #rx"^(cmov|set|j)([a-z]+)$" s)
+     => (lambda (m) (define cc (caddr m))
+          (define canon (cond [(assoc cc cc-aliases) => cdr] [else cc]))
+          (string->symbol (string-append (cadr m) canon)))]
+    [else mnemonic]))
 (define (spec-forms mnemonic)
   (define ic (cond [(assq mnemonic iclass-aliases) => cdr]
-                   [else (string->symbol (string-upcase (symbol->string mnemonic)))]))
+                   [else (string->symbol (string-upcase (symbol->string (canonical-mnemonic mnemonic))))]))
   (define e (hash-ref (load-spec) ic #f))
   (if e (hash-ref e 'forms) '()))
 ;; form = (isa-set extension flags attrs operands pattern)

@@ -12,6 +12,9 @@
 #include "rktcrypto.h"
 #include <string.h>
 #include <stdint.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+#endif
 
 typedef uint64_t u64;
 typedef unsigned __int128 u128;
@@ -111,6 +114,22 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
    point op. */
 #define fp_mul(r,a,b) mont_mul_p256((r),(a),(b))
 #define fp_sqr(r,a)   mont_mul_p256((r),(a),(a))
+#elif defined(__x86_64__) && defined(__ELF__) && !defined(RKTCRYPTO_P256_NO_ASM)
+/* rktasm/x86 kernel (rktcrypto_p256_mul_x86.S, MULX/ADX) for the field prime; the scalar
+   order keeps the portable CIOS. The feature test reads the cached CPUID word each time
+   (an inline flag test), which keeps the test hook that flips features effective. */
+extern void mont_mul_p256_x86(u64 r[4],const u64 a[4],const u64 b[4]);
+static inline int p256_x86(void){ return rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX); }
+static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
+  if (ctx == &FP && p256_x86()) mont_mul_p256_x86(r,a,b);
+  else                          mont_mul_portable(r,a,b,ctx);
+}
+static inline void fp_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4]){
+  if (p256_x86()) mont_mul_p256_x86(r,a,b); else mont_mul_portable(r,a,b,&FP);
+}
+#define mont_mul mont_mul_dispatch
+#define fp_mul(r,a,b) fp_mul_dispatch((r),(a),(b))
+#define fp_sqr(r,a)   fp_mul_dispatch((r),(a),(a))
 #else
 #define mont_mul mont_mul_portable
 #define fp_mul(r,a,b) mont_mul_portable((r),(a),(b),&FP)

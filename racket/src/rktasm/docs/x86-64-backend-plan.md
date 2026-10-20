@@ -187,6 +187,17 @@ chacha20_avx512）与标量 Poly1305（同 poly1305_x86，r 作内存操作数�
 16 KB 5650、1 MiB 6033 MB/s（标量 ~750；两趟内核 4.0 GB/s；OpenSSL ≈6.5）；integration 77/77；基准
 chacha20-poly1305 3257→5018 MB/s。再往上=Poly 双路（h,h′ 配 r²，链减半）。
 
+**X3-3a 已落地（2026-10-21，已验证）**——`crypto/asm/x86/p256_mul_x86.asm`：P-256 蒙哥马利乘（MULX + adcx/adox
+双进位链，n0=1 的 Solinas 约简：acc[i+1]+=m<<32、acc[i+2]+=m>>32、acc[i+3..4]+=m·poly3，常数 poly3/poly1/zero
+入 rodata 作内存操作数以省 GPR（15 个池全用），最后一次常数时间条件减 p（cmovc）；b 指针在 rdx 先移出）。
+C 侧 `rktcrypto_p256.c` x86 ELF 分支：`fp_mul/fp_sqr/mont_mul(ctx==&FP)` 运行时按 BMI2+ADX 分派（不缓存
+特征字，保持测试钩子有效；首版缓存导致 harness 的"portable"对照实为内核，已改）。DSL 加条件码别名
+（cmovc→CMOVB 等 jcc/cmovcc/setcc，回读比对同样归一）。数据：gate 0/200200（200k 随机/边界输入 vs
+harness 内 u128 CIOS 参考实现，+ pubkey/ECDH/ECDSA 交叉验证与篡改签名拒绝）；harness 乘法 161 Mops/s
+vs 参考 27；pubkey 134.4 vs 30.2 kops/s（4.45×）；integration 77/77；基准 p256 ecdh 55.2→30.3 µs/op、
+ecdsa sign 18.5→12.3、verify 63.5→37.9（vs OpenSSL 41.3k/95.8k/31.2k ops/s → 0.80/0.85/0.85×）。
+待做 X3-3b：标量阶 `mont_mul_x86(ctx)`、sqrn 专用、点运算内核（ARM 侧 jac_double_hw/mixed_add_hw 经验 ~12%）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
