@@ -106,6 +106,7 @@
       "rktcrypto_keccak_f2_asm.S"
       "rktcrypto_sha1_asm.S"
       "rktcrypto_sha256_x86.S"
+      "rktcrypto_aes_ctr_vaes.S"
       "rktcrypto_md5_asm.S"
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"

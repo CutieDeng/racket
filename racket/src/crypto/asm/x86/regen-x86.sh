@@ -12,9 +12,11 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)        # racket/src/crypto
 RKTASM="$ROOT/../rktasm/x86/as.rkt"
 RACKET=${RACKET:-racket}
 CC=${CC:-cc}
-# kernel | .S output | harness | extra harness sources
+# kernel | .S output | harness | extra harness sources (every kernel .S of the table is linked into every gate,
+# because the dispatchers in rktcrypto_x86.c reference all of them)
 TABLE='
 sha256|rktcrypto_sha256_x86.S|asm/tests/test_sha256_x86.c|rktcrypto_x86.c rktcrypto_cpu.c
+aes_ctr_vaes|rktcrypto_aes_ctr_vaes.S|asm/tests/test_aes_ctr_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c
 '
 rows() { echo "$TABLE" | grep -v '^$' | { if [ -n "${1:-}" ]; then grep "^$1|"; else cat; fi; }; }
 NL='
@@ -46,7 +48,8 @@ case "$cmd" in
       kk=$(echo "$row" | cut -d'|' -f1); out=$(echo "$row" | cut -d'|' -f2)
       h=$(echo "$row" | cut -d'|' -f3); deps=$(echo "$row" | cut -d'|' -f4)
       bin=$(mktemp "${TMPDIR:-/tmp}/rktasm-x86-gate.XXXXXX")
-      if ( cd "$ROOT" && $CC -O2 -I. -o "$bin" "$h" "$out" $deps ) && "$bin" > "$bin.txt" 2>&1; then
+      alls=$(rows | cut -d'|' -f2 | tr '\n' ' ')
+      if ( cd "$ROOT" && $CC -O2 -I. -o "$bin" "$h" $alls $deps ) && "$bin" > "$bin.txt" 2>&1; then
         echo "gate($kk): PASS  $(grep -c '^BENCH' "$bin.txt") BENCH line(s)"; grep '^BENCH\|mismatches' "$bin.txt" | sed 's/^/  /'
       else echo "gate($kk): FAIL"; sed 's/^/  /' "$bin.txt" 2>/dev/null | tail -8; rc=1; fi
       rm -f "$bin" "$bin.txt"

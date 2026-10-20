@@ -33,6 +33,13 @@ void rktcrypto_aes_enc_blk_x86(const unsigned char *rk, int Nr,
                                const unsigned char in[16], unsigned char out[16]);
 void rktcrypto_aes_dec_blk_x86(const unsigned char *dk, int Nr,
                                const unsigned char in[16], unsigned char out[16]);
+/* AES-NI, eight blocks in flight (the oracle for the VAES kernel) */
+void rktcrypto_aes_ctr_aesni(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                             const unsigned char *in, unsigned char *out, intptr_t len, int inc32);
+/* rktasm/x86 kernel (rktcrypto_aes_ctr_vaes.S): VAES+AVX-512, len a multiple of 64, nr_inc32 = Nr | inc32 << 8 */
+void rktcrypto_aes_ctr_vaes(const unsigned char *rk, int nr_inc32, unsigned char ctr[16],
+                            const unsigned char *in, unsigned char *out, intptr_t len);
+/* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);
 void rktcrypto_aes_cbc_enc_x86(const unsigned char *rk, int Nr, const unsigned char iv[16],

@@ -83,9 +83,19 @@
     [else (cond [(and w (regexp-match #rx"^z" (symbol->string w))) 512]
                 [(and w (regexp-match #rx"^(mskw|dq)" (symbol->string w))) 128]
                 [else #f])]))
-;; explicit operand shapes of a form, in syntax order (implicit ones dropped)
+;; syntactic operands of a form: implicit (SUPP) operands, the EVEX writemask (MASK1, written as a
+;; {k}{z} decorator in Intel syntax) and pseudo operands (EMX_BROADCAST_*) are not operands
+(define (form-explicit-operands f)
+  (for/list ([op (form-operands f)]
+             #:unless (or (list-ref op 5)
+                          (eq? (list-ref op 1) 'MASK1)
+                          (not (regexp-match? #rx"^(REG|MEM|IMM|RELBR|AGEN|PTR)" (symbol->string (car op))))))
+    op))
+(define (form-accepts-mask? f)
+  (for/or ([op (form-operands f)]) (eq? (list-ref op 1) 'MASK1)))
+;; explicit operand shapes of a form, in syntax order
 (define (form-shapes f)
-  (for/list ([op (form-operands f)] #:unless (list-ref op 5))
+  (for/list ([op (form-explicit-operands f)])
     (match-define (list role lookup action width xtype implicit?) op)
     (define rs (symbol->string role))
     (cond
@@ -99,7 +109,7 @@
 ;; user operand (from the parser): (reg name) | (vreg class name) | (mem size ...) | (imm n) | (label name)
 (define (operand-matches? shape u)
   (match* ((operand-shape-kind shape) u)
-    [('reg (list 'reg n))
+    [('reg (list* 'reg n _))
      (define i (reg-name-info n))
      (and i
           (if (operand-shape-fixed shape)
@@ -135,12 +145,18 @@
      (if (and needs-evex? (not (regexp-match? #rx"AVX512|AVX10" isa))) 10 0)))
 
 ;; Returns the best matching form for mnemonic + user operands, or #f.
+(define (operand-decors u)
+  (match u
+    [(list 'reg _ d) d] [(list 'vreg _ _ _ d) d] [(list 'mem _ _ _ _ _ _ d) d] [_ '()]))
+(define (masked? u) (for/or ([d (operand-decors u)]) (eq? (car d) 'mask)))
 (define (match-form mnemonic u-ops)
+  (define needs-mask? (ormap masked? u-ops))
   (define cands
     (for/list ([f (spec-forms mnemonic)]
                #:when (let ([shapes (form-shapes f)])
                         (and (= (length shapes) (length u-ops))
-                             (andmap operand-matches? shapes u-ops))))
+                             (andmap operand-matches? shapes u-ops)
+                             (or (not needs-mask?) (form-accepts-mask? f)))))
       f))
   (and (pair? cands) (argmin (lambda (f) (form-rank f u-ops)) cands)))
 
@@ -149,14 +165,18 @@
 ;;    (reg fixed-name) for implicit registers; flags are lists of symbols (cf of zf sf pf af).
 (define (instr-use-def form u-ops)
   (define uses '()) (define defs '())
-  (define explicit (for/list ([op (form-operands form)] #:unless (list-ref op 5)) op))
+  (define explicit (form-explicit-operands form))
   (for ([op explicit] [u u-ops])
     (define action (list-ref op 2))
     (define (use!) (set! uses (cons u uses)))
     (define (def!) (set! defs (cons u defs)))
+    (define decors (operand-decors u))
+    ;; a mask decorator reads the mask register; merge-masking (no {z}) also reads the destination
+    (for ([d decors] #:when (eq? (car d) 'mask)) (set! uses (cons (cadr d) uses)))
+    (define merge? (and (masked? u) (not (assq 'z decors))))
     (case action
       [(r cr) (use!)]
-      [(w cw) (def!)]
+      [(w cw) (when merge? (use!)) (def!)]
       [(rw crw rcw) (use!) (def!)]
       [else (void)])
     ;; memory operands read their address registers

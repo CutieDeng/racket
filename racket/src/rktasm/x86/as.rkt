@@ -83,7 +83,10 @@
                  (instr-mnemonic x)))
   ;; the emitter adds push/pop/vzeroupper; drop those from `got` for the comparison
   (define got* (filter (lambda (m) (not (memq m '(push pop vzeroupper)))) got))
-  (define (norm m) (string->symbol (regexp-replace #rx"^(j[a-z]+)$" (symbol->string m) "jcc")))
+  (define (norm m)
+    (string->symbol (regexp-replace #rx"^vpcmp(eq|lt|le|neq|nlt|nle)(u?)([bwdq])$"
+                                    (regexp-replace #rx"^(j[a-z]+)$" (symbol->string m) "jcc")
+                                    "vpcmp\\2\\3")))
   (define a (map norm want)) (define b (map norm got*))
   (cond
     [(equal? a b) (eprintf "roundtrip: OK (~a instructions assembled and read back)\n" (length a))]

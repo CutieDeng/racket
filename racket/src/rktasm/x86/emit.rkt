@@ -12,10 +12,17 @@
 
 (define callee-saved '(rbx rbp r12 r13 r14 r15))
 
+(define (decor->text d)
+  (match d
+    [(list 'z) "{z}"]
+    [(list 'bcst n) (format "{1to~a}" n)]
+    [(list 'mask r) (format "{~a}" (reg->text r))]
+    [(list 'raw s) s]))
+(define (decors->text ds) (apply string-append (map decor->text ds)))
 (define (reg->text r)
   (match r
     [(list 'reg n) (symbol->string n)]
-    [(list 'reg n decor) (string-append (symbol->string n) (string-join decor ""))]
+    [(list 'reg n decor) (string-append (symbol->string n) (decors->text decor))]
     [(list 'vreg cls name view) (error 'x86-emit "unallocated virtual register ~a.~a" view name)]
     [(list 'vreg cls name view decor) (error 'x86-emit "unallocated virtual register ~a.~a" view name)]
     [_ (error 'x86-emit "bad register ~s" r)]))
@@ -33,7 +40,7 @@
      (define inner (string-join parts " + "))
      (string-append (if size (format "~a ptr " size) "")
                     "[" (regexp-replace* #rx"\\+ -" inner "- ") "]"
-                    (string-join decor ""))]
+                    (decors->text decor))]
     [(cons 'reg _) (reg->text u)]
     [(cons 'vreg _) (reg->text u)]
     [_ (error 'x86-emit "bad operand ~s" u)]))

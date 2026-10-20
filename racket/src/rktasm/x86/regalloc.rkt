@@ -251,11 +251,13 @@
       [(ymm) (string->symbol (format "ymm~a" (caddr i)))]
       [(zmm) (string->symbol (format "zmm~a" (caddr i)))]
       [(k) base]))
+  (define (rw-decor d) (match d [(list 'mask r) (list 'mask (rw r))] [_ d]))
   (define (rw u)
     (match u
       [(list 'vreg cls name view) (list 'reg (phys-view (color-of (find (vreg-key name))) view))]
-      [(list 'vreg cls name view decor) (list 'reg (phys-view (color-of (find (vreg-key name))) view) decor)]
-      [(list 'mem base index scale disp sym size decor) (list 'mem (and base (rw base)) (and index (rw index)) scale disp sym size decor)]
+      [(list 'vreg cls name view decor) (list 'reg (phys-view (color-of (find (vreg-key name))) view) (map rw-decor decor))]
+      [(list 'reg n decor) (list 'reg n (map rw-decor decor))]
+      [(list 'mem base index scale disp sym size decor) (list 'mem (and base (rw base)) (and index (rw index)) scale disp sym size (map rw-decor decor))]
       [_ u]))
   ;; coalesced copies (same physical register on both sides) disappear
   (define new-body

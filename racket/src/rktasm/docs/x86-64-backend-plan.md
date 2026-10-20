@@ -108,6 +108,15 @@ harness asm 2666 MB/s（物理版 2665），integration 77/77，基准 sha256 26
 `tests/alloc-tests.rkt` 7 组断言（预着色/视图、隐式 xmm0 干涉与复用、拷贝合并删除、压力点报错、
 循环活跃性、视图宽度选形）。
 
+**X3-1a 已落地（2026-10-21，已验证）**——`crypto/asm/x86/aes_ctr_vaes.asm`（VAES+AVX-512：4 个 zmm 装 16 个
+计数器块，每轮一次 `vbroadcasti32x4` 供 4 条 `vaesenc`；计数器按字节反转的 128 位整数存放，inc32 用
+`vpaddd` 32 位回绕，全宽模式 `vpaddq` + `vpcmpuq`/`kshiftlb` 掩码进位；64 字节余数循环；<64 字节与非 ELF
+留 AES-NI）。C 侧：`rktcrypto_aes_ctr_x86` 变为分派器，AES-NI 实现改名 `rktcrypto_aes_ctr_aesni`（oracle）；
+`rktcrypto_cpu.c` 加 AVX512(F+DQ+BW+VL)/VAES/VPCLMULQDQ 位与 xgetbv XCR0 检查。数据：gate 0/4000
+（内核直接 + 经分派器，三种密钥长度，inc32/全宽，32/64/128 位回绕点）；harness 1 MiB AES-256-CTR
+39734 MB/s vs AES-NI 11960（3.3×）；AES 对便携差分 0/65121；integration 77/77；基准 aes-256-gcm
+3622→4830 MB/s（探针 3330→4160）。剩余瓶颈 = GHASH（xmm PCLMUL 4 块聚合）→ X3-1b。
+
 ### X2 — 调度模型（1 周）
 - xlsx/XML → `data/latency-znver5.rktd` 转换器；调度器加 §2.6 规则；对照 `llvm-mca` 与 `perf stat` 周期数（±5% 内视为模型可用）。
 

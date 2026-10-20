@@ -49,6 +49,15 @@
      (if neg (- v) v)]
     [(regexp-match #px"^-?[0-9]+$" t) (string->number t)]
     [else #f]))
+;; EVEX decorators: {k1} / {k.name} -> (mask reg), {z} -> (z), {1to16} -> (bcst 16), anything else -> (raw text)
+(define (parse-decor s line)
+  (define t (string-downcase (substring s 1 (sub1 (string-length s)))))
+  (cond
+    [(string=? t "z") '(z)]
+    [(regexp-match #px"^1to([0-9]+)$" t) => (lambda (m) (list 'bcst (string->number (cadr m))))]
+    [(parse-reg-token t line) => (lambda (r) (list 'mask r))]
+    [else (list 'raw s)]))
+(define (parse-decors t line) (map (lambda (d) (parse-decor d line)) (regexp-match* #rx"{[^}]*}" t)))
 (define (parse-mem s line)
   ;; "[qword ptr]" already stripped by caller; s is the inside of [...]
   (define parts (map string-trim (regexp-split #rx"\\+" (regexp-replace* #rx"-" s "+-"))))
@@ -69,13 +78,13 @@
   (cond
     [(regexp-match #px"^(?:(byte|word|dword|qword|xmmword|ymmword|zmmword|tbyte) ptr )?\\[(.*)\\](\\{[^}]*\\})*$" t)
      => (lambda (m) (define size (cadr m))
-          (define decor (regexp-match* #rx"{[^}]*}" t))
+          (define decor (parse-decors t line))
           (define mem (parse-mem (caddr m) line))
           (append mem (list (and size (string->symbol size)) decor)))]
     [(parse-number t) => (lambda (n) (list 'imm n))]
     [(regexp-match #px"^([a-z0-9.]+)(\\{[^}]*\\})+$" (string-downcase t))
      => (lambda (m) (define r (parse-reg-token (cadr m) line))
-          (if r (append r (list (regexp-match* #rx"{[^}]*}" t))) (parse-error line "bad operand ~s" t)))]
+          (if r (append r (list (parse-decors t line))) (parse-error line "bad operand ~s" t)))]
     [(parse-reg-token t line) => values]
     [(regexp-match #px"^[A-Za-z_.][A-Za-z0-9_.]*$" t) (list 'label (string->symbol t))]
     [else (parse-error line "bad operand ~s" t)]))

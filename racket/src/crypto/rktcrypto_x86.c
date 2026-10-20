@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <immintrin.h>
+#include "rktcrypto_cpu.h"
+#include "rktcrypto_x86.h"
 
 /* SHA-256 round constants (FIPS 180-4), local so the module is
    self-contained (the core's K256 is file-static). */
@@ -226,8 +228,8 @@ static inline void x86_ctr_step(uint64_t *hi, uint64_t *lo, int inc32)
 /* CTR keystream XOR, eight blocks in flight (AES-NI latency is ~4 cycles per
    round per block; eight independent chains keep the unit busy). */
 X86_AES_TARGET
-void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
-                           const unsigned char *in, unsigned char *out, intptr_t len, int inc32)
+void rktcrypto_aes_ctr_aesni(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                             const unsigned char *in, unsigned char *out, intptr_t len, int inc32)
 {
   uint64_t hi = x86_load_be64(ctr), lo = x86_load_be64(ctr + 8);
   const __m128i k0 = _mm_loadu_si128((const __m128i *)rk);
@@ -517,6 +519,20 @@ void rktcrypto_sha256_block_shani(uint32_t state[8], const unsigned char *data)
 
   _mm_storeu_si128((__m128i *)&state[0], STATE0);
   _mm_storeu_si128((__m128i *)&state[4], STATE1);
+}
+
+void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                           const unsigned char *in, unsigned char *out, intptr_t len, int inc32)
+{
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t head = len & ~(intptr_t)63;
+    rktcrypto_aes_ctr_vaes(rk, Nr | (inc32 ? 0x100 : 0), ctr, in, out, head);
+    in += head; out += head; len -= head;
+    if (len == 0) return;
+  }
+#endif
+  rktcrypto_aes_ctr_aesni(rk, Nr, ctr, in, out, len, inc32);
 }
 
 #endif  /* x86 */

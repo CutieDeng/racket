@@ -22,6 +22,24 @@ static unsigned rktcrypto_cpu_detect(void)
   if (__get_cpuid_count(7, 0, &a, &b, &c, &d)) {
     if (b & (1u << 29)) f |= RKTCRYPTO_CPU_X86_SHA;     /* SHA-NI      */
     if (b & (1u << 5))  f |= RKTCRYPTO_CPU_X86_AVX2;    /* AVX2        */
+    if ((b & (1u << 16)) && (b & (1u << 17)) && (b & (1u << 30)) && (b & (1u << 31)))
+      f |= RKTCRYPTO_CPU_X86_AVX512;                    /* AVX512 F+DQ+BW+VL */
+    if (c & (1u << 9))  f |= RKTCRYPTO_CPU_X86_VAES;    /* VAES        */
+    if (c & (1u << 10)) f |= RKTCRYPTO_CPU_X86_VPCLMULQDQ;
+  }
+  /* The OS must have enabled the wider register state (XCR0 via xgetbv): bits 1,2 for
+     YMM, 5,6,7 for opmask/ZMM. Without it the AVX families are reported absent. */
+  {
+    unsigned xcr0 = 0;
+    if (__get_cpuid(1, &a, &b, &c, &d) && (c & (1u << 27))) {   /* OSXSAVE */
+      unsigned lo, hi;
+      __asm__ volatile("xgetbv" : "=a"(lo), "=d"(hi) : "c"(0));
+      xcr0 = lo;
+    }
+    if ((xcr0 & 0x6) != 0x6)
+      f &= ~(RKTCRYPTO_CPU_X86_AVX2 | RKTCRYPTO_CPU_X86_AVX512 | RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ);
+    if ((xcr0 & 0xe6) != 0xe6)
+      f &= ~RKTCRYPTO_CPU_X86_AVX512;
   }
   return f;
 }

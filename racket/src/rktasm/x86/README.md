@@ -33,6 +33,11 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
   池：GPR 15 个（无 rsp）、向量 xmm0–15、掩码 k1–k7。`as.rkt --dump-alloc` 打印映射。
   主机端检查 `tests/alloc-tests.rkt`（不需 x86 硬件）。
 
-现状（X1-2a，2026-10-21）：`sha256.asm` 已改为虚拟寄存器（只有 xmm0 保持物理），lan-11 gate 0/3001、
-性能与物理寄存器版持平。待做：`.simd avx512`（xmm16–31/zmm 池）、`.frame/.alloca`、`.call` 破坏集、
-两地址改写（三操作数糖）、Zen 5 调度模型（X1-3）。
+- EVEX 修饰（X3-1a 起）：`zmm.x{k.m}{z}`、`[mem]{1to16}` 由解析器保存为结构化数据；规范表把 XED 的
+  写掩码（MASK1）与广播伪操作数剔出语法操作数列表，掩码寄存器计为 use、合并掩码（无 `{z}`）计为目标的
+  use；分配器给 k1–k7 着色并改写修饰；回读比对归一化 llvm-objdump 打印的 `vpcmp{eq,lt,…}` 别名。
+  VAES/VPCLMULQDQ 没有嵌入广播（`{1toN}` 对 `vaesenc` 非法，用 `vbroadcasti32x4` 到寄存器）。
+
+现状（X3-1a，2026-10-21）：内核 `sha256`（SHA-NI）与 `aes_ctr_vaes`（VAES+AVX-512，16 块/迭代，
+inc32 与 128 位全宽计数器）已落地并由 C 分派；lan-11 gate 0 mismatch。待做：`.simd avx512`
+（xmm16–31/zmm 池）、`.frame/.alloca`、`.call` 破坏集、两地址改写（三操作数糖）、Zen 5 调度模型（X1-3）。
