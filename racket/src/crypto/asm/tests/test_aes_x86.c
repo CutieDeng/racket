@@ -2,7 +2,7 @@
    GCM, CCM) vs the portable software AES in the same binary, by toggling the
    cached CPU feature word (rktcrypto_cpu_override_features). Run on real
    AES-NI hardware (lan-11). Build (from racket/src/crypto):
-     gcc -O2 -I. -o /tmp/test_aes_x86 asm/tests/test_aes_x86.c rktcrypto_aes_modes.c rktcrypto_aes_ctr_vaes.S \
+     gcc -O2 -I. -o /tmp/test_aes_x86 asm/tests/test_aes_x86.c rktcrypto_aes_modes.c rktcrypto_aes_ctr_vaes.S rktcrypto_ghash_vpclmul.S \
          rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_ccm.c rktcrypto_ct.c */
 #include <stdio.h>
 #include <string.h>

@@ -39,6 +39,10 @@ void rktcrypto_aes_ctr_aesni(const unsigned char *rk, int Nr, unsigned char ctr[
 /* rktasm/x86 kernel (rktcrypto_aes_ctr_vaes.S): VAES+AVX-512, len a multiple of 64, nr_inc32 = Nr | inc32 << 8 */
 void rktcrypto_aes_ctr_vaes(const unsigned char *rk, int nr_inc32, unsigned char ctr[16],
                             const unsigned char *in, unsigned char *out, intptr_t len);
+/* rktasm/x86 kernel (rktcrypto_ghash_vpclmul.S): htab[16k..] = H^(16-k), byte-reversed representation,
+   len a multiple of 64, acc updated in place */
+void rktcrypto_ghash_vpclmul(const unsigned char htab[256], unsigned char acc[16],
+                             const unsigned char *data, intptr_t len);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

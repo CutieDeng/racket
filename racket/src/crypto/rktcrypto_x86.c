@@ -414,9 +414,32 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
   H   = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
   H2  = gcm_gfmul(H, H); H3 = gcm_gfmul(H2, H); H4 = gcm_gfmul(H3, H);
   acc = _mm_setzero_si128();
+#if defined(__x86_64__) && defined(__ELF__)
+  /* VPCLMULQDQ kernel for regions of 256 bytes and more: H^16..H^1 are computed once per
+     call (15 multiplications), the kernel takes the 64-byte multiple prefix of the region. */
+  { const int use_vpclmul = rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512);
+    unsigned char htab[256] __attribute__((aligned(64))), accb[16]; int htab_ready = 0;
+#define GCM_X86_VPCLMUL(DATA, LEN) do {                                     \
+    if (use_vpclmul && (LEN) >= 256) {                                     \
+      intptr_t _n = (LEN) & ~(intptr_t)63;                                 \
+      if (!htab_ready) {                                                   \
+        __m128i _p = H; int _k;                                            \
+        for (_k = 15; _k >= 0; _k--) { _mm_storeu_si128((__m128i *)(htab + 16 * _k), _p); _p = gcm_gfmul(_p, H); } \
+        htab_ready = 1;                                                    \
+      }                                                                    \
+      _mm_storeu_si128((__m128i *)accb, acc);                              \
+      rktcrypto_ghash_vpclmul(htab, accb, (DATA), _n);                     \
+      acc = _mm_loadu_si128((const __m128i *)accb);                        \
+      (DATA) += _n; (LEN) -= _n;                                           \
+    } } while (0)
+#else
+#define GCM_X86_VPCLMUL(DATA, LEN) do { } while (0)
+  {
+#endif
 
 #define GCM_X86_REGION(DATA, LEN) do {                                      \
     intptr_t _l = (LEN); const unsigned char *_d = (DATA); __m128i _x;      \
+    GCM_X86_VPCLMUL(_d, _l);                                                \
     while (_l >= 64) {                                                      \
       __m128i _c0, _c1, _c2, _c3, _lo, _hi, _l2, _h2;                       \
       _c0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)_d), bswap);  \
@@ -446,6 +469,8 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
   GCM_X86_REGION(aad, aad_len);
   GCM_X86_REGION(ct, ct_len);
 #undef GCM_X86_REGION
+#undef GCM_X86_VPCLMUL
+  }
 
   { uint64_t abits = (uint64_t)aad_len << 3, cbits = (uint64_t)ct_len << 3;
     for (i = 0; i < 8; i++) blk[i]     = (unsigned char)(abits >> (56 - 8*i));

@@ -117,6 +117,20 @@ harness asm 2666 MB/s（物理版 2665），integration 77/77，基准 sha256 26
 39734 MB/s vs AES-NI 11960（3.3×）；AES 对便携差分 0/65121；integration 77/77；基准 aes-256-gcm
 3622→4830 MB/s（探针 3330→4160）。剩余瓶颈 = GHASH（xmm PCLMUL 4 块聚合）→ X3-1b。
 
+**X3-1b 已落地（2026-10-21，已验证）**——`crypto/asm/x86/ghash_vpclmul.asm`（VPCLMULQDQ+AVX-512：4 个 zmm
+装 16 个数据块对 H^16..H^1（C 侧每次调用预算 15 次乘法成 256 B 表，降序存放，作内存操作数），lo/hi/mid 原始积
+跨 16 块累加后一次 `gcm_reduce`（逐条转写 intrinsics 的移位折叠序列，比特一致）；64 字节余数路径；
+<256 B 区域留 PCLMUL intrinsics）。接入点 = `rktcrypto_ghash_x86` 的每个区域（aad、ct）前缀。
+数据：gate 0/3000（oracle = 同函数关闭 VPCLMULQDQ 特征位）；harness 1 MiB GHASH 21202 vs 7677 MB/s
+（2.8×）；integration 77/77；基准 aes-256-gcm 4830→8822 MB/s（探针 4160→6637）。
+分析（推断）：CTR 39.6 + GHASH 21.2 GB/s 两趟理论合成 13.8，实测 8.8；GHASH 每 256 B 一条约 50–60 周期的
+串行链（acc→clmul→折叠→约简），与 AES-256 16 块的 56 条 vaesenc 工作量相当 → X3-1c 单趟融合（AES 与
+上一块 GHASH 重叠）预计接近 OpenSSL 的 22.8 GB/s；更便宜的约简（2 clmul 蒙哥马利式）与 32 块聚合为后备。
+
+**DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
+驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
+（`vpxor`→`vpxorq`）。主机测试 +3 组。
+
 ### X2 — 调度模型（1 周）
 - xlsx/XML → `data/latency-znver5.rktd` 转换器；调度器加 §2.6 规则；对照 `llvm-mca` 与 `perf stat` 周期数（±5% 内视为模型可用）。
 
