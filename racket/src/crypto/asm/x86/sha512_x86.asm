@@ -1,7 +1,10 @@
 ;; SHA-512 block compression on x86-64 (scalar, BMI2 rorx): the eight state words stay in
 ;; registers across all blocks, the 80 rounds are unrolled with the a..h rotation folded into
 ;; register names, the sixteen-word message schedule lives in a ring in the caller's scratch
-;; area (hw[8..23]) because the DSL has no stack frames yet.
+;; area (hw[8..23]) because the DSL has no stack frames yet. Within a round Ch is added before
+;; Sigma1 so the e chain is five cycles (Ch is ready two cycles after e, Sigma1 three).
+;; A vectorised schedule (ymm sigma0/sigma1) and folding K into it were measured at +3% and
+;; +0% on Zen 5 (the round chain and the port mix bound it, IPC 4.2), so the scalar form stays.
 ;;   void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk)
 ;; hw[0..7] = state (updated). Oracle: sha512_transform_portable (rktcrypto_sha512.c) through the
 ;; core API with the BMI2/ADX bit cleared; gate: asm/tests/test_sha512_x86.c.
@@ -63,20 +66,20 @@ blk:
   add q.t1, qword ptr [q.hw + ${64 + 8 * (i % 16)}]
   mov qword ptr [q.hw + ${64 + 8 * (i % 16)}], q.t1
   .endfor
-  add q.s${(7 + 8 - i % 8) % 8}, q.t1                                ; h += W[i]
+  add q.s${(7 + 8 - i % 8) % 8}, q.t1                                ; h += W[i]   (off the e chain)
   add q.s${(7 + 8 - i % 8) % 8}, qword ptr [rip + sha512_x86_k + ${8 * i}]
-  rorx q.t0, q.s${(4 + 8 - i % 8) % 8}, 14
-  rorx q.t1, q.s${(4 + 8 - i % 8) % 8}, 18
-  xor q.t0, q.t1
-  rorx q.t1, q.s${(4 + 8 - i % 8) % 8}, 41
-  xor q.t0, q.t1
-  add q.s${(7 + 8 - i % 8) % 8}, q.t0                                ; + Sigma1(e)
   mov q.t0, q.s${(6 + 8 - i % 8) % 8}
   xor q.t0, q.s${(5 + 8 - i % 8) % 8}
   and q.t0, q.s${(4 + 8 - i % 8) % 8}
-  xor q.t0, q.s${(6 + 8 - i % 8) % 8}                                ; Ch(e, f, g)
-  add q.s${(7 + 8 - i % 8) % 8}, q.t0                                ; h = T1
-  add q.s${(3 + 8 - i % 8) % 8}, q.s${(7 + 8 - i % 8) % 8}                                 ; e' = d + T1
+  xor q.t0, q.s${(6 + 8 - i % 8) % 8}                                ; Ch(e, f, g): ready two cycles after e
+  add q.s${(7 + 8 - i % 8) % 8}, q.t0
+  rorx q.t1, q.s${(4 + 8 - i % 8) % 8}, 14
+  rorx q.t2, q.s${(4 + 8 - i % 8) % 8}, 18
+  xor q.t1, q.t2
+  rorx q.t2, q.s${(4 + 8 - i % 8) % 8}, 41
+  xor q.t1, q.t2                               ; Sigma1(e): ready three cycles after e
+  add q.s${(7 + 8 - i % 8) % 8}, q.t1                                ; h = T1 (e + 4)
+  add q.s${(3 + 8 - i % 8) % 8}, q.s${(7 + 8 - i % 8) % 8}                                 ; e' = d + T1 (e + 5)
   rorx q.t0, q.s${(0 + 8 - i % 8) % 8}, 28
   rorx q.t1, q.s${(0 + 8 - i % 8) % 8}, 34
   xor q.t0, q.t1

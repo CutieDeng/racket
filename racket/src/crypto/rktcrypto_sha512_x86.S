@@ -53,17 +53,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 64], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -83,17 +83,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 72], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 8]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -113,17 +113,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 80], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 16]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -143,17 +143,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 88], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 24]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -173,17 +173,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 96], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 32]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -203,17 +203,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 104], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 40]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -233,17 +233,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 112], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 48]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -263,17 +263,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 120], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 56]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -293,17 +293,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 128], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 64]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -323,17 +323,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 136], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 72]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -353,17 +353,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 144], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 80]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -383,17 +383,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 152], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 88]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -413,17 +413,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 160], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 96]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -443,17 +443,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 168], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 104]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -473,17 +473,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 176], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 112]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -503,17 +503,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 184], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 120]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -547,17 +547,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 64], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 128]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -591,17 +591,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 72], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 136]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -635,17 +635,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 80], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 144]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -679,17 +679,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 88], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 152]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -723,17 +723,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 96], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 160]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -767,17 +767,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 104], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 168]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -811,17 +811,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 112], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 176]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -855,17 +855,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 120], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 184]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -899,17 +899,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 128], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 192]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -943,17 +943,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 136], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 200]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -987,17 +987,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 144], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 208]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -1031,17 +1031,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 152], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 216]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -1075,17 +1075,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 160], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 224]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -1119,17 +1119,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 168], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 232]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -1163,17 +1163,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 176], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 240]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -1207,17 +1207,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 184], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 248]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -1251,17 +1251,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 64], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 256]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -1295,17 +1295,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 72], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 264]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -1339,17 +1339,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 80], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 272]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -1383,17 +1383,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 88], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 280]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -1427,17 +1427,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 96], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 288]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -1471,17 +1471,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 104], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 296]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -1515,17 +1515,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 112], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 304]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -1559,17 +1559,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 120], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 312]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -1603,17 +1603,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 128], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 320]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -1647,17 +1647,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 136], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 328]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -1691,17 +1691,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 144], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 336]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -1735,17 +1735,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 152], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 344]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -1779,17 +1779,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 160], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 352]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -1823,17 +1823,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 168], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 360]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -1867,17 +1867,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 176], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 368]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -1911,17 +1911,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 184], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 376]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -1955,17 +1955,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 64], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 384]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -1999,17 +1999,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 72], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 392]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -2043,17 +2043,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 80], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 400]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -2087,17 +2087,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 88], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 408]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -2131,17 +2131,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 96], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 416]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -2175,17 +2175,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 104], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 424]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -2219,17 +2219,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 112], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 432]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -2263,17 +2263,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 120], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 440]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -2307,17 +2307,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 128], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 448]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -2351,17 +2351,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 136], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 456]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -2395,17 +2395,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 144], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 464]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -2439,17 +2439,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 152], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 472]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -2483,17 +2483,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 160], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 480]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -2527,17 +2527,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 168], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 488]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -2571,17 +2571,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 176], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 496]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -2615,17 +2615,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 184], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 504]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -2659,17 +2659,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 64], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 512]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -2703,17 +2703,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 72], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 520]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -2747,17 +2747,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 80], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 528]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -2791,17 +2791,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 88], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 536]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -2835,17 +2835,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 96], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 544]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -2879,17 +2879,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 104], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 552]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -2923,17 +2923,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 112], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 560]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -2967,17 +2967,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 120], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 568]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
@@ -3011,17 +3011,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 128], r8
         add r9, r8
         add r9, qword ptr [rip + sha512_x86_k + 576]
-        rorx rcx, rbx, 0xe
-        rorx r8, rbx, 0x12
-        xor rcx, r8
-        rorx r8, rbx, 0x29
-        xor rcx, r8
-        add r9, rcx
         mov rcx, r10
         xor rcx, r11
         and rcx, rbx
         xor rcx, r10
         add r9, rcx
+        rorx r8, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor r8, rax
+        rorx rax, rbx, 0x29
+        xor r8, rax
+        add r9, r8
         add r12, r9
         rorx rcx, r15, 0x1c
         rorx r8, r15, 0x22
@@ -3055,17 +3055,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 136], r8
         add r10, r8
         add r10, qword ptr [rip + sha512_x86_k + 584]
-        rorx rcx, r12, 0xe
-        rorx r8, r12, 0x12
-        xor rcx, r8
-        rorx r8, r12, 0x29
-        xor rcx, r8
-        add r10, rcx
         mov rcx, r11
         xor rcx, rbx
         and rcx, r12
         xor rcx, r11
         add r10, rcx
+        rorx r8, r12, 0xe
+        rorx rax, r12, 0x12
+        xor r8, rax
+        rorx rax, r12, 0x29
+        xor r8, rax
+        add r10, r8
         add r13, r10
         rorx rcx, r9, 0x1c
         rorx r8, r9, 0x22
@@ -3099,17 +3099,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 144], r8
         add r11, r8
         add r11, qword ptr [rip + sha512_x86_k + 592]
-        rorx rcx, r13, 0xe
-        rorx r8, r13, 0x12
-        xor rcx, r8
-        rorx r8, r13, 0x29
-        xor rcx, r8
-        add r11, rcx
         mov rcx, rbx
         xor rcx, r12
         and rcx, r13
         xor rcx, rbx
         add r11, rcx
+        rorx r8, r13, 0xe
+        rorx rax, r13, 0x12
+        xor r8, rax
+        rorx rax, r13, 0x29
+        xor r8, rax
+        add r11, r8
         add r14, r11
         rorx rcx, r10, 0x1c
         rorx r8, r10, 0x22
@@ -3143,17 +3143,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 152], r8
         add rbx, r8
         add rbx, qword ptr [rip + sha512_x86_k + 600]
-        rorx rcx, r14, 0xe
-        rorx r8, r14, 0x12
-        xor rcx, r8
-        rorx r8, r14, 0x29
-        xor rcx, r8
-        add rbx, rcx
         mov rcx, r12
         xor rcx, r13
         and rcx, r14
         xor rcx, r12
         add rbx, rcx
+        rorx r8, r14, 0xe
+        rorx rax, r14, 0x12
+        xor r8, rax
+        rorx rax, r14, 0x29
+        xor r8, rax
+        add rbx, r8
         add r15, rbx
         rorx rcx, r11, 0x1c
         rorx r8, r11, 0x22
@@ -3187,17 +3187,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 160], r8
         add r12, r8
         add r12, qword ptr [rip + sha512_x86_k + 608]
-        rorx rcx, r15, 0xe
-        rorx r8, r15, 0x12
-        xor rcx, r8
-        rorx r8, r15, 0x29
-        xor rcx, r8
-        add r12, rcx
         mov rcx, r13
         xor rcx, r14
         and rcx, r15
         xor rcx, r13
         add r12, rcx
+        rorx r8, r15, 0xe
+        rorx rax, r15, 0x12
+        xor r8, rax
+        rorx rax, r15, 0x29
+        xor r8, rax
+        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
         rorx r8, rbx, 0x22
@@ -3231,17 +3231,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 168], r8
         add r13, r8
         add r13, qword ptr [rip + sha512_x86_k + 616]
-        rorx rcx, r9, 0xe
-        rorx r8, r9, 0x12
-        xor rcx, r8
-        rorx r8, r9, 0x29
-        xor rcx, r8
-        add r13, rcx
         mov rcx, r14
         xor rcx, r15
         and rcx, r9
         xor rcx, r14
         add r13, rcx
+        rorx r8, r9, 0xe
+        rorx rax, r9, 0x12
+        xor r8, rax
+        rorx rax, r9, 0x29
+        xor r8, rax
+        add r13, r8
         add r10, r13
         rorx rcx, r12, 0x1c
         rorx r8, r12, 0x22
@@ -3275,17 +3275,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 176], r8
         add r14, r8
         add r14, qword ptr [rip + sha512_x86_k + 624]
-        rorx rcx, r10, 0xe
-        rorx r8, r10, 0x12
-        xor rcx, r8
-        rorx r8, r10, 0x29
-        xor rcx, r8
-        add r14, rcx
         mov rcx, r15
         xor rcx, r9
         and rcx, r10
         xor rcx, r15
         add r14, rcx
+        rorx r8, r10, 0xe
+        rorx rax, r10, 0x12
+        xor r8, rax
+        rorx rax, r10, 0x29
+        xor r8, rax
+        add r14, r8
         add r11, r14
         rorx rcx, r13, 0x1c
         rorx r8, r13, 0x22
@@ -3319,17 +3319,17 @@ rktcrypto_sha512_blocks_x86:
         mov qword ptr [rdi + 184], r8
         add r15, r8
         add r15, qword ptr [rip + sha512_x86_k + 632]
-        rorx rcx, r11, 0xe
-        rorx r8, r11, 0x12
-        xor rcx, r8
-        rorx r8, r11, 0x29
-        xor rcx, r8
-        add r15, rcx
         mov rcx, r9
         xor rcx, r10
         and rcx, r11
         xor rcx, r9
         add r15, rcx
+        rorx r8, r11, 0xe
+        rorx rax, r11, 0x12
+        xor r8, rax
+        rorx rax, r11, 0x29
+        xor r8, rax
+        add r15, r8
         add rbx, r15
         rorx rcx, r14, 0x1c
         rorx r8, r14, 0x22
