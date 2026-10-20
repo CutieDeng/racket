@@ -481,6 +481,67 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
   _mm_storeu_si128((__m128i *)s, _mm_shuffle_epi8(acc, bswap));
 }
 
+/* H^16..H^1 for the VPCLMULQDQ kernels, descending so that table row j (64 bytes) lines up
+   with data register j; htab[240..255] = H. */
+__attribute__((target("pclmul,sse4.1,ssse3")))
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[256])
+{
+  const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+  unsigned char hb[16]; __m128i H, p; int i, k;
+  for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
+  H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
+  p = H;
+  for (k = 15; k >= 0; k--) { _mm_storeu_si128((__m128i *)(htab + 16 * k), p); p = gcm_gfmul(p, H); }
+}
+
+/* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then
+   the four-block aggregation, single blocks, and a zero-padded partial block on the intrinsics. */
+__attribute__((target("pclmul,sse4.1,ssse3")))
+void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc16[16],
+                                const unsigned char *data, intptr_t len)
+{
+  const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+  const __m128i H  = _mm_loadu_si128((const __m128i *)(htab + 240));
+  const __m128i H2 = _mm_loadu_si128((const __m128i *)(htab + 224));
+  const __m128i H3 = _mm_loadu_si128((const __m128i *)(htab + 208));
+  const __m128i H4 = _mm_loadu_si128((const __m128i *)(htab + 192));
+  __m128i acc, x;
+  unsigned char blk[16]; intptr_t i;
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 256 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t n = len & ~(intptr_t)63;
+    rktcrypto_ghash_vpclmul(htab, acc16, data, n);
+    data += n; len -= n;
+  }
+#endif
+  acc = _mm_loadu_si128((const __m128i *)acc16);
+  while (len >= 64) {
+    __m128i c0, c1, c2, c3, lo, hi, l2, h2;
+    c0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)data), bswap);
+    c1 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 16)), bswap);
+    c2 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 32)), bswap);
+    c3 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 48)), bswap);
+    gcm_mul_raw(_mm_xor_si128(acc, c0), H4, &lo, &hi);
+    gcm_mul_raw(c1, H3, &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    gcm_mul_raw(c2, H2, &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    gcm_mul_raw(c3, H,  &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    acc = gcm_reduce(lo, hi);
+    data += 64; len -= 64;
+  }
+  while (len >= 16) {
+    x = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)data), bswap);
+    acc = gcm_gfmul(_mm_xor_si128(acc, x), H);
+    data += 16; len -= 16;
+  }
+  if (len > 0) {
+    memset(blk, 0, 16);
+    for (i = 0; i < len; i++) blk[i] = data[i];
+    x = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)blk), bswap);
+    acc = gcm_gfmul(_mm_xor_si128(acc, x), H);
+  }
+  _mm_storeu_si128((__m128i *)acc16, acc);
+}
+
 /* ===================== SHA-256 block (SHA-NI) ===================== */
 /* Canonical Intel SHA-NI compression (sha256rnds2 / sha256msg1 /
    sha256msg2). Compile-checked here; validate on real SHA-NI hardware. */

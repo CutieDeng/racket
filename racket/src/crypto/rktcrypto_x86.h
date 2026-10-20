@@ -43,6 +43,25 @@ void rktcrypto_aes_ctr_vaes(const unsigned char *rk, int nr_inc32, unsigned char
    len a multiple of 64, acc updated in place */
 void rktcrypto_ghash_vpclmul(const unsigned char htab[256], unsigned char acc[16],
                              const unsigned char *data, intptr_t len);
+/* Fused AES-GCM bulk pass (rktcrypto_gcm_vaes.S): the context layout is shared with the kernel */
+struct rktcrypto_gcm_vaes_ctx {
+  const unsigned char *rk;     /* 0  */
+  const unsigned char *htab;   /* 8  H^16..H^1 descending, byte-reversed (rktcrypto_gcm_vaes_setup) */
+  unsigned char *ctr;          /* 16 big-endian counter block, advanced by the kernel */
+  unsigned char *acc;          /* 24 GHASH accumulator, byte-reversed, updated by the kernel */
+  intptr_t nr;                 /* 32 */
+  intptr_t enc;                /* 40 1 = encrypt (GHASH the output), 0 = decrypt (GHASH the input) */
+};
+intptr_t rktcrypto_gcm_crypt_vaes(const struct rktcrypto_gcm_vaes_ctx *c,
+                                  const unsigned char *in, unsigned char *out, intptr_t len);
+/* H^16..H^1 (descending, byte-reversed) from the GCM hash key h = (hi, lo) big-endian words;
+   htab[240..255] is H itself. */
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[256]);
+/* GHASH a region into acc (byte-reversed): the VPCLMULQDQ kernel for the 64-byte multiple prefix
+   of regions of 256 bytes and more, the PCLMUL intrinsics for the rest; a partial final block is
+   zero-padded. */
+void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc[16],
+                                const unsigned char *data, intptr_t len);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

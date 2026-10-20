@@ -544,6 +544,54 @@ static int gcm_setup(const unsigned char *key, intptr_t keylen, unsigned char rk
   return Nr;
 }
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* Fused VAES + VPCLMULQDQ path (rktasm/x86 kernels): GHASH of the aad, then one sweep that
+   encrypts or decrypts 256-byte chunks while folding the ciphertext into the GHASH
+   accumulator, then the sub-256-byte tails on the CTR and GHASH paths, the lengths block
+   and the tag. Mirrors gcm_hw. Returns 0 (nothing done) when the CPU lacks the extensions
+   or the message is shorter than one chunk; the caller then takes the two-pass path. */
+static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const unsigned char nonce[12],
+                         const unsigned char *aad, intptr_t aad_len,
+                         const unsigned char *in, unsigned char *out, intptr_t len,
+                         int encrypt, unsigned char tag[16], int Nr)
+{
+  unsigned char htab[256] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
+  struct rktcrypto_gcm_vaes_ctx c;
+  intptr_t done;
+  int i;
+  if (len < 256) return 0;
+  if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) &&
+        rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)))
+    return 0;
+  rktcrypto_gcm_vaes_setup(h, htab);
+  memset(acc, 0, 16);
+  rktcrypto_ghash_region_x86(htab, acc, aad, aad_len);
+  memcpy(ctr, nonce, 12);
+  ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
+  c.rk = rk; c.htab = htab; c.ctr = ctr; c.acc = acc; c.nr = Nr; c.enc = encrypt;
+  done = rktcrypto_gcm_crypt_vaes(&c, in, out, len);
+  if (done < len) {
+    /* the ciphertext is GHASHed before it is overwritten when decrypting in place */
+    if (encrypt) {
+      rktcrypto_aes_ctr_x86(rk, Nr, ctr, in + done, out + done, len - done, 1);
+      rktcrypto_ghash_region_x86(htab, acc, out + done, len - done);
+    } else {
+      rktcrypto_ghash_region_x86(htab, acc, in + done, len - done);
+      rktcrypto_aes_ctr_x86(rk, Nr, ctr, in + done, out + done, len - done, 1);
+    }
+  }
+  { uint64_t abits = (uint64_t)aad_len << 3, cbits = (uint64_t)len << 3;
+    for (i = 0; i < 8; i++) lenblock[i]     = (unsigned char)(abits >> (56 - 8 * i));
+    for (i = 0; i < 8; i++) lenblock[8 + i] = (unsigned char)(cbits >> (56 - 8 * i)); }
+  rktcrypto_ghash_region_x86(htab, acc, lenblock, 16);
+  memcpy(j0, nonce, 12);
+  j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
+  rktcrypto_aes_enc_block(rk, Nr, j0, ej0);
+  for (i = 0; i < 16; i++) tag[i] = acc[15 - i] ^ ej0[i];   /* acc is byte-reversed */
+  return 1;
+}
+#endif
+
 /* Shared AES-GCM seal/open cores over a variable key length (16/24/32). Nr is
    passed as a literal (14 for AES-256, 10 for AES-128) so the always-inlined
    gcm_hw specializes its round loops per suite -- AES-256 codegen is unchanged. */
@@ -563,6 +611,10 @@ static int gcm_seal_core(const unsigned char *key, intptr_t keylen, const unsign
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   gcm_hw(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr);
 #else
+# if defined(__x86_64__) && defined(__ELF__)
+  if (gcm_x86_fused(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr))
+    return 1;
+# endif
   { unsigned char ctr[16];
     memcpy(ctr, nonce, 12);
     ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
@@ -594,6 +646,15 @@ static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsign
   }
   return 1;
 #else
+# if defined(__x86_64__) && defined(__ELF__)
+  if (gcm_x86_fused(rk, h, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag, Nr)) {
+    if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16)) {
+      memset(out + out_start, 0, (size_t)ct_len);   /* decrypted before the check: wipe */
+      return 0;
+    }
+    return 1;
+  }
+# endif
   gcm_tag(rk, nonce, aad + aad_start, aad_len, cbody, ct_len, h, tag, Nr);
   if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16))
     return 0;

@@ -127,6 +127,21 @@ harness asm 2666 MB/s（物理版 2665），integration 77/77，基准 sha256 26
 串行链（acc→clmul→折叠→约简），与 AES-256 16 块的 56 条 vaesenc 工作量相当 → X3-1c 单趟融合（AES 与
 上一块 GHASH 重叠）预计接近 OpenSSL 的 22.8 GB/s；更便宜的约简（2 clmul 蒙哥马利式）与 32 块聚合为后备。
 
+**X3-1c 已落地（2026-10-21，已验证）**——`crypto/asm/x86/gcm_vaes.asm`：单趟 AES-GCM 主体，每 256 B 块
+16 个 CTR 块（4 zmm）加密并与输入异或，同一迭代把**上一块**密文折入 GHASH（`pending` 标志，首块跳过），
+加密时密文取自寄存器、解密时在写出前从输入装载（原地解密安全）；上下文结构体 `rktcrypto_gcm_vaes_ctx`
+（rk/htab/ctr/acc/nr/enc）绕过 6 个寄存器实参的限制，返回已处理字节数（256 的倍数）。C 侧
+`gcm_x86_fused`（gcm.c，镜像 ARM `gcm_hw`）：aad GHASH → 融合主体 → <256 B 尾部走 CTR+GHASH 区域
+（解密先 GHASH 后解密）→ 长度块 → tag；open 先解密后比对，失败清零输出。辅助 `rktcrypto_gcm_vaes_setup`
+（H^16..H^1）、`rktcrypto_ghash_region_x86`。数据：gate 0/7500（seal/open/原地/篡改，128/256 位密钥，
+长度含每个 256 倍数与随机尾部，oracle=关 VAES+VPCLMULQDQ 的两趟路径）；harness seal 16 KB
+12927 vs 4292 MB/s、1 MiB 15643 vs 4409；integration 77/77；基准 aes-256-gcm 8822→10032 MB/s（探针 6875）。
+分析（推断）：C 级 1 MiB 15.6 GB/s 而 Racket 基准 10.0 → 每 MiB 约 37 µs 的 Racket 侧开销（疑为输出
+bytes 分配/清零），需单独定位；C 级 16 KB 12.9 vs OpenSSL 22.8（0.57×），每 256 B 块约 132 条向量
+µop（56 vaesenc + 16 clmul + ~60 其他）接近端口吞吐界而非延迟链 → 调优清单：2-clmul 蒙哥马利式约简
+（−25 op）、轮密钥常驻 15 个 zmm（.simd avx512 下可容）、s/d 寄存器乒乓省 4 次拷贝、vpternlogq 三路异或、
+32 块一次约简（H^32 表）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
