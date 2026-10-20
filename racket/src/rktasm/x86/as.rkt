@@ -56,8 +56,18 @@
        (when (and (dump-alloc?) (pair? (alloc-result-mapping r)))
          (printf "~a: ~a\n" (fn-name it)
                  (string-join (for/list ([m (alloc-result-mapping r)]) (format "~a=~a" (car m) (cdr m))) " ")))
-       (alloc-result-fn r)]
+       (define out (alloc-result-fn r))
+       ;; registers 16-31 (from .simd avx512) need an EVEX form of the instruction
+       (for ([x (fn-body out)] #:when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive))))
+         (define ops (instr-ops x))
+         (when (and (operands-need-evex? ops) (not (memq (instr-mnemonic x) jumps)))
+           (define f (match-form (instr-mnemonic x) ops))
+           (unless (and f (form-evex? f))
+             (err (instr-line x) "~a has no EVEX form for registers 16-31: ~a (use the AVX-512 mnemonic, e.g. vpxorq for vpxor)"
+                  (instr-mnemonic x) (instr->text x)))))
+       out]
       [else it])))
+(when (> errors 0) (eprintf "~a error(s)\n" errors) (exit 1))
 
 ;; ---- emit
 (define text (with-output-to-string (lambda () (emit-module items (current-output-port) #:provenance (format "source ~a" (let-values ([(b n d) (split-path in-path)]) n))))))

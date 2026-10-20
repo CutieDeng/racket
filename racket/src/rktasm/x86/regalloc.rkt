@@ -24,9 +24,11 @@
 ;; ---------------------------------------------------------------- pools
 (define gpr-pool '(rax rcx rdx rsi rdi r8 r9 r10 r11 rbx r12 r13 r14 r15 rbp))
 (define vec-pool (for/list ([i 16]) (string->symbol (format "xmm~a" i))))
+(define vec-pool-avx512 (for/list ([i 32]) (string->symbol (format "xmm~a" i))))   ; xmm16-31 only under pressure
 (define k-pool '(k1 k2 k3 k4 k5 k6 k7))
 (define sysv-gpr-args '(rdi rsi rdx rcx r8 r9))
-(define (pool-of cls) (case cls [(gpr) gpr-pool] [(vec) vec-pool] [(k) k-pool]))
+(define current-vec-pool (make-parameter vec-pool))
+(define (pool-of cls) (case cls [(gpr) gpr-pool] [(vec) (current-vec-pool)] [(k) k-pool]))
 
 ;; ---------------------------------------------------------------- keys
 ;; A node is a symbol: physical base name (rax, xmm3, k2) or 'v:<name> for a vreg.
@@ -84,6 +86,9 @@
 
 ;; ---------------------------------------------------------------- liveness
 (define (allocate-fn f)
+  (parameterize ([current-vec-pool (if (eq? (fn-simd f) 'avx512) vec-pool-avx512 vec-pool)])
+    (allocate-fn* f)))
+(define (allocate-fn* f)
   (define body (list->vector (fn-body f)))
   (define n (vector-length body))
   ;; vreg classes + first-appearance order; view consistency
@@ -265,5 +270,6 @@
                #:unless (and (instr? x) (vector-ref copies i)
                              (equal? (rw (car (instr-ops x))) (rw (cadr (instr-ops x))))))
       (if (instr? x) (instr (instr-mnemonic x) (map rw (instr-ops x)) (instr-text x) (instr-line x)) x)))
-  (alloc-result (fn (fn-name f) (fn-export? f) (map rw (fn-ins f)) (map rw (fn-outs f)) (map rw (fn-inouts f)) new-body (fn-save f) (fn-line f))
-                mapping))
+  (define out (fn (fn-name f) (fn-export? f) (map rw (fn-ins f)) (map rw (fn-outs f)) (map rw (fn-inouts f)) new-body (fn-save f) (fn-line f)))
+  (set-fn-simd! out (fn-simd f))
+  (alloc-result out mapping))

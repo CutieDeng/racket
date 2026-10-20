@@ -121,3 +121,21 @@ top:
 (check-true (and (match-form 'movq (list '(vreg gpr a q) '(vreg xmm b xmm))) #t))
 
 (displayln "alloc-tests: all checks passed")
+
+;; 8. .simd avx512 widens the vector pool to 32; without it the same kernel is out of registers
+(define (wide-kernel simd)
+  (string-append "
+.function w export (
+  in: q.p
+)
+" (if simd "  .simd avx512\n" "")
+    (string-join (for/list ([i 24]) (format "  vmovdqu64 zmm.v~a, zmmword ptr [q.p + ~a]" i (* 64 i))) "\n") "\n"
+    (string-join (for/list ([i 24]) (format "  vmovdqu64 zmmword ptr [q.p + ~a], zmm.v~a" (* 64 i) i)) "\n")
+    "\n  ret\n.end"))
+(check-exn #rx"out of vec registers" (lambda () (alloc (wide-kernel #f))))
+(let ([r (alloc (wide-kernel #t))])
+  (check-true (and (for/or ([m (alloc-result-mapping r)]) (memq (cdr m) '(xmm16 xmm17 xmm18 xmm19 xmm20 xmm21 xmm22 xmm23))) #t)))
+(check-true (operands-need-evex? '((reg zmm16) (reg zmm1))))
+(check-false (operands-need-evex? '((reg zmm15) (reg zmm1))))
+
+(displayln "alloc-tests: simd checks passed")

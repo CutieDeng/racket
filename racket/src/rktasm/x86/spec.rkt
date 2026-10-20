@@ -6,7 +6,7 @@
 (require racket/list racket/string racket/runtime-path racket/match)
 (provide load-spec spec-forms match-form form-isa-set form-flags form-operands
          (struct-out operand-shape) classify-lookup instr-use-def
-         reg-name->class reg-name-info gpr64-names)
+         reg-name->class reg-name-info gpr64-names form-evex? operands-need-evex?)
 
 (define-runtime-path data-dir "data")
 
@@ -131,6 +131,14 @@
     [('rel (list 'label _)) #t]
     [(_ _) #f]))
 
+(define (form-evex? f) (regexp-match? #rx"AVX512|AVX10" (symbol->string (form-isa-set f))))
+;; vector registers 16-31 and mask registers exist only in EVEX encodings
+(define (operands-need-evex? u-ops)
+  (for/or ([u u-ops])
+    (match u
+      [(list* 'reg n _) (let ([i (reg-name-info n)]) (and i (or (eq? (car i) 'k) (and (memq (car i) '(xmm ymm zmm)) (>= (caddr i) 16)))))]
+      [(list 'mem base index _ _ _ _ _) (operands-need-evex? (filter values (list base index)))]
+      [_ #f])))
 ;; Prefer legacy/VEX forms over EVEX/APX unless the operands need them.
 (define (form-rank f u-ops)
   (define isa (symbol->string (form-isa-set f)))

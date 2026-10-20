@@ -38,6 +38,9 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
   use；分配器给 k1–k7 着色并改写修饰；回读比对归一化 llvm-objdump 打印的 `vpcmp{eq,lt,…}` 别名。
   VAES/VPCLMULQDQ 没有嵌入广播（`{1toN}` 对 `vaesenc` 非法，用 `vbroadcasti32x4` 到寄存器）。
 
-现状（X3-1a，2026-10-21）：内核 `sha256`（SHA-NI）与 `aes_ctr_vaes`（VAES+AVX-512，16 块/迭代，
-inc32 与 128 位全宽计数器）已落地并由 C 分派；lan-11 gate 0 mismatch。待做：`.simd avx512`
-（xmm16–31/zmm 池）、`.frame/.alloca`、`.call` 破坏集、两地址改写（三操作数糖）、Zen 5 调度模型（X1-3）。
+- `.simd sse|avx2|avx512`（函数内）：向量池 16 或 32 个寄存器；分配后驱动检查落在 xmm16–31 的指令
+  必须有 EVEX 形式（否则报错提示换 AVX-512 助记符）。
+
+现状（X3-1b，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR，16 块/迭代）、
+`ghash_vpclmul`（VPCLMULQDQ GHASH，16 块一次约简）已落地并由 C 分派；lan-11 gate 全部 0 mismatch。
+待做：AES+GHASH 单趟融合内核、`.frame/.alloca`、`.call` 破坏集、两地址改写、Zen 5 调度模型（X1-3）。
