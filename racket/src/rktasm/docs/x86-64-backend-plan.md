@@ -76,6 +76,11 @@ x86-64 模块需要的部件（对应 ARM 侧的层，但独立实现）：
 2. 之后才轮到 rktasm x86 内核（VAES/VPCLMULQDQ 四路、AVX-512 ChaCha）去追 OpenSSL 的 10+ GB/s。
 3. 顺带：x86 的 AES 密钥扩展也走 AES-NI（`aeskeygenassist`），CBC/CMAC 保持单块串行但用硬件指令。
 
+**X0.5 落地记录（2026-10-21，lan-11，已验证）**
+- 步骤 1（AES-NI 进 modes）：`rktcrypto_x86.c` 新增通用密钥扩展（`aeskeygenassist` 取 SubWord/RotWord，128/192/256 同一递推）、`aesimc` 逆调度、单块 enc/dec、8 块流水 CTR（`inc32` 可选）、CBC enc（串行）/dec（8 块）；`rktcrypto_aes_modes.c` 便携段通过 `expand_key/enc_blk/dec_blk` 分派，覆盖 expand/enc_block/CTR/CBC/CMAC/XTS，CCM 经 `rktcrypto_aes_enc_block` 自动受益；`rktcrypto_gcm.c` 的 `gctr` 走 8 块 CTR。差分 `asm/tests/test_aes_x86.c`（同进程切换 `rktcrypto_cpu_override_features`，4000 轮 × 全模式 × 三种密钥长，含 GCM/CCM seal/open/篡改）0/65121；integration 77/77；aes-256-gcm 117 → 1613 MB/s；perf 剩余 61% 在单块 `gcm_gfmul`。
+- 步骤 2（SHA-1 SHA-NI）：`rktcrypto_sha1_blocks_shani`（sha1rnds4/nexte/msg1/msg2 标准序列），`rktcrypto_legacy.c` 分派；差分 `asm/tests/test_sha1_x86.c` 0/3001 + abc KAT；sha1 1360 → 2818 MB/s（OpenSSL 2722–2787，≈1.02×）。
+- 步骤 3（GHASH 4 块聚合）：`gcm_gfmul` 拆为 `gcm_mul_raw`（256 位裸积）+ `gcm_reduce`（线性，可先累加后约简），`ghash_x86` 预计算 H²/H³/H⁴，每 64 字节一次约简；差分 0/65121；吞吐见下方记录。
+
 ### X1 — 规范表与文本后端（3–4 周）
 - X1a `x86/xed-converter.rkt`：只解析 `ICLASS/EXTENSION/ISA_SET/FLAGS/ATTRIBUTES/OPERANDS`（行式 key: value 块，PATTERN/OPERANDS 按顺序配对成 form），生成 x86 模块自己的指令表与 use-def 表。**不**解析 `PATTERN` 的位域——装配交给 `as`，与 rktcrypto 现有流程一致。**原型已跑通**（scratchpad `xed-convert.rkt`，约 70 行）：111 个 ISA 文件 → 1932 个 ICLASS、10884 个 form、3.5MB `.rktd`；操作数动作词汇 `r/w/rw/rcw/cw/cr/crw`，`SUPP` 标记隐式操作数（如 `SHA256RNDS2` 的隐式 XMM0、`MULX` 的隐式 RDX），宽度码 `b/d/q/dq/qq/v/vv/z*`，标志词汇 `xx-mod/-tst/-u/-0/-1/-pop/-ah`（legacy 小写，APX 大写）；首批内核助记符（SHA-NI、SSE/AVX 搬运、MULX/ADCX/ADOX/RORX、VAES/VPCLMULQDQ、VPTERNLOGQ/VPMADD52、VPROLQ）全部存在，且每条按 ISA 集分形（例如 `VPADDD`：AVX/AVX2/AVX512F_128/256/512 共 10 form），dispatch 分级可直接由 form 的 ISA 集推出。
 - X1b 后端：§2 的 1/4/5/7 项。验收样例：**SHA-256 块函数（SHA-NI，约 60 条指令）**——简单、x86 红利大、已有 C intrinsics 对照；门禁 = `asm/tests` 差分 0 mismatch + `as` 装配 + `objdump` 回读一致。

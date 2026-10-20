@@ -25,6 +25,11 @@ enum {
 /* Returns the cached feature bitmask (detects on first call). */
 unsigned rktcrypto_cpu_features(void);
 
+/* Test-only: force the cached bitmask to `features` (enable = 1) so a
+   differential harness can run the portable and the hardware paths in
+   one process; enable = 0 returns to detection on the next query. */
+void rktcrypto_cpu_override_features(unsigned features, int enable);
+
 /* Convenience predicate. */
 static inline int rktcrypto_cpu_has(unsigned feature)
 {

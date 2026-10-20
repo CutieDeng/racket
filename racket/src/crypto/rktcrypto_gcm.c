@@ -473,6 +473,12 @@ gctr(const unsigned char rk[240], unsigned char ctr[16],
                  const unsigned char *in, unsigned char *out, intptr_t len, int Nr)
 {
   unsigned char ks[16];
+#if defined(__x86_64__) || defined(__i386__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI)) {
+    rktcrypto_aes_ctr_x86(rk, Nr, ctr, in, out, len, 1);   /* eight blocks in flight */
+    return;
+  }
+#endif
   while (len > 0) {
     intptr_t n = (len < 16) ? len : 16, i;
     rktcrypto_aes_enc_block(rk, Nr, ctr, ks);

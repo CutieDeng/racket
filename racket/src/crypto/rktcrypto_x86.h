@@ -18,6 +18,25 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
                          unsigned char s[16]);
 
 void rktcrypto_sha256_block_shani(uint32_t state[8], const unsigned char *data);
+void rktcrypto_sha1_blocks_shani(uint32_t state[5], const unsigned char *data, intptr_t nblk);
+
+/* AES-NI key schedules and block/mode kernels for all key sizes (Nr = 10/12/14).
+   rk/dk are the 16*(Nr+1)-byte FIPS-197 schedules in encryption order; dk is
+   the equivalent-inverse-cipher schedule (aesimc applied) for aesdec. The CTR
+   kernel keeps `ctr` (big-endian counter block) updated in place; inc32 selects
+   GCM's 32-bit counter increment, otherwise the whole 128-bit value steps. */
+int  rktcrypto_aes_expand_x86(const unsigned char *key, int keylen, unsigned char rk[240]);
+void rktcrypto_aes_expand_dec_x86(const unsigned char rk[240], int Nr, unsigned char dk[240]);
+void rktcrypto_aes_enc_blk_x86(const unsigned char *rk, int Nr,
+                               const unsigned char in[16], unsigned char out[16]);
+void rktcrypto_aes_dec_blk_x86(const unsigned char *dk, int Nr,
+                               const unsigned char in[16], unsigned char out[16]);
+void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                           const unsigned char *in, unsigned char *out, intptr_t len, int inc32);
+void rktcrypto_aes_cbc_enc_x86(const unsigned char *rk, int Nr, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len);
+void rktcrypto_aes_cbc_dec_x86(const unsigned char *dk, int Nr, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len);
 
 #endif
 

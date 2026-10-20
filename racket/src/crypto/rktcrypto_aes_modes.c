@@ -292,58 +292,90 @@ static void aes_dec_blk(const unsigned char*rk,int Nr,const unsigned char in[16]
   for(c=0;c<4;c++) for(i=0;i<4;i++) t[i+4*c]=ISBOX[s[i+4*((c-i+4)&3)]];
   for(i=0;i<16;i++) out[i]=(unsigned char)(t[i]^rk[i]);
 }
+#if defined(__x86_64__) || defined(__i386__)
+/* x86: the same mode constructions, with the block/CTR/CBC work on AES-NI
+   when the CPU has it (runtime dispatch via rktcrypto_cpu). The portable
+   table-driven cipher stays as the fallback for CPUs without AES-NI. */
+#include "rktcrypto_cpu.h"
+#include "rktcrypto_x86.h"
+#define AES_X86() (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI))
+#else
+#define AES_X86() 0
+#define rktcrypto_aes_expand_x86(k,l,rk) 0
+#define rktcrypto_aes_expand_dec_x86(rk,Nr,dk) ((void)0)
+#define rktcrypto_aes_enc_blk_x86(rk,Nr,i,o) ((void)0)
+#define rktcrypto_aes_dec_blk_x86(dk,Nr,i,o) ((void)0)
+#define rktcrypto_aes_ctr_x86(rk,Nr,c,i,o,l,inc) ((void)0)
+#define rktcrypto_aes_cbc_enc_x86(rk,Nr,iv,i,o,l) ((void)0)
+#define rktcrypto_aes_cbc_dec_x86(dk,Nr,iv,i,o,l) ((void)0)
+#endif
+static int expand_key(const unsigned char*key,int keylen,unsigned char*rk){
+  if(AES_X86()) return rktcrypto_aes_expand_x86(key,keylen,rk);
+  return aes_expand(key,keylen,rk);
+}
+static void enc_blk(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){
+  if(AES_X86()) rktcrypto_aes_enc_blk_x86(rk,Nr,in,out); else aes_enc_blk(rk,Nr,in,out);
+}
+/* dk = equivalent-inverse schedule (x86 only; unused on the portable path) */
+static void dec_blk(const unsigned char*rk,const unsigned char*dk,int Nr,const unsigned char in[16],unsigned char out[16]){
+  if(AES_X86()) rktcrypto_aes_dec_blk_x86(dk,Nr,in,out); else aes_dec_blk(rk,Nr,in,out);
+}
 static void ctr_add(unsigned char c[16],uint64_t add){ for(int i=15;i>=0&&add;i--){ unsigned v=c[i]+(add&0xff); c[i]=(unsigned char)v; add=(add>>8)+(v>>8); } }
-int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return aes_expand(key,(int)keylen,rk); }
-void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ aes_enc_blk(rk,Nr,in,out); }
+int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return expand_key(key,(int)keylen,rk); }
+void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ enc_blk(rk,Nr,in,out); }
 void rktcrypto_aes_ctr(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                        const unsigned char*in,unsigned char*out,intptr_t len){
-  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); unsigned char ctr[16],ks[16]; memcpy(ctr,iv,16);
+  unsigned char rk[240]; int Nr=expand_key(key,(int)keylen,rk); unsigned char ctr[16],ks[16]; memcpy(ctr,iv,16);
+  if(AES_X86()){ rktcrypto_aes_ctr_x86(rk,Nr,ctr,in,out,len,0); return; }
   while(len>0){ aes_enc_blk(rk,Nr,ctr,ks); intptr_t n=len<16?len:16; for(intptr_t i=0;i<n;i++) out[i]=in[i]^ks[i]; ctr_add(ctr,1); in+=n;out+=n;len-=n; }
 }
 void rktcrypto_aes_cbc_encrypt(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                                const unsigned char*in,unsigned char*out,intptr_t len){
-  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); unsigned char prev[16],x[16]; memcpy(prev,iv,16);
+  unsigned char rk[240]; int Nr=expand_key(key,(int)keylen,rk); unsigned char prev[16],x[16]; memcpy(prev,iv,16);
+  if(AES_X86()){ rktcrypto_aes_cbc_enc_x86(rk,Nr,iv,in,out,len); return; }
   for(intptr_t o=0;o+16<=len;o+=16){ for(int i=0;i<16;i++) x[i]=in[o+i]^prev[i]; aes_enc_blk(rk,Nr,x,out+o); memcpy(prev,out+o,16); }
 }
 void rktcrypto_aes_cbc_decrypt(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                                const unsigned char*in,unsigned char*out,intptr_t len){
-  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk); unsigned char prev[16],c[16],d[16]; memcpy(prev,iv,16);
+  unsigned char rk[240]; int Nr=expand_key(key,(int)keylen,rk); unsigned char prev[16],c[16],d[16]; memcpy(prev,iv,16);
+  if(AES_X86()){ unsigned char dk[240]; rktcrypto_aes_expand_dec_x86(rk,Nr,dk); rktcrypto_aes_cbc_dec_x86(dk,Nr,iv,in,out,len); return; }
   for(intptr_t o=0;o+16<=len;o+=16){ memcpy(c,in+o,16); aes_dec_blk(rk,Nr,c,d); for(int i=0;i<16;i++) out[o+i]=d[i]^prev[i]; memcpy(prev,c,16); }
 }
 static void cmac_dbl(unsigned char o[16],const unsigned char in[16]){ int carry=in[0]>>7; for(int i=0;i<15;i++) o[i]=(unsigned char)((in[i]<<1)|(in[i+1]>>7)); o[15]=(unsigned char)(in[15]<<1); if(carry) o[15]^=0x87; }
 void rktcrypto_aes_cmac(const unsigned char*key,intptr_t keylen,const unsigned char*msg,intptr_t len,unsigned char tag[16]){
-  unsigned char rk[240]; int Nr=aes_expand(key,(int)keylen,rk);
-  unsigned char L[16],K1[16],K2[16],zero[16]={0},X[16]={0},last[16],t[16]; aes_enc_blk(rk,Nr,zero,L);
+  unsigned char rk[240]; int Nr=expand_key(key,(int)keylen,rk);
+  unsigned char L[16],K1[16],K2[16],zero[16]={0},X[16]={0},last[16],t[16]; enc_blk(rk,Nr,zero,L);
   cmac_dbl(K1,L); cmac_dbl(K2,K1);
   intptr_t nblk=(len+15)/16; if(nblk==0)nblk=1; intptr_t o=0,i;
-  for(i=0;i<nblk-1;i++){ for(int j=0;j<16;j++) t[j]=X[j]^msg[o+j]; aes_enc_blk(rk,Nr,t,X); o+=16; }
+  for(i=0;i<nblk-1;i++){ for(int j=0;j<16;j++) t[j]=X[j]^msg[o+j]; enc_blk(rk,Nr,t,X); o+=16; }
   intptr_t rem=len-o;
   if(rem==16){ for(i=0;i<16;i++) last[i]=msg[o+i]^K1[i]; }
   else { for(i=0;i<rem;i++) last[i]=msg[o+i]; last[rem]=0x80; for(i=rem+1;i<16;i++) last[i]=0; for(i=0;i<16;i++) last[i]^=K2[i]; }
-  for(i=0;i<16;i++) t[i]=X[i]^last[i]; aes_enc_blk(rk,Nr,t,tag);
+  for(i=0;i<16;i++) t[i]=X[i]^last[i]; enc_blk(rk,Nr,t,tag);
 }
 static void xts_gf(unsigned char T[16]){ int cin=0; for(int j=0;j<16;j++){ int cout=T[j]>>7; T[j]=(unsigned char)((T[j]<<1)|cin); cin=cout; } if(cin) T[0]^=0x87; }
 void rktcrypto_aes_xts(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                        const unsigned char*in,unsigned char*out,intptr_t len,int encrypt){
-  unsigned char rk1[240],rk2[240],T[16],x[16],c[16]; int Nr=aes_expand(key,(int)keylen,rk1); aes_expand(key+keylen,(int)keylen,rk2);
-  aes_enc_blk(rk2,Nr,iv,T);
+  unsigned char rk1[240],rk2[240],dk1[240],T[16],x[16],c[16]; int Nr=expand_key(key,(int)keylen,rk1); expand_key(key+keylen,(int)keylen,rk2);
+  if(AES_X86()) rktcrypto_aes_expand_dec_x86(rk1,Nr,dk1); else memset(dk1,0,sizeof dk1);
+  enc_blk(rk2,Nr,iv,T);
   intptr_t nfull=len/16, rem=len%16, last_full=rem?nfull-1:nfull, o=0,i;
   for(i=0;i<last_full;i++){ for(int j=0;j<16;j++) x[j]=in[o+j]^T[j];
-    if(encrypt) aes_enc_blk(rk1,Nr,x,c); else aes_dec_blk(rk1,Nr,x,c);
+    if(encrypt) enc_blk(rk1,Nr,x,c); else dec_blk(rk1,dk1,Nr,x,c);
     for(int j=0;j<16;j++) out[o+j]=c[j]^T[j]; xts_gf(T); o+=16; }
   if(rem){
     if(encrypt){ unsigned char cb[16],pp[16],T2[16],c2[16];
-      for(int j=0;j<16;j++) x[j]=in[o+j]^T[j]; aes_enc_blk(rk1,Nr,x,cb); for(int j=0;j<16;j++) cb[j]^=T[j];
+      for(int j=0;j<16;j++) x[j]=in[o+j]^T[j]; enc_blk(rk1,Nr,x,cb); for(int j=0;j<16;j++) cb[j]^=T[j];
       for(i=0;i<rem;i++) out[o+16+i]=cb[i];
       for(i=0;i<rem;i++) pp[i]=in[o+16+i]; for(i=rem;i<16;i++) pp[i]=cb[i];
       memcpy(T2,T,16); xts_gf(T2);
-      for(int j=0;j<16;j++) x[j]=pp[j]^T2[j]; aes_enc_blk(rk1,Nr,x,c2); for(int j=0;j<16;j++) out[o+j]=c2[j]^T2[j];
+      for(int j=0;j<16;j++) x[j]=pp[j]^T2[j]; enc_blk(rk1,Nr,x,c2); for(int j=0;j<16;j++) out[o+j]=c2[j]^T2[j];
     } else { unsigned char T2[16],pb[16],cc[16],p2[16];
       memcpy(T2,T,16); xts_gf(T2);
-      for(int j=0;j<16;j++) x[j]=in[o+j]^T2[j]; aes_dec_blk(rk1,Nr,x,pb); for(int j=0;j<16;j++) pb[j]^=T2[j];
+      for(int j=0;j<16;j++) x[j]=in[o+j]^T2[j]; dec_blk(rk1,dk1,Nr,x,pb); for(int j=0;j<16;j++) pb[j]^=T2[j];
       for(i=0;i<rem;i++) out[o+16+i]=pb[i];
       for(i=0;i<rem;i++) cc[i]=in[o+16+i]; for(i=rem;i<16;i++) cc[i]=pb[i];
-      for(int j=0;j<16;j++) x[j]=cc[j]^T[j]; aes_dec_blk(rk1,Nr,x,p2); for(int j=0;j<16;j++) out[o+j]=p2[j]^T[j]; }
+      for(int j=0;j<16;j++) x[j]=cc[j]^T[j]; dec_blk(rk1,dk1,Nr,x,p2); for(int j=0;j<16;j++) out[o+j]=p2[j]^T[j]; }
   }
 }
 #endif

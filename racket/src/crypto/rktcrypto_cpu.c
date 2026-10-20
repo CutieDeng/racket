@@ -85,6 +85,12 @@ static unsigned rktcrypto_cpu_detect(void) { return 0; }
 static unsigned rktcrypto_cpu_detect(void) { return 0; }
 #endif
 
+void rktcrypto_cpu_override_features(unsigned features, int enable)
+{
+  rktcrypto_cpu_flags = features;
+  rktcrypto_cpu_initialized = enable ? 1 : 0;
+}
+
 unsigned rktcrypto_cpu_features(void)
 {
   if (!rktcrypto_cpu_initialized) {
