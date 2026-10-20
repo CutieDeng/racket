@@ -288,6 +288,41 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
 }
 #endif
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* Fused ChaCha20 + Poly1305 on the rktasm/x86 kernels (the fused kernel absorbs 64 Poly1305
+   blocks from `mac` while producing one unit; encryption feeds it the previous unit, decryption
+   the current one, see below). Whole 1024-byte units only; returns bytes consumed (0 when the
+   message has fewer than two units or the CPU lacks AVX-512 / BMI2+ADX, or the Poly1305
+   buffer is not empty). `poly`'s r and h are read and h written back. */
+intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
+                                          const unsigned char *in, unsigned char *out, intptr_t len,
+                                          int encrypt, rktcrypto_poly1305_ctx_t *poly)
+{
+  uint32_t st[16]; uint64_t hr[6];
+  intptr_t units = len / 1024;
+  const unsigned char *mac = encrypt ? out : in;
+  if (units < 2 || poly->buf_len != 0) return 0;
+  if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX))) return 0;
+  chacha20_setup(st, key, nonce, 1);
+  rktcrypto_poly1305_export64(poly, hr);
+  if (encrypt) {
+    /* unit 0 on the plain kernel; each fused unit absorbs the PREVIOUS unit's ciphertext,
+       which in-place encryption leaves intact; the last unit is absorbed afterwards */
+    rktcrypto_chacha20_blocks_avx512(st, in, out, 1);
+    rktcrypto_chacha20poly1305_units_x86(st, in + 1024, out + 1024, units - 1, out, hr);
+    rktcrypto_poly1305_import64(poly, hr);
+    rktcrypto_poly1305_update(poly, out + (units - 1) * 1024, 1024);
+  } else {
+    /* each fused unit absorbs its OWN ciphertext: the Poly1305 loads precede the stores of
+       the unit, so in-place decryption cannot overwrite what is still to be absorbed */
+    (void)mac;
+    rktcrypto_chacha20poly1305_units_x86(st, in, out, units, in, hr);
+    rktcrypto_poly1305_import64(poly, hr);
+  }
+  return units * 1024;
+}
+#endif
+
 void rktcrypto_chacha20_xor(const unsigned char key[32],
                             const unsigned char nonce[12],
                             uint32_t counter,

@@ -39,6 +39,32 @@ void rktcrypto_poly1305_init(rktcrypto_poly1305_ctx_t *ctx, const unsigned char 
 /* Processes complete 16-byte blocks from `m` (nblocks of them). If
    `final` is set, the high bit is not added (the caller has already
    placed the 0x01 byte in the padded final block). */
+#if defined(__x86_64__) && defined(__ELF__)
+/* radix 2^26 -> 2^64 (carries normalised first so the sum fits 131 bits) and back; h4 may come
+   back up to 2^27, which the radix-2^26 products absorb. */
+void rktcrypto_poly1305_export64(const rktcrypto_poly1305_ctx_t *ctx, uint64_t hr[6])
+{
+  uint64_t l0 = ctx->h[0], l1 = ctx->h[1], l2 = ctx->h[2], l3 = ctx->h[3], l4 = ctx->h[4], c;
+  unsigned __int128 acc;
+  c = l0 >> 26; l0 &= 0x3ffffff; l1 += c; c = l1 >> 26; l1 &= 0x3ffffff; l2 += c;
+  c = l2 >> 26; l2 &= 0x3ffffff; l3 += c; c = l3 >> 26; l3 &= 0x3ffffff; l4 += c;
+  acc = (unsigned __int128)l0 | ((unsigned __int128)l1 << 26) | ((unsigned __int128)l2 << 52) |
+        ((unsigned __int128)l3 << 78) | ((unsigned __int128)(l4 & 0xffffff) << 104);
+  hr[0] = (uint64_t)acc; hr[1] = (uint64_t)(acc >> 64); hr[2] = l4 >> 24;
+  hr[3] = (uint64_t)ctx->r[0] | ((uint64_t)ctx->r[1] << 26) | ((uint64_t)ctx->r[2] << 52);
+  hr[4] = ((uint64_t)ctx->r[2] >> 12) | ((uint64_t)ctx->r[3] << 14) | ((uint64_t)ctx->r[4] << 40);
+  hr[5] = hr[4] + (hr[4] >> 2);
+}
+void rktcrypto_poly1305_import64(rktcrypto_poly1305_ctx_t *ctx, const uint64_t hr[6])
+{
+  ctx->h[0] = (uint32_t)(hr[0] & 0x3ffffff);
+  ctx->h[1] = (uint32_t)((hr[0] >> 26) & 0x3ffffff);
+  ctx->h[2] = (uint32_t)(((hr[0] >> 52) | (hr[1] << 12)) & 0x3ffffff);
+  ctx->h[3] = (uint32_t)((hr[1] >> 14) & 0x3ffffff);
+  ctx->h[4] = (uint32_t)((hr[1] >> 40) | (hr[2] << 24));
+}
+#endif
+
 static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *m,
                             intptr_t bytes, uint32_t hibit)
 {
@@ -50,23 +76,12 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
   /* rktasm/x86 kernel in radix 2^64: convert the accumulator and r, run the whole-block
      prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */
   if (bytes >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
-    uint64_t hh[3], rr[3], l0 = h0, l1 = h1, l2 = h2, l3 = h3, l4 = h4, c;
-    unsigned __int128 acc;
+    uint64_t hr[6];
     intptr_t nblk = bytes / 16;
-    c = l0 >> 26; l0 &= 0x3ffffff; l1 += c; c = l1 >> 26; l1 &= 0x3ffffff; l2 += c;
-    c = l2 >> 26; l2 &= 0x3ffffff; l3 += c; c = l3 >> 26; l3 &= 0x3ffffff; l4 += c;
-    acc = (unsigned __int128)l0 | ((unsigned __int128)l1 << 26) | ((unsigned __int128)l2 << 52) |
-          ((unsigned __int128)l3 << 78) | ((unsigned __int128)(l4 & 0xffffff) << 104);
-    hh[0] = (uint64_t)acc; hh[1] = (uint64_t)(acc >> 64); hh[2] = l4 >> 24;
-    rr[0] = (uint64_t)r0 | ((uint64_t)r1 << 26) | ((uint64_t)r2 << 52);
-    rr[1] = ((uint64_t)r2 >> 12) | ((uint64_t)r3 << 14) | ((uint64_t)r4 << 40);
-    rr[2] = rr[1] + (rr[1] >> 2);
-    rktcrypto_poly1305_blocks_x86(hh, rr, m, nblk, hibit ? 1 : 0);
-    h0 = (uint32_t)(hh[0] & 0x3ffffff);
-    h1 = (uint32_t)((hh[0] >> 26) & 0x3ffffff);
-    h2 = (uint32_t)(((hh[0] >> 52) | (hh[1] << 12)) & 0x3ffffff);
-    h3 = (uint32_t)((hh[1] >> 14) & 0x3ffffff);
-    h4 = (uint32_t)((hh[1] >> 40) | (hh[2] << 24));
+    rktcrypto_poly1305_export64(ctx, hr);           /* ctx->h still equals h0..h4 here */
+    rktcrypto_poly1305_blocks_x86(hr, hr + 3, m, nblk, hibit ? 1 : 0);
+    rktcrypto_poly1305_import64(ctx, hr);
+    h0 = ctx->h[0]; h1 = ctx->h[1]; h2 = ctx->h[2]; h3 = ctx->h[3]; h4 = ctx->h[4];
     m += nblk * 16; bytes -= nblk * 16;
   }
 #endif

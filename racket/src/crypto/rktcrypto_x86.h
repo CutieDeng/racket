@@ -70,6 +70,14 @@ void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *i
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);
+/* rktasm/x86 kernel (rktcrypto_chacha20poly1305_x86.S): `units` x 1024 bytes of ChaCha20 XOR while Poly1305
+   absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */
+void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned char *in, unsigned char *out,
+                                          intptr_t units, const unsigned char *mac, uint64_t hr[6]);
+/* Poly1305 state in radix 2^64 for the kernels (rktcrypto_poly1305.c); the context buffer must be empty */
+struct rktcrypto_poly1305_ctx_t;
+void rktcrypto_poly1305_export64(const struct rktcrypto_poly1305_ctx_t *ctx, uint64_t hr[6]);
+void rktcrypto_poly1305_import64(struct rktcrypto_poly1305_ctx_t *ctx, const uint64_t hr[6]);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

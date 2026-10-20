@@ -65,7 +65,7 @@ static int rktcrypto_chacha20poly1305_seal(const unsigned char key[32],
 
   if (pt_len < 0 || aad_len < 0) return 0;
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || (defined(__x86_64__) && defined(__ELF__))
   {
     /* Fused: ChaCha20 keystream and Poly1305 MAC run concurrently (separate
        execution ports), nearly hiding the MAC under the cipher. */
@@ -112,7 +112,7 @@ static int rktcrypto_chacha20poly1305_open(const unsigned char key[32],
   if (total < 16 || aad_len < 0) return 0;
   ct_len = total - 16;
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || (defined(__x86_64__) && defined(__ELF__))
   {
     /* Fused: Poly1305 authenticates the ciphertext while ChaCha20 decrypts it,
        both in one interleaved pass. The tag is verified afterwards; on failure
@@ -129,9 +129,11 @@ static int rktcrypto_chacha20poly1305_open(const unsigned char key[32],
     poly1305_pad16(&poly, aad_len);
     done = rktcrypto_chacha20poly1305_fused(key, nonce, cbody, pt, ct_len, 0, &poly);
     if (done < ct_len) {
+      /* the tail is authenticated before it is decrypted: with pt == cbody (in place) the
+         decryption would otherwise overwrite the ciphertext the MAC still has to cover */
+      rktcrypto_poly1305_update(&poly, cbody + done, ct_len - done);
       rktcrypto_chacha20_xor(key, nonce, (uint32_t)(1 + done / 64),
                              cbody + done, pt + done, ct_len - done);
-      rktcrypto_poly1305_update(&poly, cbody + done, ct_len - done);
     }
     poly1305_pad16(&poly, ct_len);
     poly1305_le64(&poly, (uint64_t)aad_len);

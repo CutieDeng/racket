@@ -176,6 +176,17 @@ FP 管线 0/1 饱和（vaesenc/vpclmulqdq zmm 按双泵建模），但独立 CTR
 H 表（~5 次串行乘 + 内核）与 J0/aad/尾部固定开销）；integration 77/77；基准 aes-256-gcm 10161→11551 MB/s
 （含 49 µs/MiB 的 make-bytes）。
 
+**X3-2c 已落地（2026-10-21，已验证）**——`crypto/asm/x86/chacha20poly1305_x86.asm`：ChaCha20 单元循环（同
+chacha20_avx512）与标量 Poly1305（同 poly1305_x86，r 作内存操作数）融合，64 个 Poly 块按 `.for k, b*64/40,
+(b+1)*64/40`（`.for` 边界为编译期表达式）摊到 40 个半轮之间，向量管线与整数乘法器并行；C 侧
+`rktcrypto_chacha20poly1305_fused`（x86 ELF 定义，aead.c 的 ARM 融合分支守卫扩到 x86 ELF）：加密=单元 0 走
+普通内核、融合内核吸收**上一单元**密文、末单元事后 update；解密=融合内核吸收**本单元**密文（Poly 读在
+存储之前，原地解密安全）。Poly 状态 radix 2^26↔2^64 转换提为 `rktcrypto_poly1305_export64/import64`。
+**修正既有缺陷**：aead.c open 的尾部原先先解密再 update（原地时 MAC 吸到明文，ARM 路径同样），改为先认证
+后解密。数据：gate 0/3000（seal/open/原地/篡改清零，长度含每个 1024 倍数与随机尾部）；harness seal
+16 KB 5650、1 MiB 6033 MB/s（标量 ~750；两趟内核 4.0 GB/s；OpenSSL ≈6.5）；integration 77/77；基准
+chacha20-poly1305 3257→5018 MB/s。再往上=Poly 双路（h,h′ 配 r²，链减半）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
