@@ -142,7 +142,11 @@ static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p
   sha256_transform_hw(ctx, p, nblocks);
 #elif defined(__x86_64__) || defined(__i386__)
   if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SHA)) {
+#if defined(__x86_64__) && defined(__ELF__)
+    rktcrypto_sha256_blocks_x86(ctx->h, p, nblocks);   /* rktasm/x86 kernel */
+#else
     while (nblocks-- > 0) { rktcrypto_sha256_block_shani(ctx->h, p); p += 64; }
+#endif
   } else {
     while (nblocks-- > 0) { sha256_transform_portable(ctx, p); p += 64; }
   }

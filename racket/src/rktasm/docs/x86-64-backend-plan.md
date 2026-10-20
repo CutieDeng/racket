@@ -86,6 +86,21 @@ x86-64 模块需要的部件（对应 ARM 侧的层，但独立实现）：
 - X1b 后端：§2 的 1/4/5/7 项。验收样例：**SHA-256 块函数（SHA-NI，约 60 条指令）**——简单、x86 红利大、已有 C intrinsics 对照；门禁 = `asm/tests` 差分 0 mismatch + `as` 装配 + `objdump` 回读一致。
 - X1c 门禁接入 `regen.sh`：`gate-x86`（lan-11 原生，等价 Phase E 的 `ELF_NATIVE`）。
 
+**X1-1 已落地（2026-10-21，已验证）**——物理寄存器模式的端到端闭环：
+- 模块文件 `rktasm/x86/{spec,parse,emit,as}.rkt`（见 `x86/README.md`）；`data/xed-x86.rktd` 为生成物不入库
+  （`.gitignore`），从 pin 住的 XED checkout 用 `xed-convert.rkt` 再生。`.for var, lo, hi` / `${expr}`
+  直接复用 `parser/unroll.rkt`（唯一与 AArch64 管线共享的代码）。
+- 首个内核 `crypto/asm/x86/sha256.asm`（SHA-NI，从已验证的 intrinsics 逐条转写，状态驻寄存器跨块）→
+  `rktcrypto_sha256_x86.S`，`rktcrypto_sha256.c` 在 x86-64 ELF 上分派；守卫 `__x86_64__ && __ELF__`，
+  非 ELF x86-64 仍走 intrinsics。维护脚本 `crypto/asm/x86/regen-x86.sh {regen|check|gate|list}`。
+- 门禁数据：Mac 闭环 173 条指令 parse→emit→clang 交叉汇编→llvm-objdump 回读一致，`check` 字节级再生稳定；
+  lan-11 `gate` 0/3001 mismatch（3000 组随机多块 + FIPS 180-4 "abc" KAT）；harness 1 MiB
+  asm 2665 MB/s vs intrinsics 2355 MB/s（+13%）；`make base` 后 self-test #t、integration 77/77；
+  `crypto-benchmark` sha256 2243/2342（intrinsics，X0.5/X0）→ 2537/2669 MB/s（两次），
+  OpenSSL 3.2.6 `speed -evp sha256` 16 KB = 2642 MB/s → 0.96–1.01×（持平）。
+- 未做（X1-2/X1-3）：虚拟寄存器 + 图着色分配、SysV 自动序幕/`.frame`/`.alloca`、两地址改写、
+  Zen 5 调度模型；编码器 X4 仍后置。
+
 ### X2 — 调度模型（1 周）
 - xlsx/XML → `data/latency-znver5.rktd` 转换器；调度器加 §2.6 规则；对照 `llvm-mca` 与 `perf stat` 周期数（±5% 内视为模型可用）。
 

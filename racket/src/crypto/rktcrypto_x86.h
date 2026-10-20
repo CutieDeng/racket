@@ -19,6 +19,8 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
 
 void rktcrypto_sha256_block_shani(uint32_t state[8], const unsigned char *data);
 void rktcrypto_sha1_blocks_shani(uint32_t state[5], const unsigned char *data, intptr_t nblk);
+/* rktasm/x86 kernel (rktcrypto_sha256_x86.S, from asm/x86/sha256.asm); x86-64 ELF only */
+void rktcrypto_sha256_blocks_x86(uint32_t state[8], const unsigned char *data, intptr_t nblk);
 
 /* AES-NI key schedules and block/mode kernels for all key sizes (Nr = 10/12/14).
    rk/dk are the 16*(Nr+1)-byte FIPS-197 schedules in encryption order; dk is
