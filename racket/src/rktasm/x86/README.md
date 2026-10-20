@@ -40,6 +40,8 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
 
 - `.simd sse|avx2|avx512`（函数内）：向量池 16 或 32 个寄存器；分配后驱动检查落在 xmm16–31 的指令
   必须有 EVEX 形式（否则报错提示换 AVX-512 助记符）。
+- `.frame N`（函数内）：N 字节栈暂存，正文用 `[rsp + off]` 访问；发射器在 push 之后 `sub rsp`、每个 `ret`
+  前 `add rsp`，并按返回地址 + push 数把大小补到 16 字节对齐。
 
 现状（X3-2a，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR）、`ghash_vpclmul`
 （VPCLMULQDQ GHASH）、`gcm_vaes`（AES-GCM 单趟融合，上下文结构体传参）、`chacha20_avx512`（16 块/单元，

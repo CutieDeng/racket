@@ -139,3 +139,23 @@ top:
 (check-false (operands-need-evex? '((reg zmm15) (reg zmm1))))
 
 (displayln "alloc-tests: simd checks passed")
+
+;; 9. .frame N allocates stack scratch after the pushes and frees it before every ret; rsp stays
+;;    16-byte aligned in the body (return address + pushes + frame)
+(let* ([r (alloc "
+.function fr export (
+  in: q.p
+)
+  .frame 24
+  mov q.x, qword ptr [q.p]
+  mov qword ptr [rsp + 8], q.x
+  mov q.y, qword ptr [rsp + 8]
+  add q.y, qword ptr [rsp]
+  mov qword ptr [q.p], q.y
+  ret
+.end")]
+       [text (emitted r)])
+  ;; no callee-saved pushes here: return address (8) + frame must be a multiple of 16 -> 24 rounds to 32, +8 = 40
+  (check-true (regexp-match? #rx"sub     rsp, 40\n" text))
+  (check-true (regexp-match? #rx"add     rsp, 40\n        ret" text)))
+(displayln "alloc-tests: frame checks passed")

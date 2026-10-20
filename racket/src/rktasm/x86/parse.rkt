@@ -9,6 +9,7 @@
 ;;     mnemonic dst, src, ...           ; operands: rax / q.name / 12 / 0x1f / [rsi + rcx*8 + 16]
 ;;     .save all | .save none           ; callee-saved registers (default: all used)
 ;;     .simd sse | avx2 | avx512        ; vector register pool: avx512 adds xmm16-31 (EVEX-only mnemonics)
+;;     .frame N                         ; N bytes of stack scratch, addressed as [rsp + off] (0 <= off < N)
 ;;   .end
 ;;   .rodata NAME [align=N]             ; constant block, raw data directives inside
 ;;     .long 1, 2, 3
@@ -20,7 +21,7 @@
 (provide parse-file parse-string
          (struct-out fn) (struct-out rodata) (struct-out instr) (struct-out label))
 
-(struct fn (name export? ins outs inouts body save line [simd #:auto]) #:transparent #:mutable #:auto-value 'sse)
+(struct fn (name export? ins outs inouts body save line [simd #:auto] [frame #:auto]) #:transparent #:mutable #:auto-value 'sse)
 (struct rodata (name align lines line) #:transparent)
 (struct instr (mnemonic ops text line) #:transparent)
 (struct label (name line) #:transparent)
@@ -149,6 +150,8 @@
        => (lambda (m) (unless cur (parse-error ln ".save outside .function")) (set-fn-save! cur (string->symbol (cadr m))))]
       [(regexp-match #px"^\\.simd\\s+(sse|avx2|avx512)$" s)
        => (lambda (m) (unless cur (parse-error ln ".simd outside .function")) (set-fn-simd! cur (string->symbol (cadr m))))]
+      [(regexp-match #px"^\\.frame\\s+([0-9]+)$" s)
+       => (lambda (m) (unless cur (parse-error ln ".frame outside .function")) (set-fn-frame! cur (string->number (cadr m))))]
       [(regexp-match #px"^([A-Za-z_.][A-Za-z0-9_.]*):$" s)
        => (lambda (m) (add-body! (label (string->symbol (cadr m)) ln)))]
       [(regexp-match #px"^\\.(p2align|align)\\s+[0-9]+$" s) (add-body! (instr '.directive '() s ln))]

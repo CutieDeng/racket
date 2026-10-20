@@ -80,8 +80,16 @@
     (fprintf out "        .globl  ~a\n" name)
     (fprintf out "        .type   ~a, @function\n" name))
   (fprintf out "        .p2align 5\n~a:\n" name)
-  ;; prologue: callee-saved pushes; keep 16-byte alignment at calls (ret addr + pushes)
+  ;; prologue: callee-saved pushes, then the .frame scratch; the frame size is rounded so that
+  ;; rsp is 16-byte aligned in the body (return address + pushes + frame)
   (for ([r saves]) (fprintf out "        push    ~a\n" r))
+  (define frame
+    (let ([n (let ([v (fn-frame f)]) (if (number? v) v 0))])   ; the struct's #:auto fields share one auto-value
+      (if (zero? n) 0
+          (let* ([n16 (* 16 (quotient (+ n 15) 16))]
+                 [odd? (odd? (add1 (length saves)))])   ; return address + pushes = odd number of qwords?
+            (+ n16 (if odd? 8 0))))))
+  (when (> frame 0) (fprintf out "        sub     rsp, ~a\n" frame))
   (parameterize ([current-fn name])
   (for ([x (fn-body f)])
     (cond
@@ -89,6 +97,7 @@
       [(eq? (instr-mnemonic x) '.directive) (fprintf out "        ~a\n" (instr-text x))]
       [(eq? (instr-mnemonic x) 'ret)
        (when uses-wide? (fprintf out "        vzeroupper\n"))
+       (when (> frame 0) (fprintf out "        add     rsp, ~a\n" frame))
        (for ([r (reverse saves)]) (fprintf out "        pop     ~a\n" r))
        (fprintf out "        ret\n")]
       [else (fprintf out "        ~a\n" (instr->text x))])))

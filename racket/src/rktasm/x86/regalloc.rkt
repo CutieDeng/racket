@@ -272,4 +272,5 @@
       (if (instr? x) (instr (instr-mnemonic x) (map rw (instr-ops x)) (instr-text x) (instr-line x)) x)))
   (define out (fn (fn-name f) (fn-export? f) (map rw (fn-ins f)) (map rw (fn-outs f)) (map rw (fn-inouts f)) new-body (fn-save f) (fn-line f)))
   (set-fn-simd! out (fn-simd f))
+  (set-fn-frame! out (fn-frame f))
   (alloc-result out mapping))
