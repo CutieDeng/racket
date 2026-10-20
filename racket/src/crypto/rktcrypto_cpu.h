@@ -17,6 +17,7 @@ enum {
   RKTCRYPTO_CPU_X86_AVX512 = 1u << 4,   /* F+DQ+BW+VL with ZMM/opmask state enabled by the OS */
   RKTCRYPTO_CPU_X86_VAES   = 1u << 5,
   RKTCRYPTO_CPU_X86_VPCLMULQDQ = 1u << 6,
+  RKTCRYPTO_CPU_X86_BMI2ADX = 1u << 7,   /* MULX + ADCX/ADOX */
   RKTCRYPTO_CPU_ARM_AES    = 1u << 8,
   RKTCRYPTO_CPU_ARM_PMULL  = 1u << 9,
   RKTCRYPTO_CPU_ARM_SHA2   = 1u << 10,

@@ -6,6 +6,10 @@
 
 #include "rktcrypto_cipher.h"
 #include <string.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 
 static uint32_t load32_le(const unsigned char *p)
 {
@@ -42,6 +46,30 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
   const uint32_t s1 = r1 * 5, s2 = r2 * 5, s3 = r3 * 5, s4 = r4 * 5;
   uint32_t h0 = ctx->h[0], h1 = ctx->h[1], h2 = ctx->h[2], h3 = ctx->h[3], h4 = ctx->h[4];
 
+#if defined(__x86_64__) && defined(__ELF__)
+  /* rktasm/x86 kernel in radix 2^64: convert the accumulator and r, run the whole-block
+     prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */
+  if (bytes >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
+    uint64_t hh[3], rr[3], l0 = h0, l1 = h1, l2 = h2, l3 = h3, l4 = h4, c;
+    unsigned __int128 acc;
+    intptr_t nblk = bytes / 16;
+    c = l0 >> 26; l0 &= 0x3ffffff; l1 += c; c = l1 >> 26; l1 &= 0x3ffffff; l2 += c;
+    c = l2 >> 26; l2 &= 0x3ffffff; l3 += c; c = l3 >> 26; l3 &= 0x3ffffff; l4 += c;
+    acc = (unsigned __int128)l0 | ((unsigned __int128)l1 << 26) | ((unsigned __int128)l2 << 52) |
+          ((unsigned __int128)l3 << 78) | ((unsigned __int128)(l4 & 0xffffff) << 104);
+    hh[0] = (uint64_t)acc; hh[1] = (uint64_t)(acc >> 64); hh[2] = l4 >> 24;
+    rr[0] = (uint64_t)r0 | ((uint64_t)r1 << 26) | ((uint64_t)r2 << 52);
+    rr[1] = ((uint64_t)r2 >> 12) | ((uint64_t)r3 << 14) | ((uint64_t)r4 << 40);
+    rr[2] = rr[1] + (rr[1] >> 2);
+    rktcrypto_poly1305_blocks_x86(hh, rr, m, nblk, hibit ? 1 : 0);
+    h0 = (uint32_t)(hh[0] & 0x3ffffff);
+    h1 = (uint32_t)((hh[0] >> 26) & 0x3ffffff);
+    h2 = (uint32_t)(((hh[0] >> 52) | (hh[1] << 12)) & 0x3ffffff);
+    h3 = (uint32_t)((hh[1] >> 14) & 0x3ffffff);
+    h4 = (uint32_t)((hh[1] >> 40) | (hh[2] << 24));
+    m += nblk * 16; bytes -= nblk * 16;
+  }
+#endif
   while (bytes >= 16) {
     uint64_t d0, d1, d2, d3, d4;
     uint32_t c;

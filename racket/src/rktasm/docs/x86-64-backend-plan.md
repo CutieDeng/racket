@@ -151,6 +151,19 @@ unpack(dq)+unpack(qdq)+vshufi32x4×2（imm 0x44/0xee 再 0x88/0xdd），计数�
 原地、AEAD seal/open）；harness 1 MiB XOR 10695 vs 1000 MB/s（10.7×），AEAD seal 2844 vs 796；
 integration 77/77；基准 chacha20-poly1305 743→2503 MB/s。瓶颈转为标量 radix-2^26 Poly1305 → X3-2b。
 
+**X3-2b 已落地（2026-10-21，已验证）**——`crypto/asm/x86/poly1305_x86.asm`：radix-2^64 Poly1305 块循环
+（h 三肢、r=(r0,r1)、s1=r1+r1>>2；每块 4 条 `mulx` + 2 条 `imul` + 2^130≡5 部分约简，OpenSSL base-2^64 同构）；
+`m` 实参在 rdx（mulx 隐式源）须先移出，分配器把 h0 合并进 rdx（合法：h0 在 rdx 重定义前已死）。C 侧
+`poly1305_blocks` 在 ≥64 B 时把 radix-2^26 累加器/r 转成 2^64（先归一化进位，`unsigned __int128`），
+调内核后转回（h4 可达 2^27，radix-2^26 乘法可吸收）；cpu.c 加 BMI2+ADX 位。数据：gate 0/4200
+（oracle=关 BMI2ADX 位的 radix-2^26 路径；随机分片 update、r 钳位极值、全 0xff 块、AEAD seal/open）；
+harness 1 MiB MAC 6402 vs 3907 MB/s，AEAD seal 3995 vs 2850；integration 77/77；基准 chacha20-poly1305
+2503→3257 MB/s。两趟合成 1/(1/10.7+1/6.4)=4.0 GB/s（OpenSSL ≈6.5）→ X3-2c 融合（ChaCha 向量 +
+Poly 标量同循环）+ Poly 双路（h、h′ 配 r²）。
+**Racket 侧开销（lan-11 已验证）**：`(make-bytes 1048592)` 每次 49 µs（清零 + 新页），超过 1 MiB
+AES-GCM 的 C 时间（67 µs）——`aead-encrypt` 的输出缓冲分配是 Racket 基准 10.0 vs C 15.6 GB/s 的主因；
+候选：不清零分配原语（C 调用覆盖全部字节）或复用缓冲 API。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

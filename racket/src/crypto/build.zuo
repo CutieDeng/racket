@@ -110,6 +110,7 @@
       "rktcrypto_ghash_vpclmul.S"
       "rktcrypto_gcm_vaes.S"
       "rktcrypto_chacha20_avx512.S"
+      "rktcrypto_poly1305_x86.S"
       "rktcrypto_md5_asm.S"
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"

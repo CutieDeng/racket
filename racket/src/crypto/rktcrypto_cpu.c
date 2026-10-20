@@ -26,6 +26,7 @@ static unsigned rktcrypto_cpu_detect(void)
       f |= RKTCRYPTO_CPU_X86_AVX512;                    /* AVX512 F+DQ+BW+VL */
     if (c & (1u << 9))  f |= RKTCRYPTO_CPU_X86_VAES;    /* VAES        */
     if (c & (1u << 10)) f |= RKTCRYPTO_CPU_X86_VPCLMULQDQ;
+    if ((b & (1u << 8)) && (b & (1u << 19))) f |= RKTCRYPTO_CPU_X86_BMI2ADX;   /* BMI2 + ADX */
   }
   /* The OS must have enabled the wider register state (XCR0 via xgetbv): bits 1,2 for
      YMM, 5,6,7 for opmask/ZMM. Without it the AVX families are reported absent. */
