@@ -208,6 +208,11 @@ SHA3-256("abc")）；harness 532 vs 272 MB/s（1.96×，按 136 B/置换折算�
 掩码 vpermq 串行（~15 周期）+theta/chi 链 → 每轮 ~35 周期、每置换 ~1300 周期；可改 vpermt2q 两两合并树
 （深度 3，约 −11%）；ML-KEM/ML-DSA 的 `keccak_f1600_x2` 双态交错可得近 2× 吞吐（下一步）。
 
+**X3-3b 已落地（2026-10-21，已验证）**——`mont_mul_x86(r,a,b,ctx)`：标量阶的通用蒙哥马利乘（同文件；m=acc[i]·n0 用
+imul，acc+=m·M 走 mulx+adcx/adox；imul 破坏标志后用 `xor d.t0` 清零；零常量走内存以保持 15 个 GPR 内），
+`mont_mul_dispatch` 对 ctx≠&FP 分派到它。数据：gate 0/300200（+100k 通用参考差分，模 n 与模 p 两种 ctx）；
+基准 ecdsa sign 12.3→11.2 µs/op（89.5k ops/s，OpenSSL 95.8k → 0.93×）、verify 37.4、ecdh 31.0。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

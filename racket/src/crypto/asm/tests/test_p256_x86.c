@@ -12,6 +12,35 @@
 #include "rktcrypto_cpu.h"
 
 void mont_mul_p256_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4]);
+typedef struct { uint64_t m[4]; uint64_t n0; uint64_t rr[4]; } mont_ctx_t;
+void mont_mul_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const mont_ctx_t *ctx);
+/* the group order n and its -n^-1 mod 2^64 */
+static const uint64_t N[4] = {0xf3b9cac2fc632551ULL, 0xbce6faada7179e84ULL, 0xffffffffffffffffULL, 0xffffffff00000000ULL};
+static uint64_t compute_n0(uint64_t m0)
+{
+  uint64_t inv = m0;
+  inv *= 2 - m0 * inv; inv *= 2 - m0 * inv; inv *= 2 - m0 * inv; inv *= 2 - m0 * inv; inv *= 2 - m0 * inv;
+  return (uint64_t)(0 - inv);
+}
+/* generic CIOS with modulus M and n0 */
+static void ref_mont_mul_gen(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const uint64_t M[4], uint64_t n0)
+{
+  uint64_t t[6] = {0, 0, 0, 0, 0, 0}; int i, j;
+  for (i = 0; i < 4; i++) {
+    unsigned __int128 c = 0; uint64_t m;
+    for (j = 0; j < 4; j++) { c += (unsigned __int128)t[j] + (unsigned __int128)a[i] * b[j]; t[j] = (uint64_t)c; c >>= 64; }
+    c += t[4]; t[4] = (uint64_t)c; t[5] = (uint64_t)(c >> 64);
+    m = t[0] * n0;
+    c = 0;
+    for (j = 0; j < 4; j++) { c += (unsigned __int128)t[j] + (unsigned __int128)m * M[j]; t[j] = (uint64_t)c; c >>= 64; }
+    c += t[4]; t[4] = (uint64_t)c; c >>= 64; t[5] += (uint64_t)c;
+    for (j = 0; j < 5; j++) t[j] = t[j + 1];
+    t[5] = 0;
+  }
+  { uint64_t s[4]; unsigned __int128 br = 0; int k;
+    for (k = 0; k < 4; k++) { unsigned __int128 x = (unsigned __int128)t[k] - M[k] - br; s[k] = (uint64_t)x; br = (x >> 64) & 1; }
+    if (t[4] || !br) memcpy(r, s, 32); else memcpy(r, t, 32); }
+}
 
 static const uint64_t P[4] = {0xffffffffffffffffULL, 0x00000000ffffffffULL, 0ULL, 0xffffffff00000001ULL};
 static uint64_t st = 0x9b05688c2b3e6c1fULL;
@@ -69,6 +98,17 @@ int main(void)
     mont_mul_p256_x86(r2, a, b);
     tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("MUL MISMATCH t=%d a=%016llx.. b=%016llx..\n", t, (unsigned long long)a[3], (unsigned long long)b[3]); }
   }
+  /* generic kernel against the generic reference, modulus n (and p through the generic path) */
+  { mont_ctx_t cn, cp; memcpy(cn.m, N, 32); cn.n0 = compute_n0(N[0]); memcpy(cp.m, P, 32); cp.n0 = compute_n0(P[0]);
+    for (t = 0; t < 100000; t++) {
+      uint64_t a[4], b[4], r1[4], r2[4]; const mont_ctx_t *c = (t & 4) ? &cp : &cn;
+      special(a, (int)(rnd64() % 8)); special(b, (int)(rnd64() % 8));
+      if (c == &cn) { a[3] &= 0xfffffffeffffffffULL; b[3] &= 0xfffffffeffffffffULL; }   /* keep below n */
+      if (t & 1) memcpy(b, a, 32);
+      ref_mont_mul_gen(r1, a, b, c->m, c->n0);
+      mont_mul_x86(r2, a, b, c);
+      tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("GENERIC MUL MISMATCH t=%d ctx=%s\n", t, c == &cn ? "n" : "p"); }
+    } }
   /* public API: pubkey / ECDH / ECDSA with the kernel vs without */
   for (t = 0; t < 40; t++) {
     unsigned char priv[32], priv2[32], pub_a[65], pub_b[65], pub2[65], sh_a[32], sh_b[32], sig[64], msg[48]; int ra, rb;

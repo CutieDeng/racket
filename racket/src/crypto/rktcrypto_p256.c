@@ -119,10 +119,12 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
    order keeps the portable CIOS. The feature test reads the cached CPUID word each time
    (an inline flag test), which keeps the test hook that flips features effective. */
 extern void mont_mul_p256_x86(u64 r[4],const u64 a[4],const u64 b[4]);
+extern void mont_mul_x86(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
 static inline int p256_x86(void){ return rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX); }
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
-  if (ctx == &FP && p256_x86()) mont_mul_p256_x86(r,a,b);
-  else                          mont_mul_portable(r,a,b,ctx);
+  if (!p256_x86())  mont_mul_portable(r,a,b,ctx);
+  else if (ctx == &FP) mont_mul_p256_x86(r,a,b);
+  else              mont_mul_x86(r,a,b,ctx);
 }
 static inline void fp_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4]){
   if (p256_x86()) mont_mul_p256_x86(r,a,b); else mont_mul_portable(r,a,b,&FP);
