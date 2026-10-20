@@ -7,6 +7,10 @@
 
 #include "rktcrypto_cipher.h"
 #include <string.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 #if defined(__aarch64__)
 # include <arm_neon.h>
 #endif
@@ -294,6 +298,13 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
   unsigned char block[64];
   chacha20_setup(state, key, nonce, counter);
 
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 1024 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t units = len / 1024;
+    rktcrypto_chacha20_blocks_avx512(state, in, out, units);   /* rktasm/x86 kernel, 16 blocks per unit */
+    in += units * 1024; out += units * 1024; len -= units * 1024;
+  }
+#endif
 #if defined(__aarch64__)
   while (len >= 512) {
     chacha20_8block_xor(state, state[12], in, out);

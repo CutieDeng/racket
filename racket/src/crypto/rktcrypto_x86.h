@@ -62,6 +62,9 @@ void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[256]);
    zero-padded. */
 void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc[16],
                                 const unsigned char *data, intptr_t len);
+/* rktasm/x86 kernel (rktcrypto_chacha20_avx512.S): `units` x 1024 bytes of ChaCha20 keystream XOR,
+   state[12] advanced by 16 per unit */
+void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

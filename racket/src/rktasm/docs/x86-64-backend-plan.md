@@ -142,6 +142,15 @@ bytes 分配/清零），需单独定位；C 级 16 KB 12.9 vs OpenSSL 22.8（0.
 （−25 op）、轮密钥常驻 15 个 zmm（.simd avx512 下可容）、s/d 寄存器乒乓省 4 次拷贝、vpternlogq 三路异或、
 32 块一次约简（H^32 表）。
 
+**X3-2a 已落地（2026-10-21，已验证）**——`crypto/asm/x86/chacha20_avx512.asm`：state-in-lanes 布局 16 块/单元
+（寄存器 i = 全部 16 块的字 i），`vprold` 旋转，`.for` 四层嵌套（轮/列-对角/半步/列）由 `${}` 索引算术与
+`${if}` 生成 960 条轮指令，嵌入广播 `dword ptr [st+4i]{1to16}` 加回原状态，16×16 dword 转置 =
+unpack(dq)+unpack(qdq)+vshufi32x4×2（imm 0x44/0xee 再 0x88/0xdd），计数器 `add dword ptr [st+48], 16`
+按规范 mod 2^32 回绕；`.simd avx512` 下分配到 xmm0–20。接入 `rktcrypto_chacha20_xor`（≥1024 B 的整单元）。
+数据：gate 0/6000（oracle=关 AVX512 位的标量路径；长度含每个 1024 倍数与随机尾部、计数器 2^32 回绕、
+原地、AEAD seal/open）；harness 1 MiB XOR 10695 vs 1000 MB/s（10.7×），AEAD seal 2844 vs 796；
+integration 77/77；基准 chacha20-poly1305 743→2503 MB/s。瓶颈转为标量 radix-2^26 Poly1305 → X3-2b。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
