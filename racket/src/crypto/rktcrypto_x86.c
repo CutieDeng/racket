@@ -481,17 +481,33 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
   _mm_storeu_si128((__m128i *)s, _mm_shuffle_epi8(acc, bswap));
 }
 
-/* H^16..H^1 for the VPCLMULQDQ kernels, descending so that table row j (64 bytes) lines up
-   with data register j; htab[240..255] = H. */
+/* H^32..H^1 for the VPCLMULQDQ kernels, descending so that table row j (64 bytes) lines up
+   with data register j; row 7 = [H^4 H^3 H^2 H] and the multipliers H^4, H^8, H^16 are computed
+   here (five serial multiplications), the other rows by the vectorised kernel (seven lane-wise
+   multiplications in three dependent levels) or, without the kernel, serially. */
 __attribute__((target("pclmul,sse4.1,ssse3")))
-void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[256])
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[512])
 {
   const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
-  unsigned char hb[16]; __m128i H, p; int i, k;
+  unsigned char hb[16], c[48] __attribute__((aligned(16))); __m128i H, H2, H3, H4, H8, H16; int i;
   for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
   H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
-  p = H;
-  for (k = 15; k >= 0; k--) { _mm_storeu_si128((__m128i *)(htab + 16 * k), p); p = gcm_gfmul(p, H); }
+  H2 = gcm_gfmul(H, H); H3 = gcm_gfmul(H2, H); H4 = gcm_gfmul(H2, H2);
+  H8 = gcm_gfmul(H4, H4); H16 = gcm_gfmul(H8, H8);
+  _mm_storeu_si128((__m128i *)(htab + 448), H4);
+  _mm_storeu_si128((__m128i *)(htab + 464), H3);
+  _mm_storeu_si128((__m128i *)(htab + 480), H2);
+  _mm_storeu_si128((__m128i *)(htab + 496), H);
+#if defined(__x86_64__) && defined(__ELF__)
+  _mm_storeu_si128((__m128i *)c, H4);
+  _mm_storeu_si128((__m128i *)(c + 16), H8);
+  _mm_storeu_si128((__m128i *)(c + 32), H16);
+  rktcrypto_gcm_htab_vaes(htab, c);
+#else
+  { __m128i p = H4; int k;
+    (void)c; (void)H8; (void)H16;
+    for (k = 27; k >= 0; k--) { p = gcm_gfmul(p, H); _mm_storeu_si128((__m128i *)(htab + 16 * k), p); } }
+#endif
 }
 
 /* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then

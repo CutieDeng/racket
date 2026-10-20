@@ -92,7 +92,7 @@
                            #:when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive))))
                  (instr-mnemonic x)))
   ;; the emitter adds push/pop/vzeroupper; drop those from `got` for the comparison
-  (define got* (filter (lambda (m) (not (memq m '(push pop vzeroupper)))) got))
+  (define got* (filter (lambda (m) (not (or (memq m '(push pop vzeroupper)) (regexp-match? #rx"^(nop|data16|cs|xchg)" (symbol->string m))))) got))
   (define (norm m)
     (string->symbol (regexp-replace #rx"^vpcmp(eq|lt|le|neq|nlt|nle)(u?)([bwdq])$"
                                     (regexp-replace #rx"^(j[a-z]+)$" (symbol->string m) "jcc")

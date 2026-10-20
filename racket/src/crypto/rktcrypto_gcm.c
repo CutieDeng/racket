@@ -555,17 +555,17 @@ static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const
                          const unsigned char *in, unsigned char *out, intptr_t len,
                          int encrypt, unsigned char tag[16], int Nr)
 {
-  unsigned char htab[256] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
+  unsigned char htab[512] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
   struct rktcrypto_gcm_vaes_ctx c;
   intptr_t done;
   int i;
-  if (len < 256) return 0;
+  if (len < 512) return 0;
   if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) &&
         rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)))
     return 0;
   rktcrypto_gcm_vaes_setup(h, htab);
   memset(acc, 0, 16);
-  rktcrypto_ghash_region_x86(htab, acc, aad, aad_len);
+  rktcrypto_ghash_region_x86(htab + 256, acc, aad, aad_len);
   memcpy(ctr, nonce, 12);
   ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
   c.rk = rk; c.htab = htab; c.ctr = ctr; c.acc = acc; c.nr = Nr; c.enc = encrypt;
@@ -574,16 +574,16 @@ static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const
     /* the ciphertext is GHASHed before it is overwritten when decrypting in place */
     if (encrypt) {
       rktcrypto_aes_ctr_x86(rk, Nr, ctr, in + done, out + done, len - done, 1);
-      rktcrypto_ghash_region_x86(htab, acc, out + done, len - done);
+      rktcrypto_ghash_region_x86(htab + 256, acc, out + done, len - done);
     } else {
-      rktcrypto_ghash_region_x86(htab, acc, in + done, len - done);
+      rktcrypto_ghash_region_x86(htab + 256, acc, in + done, len - done);
       rktcrypto_aes_ctr_x86(rk, Nr, ctr, in + done, out + done, len - done, 1);
     }
   }
   { uint64_t abits = (uint64_t)aad_len << 3, cbits = (uint64_t)len << 3;
     for (i = 0; i < 8; i++) lenblock[i]     = (unsigned char)(abits >> (56 - 8 * i));
     for (i = 0; i < 8; i++) lenblock[8 + i] = (unsigned char)(cbits >> (56 - 8 * i)); }
-  rktcrypto_ghash_region_x86(htab, acc, lenblock, 16);
+  rktcrypto_ghash_region_x86(htab + 256, acc, lenblock, 16);
   memcpy(j0, nonce, 12);
   j0[12] = 0; j0[13] = 0; j0[14] = 0; j0[15] = 1;
   rktcrypto_aes_enc_block(rk, Nr, j0, ej0);

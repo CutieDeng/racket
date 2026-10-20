@@ -164,6 +164,18 @@ Poly 标量同循环）+ Poly 双路（h、h′ 配 r²）。
 AES-GCM 的 C 时间（67 µs）——`aead-encrypt` 的输出缓冲分配是 Racket 基准 10.0 vs C 15.6 GB/s 的主因；
 候选：不清零分配原语（C 调用覆盖全部字节）或复用缓冲 API。
 
+**X3-1d 已落地（2026-10-21，已验证）**——GCM 调优：llvm-mca（x86_64 llvm 19，`-mcpu=znver5`）把瓶颈报为
+FP 管线 0/1 饱和（vaesenc/vpclmulqdq zmm 按双泵建模），但独立 CTR 内核 39.8 GB/s（56 条 vaesenc/256 B 约 33
+周期）证明本机 vaesenc zmm 并非双泵，融合循环实为每块 GHASH 串行链（~50–60 周期/约简）所限 → 结构改为
+**512 B 块、8 个 zmm（32 块）对 H^32..H^1 一次约简**（链成本/字节减半，AES 吞吐成为上限）；H^32 表由
+`rktcrypto_gcm_htab_vaes` 向量化生成（C 算 H²/H³/H⁴/H⁸/H¹⁶ 五次串行乘，内核以 3 层相关度做 7 次 lane-wise
+乘：行 6 = 行 7·H⁴，行 5,4 = 行 7,6·H⁸，行 3..0 = 行 7..4·H¹⁶），避免每次调用 31 次串行乘。常驻轮密钥试验
+仅 +1.4%（且挤占 d0–7 的寄存器预算）已撤回；`vpternlogq` 三路异或保留。驱动回读比对忽略函数间对齐 nop。
+数据：gate 0/7500（篡改清零期望随块大小改为 ≥512 B）；harness seal 16 KB 17.8–18.8 GB/s、1 MiB
+21.2–22.5 GB/s（OpenSSL `speed -evp` 16 KB 22.8 → 1 MiB 已持平，16 KB 0.78–0.82×，差额=每次调用的
+H 表（~5 次串行乘 + 内核）与 J0/aad/尾部固定开销）；integration 77/77；基准 aes-256-gcm 10161→11551 MB/s
+（含 49 µs/MiB 的 make-bytes）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

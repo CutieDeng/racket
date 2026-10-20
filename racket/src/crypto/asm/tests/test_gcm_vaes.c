@@ -65,13 +65,13 @@ int main(void)
     tot++; if (ra != 1 || memcmp(buf, cta, len + 16)) { bad++; if (bad <= 5) printf("INPLACE SEAL MISMATCH t=%d len=%ld\n", t, len); continue; }
     ra = open_(k256, key, nonce, aad, alen, buf, len + 16, buf);
     tot++; if (ra != 1 || memcmp(buf, pt, len)) { bad++; if (bad <= 5) printf("INPLACE OPEN MISMATCH t=%d len=%ld\n", t, len); continue; }
-    /* tamper: one flipped byte (body or tag) must fail and, on the fused path, wipe the output */
+    /* tamper: one flipped byte (body or tag) must fail and, on the fused path (>= 512 bytes), wipe the output */
     { long pos = (long)(rnd() % (unsigned)(len + 16)); int wiped = 1;
       memcpy(buf, cta, len + 16); buf[pos] ^= 0x40;
       memset(pa, 0x5a, len);
       ra = open_(k256, key, nonce, aad, alen, buf, len + 16, pa);
       for (i = 0; i < len; i++) if (pa[i] != 0) { wiped = 0; break; }
-      tot++; if (ra != 0 || (len >= 256 && !wiped)) { bad++; if (bad <= 5) printf("TAMPER t=%d len=%ld pos=%ld ra=%d wiped=%d\n", t, len, pos, ra, wiped); } }
+      tot++; if (ra != 0 || (len >= 512 && !wiped)) { bad++; if (bad <= 5) printf("TAMPER t=%d len=%ld pos=%ld ra=%d wiped=%d\n", t, len, pos, ra, wiped); } }
   }
   /* BENCH: AES-256-GCM seal, 16 KiB and 1 MiB, best of 5, fused vs two-pass */
   { unsigned char key[32] = {1, 2, 3}, nonce[12] = {4, 5, 6}; long sizes[2] = {16384, MAXLEN}; int s;
