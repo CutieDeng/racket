@@ -213,6 +213,31 @@ imul，acc+=m·M 走 mulx+adcx/adox；imul 破坏标志后用 `xor d.t0` 清零�
 `mont_mul_dispatch` 对 ctx≠&FP 分派到它。数据：gate 0/300200（+100k 通用参考差分，模 n 与模 p 两种 ctx）；
 基准 ecdsa sign 12.3→11.2 µs/op（89.5k ops/s，OpenSSL 95.8k → 0.93×）、verify 37.4、ecdh 31.0。
 
+**X3-4b 已落地（2026-10-21，已验证）**——`crypto/asm/x86/sha512_x86.asm`：标量 SHA-512（BMI2 `rorx` 做 Σ/σ，
+8 个状态字常驻寄存器跨块，80 轮展开并把 a..h 轮转折入寄存器名 `s${(k+8-i%8)%8}`，16 字消息环放在调用方
+的 `hw[24]`（状态 8 + 环 16，DSL 尚无栈帧），每轮 ~22 条 + 调度 ~17 条）。接入 `sha512_transform`
+（单块）与 `core_update` 的整块批路径（状态跨块驻留）。数据：gate 0/3001（随机分片 update、SHA-384 IV
+混测 + FIPS 180-4 "abc"）；harness 1164 vs 697 MB/s（1.67×）；integration 77/77；基准 sha512 635→1023 MB/s
+（OpenSSL 1519 → 0.67×；C 级 0.77×）。下一步 X3-4c：AVX2 向量化消息调度（4 字 σ0/σ1，交错进标量轮），
+预计 ≈1.4–1.5 GB/s（OpenSSL 的做法）。
+
+**x86 内核总表（2026-10-21，lan-11 Zen 5；Racket 基准 / C 级 harness / OpenSSL 3.2.6 `speed -evp` 16 KB）**
+
+| 原语 | X0 基线 | 现 Racket 基准 | 现 C 级 | OpenSSL | 比值（Racket / C） |
+|---|---|---|---|---|---|
+| sha256 | 2342 MB/s | 2537–2676 | 2665–2813 | 2642 | 1.0 / 1.0 |
+| sha1 | 1360 | 2670–2819 | — | 2788 | 1.0 |
+| aes-256-gcm | 117 | 12.2–13.0 GB/s | 16 KB 17.8–18.8 / 1 MiB 21.2–22.5 GB/s | 23.4 GB/s | 0.53 / 0.78–0.95 |
+| chacha20-poly1305 | 744 | 4.8–5.0 GB/s | 6.0 GB/s | 6.6 GB/s | 0.75 / 0.92 |
+| sha512 | 663 | 1023 | 1164 | 1519 | 0.67 / 0.77 |
+| sha3-256 | 313 | 497 | 532 | 779 | 0.64 / 0.68 |
+| p256 ecdh | 55.2 µs | 31–32 µs | — | 24.2 µs | 0.76 |
+| p256 ecdsa sign | 18.5 µs | 11.1–11.2 µs | — | 10.4 µs | 0.93 |
+| p256 ecdsa verify | 63.5 µs | 37.4–38.6 µs | — | 32.0 µs | 0.84 |
+
+Racket 基准与 C 级的差距主因=`aead-encrypt` 的 `make-bytes`（49 µs/MiB，lan-11 实测）与每次调用的
+上下文建立；AEAD 的 C 级数字才是与 `openssl speed` 同口径的比较。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

@@ -80,6 +80,8 @@ void rktcrypto_poly1305_export64(const struct rktcrypto_poly1305_ctx_t *ctx, uin
 void rktcrypto_poly1305_import64(struct rktcrypto_poly1305_ctx_t *ctx, const uint64_t hr[6]);
 /* rktasm/x86 kernel (rktcrypto_keccak_avx512.S): Keccak-f[1600] in place */
 void keccak_f1600_x86(uint64_t s[25]);
+/* rktasm/x86 kernel (rktcrypto_sha512_x86.S): hw[0..7] = state (updated), hw[8..23] = schedule scratch */
+void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);
