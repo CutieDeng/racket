@@ -170,6 +170,9 @@ void rktcrypto_keccak_f1600_x2(uint64_t sA[25], uint64_t sB[25])
     a[0] = veorq_u64(a[0], vdupq_n_u64(RC[round]));
   }
   for (i = 0; i < 25; i++) { sA[i]=vgetq_lane_u64(a[i],0); sB[i]=vgetq_lane_u64(a[i],1); }
+#elif defined(__x86_64__) && defined(__ELF__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x2_x86(sA, sB);   /* rktasm/x86: two chains in flight */
+  else { keccak_f(sA); keccak_f(sB); }
 #else
   keccak_f(sA); keccak_f(sB);
 #endif

@@ -78,8 +78,9 @@ void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned cha
 struct rktcrypto_poly1305_ctx_t;
 void rktcrypto_poly1305_export64(const struct rktcrypto_poly1305_ctx_t *ctx, uint64_t hr[6]);
 void rktcrypto_poly1305_import64(struct rktcrypto_poly1305_ctx_t *ctx, const uint64_t hr[6]);
-/* rktasm/x86 kernel (rktcrypto_keccak_avx512.S): Keccak-f[1600] in place */
+/* rktasm/x86 kernels (rktcrypto_keccak_avx512.S): Keccak-f[1600] in place, and two states interleaved */
 void keccak_f1600_x86(uint64_t s[25]);
+void keccak_f1600_x2_x86(uint64_t sA[25], uint64_t sB[25]);
 /* rktasm/x86 kernel (rktcrypto_sha512_x86.S): hw[0..7] = state (updated), hw[8..23] = schedule scratch */
 void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk);
 /* rktasm/x86 kernels (rktcrypto_x25519_x86.S): GF(2^255-19) in four 64-bit limbs, loosely reduced */

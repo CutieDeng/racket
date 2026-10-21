@@ -111,3 +111,84 @@ round2:
 .endfor
   ret
 .end
+
+;; ---- two independent states, interleaved (ML-KEM / ML-DSA samplers run XOF pairs) --------
+;; The single-state round twice over, state A in s0..s9 and state B in s10..s19 (each with its
+;; two register sets), the index vectors shared; the two dependency chains overlap in the
+;; out-of-order window. 31 vector registers: .simd avx512.
+;;   void keccak_f1600_x2_x86(uint64_t sA[25], uint64_t sB[25])
+.function keccak_f1600_x2_x86 export (
+  in: q.sa, q.sb
+)
+  .simd avx512
+  mov d.t, 0x1f
+  kmovw k.m5, d.t
+  mov d.t, 1
+  kmovw k.m0, d.t
+  vmovdqa64 zmm.pi2, zmmword ptr [rip + keccak_x86_idx + 128]
+  vmovdqa64 zmm.pi3, zmmword ptr [rip + keccak_x86_idx + 192]
+  vmovdqa64 zmm.pi4, zmmword ptr [rip + keccak_x86_idx + 256]
+.for y, 0, 5
+  vmovdqu64 zmm.s${y}{k.m5}{z}, zmmword ptr [q.sa + ${40 * y}]
+  vmovdqu64 zmm.s${10 + y}{k.m5}{z}, zmmword ptr [q.sb + ${40 * y}]
+.endfor
+  lea q.rc, [rip + keccak_x86_rc]
+  mov d.n, 12
+round2x:
+.for h, 0, 2
+  ;; theta, both states
+  .for st, 0, 2
+  vmovdqa64 zmm.c${st}, zmm.s${10 * st + 5 * h}
+  vpternlogq zmm.c${st}, zmm.s${10 * st + 5 * h + 1}, zmm.s${10 * st + 5 * h + 2}, 0x96
+  vpternlogq zmm.c${st}, zmm.s${10 * st + 5 * h + 3}, zmm.s${10 * st + 5 * h + 4}, 0x96
+  vpermq zmm.d${st}, zmm.pi3, zmm.c${st}
+  vpermq zmm.t${st}, zmm.pi2, zmm.c${st}
+  vprolq zmm.t${st}, zmm.t${st}, 1
+  vpxorq zmm.d${st}, zmm.d${st}, zmm.t${st}
+  .endfor
+  .for y, 0, 5
+    .for st, 0, 2
+  vpxorq zmm.s${10 * st + 5 * h + y}, zmm.s${10 * st + 5 * h + y}, zmm.d${st}
+    .endfor
+  .endfor
+  ;; rho
+  .for y, 0, 5
+    .for st, 0, 2
+  vprolvq zmm.s${10 * st + 5 * h + y}, zmm.s${10 * st + 5 * h + y}, zmmword ptr [rip + keccak_x86_rho + ${64 * y}]
+    .endfor
+  .endfor
+  ;; pi (merge tree) into the other register set of each state
+  .for yo, 0, 5
+    .for st, 0, 2
+  vmovdqa64 zmm.ta${st}, zmmword ptr [rip + keccak_x86_pi + ${192 * yo}]
+  vpermi2q zmm.ta${st}, zmm.s${10 * st + 5 * h}, zmm.s${10 * st + 5 * h + 1}
+  vmovdqa64 zmm.tb${st}, zmmword ptr [rip + keccak_x86_pi + ${192 * yo + 64}]
+  vpermi2q zmm.tb${st}, zmm.s${10 * st + 5 * h + 2}, zmm.s${10 * st + 5 * h + 3}
+  vmovdqa64 zmm.tm${st}, zmmword ptr [rip + keccak_x86_pi + 960]
+  vpermi2q zmm.tm${st}, zmm.ta${st}, zmm.tb${st}
+  vmovdqa64 zmm.s${10 * st + 5 * (1 - h) + yo}, zmmword ptr [rip + keccak_x86_pi + ${192 * yo + 128}]
+  vpermi2q zmm.s${10 * st + 5 * (1 - h) + yo}, zmm.tm${st}, zmm.s${10 * st + 5 * h + 4}
+    .endfor
+  .endfor
+  ;; chi
+  .for yo, 0, 5
+    .for st, 0, 2
+  vpermq zmm.ta${st}, zmm.pi2, zmm.s${10 * st + 5 * (1 - h) + yo}
+  vpermq zmm.tb${st}, zmm.pi4, zmm.s${10 * st + 5 * (1 - h) + yo}
+  vpternlogq zmm.s${10 * st + 5 * (1 - h) + yo}, zmm.ta${st}, zmm.tb${st}, 0xd2
+    .endfor
+  .endfor
+  ;; iota
+  .for st, 0, 2
+  vpxorq zmm.s${10 * st + 5 * (1 - h)}{k.m0}, zmm.s${10 * st + 5 * (1 - h)}, qword ptr [q.rc + ${8 * h}]{1to8}
+  .endfor
+.endfor
+  add q.rc, 16
+  sub d.n, 1
+  jnz round2x
+.for y, 0, 5
+  vmovdqu64 zmmword ptr [q.sa + ${40 * y}]{k.m5}, zmm.s${y}
+  vmovdqu64 zmmword ptr [q.sb + ${40 * y}]{k.m5}, zmm.s${10 + y}
+.endfor
+  ret
+.end

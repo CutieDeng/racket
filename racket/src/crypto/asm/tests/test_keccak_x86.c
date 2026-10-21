@@ -49,6 +49,15 @@ int main(void)
     ref_keccak_f(b);
     tot++; if (memcmp(a, b, sizeof a)) { bad++; if (bad <= 5) printf("PERM MISMATCH t=%d\n", t); }
   }
+  /* two-state kernel against two reference permutations */
+  for (t = 0; t < 10000; t++) {
+    uint64_t a[25], b[25], ra[25], rb[25];
+    for (i = 0; i < 25; i++) { a[i] = rnd64(); b[i] = (t % 5 == 0) ? ~a[i] : rnd64(); }
+    memcpy(ra, a, sizeof a); memcpy(rb, b, sizeof b);
+    keccak_f1600_x2_x86(a, b);
+    ref_keccak_f(ra); ref_keccak_f(rb);
+    tot++; if (memcmp(a, ra, sizeof a) || memcmp(b, rb, sizeof b)) { bad++; if (bad <= 5) printf("X2 MISMATCH t=%d\n", t); }
+  }
   /* SHA3-256("abc") = 3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532 */
   { uint64_t s[25]; unsigned char blk[136], got[32];
     static const unsigned char want[32] = {0x3a,0x98,0x5d,0xa7,0x4f,0xe2,0x25,0xb2,0x04,0x5c,0x17,0x2d,0x6b,0xd3,0x90,0xbd,0x85,0x5f,0x08,0x6e,0x3e,0x9d,0x52,0x5b,0x46,0xbf,0xe2,0x45,0x11,0x43,0x15,0x32};
@@ -66,6 +75,11 @@ int main(void)
       t0 = now(); for (i = 0; i < 200000; i++) ref_keccak_f(s); t1 = now();
       v = 200000.0 * 136 / (t1 - t0) / 1e6; if (v > bb) bb = v;
     }
+    { uint64_t s2[25]; double bx = 0; memset(s2, 0, sizeof s2);
+      for (r = 0; r < 5; r++) {
+        double t0 = now(); for (i = 0; i < 100000; i++) keccak_f1600_x2_x86(s, s2); double t1 = now();
+        double v = 200000.0 * 136 / (t1 - t0) / 1e6; if (v > bx) bx = v; }
+      printf("BENCH keccak-avx512-x2 (sha3-256 rate, two states): %.0f MB/s\n", bx); }
     printf("BENCH keccak-avx512 (sha3-256 rate): %.0f MB/s\nBENCH keccak-portable (sha3-256 rate): %.0f MB/s\n", ba, bb); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");
   return bad ? 1 : 0;
