@@ -294,6 +294,15 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
    the current one, see below). Whole 1024-byte units only; returns bytes consumed (0 when the
    message has fewer than two units or the CPU lacks AVX-512 / BMI2+ADX, or the Poly1305
    buffer is not empty). `poly`'s r and h are read and h written back. */
+/* `units` x 1024 bytes of keystream XOR on the AVX-512 kernels: 2048-byte pairs on the two-set
+   kernel (its rounds keep the vector pipes busy), a trailing odd unit on the sixteen-block one */
+static void chacha20_units_avx512(uint32_t st[16], const unsigned char *in, unsigned char *out, intptr_t units)
+{
+  intptr_t pairs = units / 2;
+  if (pairs) { rktcrypto_chacha20_blocks2_avx512(st, in, out, pairs); in += pairs * 2048; out += pairs * 2048; }
+  if (units & 1) rktcrypto_chacha20_blocks_avx512(st, in, out, 1);
+}
+
 intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
                                           const unsigned char *in, unsigned char *out, intptr_t len,
                                           int encrypt, rktcrypto_poly1305_ctx_t *poly)
@@ -309,11 +318,11 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
        units (ChaCha20 at 10.7 GB/s, then Poly1305) beat the scalar-fused kernel; the
        ciphertext is absorbed before it is overwritten when decrypting in place */
     if (encrypt) {
-      rktcrypto_chacha20_blocks_avx512(st, in, out, units);
+      chacha20_units_avx512(st, in, out, units);
       rktcrypto_poly1305_update(poly, out, units * 1024);
     } else {
       rktcrypto_poly1305_update(poly, in, units * 1024);
-      rktcrypto_chacha20_blocks_avx512(st, in, out, units);
+      chacha20_units_avx512(st, in, out, units);
     }
     return units * 1024;
   }
@@ -349,7 +358,7 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
 #if defined(__x86_64__) && defined(__ELF__)
   if (len >= 1024 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
     intptr_t units = len / 1024;
-    rktcrypto_chacha20_blocks_avx512(state, in, out, units);   /* rktasm/x86 kernel, 16 blocks per unit */
+    chacha20_units_avx512(state, in, out, units);   /* rktasm/x86 kernels: 32-block pairs, then an odd 16-block unit */
     in += units * 1024; out += units * 1024; len -= units * 1024;
   }
 #endif

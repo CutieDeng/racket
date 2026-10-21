@@ -69,6 +69,8 @@ void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc
 /* rktasm/x86 kernel (rktcrypto_chacha20_avx512.S): `units` x 1024 bytes of ChaCha20 keystream XOR,
    state[12] advanced by 16 per unit */
 void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
+/* same kernel file: `units` x 2048 bytes, two sixteen-block sets interleaved in all 32 registers (state[12] += 32 per unit) */
+void rktcrypto_chacha20_blocks2_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);
