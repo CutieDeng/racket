@@ -258,6 +258,15 @@ SHA-512/SHA-3 为内核本身（轮链/置换延迟界）；P-256 为点运算�
 数据：gate 0/400200；sqr 185 vs mul 153 Mops/s（1.21×）；integration 77/77；基准 p256 ecdh 30.8→28.3 µs
 （0.86×）、ecdsa sign 11.0→10.4 µs（96.5k ops/s vs OpenSSL 95.8k，**持平**）、verify 36.8→34.9 µs（0.92×）。
 
+**X3-5a 已落地（2026-10-21，已验证）**——`crypto/asm/x86/x25519_x86.asm`：GF(2^255−19) radix-2^64 内核 `fe64_mul/sqr/
+mul121665`（mulx/adcx/adox 行 + 38 折叠 + 顶字再折 + 掩码 38 吸收末进位，宏 `FE64_REDUCE`），C 侧 fe64 阶梯
+（add/sub/cswap/frombytes/tobytes/invert 用 `unsigned __int128`，tobytes 两步规范化），BMI2+ADX 时分派。
+数据：gate 0/3001（随机 + 0/1/p−1/p/p+1/2^256−1/基点 等边界点 + RFC 7748 向量，oracle=关位的 radix-2^51 阶梯）；
+harness 41.3 vs 40.4 kops/s——**无增益**：gcc 对 radix-2^51 `__int128` 代码内联良好，而每次内核调用付 6 对
+push/pop + 内存往返，抵消了 mulx 的收益；基准 x25519 shared 23.9 µs（OpenSSL 18.3 → 0.77×）。
+→ X3-5b：用 `.macro` 把整步阶梯（5 mul + 4 sqr + mul121665 + add/sub）合成一个内核（操作数在 `.frame` 槽），
+去掉 11 次调用开销。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

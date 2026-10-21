@@ -25,6 +25,7 @@ chacha20poly1305_x86|rktcrypto_chacha20poly1305_x86.S|asm/tests/test_chacha20pol
 p256_mul_x86|rktcrypto_p256_mul_x86.S|asm/tests/test_p256_x86.c|rktcrypto_*.c
 keccak_avx512|rktcrypto_keccak_avx512.S|asm/tests/test_keccak_x86.c|rktcrypto_cpu.c rktcrypto_x86.c
 sha512_x86|rktcrypto_sha512_x86.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
+x25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_x25519_x86.c|rktcrypto_x25519.c rktcrypto_cpu.c rktcrypto_x86.c
 '
 rows() { echo "$TABLE" | grep -v '^$' | { if [ -n "${1:-}" ]; then grep "^$1|"; else cat; fi; }; }
 NL='
