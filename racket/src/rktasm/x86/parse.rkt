@@ -10,6 +10,7 @@
 ;;     .save all | .save none           ; callee-saved registers (default: all used)
 ;;     .simd sse | avx2 | avx512        ; vector register pool: avx512 adds xmm16-31 (EVEX-only mnemonics)
 ;;     .frame N                         ; N bytes of stack scratch, addressed as [rsp + off] (0 <= off < N)
+;;   .macro NAME p1, p2 ... .endm      ; parameterised text macro (\\p1 in the body), invoked as NAME(a, b)
 ;;   .end
 ;;   .rodata NAME [align=N]             ; constant block, raw data directives inside
 ;;     .long 1, 2, 3
@@ -17,7 +18,7 @@
 ;;
 ;; Virtual registers: q.name d.name w.name b.name (GPR views), xmm.name ymm.name zmm.name, k.name.
 ;; Memory: [base + index*scale + disp] with optional "size ptr" prefix, or [rip + sym + disp].
-(require racket/string racket/list racket/match racket/path "spec.rkt" "../parser/unroll.rkt")
+(require racket/string racket/list racket/match racket/path "spec.rkt" "../parser/unroll.rkt" "macro.rkt")
 (provide parse-file parse-string
          (struct-out fn) (struct-out rodata) (struct-out instr) (struct-out label))
 
@@ -104,8 +105,9 @@
 
 ;; ---- lines
 (define (parse-string text [source 'x86-asm])
-  ;; shared compile-time unrolling (.for var, lo, hi / ${expr}) from the AArch64 frontend
-  (define lines (expand-for-lines (for/list ([l (regexp-split #rx"\r?\n" text)] [n (in-naturals 1)]) (list l n #f)) source))
+  ;; parameterised macros (x86/macro.rkt), then the shared compile-time unrolling
+  ;; (.for var, lo, hi / ${expr}) from the AArch64 frontend
+  (define lines (expand-for-lines (expand-macros (for/list ([l (regexp-split #rx"\r?\n" text)] [n (in-naturals 1)]) (list l n #f)) source) source))
   (define items '())
   (define cur #f)        ; fn being filled
   (define cur-ro #f)     ; rodata being filled

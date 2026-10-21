@@ -42,6 +42,8 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
   必须有 EVEX 形式（否则报错提示换 AVX-512 助记符）。
 - `.frame N`（函数内）：N 字节栈暂存，正文用 `[rsp + off]` 访问；发射器在 push 之后 `sub rsp`、每个 `ret`
   前 `add rsp`，并按返回地址 + push 数把大小补到 16 字节对齐。
+- `.macro NAME p1, p2 … .endm` / `NAME(a, b)`：参数化文本宏（`x86/macro.rkt`，体内 `\p1`、`\@` 为每次展开
+  的计数器），在 `.for` 展开之前展开，可嵌套、可含 `.for`；体内的 `${}` 只在 `.for` 体内求值（沿用 unroll 规则）。
 
 现状（X3-2a，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR）、`ghash_vpclmul`
 （VPCLMULQDQ GHASH）、`gcm_vaes`（AES-GCM 单趟融合，上下文结构体传参）、`chacha20_avx512`（16 块/单元，

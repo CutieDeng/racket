@@ -159,3 +159,45 @@ top:
   (check-true (regexp-match? #rx"sub     rsp, 40\n" text))
   (check-true (regexp-match? #rx"add     rsp, 40\n        ret" text)))
 (displayln "alloc-tests: frame checks passed")
+
+;; 10. .macro: parameter substitution, per-expansion labels (\@), nesting, and .for inside a body
+(let* ([r (alloc "
+.macro ADD3 d, a, b
+  mov \\d, \\a
+  add \\d, \\b
+.endm
+.macro CLAMP x
+  test \\x, \\x
+  jns ok\\@
+  neg \\x
+ok\\@:
+.endm
+.macro TWICE d, a, b
+  ADD3(\\d, \\a, \\b)
+  .for k, 0, 2
+  CLAMP(\\d)
+  .endfor
+.endm
+.function m export (
+  in: q.a, q.b
+  out: q.r
+)
+  TWICE(q.r, q.a, qword ptr [q.b + 8])
+  ret
+.end")]
+       [body (filter instr? (fn-body (alloc-result-fn r)))])
+  ;; mov, add, then two CLAMP expansions of three instructions each
+  (check-equal? (length body) 8)
+  (check-equal? (map instr-mnemonic body) '(mov add test jns neg test jns neg))
+  (check-equal? (length (filter label? (fn-body (alloc-result-fn r)))) 2))
+(check-exn #rx"expects 2 argument" (lambda () (alloc "
+.macro P a, b
+  mov \\a, \\b
+.endm
+.function e export (
+  in: q.a
+)
+  P(q.a)
+  ret
+.end")))
+(displayln "alloc-tests: macro checks passed")
