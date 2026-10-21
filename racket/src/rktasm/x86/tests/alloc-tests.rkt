@@ -201,3 +201,39 @@ ok\\@:
   ret
 .end")))
 (displayln "alloc-tests: macro checks passed")
+
+;; 11. ${expr} is evaluated outside .for as well (macros with arithmetic on their arguments)
+(let* ([r (alloc "
+.macro LOADK d, i
+  mov \\d, qword ptr [q.p + ${8 * (\\i + 1)}]
+.endm
+.function tl export (
+  in: q.p
+  out: q.r
+)
+  LOADK(q.r, 2)
+  add q.r, ${1 << 4}
+  ret
+.end")]
+       [text (emitted r)])
+  (check-true (regexp-match? #rx"\\[rdi \\+ 24\\]" text))
+  (check-true (regexp-match? #rx"add     rax, 0x10|add rax, 0x10" text)))
+(displayln "alloc-tests: top-level expression checks passed")
+
+;; 12. xor r, r is a definition, not a use: an out register zeroed at one exit is not live from entry
+(let ([r (alloc "
+.function zr export (
+  in: q.p
+  out: q.ret
+)
+  mov q.a, qword ptr [q.p]
+  test q.a, q.a
+  jz other
+  xor d.ret, d.ret
+  ret
+other:
+  mov d.ret, 2
+  ret
+.end")])
+  (check-not-equal? (mapping-ref r 'a) 'rax))
+(displayln "alloc-tests: zeroing idiom checks passed")

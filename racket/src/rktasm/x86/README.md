@@ -43,7 +43,12 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
 - `.frame N`（函数内）：N 字节栈暂存，正文用 `[rsp + off]` 访问；发射器在 push 之后 `sub rsp`、每个 `ret`
   前 `add rsp`，并按返回地址 + push 数把大小补到 16 字节对齐。
 - `.macro NAME p1, p2 … .endm` / `NAME(a, b)`：参数化文本宏（`x86/macro.rkt`，体内 `\p1`、`\@` 为每次展开
-  的计数器），在 `.for` 展开之前展开，可嵌套、可含 `.for`；体内的 `${}` 只在 `.for` 体内求值（沿用 unroll 规则）。
+  的计数器），在 `.for` 展开之前展开，可嵌套、可含 `.for`。
+- `${expr}` 在任何一行都求值（解析器把整个源包进一个隐式单次 `.for`），宏参数可直接参与算术。
+- 分配器把清零惯用法（`xor r, r`、`sub r, r`、`pxor/vpxorq x, x`）视为纯定义而非读取（否则一个在出口处
+  `xor d.ret, d.ret` 的 out 寄存器会从入口一直活到出口）；寄存器不足时错误信息列出压力点的活跃值。
+- 内核合成配方（X25519 阶梯、P-256 点运算）：把域运算体写成内存操作数宏（参数为"基址 + 偏移"文本，
+  如 `rsp + 32`、`q.p + 64`），临时量放 `.frame` 槽，一次调用完成整步，消掉调用/push/pop 开销。
 
 现状（X3-2a，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR）、`ghash_vpclmul`
 （VPCLMULQDQ GHASH）、`gcm_vaes`（AES-GCM 单趟融合，上下文结构体传参）、`chacha20_avx512`（16 块/单元，

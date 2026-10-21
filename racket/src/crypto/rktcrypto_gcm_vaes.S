@@ -34,82 +34,81 @@ gcm_vaes_thirtytwo:
 rktcrypto_gcm_crypt_vaes:
         push    rbx
         push    r12
-        push    r13
         xor eax, eax
         cmp rcx, 0x200
         jb .Lrktcrypto_gcm_crypt_vaes_done
-        mov r13, qword ptr [rdi]
-        mov r12, qword ptr [rdi + 8]
-        mov rbx, qword ptr [rdi + 16]
-        mov r11, qword ptr [rdi + 32]
-        mov r10, qword ptr [rdi + 40]
-        mov r9, r11
-        shl r9, 0x4
+        mov r12, qword ptr [rdi]
+        mov rbx, qword ptr [rdi + 8]
+        mov r11, qword ptr [rdi + 16]
+        mov r10, qword ptr [rdi + 32]
+        mov r9, qword ptr [rdi + 40]
+        mov r8, r10
+        shl r8, 0x4
         vbroadcasti32x4 zmm17, xmmword ptr [rip + gcm_vaes_bswap]
-        vbroadcasti32x4 zmm16, xmmword ptr [r13]
-        vbroadcasti32x4 zmm15, xmmword ptr [r13 + r9]
-        vbroadcasti32x4 zmm14, xmmword ptr [rbx]
+        vbroadcasti32x4 zmm16, xmmword ptr [r12]
+        vbroadcasti32x4 zmm15, xmmword ptr [r12 + r8]
+        vbroadcasti32x4 zmm14, xmmword ptr [r11]
         vpshufb zmm14, zmm14, zmm17
-        mov rbx, qword ptr [rdi + 24]
-        vmovdqu64 xmm12, xmmword ptr [rbx]
+        mov r11, qword ptr [rdi + 24]
+        vmovdqu64 xmm12, xmmword ptr [r11]
         xor r8d, r8d
 .Lrktcrypto_gcm_crypt_vaes_loop:
         test r8d, r8d
         jz .Lrktcrypto_gcm_crypt_vaes_skipghash
         vpxorq zmm13, zmm13, zmm12
-        vpclmulqdq zmm12, zmm13, zmmword ptr [r12], 0x0
-        vpclmulqdq zmm4, zmm13, zmmword ptr [r12], 0x11
-        vpclmulqdq zmm1, zmm13, zmmword ptr [r12], 0x10
-        vpclmulqdq zmm0, zmm13, zmmword ptr [r12], 0x1
+        vpclmulqdq zmm12, zmm13, zmmword ptr [rbx], 0x0
+        vpclmulqdq zmm4, zmm13, zmmword ptr [rbx], 0x11
+        vpclmulqdq zmm1, zmm13, zmmword ptr [rbx], 0x10
+        vpclmulqdq zmm0, zmm13, zmmword ptr [rbx], 0x1
         vpxorq zmm1, zmm1, zmm0
-        vpclmulqdq zmm0, zmm11, zmmword ptr [r12 + 64], 0x0
+        vpclmulqdq zmm0, zmm11, zmmword ptr [rbx + 64], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm11, zmmword ptr [r12 + 64], 0x11
+        vpclmulqdq zmm0, zmm11, zmmword ptr [rbx + 64], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm11, zmmword ptr [r12 + 64], 0x10
-        vpclmulqdq zmm3, zmm11, zmmword ptr [r12 + 64], 0x1
+        vpclmulqdq zmm0, zmm11, zmmword ptr [rbx + 64], 0x10
+        vpclmulqdq zmm3, zmm11, zmmword ptr [rbx + 64], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm10, zmmword ptr [r12 + 128], 0x0
+        vpclmulqdq zmm0, zmm10, zmmword ptr [rbx + 128], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm10, zmmword ptr [r12 + 128], 0x11
+        vpclmulqdq zmm0, zmm10, zmmword ptr [rbx + 128], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm10, zmmword ptr [r12 + 128], 0x10
-        vpclmulqdq zmm3, zmm10, zmmword ptr [r12 + 128], 0x1
+        vpclmulqdq zmm0, zmm10, zmmword ptr [rbx + 128], 0x10
+        vpclmulqdq zmm3, zmm10, zmmword ptr [rbx + 128], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm9, zmmword ptr [r12 + 192], 0x0
+        vpclmulqdq zmm0, zmm9, zmmword ptr [rbx + 192], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm9, zmmword ptr [r12 + 192], 0x11
+        vpclmulqdq zmm0, zmm9, zmmword ptr [rbx + 192], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm9, zmmword ptr [r12 + 192], 0x10
-        vpclmulqdq zmm3, zmm9, zmmword ptr [r12 + 192], 0x1
+        vpclmulqdq zmm0, zmm9, zmmword ptr [rbx + 192], 0x10
+        vpclmulqdq zmm3, zmm9, zmmword ptr [rbx + 192], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm8, zmmword ptr [r12 + 256], 0x0
+        vpclmulqdq zmm0, zmm8, zmmword ptr [rbx + 256], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm8, zmmword ptr [r12 + 256], 0x11
+        vpclmulqdq zmm0, zmm8, zmmword ptr [rbx + 256], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm8, zmmword ptr [r12 + 256], 0x10
-        vpclmulqdq zmm3, zmm8, zmmword ptr [r12 + 256], 0x1
+        vpclmulqdq zmm0, zmm8, zmmword ptr [rbx + 256], 0x10
+        vpclmulqdq zmm3, zmm8, zmmword ptr [rbx + 256], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm7, zmmword ptr [r12 + 320], 0x0
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rbx + 320], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm7, zmmword ptr [r12 + 320], 0x11
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rbx + 320], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm7, zmmword ptr [r12 + 320], 0x10
-        vpclmulqdq zmm3, zmm7, zmmword ptr [r12 + 320], 0x1
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rbx + 320], 0x10
+        vpclmulqdq zmm3, zmm7, zmmword ptr [rbx + 320], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm6, zmmword ptr [r12 + 384], 0x0
+        vpclmulqdq zmm0, zmm6, zmmword ptr [rbx + 384], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [r12 + 384], 0x11
+        vpclmulqdq zmm0, zmm6, zmmword ptr [rbx + 384], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [r12 + 384], 0x10
-        vpclmulqdq zmm3, zmm6, zmmword ptr [r12 + 384], 0x1
+        vpclmulqdq zmm0, zmm6, zmmword ptr [rbx + 384], 0x10
+        vpclmulqdq zmm3, zmm6, zmmword ptr [rbx + 384], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
-        vpclmulqdq zmm0, zmm5, zmmword ptr [r12 + 448], 0x0
+        vpclmulqdq zmm0, zmm5, zmmword ptr [rbx + 448], 0x0
         vpxorq zmm12, zmm12, zmm0
-        vpclmulqdq zmm0, zmm5, zmmword ptr [r12 + 448], 0x11
+        vpclmulqdq zmm0, zmm5, zmmword ptr [rbx + 448], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm5, zmmword ptr [r12 + 448], 0x10
-        vpclmulqdq zmm3, zmm5, zmmword ptr [r12 + 448], 0x1
+        vpclmulqdq zmm0, zmm5, zmmword ptr [rbx + 448], 0x10
+        vpclmulqdq zmm3, zmm5, zmmword ptr [rbx + 448], 0x1
         vpternlogq zmm1, zmm0, zmm3, 0x96
         vpslldq zmm0, zmm1, 0x8
         vpsrldq zmm1, zmm1, 0x8
@@ -164,71 +163,71 @@ rktcrypto_gcm_crypt_vaes:
         vpxorq zmm2, zmm2, zmm16
         vpshufb zmm1, zmm1, zmm17
         vpxorq zmm1, zmm1, zmm16
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 16]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 16]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 32]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 32]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 48]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 48]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 64]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 64]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 80]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 80]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 96]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 96]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 112]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 112]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 128]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 128]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 144]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 144]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        cmp r11d, 0xa
+        cmp r10d, 0xa
         je .Lrktcrypto_gcm_crypt_vaes_last0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 160]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 160]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 176]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 176]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        cmp r11d, 0xc
+        cmp r10d, 0xc
         je .Lrktcrypto_gcm_crypt_vaes_last0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 192]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 192]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 208]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 208]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
@@ -238,7 +237,7 @@ rktcrypto_gcm_crypt_vaes:
         vaesenclast zmm3, zmm3, zmm15
         vaesenclast zmm2, zmm2, zmm15
         vaesenclast zmm1, zmm1, zmm15
-        test r10d, r10d
+        test r9d, r9d
         jnz .Lrktcrypto_gcm_crypt_vaes_xorstore0
         vmovdqu64 zmm13, zmmword ptr [rsi]
         vmovdqu64 zmm11, zmmword ptr [rsi + 64]
@@ -253,7 +252,7 @@ rktcrypto_gcm_crypt_vaes:
         vmovdqu64 zmmword ptr [rdx + 128], zmm2
         vpxorq zmm1, zmm1, zmmword ptr [rsi + 192]
         vmovdqu64 zmmword ptr [rdx + 192], zmm1
-        test r10d, r10d
+        test r9d, r9d
         jz .Lrktcrypto_gcm_crypt_vaes_reverse0
         vmovdqa64 zmm13, zmm4
         vmovdqa64 zmm11, zmm3
@@ -276,71 +275,71 @@ rktcrypto_gcm_crypt_vaes:
         vpxorq zmm2, zmm2, zmm16
         vpshufb zmm1, zmm1, zmm17
         vpxorq zmm1, zmm1, zmm16
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 16]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 16]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 32]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 32]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 48]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 48]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 64]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 64]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 80]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 80]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 96]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 96]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 112]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 112]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 128]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 128]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 144]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 144]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        cmp r11d, 0xa
+        cmp r10d, 0xa
         je .Lrktcrypto_gcm_crypt_vaes_last1
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 160]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 160]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 176]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 176]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        cmp r11d, 0xc
+        cmp r10d, 0xc
         je .Lrktcrypto_gcm_crypt_vaes_last1
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 192]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 192]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
         vaesenc zmm1, zmm1, zmm0
-        vbroadcasti32x4 zmm0, xmmword ptr [r13 + 208]
+        vbroadcasti32x4 zmm0, xmmword ptr [r12 + 208]
         vaesenc zmm4, zmm4, zmm0
         vaesenc zmm3, zmm3, zmm0
         vaesenc zmm2, zmm2, zmm0
@@ -350,7 +349,7 @@ rktcrypto_gcm_crypt_vaes:
         vaesenclast zmm3, zmm3, zmm15
         vaesenclast zmm2, zmm2, zmm15
         vaesenclast zmm1, zmm1, zmm15
-        test r10d, r10d
+        test r9d, r9d
         jnz .Lrktcrypto_gcm_crypt_vaes_xorstore1
         vmovdqu64 zmm8, zmmword ptr [rsi + 256]
         vmovdqu64 zmm7, zmmword ptr [rsi + 320]
@@ -365,7 +364,7 @@ rktcrypto_gcm_crypt_vaes:
         vmovdqu64 zmmword ptr [rdx + 384], zmm2
         vpxorq zmm1, zmm1, zmmword ptr [rsi + 448]
         vmovdqu64 zmmword ptr [rdx + 448], zmm1
-        test r10d, r10d
+        test r9d, r9d
         jz .Lrktcrypto_gcm_crypt_vaes_reverse1
         vmovdqa64 zmm8, zmm4
         vmovdqa64 zmm7, zmm3
@@ -384,13 +383,12 @@ rktcrypto_gcm_crypt_vaes:
         sub rcx, 0x200
         jmp .Lrktcrypto_gcm_crypt_vaes_loop
 .Lrktcrypto_gcm_crypt_vaes_fin:
-        vmovdqu64 xmmword ptr [rbx], xmm12
-        mov rbx, qword ptr [rdi + 16]
+        vmovdqu64 xmmword ptr [r11], xmm12
+        mov r11, qword ptr [rdi + 16]
         vpshufb xmm0, xmm14, xmm17
-        vmovdqu64 xmmword ptr [rbx], xmm0
+        vmovdqu64 xmmword ptr [r11], xmm0
 .Lrktcrypto_gcm_crypt_vaes_done:
         vzeroupper
-        pop     r13
         pop     r12
         pop     rbx
         ret

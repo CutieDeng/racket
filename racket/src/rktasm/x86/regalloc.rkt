@@ -72,8 +72,21 @@
      (define f (or (match-form mn ops) (error 'x86-regalloc "line ~a: no form for ~a" (instr-line x) (instr-text x))))
      (define-values (u d fr fw) (instr-use-def f ops))
      (define (keys l) (remove-duplicates (filter values (append (map operand-key l) (append-map mem-regs l)))))
+     ;; zeroing idioms (xor r, r / sub r, r / pxor x, x ...) define their register without reading it
+     (define zeroing?
+       (and (memq mn '(xor sub pxor xorps xorpd vpxor vpxord vpxorq vxorps vxorpd))
+            (= 2 (length ops)) (operand-key (car ops))
+            (equal? (operand-key (car ops)) (operand-key (cadr ops)))
+            (not (and (pair? (car ops)) (eq? (car (car ops)) 'mem)))))
+     (define zeroing3?   ; vpxorq d, s, s and friends
+       (and (memq mn '(vpxor vpxord vpxorq vxorps vxorpd))
+            (= 3 (length ops)) (operand-key (cadr ops))
+            (equal? (operand-key (cadr ops)) (operand-key (caddr ops)))))
      ;; a memory operand that is "defined" only writes memory: its address registers are uses
-     (define uses (remove-duplicates (append (keys u) (append-map mem-regs d))))
+     (define uses0 (remove-duplicates (append (keys u) (append-map mem-regs d))))
+     (define uses (cond [zeroing? (remove (operand-key (car ops)) uses0)]
+                        [zeroing3? (remove (operand-key (cadr ops)) uses0)]
+                        [else uses0]))
      (define defs (remove-duplicates (filter values (map operand-key (filter (lambda (o) (not (and (pair? o) (eq? (car o) 'mem)))) d)))))
      (define copy? (and (memq mn copy-mnemonics) (= 2 (length ops))
                         (operand-key (car ops)) (operand-key (cadr ops))
@@ -181,9 +194,11 @@
       (define worst (for/fold ([best #f]) ([i n])
         (define c (length (filter (lambda (l) (eq? (node-class l) cls)) (vector-ref live-out i))))
         (if (or (not best) (> c (cdr best))) (cons i c) best)))
-      (format "~a ~a registers live after line ~a (pool ~a)" (cdr worst) cls
+      (format "~a ~a registers live after line ~a (pool ~a): ~a" (cdr worst) cls
               (let ([x (vector-ref body (car worst))]) (if (instr? x) (instr-line x) (label-line x)))
-              (length (pool-of cls)))))
+              (length (pool-of cls))
+              (for/list ([l (vector-ref live-out (car worst))] #:when (eq? (node-class l) cls))
+                (if (vreg-key? l) (vreg-key-name l) l)))))
   ;; ---- coalescing (union-find over vreg nodes; a vreg may be merged into a physical register)
   (define alias (make-hasheq))
   (define (find k) (let ([a (hash-ref alias k #f)]) (if a (find a) k)))

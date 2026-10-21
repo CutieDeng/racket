@@ -11,6 +11,7 @@
 ;;     .simd sse | avx2 | avx512        ; vector register pool: avx512 adds xmm16-31 (EVEX-only mnemonics)
 ;;     .frame N                         ; N bytes of stack scratch, addressed as [rsp + off] (0 <= off < N)
 ;;   .macro NAME p1, p2 ... .endm      ; parameterised text macro (\\p1 in the body), invoked as NAME(a, b)
+;;   ${expr}                          ; compile-time integer expression, evaluated on every line
 ;;   .end
 ;;   .rodata NAME [align=N]             ; constant block, raw data directives inside
 ;;     .long 1, 2, 3
@@ -106,8 +107,12 @@
 ;; ---- lines
 (define (parse-string text [source 'x86-asm])
   ;; parameterised macros (x86/macro.rkt), then the shared compile-time unrolling
-  ;; (.for var, lo, hi / ${expr}) from the AArch64 frontend
-  (define lines (expand-for-lines (expand-macros (for/list ([l (regexp-split #rx"\r?\n" text)] [n (in-naturals 1)]) (list l n #f)) source) source))
+  ;; (.for var, lo, hi / ${expr}) from the AArch64 frontend. The whole source is wrapped in an
+  ;; implicit one-trip .for so that ${expr} is evaluated on every line, not only inside loops
+  ;; (the AArch64 pass substitutes only in loop bodies); line numbers stay the originals.
+  (define raw (for/list ([l (regexp-split #rx"\r?\n" text)] [n (in-naturals 1)]) (list l n #f)))
+  (define wrapped (append (list (list ".for __top, 0, 1" 0 #f)) (expand-macros raw source) (list (list ".endfor" 0 #f))))
+  (define lines (expand-for-lines wrapped source))
   (define items '())
   (define cur #f)        ; fn being filled
   (define cur-ro #f)     ; rodata being filled
