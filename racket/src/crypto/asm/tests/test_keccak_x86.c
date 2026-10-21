@@ -49,6 +49,15 @@ int main(void)
     ref_keccak_f(b);
     tot++; if (memcmp(a, b, sizeof a)) { bad++; if (bad <= 5) printf("PERM MISMATCH t=%d\n", t); }
   }
+  /* scalar kernel against the reference permutation */
+  for (t = 0; t < 20000; t++) {
+    uint64_t a[25], b[25];
+    for (i = 0; i < 25; i++) a[i] = (t % 7 == 0) ? ((rnd64() & 1) ? ~0ULL : 0ULL) : rnd64();
+    memcpy(b, a, sizeof a);
+    keccak_f1600_scalar_x86(a);
+    ref_keccak_f(b);
+    tot++; if (memcmp(a, b, sizeof a)) { bad++; if (bad <= 5) printf("SCALAR MISMATCH t=%d\n", t); }
+  }
   /* two-state kernel against two reference permutations */
   for (t = 0; t < 10000; t++) {
     uint64_t a[25], b[25], ra[25], rb[25];
@@ -75,6 +84,11 @@ int main(void)
       t0 = now(); for (i = 0; i < 200000; i++) ref_keccak_f(s); t1 = now();
       v = 200000.0 * 136 / (t1 - t0) / 1e6; if (v > bb) bb = v;
     }
+    { double bs = 0;
+      for (r = 0; r < 5; r++) {
+        double t0 = now(); for (i = 0; i < 200000; i++) keccak_f1600_scalar_x86(s); double t1 = now();
+        double v = 200000.0 * 136 / (t1 - t0) / 1e6; if (v > bs) bs = v; }
+      printf("BENCH keccak-scalar (sha3-256 rate): %.0f MB/s\n", bs); }
     { uint64_t s2[25]; double bx = 0; memset(s2, 0, sizeof s2);
       for (r = 0; r < 5; r++) {
         double t0 = now(); for (i = 0; i < 100000; i++) keccak_f1600_x2_x86(s, s2); double t1 = now();

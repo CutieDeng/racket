@@ -117,6 +117,7 @@
       "rktcrypto_sha512_x86.S"
       "rktcrypto_x25519_x86.S"
       "rktcrypto_poly1305_ifma.S"
+      "rktcrypto_keccak_scalar.S"
       "rktcrypto_md5_asm.S"
       "rktcrypto_rsa.c"
       "rktcrypto_rsa_keygen.c"

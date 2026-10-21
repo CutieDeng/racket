@@ -132,7 +132,10 @@ static void keccak_f(uint64_t s[25])
 #if defined(__ARM_FEATURE_SHA3)
   keccak_f_sha3(s);
 #elif defined(__x86_64__) && defined(__ELF__)
-  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x86(s);   /* rktasm/x86 kernel */
+  /* a single stream is faster on the integer unit (the AVX-512 kernel is bound by its 512-bit
+     shuffles); the vector kernel serves the two-state entry below */
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) keccak_f1600_scalar_x86(s);   /* rktasm/x86 kernel */
+  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x86(s);
   else keccak_f_portable(s);
 #else
   keccak_f_portable(s);
