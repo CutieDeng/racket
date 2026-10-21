@@ -270,40 +270,25 @@ static void fe64_invert(fe64 out, const fe64 z)
 static int x25519_fe64(unsigned char out[32], const unsigned char scalar[32], const unsigned char point[32])
 {
   unsigned char e[32];
-  fe64 x1, x2, z2, x3, z3, A, B, C, D, DA, CB, AA, BB, E, t0, t1;
+  fe64 x1;
+  uint64_t st[16];                /* x2 | z2 | x3 | z3, the layout x25519_step_x86 takes */
+  uint64_t *x2 = st, *z2 = st + 4, *x3 = st + 8, *z3 = st + 12;
   uint64_t swap = 0;
   int pos, i;
   memcpy(e, scalar, 32);
   e[0] &= 248; e[31] &= 127; e[31] |= 64;
   fe64_frombytes(x1, point);
-  memset(x2, 0, 32); x2[0] = 1;
-  memset(z2, 0, 32);
+  memset(st, 0, sizeof st);
+  x2[0] = 1;
   memcpy(x3, x1, 32);
-  memset(z3, 0, 32); z3[0] = 1;
+  z3[0] = 1;
   for (pos = 254; pos >= 0; pos--) {
     uint64_t b = (e[pos >> 3] >> (pos & 7)) & 1;
     swap ^= b;
     fe64_cswap(x2, x3, swap);
     fe64_cswap(z2, z3, swap);
     swap = b;
-    fe64_add(A, x2, z2);
-    fe64_sub(B, x2, z2);
-    fe64_add(C, x3, z3);
-    fe64_sub(D, x3, z3);
-    fe64_mul_x86(DA, D, A);
-    fe64_mul_x86(CB, C, B);
-    fe64_add(t0, DA, CB);
-    fe64_sub(t1, DA, CB);
-    fe64_sqr_x86(x3, t0);
-    fe64_sqr_x86(t1, t1);
-    fe64_mul_x86(z3, x1, t1);
-    fe64_sqr_x86(AA, A);
-    fe64_sqr_x86(BB, B);
-    fe64_mul_x86(x2, AA, BB);
-    fe64_sub(E, AA, BB);
-    fe64_mul121665_x86(t0, E);
-    fe64_add(t0, t0, AA);
-    fe64_mul_x86(z2, E, t0);
+    x25519_step_x86(st, x1);     /* the whole step (10 multiplications, 8 add/sub) in one kernel */
   }
   fe64_cswap(x2, x3, swap);
   fe64_cswap(z2, z3, swap);

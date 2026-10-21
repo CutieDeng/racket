@@ -86,6 +86,8 @@ void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, int
 void fe64_mul_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4]);
 void fe64_sqr_x86(uint64_t r[4], const uint64_t a[4]);
 void fe64_mul121665_x86(uint64_t r[4], const uint64_t a[4]);
+/* one ladder step on st = {x2, z2, x3, z3} with the base coordinate x1, all in registers/frame slots */
+void x25519_step_x86(uint64_t st[16], const uint64_t x1[4]);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

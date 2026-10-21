@@ -86,7 +86,9 @@
                       (let ([p (with-output-to-string (lambda () (system* (find-executable-path "xcrun") "--find" "llvm-objdump")))]) (string-trim p))))
   (define dis (with-output-to-string (lambda () (system* objdump "-d" "--x86-asm-syntax=intel" "--no-show-raw-insn" (path->string obj)))))
   (define got (for/list ([l (string-split dis "\n")]
-                         #:when (regexp-match #px"^\\s*[0-9a-f]+:\\s+\\S" l))
+                         #:when (regexp-match #px"^\\s*[0-9a-f]+:\\s+\\S" l)
+                         ;; the emitter's own frame adjustments are not source instructions
+                         #:unless (regexp-match? #px"^\\s*[0-9a-f]+:\\s+(sub|add)\\s+rsp," l))
                 (string->symbol (cadr (regexp-match #px"^\\s*[0-9a-f]+:\\s+(\\S+)" l)))))
   (define want (for*/list ([it items] #:when (fn? it) [x (fn-body it)]
                            #:when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive))))
