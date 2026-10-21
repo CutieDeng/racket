@@ -89,6 +89,8 @@ void keccak_f1600_x2_x86(uint64_t sA[25], uint64_t sB[25]);
 void keccak_f1600_scalar_x86(uint64_t s[25]);
 /* rktasm/x86 kernel (rktcrypto_sha512_x86.S): hw[0..7] = state (updated), hw[8..23] = schedule scratch */
 void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk);
+/* rktasm/x86 kernel (rktcrypto_sha512_avx512.S): same contract, vectorised schedule (AVX-512VL + BMI2) */
+void rktcrypto_sha512_blocks_avx512_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk);
 /* rktasm/x86 kernels (rktcrypto_x25519_x86.S): GF(2^255-19) in four 64-bit limbs, loosely reduced */
 void fe64_mul_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4]);
 void fe64_sqr_x86(uint64_t r[4], const uint64_t a[4]);

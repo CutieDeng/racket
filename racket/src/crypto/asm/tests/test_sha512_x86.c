@@ -1,6 +1,7 @@
-/* Differential + KAT + BENCH for the SHA-512 kernel (rktcrypto_sha512_x86.S) through the core API:
-   the same hashing with the BMI2/ADX bit cleared is the oracle (the portable transform, checked by
-   the integration suite against FIPS 180-4). Build (from racket/src/crypto, on BMI2 hardware):
+/* Differential + KAT + BENCH for the SHA-512 kernels (rktcrypto_sha512_x86.S scalar,
+   rktcrypto_sha512_avx512.S vector schedule) through the core API: the same hashing with the
+   AVX-512 bit cleared selects the scalar kernel, with the BMI2/ADX bit cleared the portable
+   transform (checked by the integration suite against FIPS 180-4); all three must agree. Build (from racket/src/crypto, on BMI2 hardware):
      gcc -O2 -I. -o /tmp/test_sha512_x86 asm/tests/test_sha512_x86.c rktcrypto_*.S rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c */
 #include <stdio.h>
 #include <string.h>
@@ -15,11 +16,12 @@ static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
 #define MAXLEN (1 << 20)
 static unsigned char msg[MAXLEN + 64];
 
-static void kernel(int on)
+static void kernel(int on)   /* 1: detection (vector schedule when AVX-512); 0: portable */
 {
   if (on) rktcrypto_cpu_override_features(0, 0);
   else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_BMI2ADX, 1);
 }
+static void scalar(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_AVX512, 1); }
 static void hash(const uint64_t *iv, long len, unsigned seed, unsigned char out[64])
 {
   rktcrypto_sha512_ctx_t ctx; long pos = 0; uint64_t s = seed;
@@ -43,13 +45,17 @@ int main(void)
     kernel(1); hash(iv, len, seed, a);
     kernel(0); hash(iv, len, seed, b); kernel(1);
     tot++; if (memcmp(a, b, 64)) { bad++; if (bad <= 5) printf("HASH MISMATCH t=%d len=%ld\n", t, len); }
+    if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+      scalar(); hash(iv, len, seed, b); kernel(1);
+      tot++; if (memcmp(a, b, 64)) { bad++; if (bad <= 5) printf("HASH MISMATCH (scalar kernel) t=%d len=%ld\n", t, len); }
+    }
   }
   /* FIPS 180-4 SHA-512("abc") */
   { static const unsigned char want[16] = {0xdd,0xaf,0x35,0xa1,0x93,0x61,0x7a,0xba,0xcc,0x41,0x73,0x49,0xae,0x20,0x41,0x31};
     unsigned char out[64]; rktcrypto_sha512_ctx_t ctx;
     rktcrypto_sha512_core_init(&ctx, rktcrypto_sha512_iv); rktcrypto_sha512_core_update(&ctx, (const unsigned char *)"abc", 3); rktcrypto_sha512_core_final(&ctx, out, 64);
     tot++; if (memcmp(out, want, 16)) { bad++; printf("KAT sha512(abc) mismatch\n"); } }
-  { int r; double ba = 0, bb = 0; unsigned char out[64]; rktcrypto_sha512_ctx_t ctx;
+  { int r; double ba = 0, bb = 0, bs = 0; unsigned char out[64]; rktcrypto_sha512_ctx_t ctx;
     for (i = 0; i < MAXLEN; i++) msg[i] = (unsigned char)i;
     for (r = 0; r < 5; r++) {
       double t0, t1, v;
@@ -57,8 +63,11 @@ int main(void)
       v = 4.0 * MAXLEN / (t1 - t0) / 1e6; if (v > ba) ba = v;
       kernel(0); t0 = now(); for (i = 0; i < 2; i++) { rktcrypto_sha512_core_init(&ctx, rktcrypto_sha512_iv); rktcrypto_sha512_core_update(&ctx, msg, MAXLEN); rktcrypto_sha512_core_final(&ctx, out, 64); } t1 = now(); kernel(1);
       v = 2.0 * MAXLEN / (t1 - t0) / 1e6; if (v > bb) bb = v;
+      scalar(); t0 = now(); for (i = 0; i < 4; i++) { rktcrypto_sha512_core_init(&ctx, rktcrypto_sha512_iv); rktcrypto_sha512_core_update(&ctx, msg, MAXLEN); rktcrypto_sha512_core_final(&ctx, out, 64); } t1 = now(); kernel(1);
+      v = 4.0 * MAXLEN / (t1 - t0) / 1e6; if (v > bs) bs = v;
     }
-    printf("BENCH sha512-x86: %.0f MB/s\nBENCH sha512-portable: %.0f MB/s\n", ba, bb); }
+    printf("BENCH sha512-%s: %.0f MB/s\nBENCH sha512-scalar: %.0f MB/s\nBENCH sha512-portable: %.0f MB/s\n",
+           rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512) ? "avx512" : "x86", ba, bs, bb); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");
   return bad ? 1 : 0;
 }

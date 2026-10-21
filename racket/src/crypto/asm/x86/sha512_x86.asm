@@ -3,8 +3,10 @@
 ;; register names, the sixteen-word message schedule lives in a ring in the caller's scratch
 ;; area (hw[8..23]) because the DSL has no stack frames yet. Within a round Ch is added before
 ;; Sigma1 so the e chain is five cycles (Ch is ready two cycles after e, Sigma1 three).
-;; A vectorised schedule (ymm sigma0/sigma1) and folding K into it were measured at +3% and
-;; +0% on Zen 5 (the round chain and the port mix bound it, IPC 4.2), so the scalar form stays.
+;; This form is bound by its twelve rorx/shr per round on the shift pipes plus ~38 ALU ops
+;; (7.7 cycles per round on Zen 5); sha512_avx512.asm moves the schedule to AVX-512VL ymm
+;; (four words per step) and is dispatched first when AVX-512 is available. This kernel stays
+;; as the BMI2-only fallback (an earlier two-lane xmm schedule attempt gained only 3%).
 ;;   void rktcrypto_sha512_blocks_x86(uint64_t hw[24], const unsigned char *data, intptr_t nblk)
 ;; hw[0..7] = state (updated). Oracle: sha512_transform_portable (rktcrypto_sha512.c) through the
 ;; core API with the BMI2/ADX bit cleared; gate: asm/tests/test_sha512_x86.c.

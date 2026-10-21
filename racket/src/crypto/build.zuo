@@ -115,6 +115,7 @@
       "rktcrypto_p256_mul_x86.S"
       "rktcrypto_keccak_avx512.S"
       "rktcrypto_sha512_x86.S"
+      "rktcrypto_sha512_avx512.S"
       "rktcrypto_x25519_x86.S"
       "rktcrypto_poly1305_ifma.S"
       "rktcrypto_keccak_scalar.S"

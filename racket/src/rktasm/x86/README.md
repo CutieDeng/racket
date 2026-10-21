@@ -60,5 +60,5 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
 
 现状（X3-2a，2026-10-21）：内核 `sha256`（SHA-NI）、`aes_ctr_vaes`（VAES+AVX-512 CTR）、`ghash_vpclmul`
 （VPCLMULQDQ GHASH）、`gcm_vaes`（AES-GCM 单趟融合，上下文结构体传参）、`chacha20_avx512`（16 块/单元，
-`.simd avx512`）、`poly1305_x86`（MULX radix-2^64）、`chacha20poly1305_x86`（向量 ChaCha + 标量 Poly 融合）、`p256_mul_x86`（MULX/ADX 蒙哥马利乘）、`keccak_avx512`（Keccak-f[1600] 平面布局 + x2 双态）、`sha512_x86`（标量 rorx）、`poly1305_ifma`（AVX-512 IFMA 八路）、P-256 点运算、X25519 整步阶梯已落地并由 C 分派；lan-11 gate 全部 0 mismatch。待做：SHA-3 单流标量、GCM 16 KB 固定开销（API）
+`.simd avx512`）、`poly1305_x86`（MULX radix-2^64）、`chacha20poly1305_x86`（向量 ChaCha + 标量 Poly 融合）、`p256_mul_x86`（MULX/ADX 蒙哥马利乘）、`keccak_avx512`（Keccak-f[1600] 平面布局 + x2 双态）、`sha512_x86`（标量 rorx）+ `sha512_avx512`（AVX-512VL 四字向量调度，标量轮）、`poly1305_ifma`（AVX-512 IFMA 八路）、`keccak_scalar`（单流标量 Keccak）、P-256 点运算、X25519 整步阶梯已落地并由 C 分派；lan-11 gate 全部 0 mismatch。待做：GCM 16 KB 固定开销（API）、Ed25519 点运算宏合成
 （2-clmul 约简、轮密钥常驻）、`.frame/.alloca`、`.call` 破坏集、两地址改写、Zen 5 调度模型（X1-3）。
