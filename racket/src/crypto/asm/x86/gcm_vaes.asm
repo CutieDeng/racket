@@ -15,10 +15,9 @@
 ;; Oracle: the two-pass path (rktcrypto_aes_ctr_aesni + rktcrypto_ghash_x86);
 ;; gate: asm/tests/test_gcm_vaes.c.
 ;;
-;; rktcrypto_gcm_htab_vaes(htab, c) fills rows 0..6 of the table from row 7
-;; ([H^4 H^3 H^2 H], written by the C side) and c = [H^4 | H^8 | H^16]: row 6 = row 7 * H^4,
-;; rows 5,4 = rows 7,6 * H^8, rows 3..0 = rows 7..4 * H^16, each a lane-wise field
-;; multiplication with the same shift-then-fold reduction as the intrinsics.
+;; rktcrypto_gcm_htab_vaes(htab, H) builds the whole 1280-byte table from the hash key block:
+;; H^32..H^1 times x^-1 in eight rows, their (lo ^ hi) halves for the Karatsuba cross term, and
+;; the plain H^16..H^1 the region helper takes (see the kernel's own comment).
 
 .rodata gcm_vaes_bswap align=16
   .byte 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
@@ -2540,15 +2539,159 @@ done:
   ret
 .end
 
+.rodata gcm_vaes_xinv align=64                  ; x^-1 in the reflected representation, per 128-bit lane
+  .quad 1, 0xc200000000000000, 1, 0xc200000000000000, 1, 0xc200000000000000, 1, 0xc200000000000000
+.end
+.rodata gcm_vaes_xpow128 align=64               ; x^128 mod P = x^7 + x^2 + x + 1, reflected, per lane
+  .quad 0, 0xe100000000000000, 0, 0xe100000000000000, 0, 0xe100000000000000, 0, 0xe100000000000000
+.end
 .function rktcrypto_gcm_htab_vaes export (
-  in: q.htab, q.c
+  in: q.htab, q.hb
 )
   .simd avx512
-  vmovdqu64 zmm.v7, zmmword ptr [q.htab + 448]
-  vbroadcasti32x4 zmm.c4, xmmword ptr [q.c]
-  vbroadcasti32x4 zmm.c8, xmmword ptr [q.c + 16]
-  vbroadcasti32x4 zmm.c16, xmmword ptr [q.c + 32]
-  ;; k: 0 v6=v7*c4 | 1 v5=v7*c8 | 2 v4=v6*c8 | 3 v3=v7*c16 | 4 v2=v6*c16 | 5 v1=v5*c16 | 6 v0=v4*c16
+  vmovdqu64 xmm.h1, xmmword ptr [q.hb]
+  vpshufb xmm.h1, xmm.h1, xmmword ptr [rip + gcm_vaes_bswap]   ; byte-reversed representation
+  vpxorq xmm.zero, xmm.zero, xmm.zero
+  ;; H * x^-1
+  vpsrlq xmm.t, xmm.h1, 63
+  vpsllq xmm.h1, xmm.h1, 1
+  vpslldq xmm.t2, xmm.t, 8
+  vporq xmm.h1, xmm.h1, xmm.t2
+  vpshufd xmm.t, xmm.t, 0xee
+  vpsubq xmm.t, xmm.zero, xmm.t
+  vpternlogq xmm.h1, xmm.t, xmmword ptr [rip + gcm_vaes_xinv], 0x78
+  vpclmulqdq xmm.lo, xmm.h1, xmm.h1, 0x00
+  vpclmulqdq xmm.hi, xmm.h1, xmm.h1, 0x11
+  vpclmulqdq xmm.mid, xmm.h1, xmm.h1, 0x10
+  vpclmulqdq xmm.t, xmm.h1, xmm.h1, 0x01
+  vpxorq xmm.mid, xmm.mid, xmm.t
+  vpslldq xmm.t, xmm.mid, 8
+  vpsrldq xmm.mid, xmm.mid, 8
+  vpxorq xmm.lo, xmm.lo, xmm.t
+  vpxorq xmm.hi, xmm.hi, xmm.mid
+  vpslld xmm.t7, xmm.lo, 31
+  vpslld xmm.t8, xmm.lo, 30
+  vpslld xmm.t9, xmm.lo, 25
+  vpxorq xmm.t7, xmm.t7, xmm.t8
+  vpxorq xmm.t7, xmm.t7, xmm.t9
+  vpsrldq xmm.t8, xmm.t7, 4
+  vpslldq xmm.t7, xmm.t7, 12
+  vpxorq xmm.lo, xmm.lo, xmm.t7
+  vpsrld xmm.t2, xmm.lo, 1
+  vpsrld xmm.t4, xmm.lo, 2
+  vpsrld xmm.t5, xmm.lo, 7
+  vpxorq xmm.t2, xmm.t2, xmm.t4
+  vpxorq xmm.t2, xmm.t2, xmm.t5
+  vpxorq xmm.t2, xmm.t2, xmm.t8
+  vpxorq xmm.lo, xmm.lo, xmm.t2
+  vpxorq xmm.h2, xmm.hi, xmm.lo
+  vpclmulqdq xmm.lo, xmm.h2, xmm.h1, 0x00
+  vpclmulqdq xmm.hi, xmm.h2, xmm.h1, 0x11
+  vpclmulqdq xmm.mid, xmm.h2, xmm.h1, 0x10
+  vpclmulqdq xmm.t, xmm.h2, xmm.h1, 0x01
+  vpxorq xmm.mid, xmm.mid, xmm.t
+  vpslldq xmm.t, xmm.mid, 8
+  vpsrldq xmm.mid, xmm.mid, 8
+  vpxorq xmm.lo, xmm.lo, xmm.t
+  vpxorq xmm.hi, xmm.hi, xmm.mid
+  vpslld xmm.t7, xmm.lo, 31
+  vpslld xmm.t8, xmm.lo, 30
+  vpslld xmm.t9, xmm.lo, 25
+  vpxorq xmm.t7, xmm.t7, xmm.t8
+  vpxorq xmm.t7, xmm.t7, xmm.t9
+  vpsrldq xmm.t8, xmm.t7, 4
+  vpslldq xmm.t7, xmm.t7, 12
+  vpxorq xmm.lo, xmm.lo, xmm.t7
+  vpsrld xmm.t2, xmm.lo, 1
+  vpsrld xmm.t4, xmm.lo, 2
+  vpsrld xmm.t5, xmm.lo, 7
+  vpxorq xmm.t2, xmm.t2, xmm.t4
+  vpxorq xmm.t2, xmm.t2, xmm.t5
+  vpxorq xmm.t2, xmm.t2, xmm.t8
+  vpxorq xmm.lo, xmm.lo, xmm.t2
+  vpxorq xmm.h3, xmm.hi, xmm.lo
+  vpclmulqdq xmm.lo, xmm.h2, xmm.h2, 0x00
+  vpclmulqdq xmm.hi, xmm.h2, xmm.h2, 0x11
+  vpclmulqdq xmm.mid, xmm.h2, xmm.h2, 0x10
+  vpclmulqdq xmm.t, xmm.h2, xmm.h2, 0x01
+  vpxorq xmm.mid, xmm.mid, xmm.t
+  vpslldq xmm.t, xmm.mid, 8
+  vpsrldq xmm.mid, xmm.mid, 8
+  vpxorq xmm.lo, xmm.lo, xmm.t
+  vpxorq xmm.hi, xmm.hi, xmm.mid
+  vpslld xmm.t7, xmm.lo, 31
+  vpslld xmm.t8, xmm.lo, 30
+  vpslld xmm.t9, xmm.lo, 25
+  vpxorq xmm.t7, xmm.t7, xmm.t8
+  vpxorq xmm.t7, xmm.t7, xmm.t9
+  vpsrldq xmm.t8, xmm.t7, 4
+  vpslldq xmm.t7, xmm.t7, 12
+  vpxorq xmm.lo, xmm.lo, xmm.t7
+  vpsrld xmm.t2, xmm.lo, 1
+  vpsrld xmm.t4, xmm.lo, 2
+  vpsrld xmm.t5, xmm.lo, 7
+  vpxorq xmm.t2, xmm.t2, xmm.t4
+  vpxorq xmm.t2, xmm.t2, xmm.t5
+  vpxorq xmm.t2, xmm.t2, xmm.t8
+  vpxorq xmm.lo, xmm.lo, xmm.t2
+  vpxorq xmm.h4, xmm.hi, xmm.lo
+  vpclmulqdq xmm.lo, xmm.h4, xmm.h4, 0x00
+  vpclmulqdq xmm.hi, xmm.h4, xmm.h4, 0x11
+  vpclmulqdq xmm.mid, xmm.h4, xmm.h4, 0x10
+  vpclmulqdq xmm.t, xmm.h4, xmm.h4, 0x01
+  vpxorq xmm.mid, xmm.mid, xmm.t
+  vpslldq xmm.t, xmm.mid, 8
+  vpsrldq xmm.mid, xmm.mid, 8
+  vpxorq xmm.lo, xmm.lo, xmm.t
+  vpxorq xmm.hi, xmm.hi, xmm.mid
+  vpslld xmm.t7, xmm.lo, 31
+  vpslld xmm.t8, xmm.lo, 30
+  vpslld xmm.t9, xmm.lo, 25
+  vpxorq xmm.t7, xmm.t7, xmm.t8
+  vpxorq xmm.t7, xmm.t7, xmm.t9
+  vpsrldq xmm.t8, xmm.t7, 4
+  vpslldq xmm.t7, xmm.t7, 12
+  vpxorq xmm.lo, xmm.lo, xmm.t7
+  vpsrld xmm.t2, xmm.lo, 1
+  vpsrld xmm.t4, xmm.lo, 2
+  vpsrld xmm.t5, xmm.lo, 7
+  vpxorq xmm.t2, xmm.t2, xmm.t4
+  vpxorq xmm.t2, xmm.t2, xmm.t5
+  vpxorq xmm.t2, xmm.t2, xmm.t8
+  vpxorq xmm.lo, xmm.lo, xmm.t2
+  vpxorq xmm.h8, xmm.hi, xmm.lo
+  vpclmulqdq xmm.lo, xmm.h8, xmm.h8, 0x00
+  vpclmulqdq xmm.hi, xmm.h8, xmm.h8, 0x11
+  vpclmulqdq xmm.mid, xmm.h8, xmm.h8, 0x10
+  vpclmulqdq xmm.t, xmm.h8, xmm.h8, 0x01
+  vpxorq xmm.mid, xmm.mid, xmm.t
+  vpslldq xmm.t, xmm.mid, 8
+  vpsrldq xmm.mid, xmm.mid, 8
+  vpxorq xmm.lo, xmm.lo, xmm.t
+  vpxorq xmm.hi, xmm.hi, xmm.mid
+  vpslld xmm.t7, xmm.lo, 31
+  vpslld xmm.t8, xmm.lo, 30
+  vpslld xmm.t9, xmm.lo, 25
+  vpxorq xmm.t7, xmm.t7, xmm.t8
+  vpxorq xmm.t7, xmm.t7, xmm.t9
+  vpsrldq xmm.t8, xmm.t7, 4
+  vpslldq xmm.t7, xmm.t7, 12
+  vpxorq xmm.lo, xmm.lo, xmm.t7
+  vpsrld xmm.t2, xmm.lo, 1
+  vpsrld xmm.t4, xmm.lo, 2
+  vpsrld xmm.t5, xmm.lo, 7
+  vpxorq xmm.t2, xmm.t2, xmm.t4
+  vpxorq xmm.t2, xmm.t2, xmm.t5
+  vpxorq xmm.t2, xmm.t2, xmm.t8
+  vpxorq xmm.lo, xmm.lo, xmm.t2
+  vpxorq xmm.h16, xmm.hi, xmm.lo
+  vinserti32x4 zmm.v7, zmm.h4, xmm.h3, 1         ; row 7 = [H^4 H^3 H^2 H]
+  vinserti32x4 zmm.v7, zmm.v7, xmm.h2, 2
+  vinserti32x4 zmm.v7, zmm.v7, xmm.h1, 3
+  vshufi32x4 zmm.c4, zmm.h4, zmm.h4, 0           ; lane 0 to every lane
+  vshufi32x4 zmm.c8, zmm.h8, zmm.h8, 0
+  vshufi32x4 zmm.c16, zmm.h16, zmm.h16, 0
+  ;; rows: 6 = 7*H^4 | 5 = 7*H^8 | 4 = 6*H^8 | 3 = 7*H^16 | 2 = 6*H^16 | 1 = 5*H^16 | 0 = 4*H^16
   vpclmulqdq zmm.lo, zmm.v7, zmm.c4, 0x00
   vpclmulqdq zmm.hi, zmm.v7, zmm.c4, 0x11
   vpclmulqdq zmm.mid, zmm.v7, zmm.c4, 0x10
@@ -2558,16 +2701,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2593,16 +2726,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2628,16 +2751,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2663,16 +2776,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2698,16 +2801,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2733,16 +2826,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2768,16 +2851,6 @@ done:
   vpsrldq zmm.mid, zmm.mid, 8
   vpxorq zmm.lo, zmm.lo, zmm.t
   vpxorq zmm.hi, zmm.hi, zmm.mid
-  vpsrld zmm.t7, zmm.lo, 31
-  vpsrld zmm.t8, zmm.hi, 31
-  vpslld zmm.lo, zmm.lo, 1
-  vpslld zmm.hi, zmm.hi, 1
-  vpsrldq zmm.t9, zmm.t7, 12
-  vpslldq zmm.t8, zmm.t8, 4
-  vpslldq zmm.t7, zmm.t7, 4
-  vporq zmm.lo, zmm.lo, zmm.t7
-  vporq zmm.hi, zmm.hi, zmm.t8
-  vporq zmm.hi, zmm.hi, zmm.t9
   vpslld zmm.t7, zmm.lo, 31
   vpslld zmm.t8, zmm.lo, 30
   vpslld zmm.t9, zmm.lo, 25
@@ -2801,5 +2874,69 @@ done:
   vmovdqu64 zmmword ptr [q.htab + 256], zmm.v4
   vmovdqu64 zmmword ptr [q.htab + 320], zmm.v5
   vmovdqu64 zmmword ptr [q.htab + 384], zmm.v6
+  vmovdqu64 zmmword ptr [q.htab + 448], zmm.v7
+  ;; Karatsuba rows: (lo ^ hi) of each scaled entry in both halves
+  vpshufd zmm.t, zmm.v0, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v0
+  vmovdqu64 zmmword ptr [q.htab + 512], zmm.t
+  vpshufd zmm.t, zmm.v1, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v1
+  vmovdqu64 zmmword ptr [q.htab + 576], zmm.t
+  vpshufd zmm.t, zmm.v2, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v2
+  vmovdqu64 zmmword ptr [q.htab + 640], zmm.t
+  vpshufd zmm.t, zmm.v3, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v3
+  vmovdqu64 zmmword ptr [q.htab + 704], zmm.t
+  vpshufd zmm.t, zmm.v4, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v4
+  vmovdqu64 zmmword ptr [q.htab + 768], zmm.t
+  vpshufd zmm.t, zmm.v5, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v5
+  vmovdqu64 zmmword ptr [q.htab + 832], zmm.t
+  vpshufd zmm.t, zmm.v6, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v6
+  vmovdqu64 zmmword ptr [q.htab + 896], zmm.t
+  vpshufd zmm.t, zmm.v7, 0x4e
+  vpxorq zmm.t, zmm.t, zmm.v7
+  vmovdqu64 zmmword ptr [q.htab + 960], zmm.t
+  ;; plain H^16..H^1 for the region helper: times x (shift right, the bit off the bottom folds x^128 in)
+  vmovdqa64 zmm.xp, zmmword ptr [rip + gcm_vaes_xpow128]
+  vpsllq zmm.t2, zmm.v4, 63                    ; qword 0's low bit, as the sign of qword 0
+  vpsraq zmm.t2, zmm.t2, 63                     ; mask in qword 0
+  vpslldq zmm.t2, zmm.t2, 8                     ; ... moved to qword 1
+  vpsllq zmm.t, zmm.v4, 63                     ; qword 1's low bit heads for qword 0's top
+  vpsrldq zmm.t, zmm.t, 8
+  vpsrlq zmm.v4, zmm.v4, 1
+  vporq zmm.v4, zmm.v4, zmm.t
+  vpternlogq zmm.v4, zmm.t2, zmm.xp, 0x78       ; ^= mask & x^128
+  vmovdqu64 zmmword ptr [q.htab + 1024], zmm.v4
+  vpsllq zmm.t2, zmm.v5, 63                    ; qword 0's low bit, as the sign of qword 0
+  vpsraq zmm.t2, zmm.t2, 63                     ; mask in qword 0
+  vpslldq zmm.t2, zmm.t2, 8                     ; ... moved to qword 1
+  vpsllq zmm.t, zmm.v5, 63                     ; qword 1's low bit heads for qword 0's top
+  vpsrldq zmm.t, zmm.t, 8
+  vpsrlq zmm.v5, zmm.v5, 1
+  vporq zmm.v5, zmm.v5, zmm.t
+  vpternlogq zmm.v5, zmm.t2, zmm.xp, 0x78       ; ^= mask & x^128
+  vmovdqu64 zmmword ptr [q.htab + 1088], zmm.v5
+  vpsllq zmm.t2, zmm.v6, 63                    ; qword 0's low bit, as the sign of qword 0
+  vpsraq zmm.t2, zmm.t2, 63                     ; mask in qword 0
+  vpslldq zmm.t2, zmm.t2, 8                     ; ... moved to qword 1
+  vpsllq zmm.t, zmm.v6, 63                     ; qword 1's low bit heads for qword 0's top
+  vpsrldq zmm.t, zmm.t, 8
+  vpsrlq zmm.v6, zmm.v6, 1
+  vporq zmm.v6, zmm.v6, zmm.t
+  vpternlogq zmm.v6, zmm.t2, zmm.xp, 0x78       ; ^= mask & x^128
+  vmovdqu64 zmmword ptr [q.htab + 1152], zmm.v6
+  vpsllq zmm.t2, zmm.v7, 63                    ; qword 0's low bit, as the sign of qword 0
+  vpsraq zmm.t2, zmm.t2, 63                     ; mask in qword 0
+  vpslldq zmm.t2, zmm.t2, 8                     ; ... moved to qword 1
+  vpsllq zmm.t, zmm.v7, 63                     ; qword 1's low bit heads for qword 0's top
+  vpsrldq zmm.t, zmm.t, 8
+  vpsrlq zmm.v7, zmm.v7, 1
+  vporq zmm.v7, zmm.v7, zmm.t
+  vpternlogq zmm.v7, zmm.t2, zmm.xp, 0x78       ; ^= mask & x^128
+  vmovdqu64 zmmword ptr [q.htab + 1216], zmm.v7
   ret
 .end

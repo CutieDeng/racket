@@ -502,34 +502,26 @@ static void gcm_scale_xinv(unsigned char *e)
 __attribute__((target("pclmul,sse4.1,ssse3")))
 void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280])
 {
-  const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
-  unsigned char hb[16], c[48] __attribute__((aligned(16))); __m128i H, H2, H3, H4, H8, H16; int i;
+  unsigned char hb[16]; int i;
   for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
-  H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
-  H2 = gcm_gfmul(H, H); H3 = gcm_gfmul(H2, H); H4 = gcm_gfmul(H2, H2);
-  H8 = gcm_gfmul(H4, H4); H16 = gcm_gfmul(H8, H8);
-  _mm_storeu_si128((__m128i *)(htab + 448), H4);
-  _mm_storeu_si128((__m128i *)(htab + 464), H3);
-  _mm_storeu_si128((__m128i *)(htab + 480), H2);
-  _mm_storeu_si128((__m128i *)(htab + 496), H);
 #if defined(__x86_64__) && defined(__ELF__)
-  _mm_storeu_si128((__m128i *)c, H4);
-  _mm_storeu_si128((__m128i *)(c + 16), H8);
-  _mm_storeu_si128((__m128i *)(c + 32), H16);
-  rktcrypto_gcm_htab_vaes(htab, c);
+  rktcrypto_gcm_htab_vaes(htab, hb);                      /* the whole table in one kernel pass */
 #else
-  { __m128i p = H4; int k;
-    (void)c; (void)H8; (void)H16;
-    for (k = 27; k >= 0; k--) { p = gcm_gfmul(p, H); _mm_storeu_si128((__m128i *)(htab + 16 * k), p); } }
+  { const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    __m128i H, p; int k;
+    H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
+    _mm_storeu_si128((__m128i *)(htab + 496), H);
+    p = H;
+    for (k = 30; k >= 0; k--) { p = gcm_gfmul(p, H); _mm_storeu_si128((__m128i *)(htab + 16 * k), p); }
+    memcpy(htab + 1024, htab + 256, 256);                 /* plain H^16..H^1 for the region helper */
+    for (i = 0; i < 32; i++) {
+      uint64_t lo, hi, kk;
+      gcm_scale_xinv(htab + 16 * i);                        /* the kernel's rows carry x^-1 */
+      memcpy(&lo, htab + 16 * i, 8); memcpy(&hi, htab + 16 * i + 8, 8);
+      kk = lo ^ hi;                                         /* Karatsuba rows: lo ^ hi in both halves */
+      memcpy(htab + 512 + 16 * i, &kk, 8); memcpy(htab + 512 + 16 * i + 8, &kk, 8);
+    } }
 #endif
-  memcpy(htab + 1024, htab + 256, 256);                   /* plain H^16..H^1 for the region helper */
-  for (i = 0; i < 32; i++) {
-    uint64_t lo, hi, k;
-    gcm_scale_xinv(htab + 16 * i);                          /* the kernel's rows carry x^-1 */
-    memcpy(&lo, htab + 16 * i, 8); memcpy(&hi, htab + 16 * i + 8, 8);
-    k = lo ^ hi;                                            /* Karatsuba rows: lo ^ hi in both halves */
-    memcpy(htab + 512 + 16 * i, &k, 8); memcpy(htab + 512 + 16 * i + 8, &k, 8);
-  }
 }
 
 /* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then

@@ -2387,138 +2387,172 @@ rktcrypto_gcm_crypt_vaes:
         ret
         .size   rktcrypto_gcm_crypt_vaes, .-rktcrypto_gcm_crypt_vaes
 
+        .section .rodata
+        .p2align 6
+gcm_vaes_xinv:
+        .quad 1, 0xc200000000000000, 1, 0xc200000000000000, 1, 0xc200000000000000, 1, 0xc200000000000000
+        .text
+
+        .section .rodata
+        .p2align 6
+gcm_vaes_xpow128:
+        .quad 0, 0xe100000000000000, 0, 0xe100000000000000, 0, 0xe100000000000000, 0, 0xe100000000000000
+        .text
+
         .globl  rktcrypto_gcm_htab_vaes
         .type   rktcrypto_gcm_htab_vaes, @function
         .p2align 5
 rktcrypto_gcm_htab_vaes:
-        vmovdqu64 zmm6, zmmword ptr [rdi + 448]
-        vbroadcasti32x4 zmm0, xmmword ptr [rsi]
-        vbroadcasti32x4 zmm7, xmmword ptr [rsi + 16]
-        vbroadcasti32x4 zmm12, xmmword ptr [rsi + 32]
-        vpclmulqdq zmm5, zmm6, zmm0, 0x0
-        vpclmulqdq zmm4, zmm6, zmm0, 0x11
-        vpclmulqdq zmm1, zmm6, zmm0, 0x10
-        vpclmulqdq zmm0, zmm6, zmm0, 0x1
+        vmovdqu64 xmm10, xmmword ptr [rsi]
+        vpshufb xmm10, xmm10, xmmword ptr [rip + gcm_vaes_bswap]
+        vpxorq xmm2, xmm2, xmm2
+        vpsrlq xmm1, xmm10, 0x3f
+        vpsllq xmm10, xmm10, 0x1
+        vpslldq xmm0, xmm1, 0x8
+        vporq xmm10, xmm10, xmm0
+        vpshufd xmm1, xmm1, 0xee
+        vpsubq xmm1, xmm2, xmm1
+        vpternlogq xmm10, xmm1, xmmword ptr [rip + gcm_vaes_xinv], 0x78
+        vpclmulqdq xmm5, xmm10, xmm10, 0x0
+        vpclmulqdq xmm4, xmm10, xmm10, 0x11
+        vpclmulqdq xmm1, xmm10, xmm10, 0x10
+        vpclmulqdq xmm0, xmm10, xmm10, 0x1
+        vpxorq xmm1, xmm1, xmm0
+        vpslldq xmm0, xmm1, 0x8
+        vpsrldq xmm1, xmm1, 0x8
+        vpxorq xmm5, xmm5, xmm0
+        vpxorq xmm4, xmm4, xmm1
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
+        vpslld xmm0, xmm5, 0x19
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxorq xmm5, xmm5, xmm2
+        vpsrld xmm2, xmm5, 0x1
+        vpsrld xmm1, xmm5, 0x2
+        vpsrld xmm0, xmm5, 0x7
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpxorq xmm2, xmm2, xmm3
+        vpxorq xmm5, xmm5, xmm2
+        vpxorq xmm9, xmm4, xmm5
+        vpclmulqdq xmm5, xmm9, xmm10, 0x0
+        vpclmulqdq xmm4, xmm9, xmm10, 0x11
+        vpclmulqdq xmm1, xmm9, xmm10, 0x10
+        vpclmulqdq xmm0, xmm9, xmm10, 0x1
+        vpxorq xmm1, xmm1, xmm0
+        vpslldq xmm0, xmm1, 0x8
+        vpsrldq xmm1, xmm1, 0x8
+        vpxorq xmm5, xmm5, xmm0
+        vpxorq xmm4, xmm4, xmm1
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
+        vpslld xmm0, xmm5, 0x19
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxorq xmm5, xmm5, xmm2
+        vpsrld xmm2, xmm5, 0x1
+        vpsrld xmm1, xmm5, 0x2
+        vpsrld xmm0, xmm5, 0x7
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpxorq xmm2, xmm2, xmm3
+        vpxorq xmm5, xmm5, xmm2
+        vpxorq xmm7, xmm4, xmm5
+        vpclmulqdq xmm5, xmm9, xmm9, 0x0
+        vpclmulqdq xmm4, xmm9, xmm9, 0x11
+        vpclmulqdq xmm1, xmm9, xmm9, 0x10
+        vpclmulqdq xmm0, xmm9, xmm9, 0x1
+        vpxorq xmm1, xmm1, xmm0
+        vpslldq xmm0, xmm1, 0x8
+        vpsrldq xmm1, xmm1, 0x8
+        vpxorq xmm5, xmm5, xmm0
+        vpxorq xmm4, xmm4, xmm1
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
+        vpslld xmm0, xmm5, 0x19
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxorq xmm5, xmm5, xmm2
+        vpsrld xmm2, xmm5, 0x1
+        vpsrld xmm1, xmm5, 0x2
+        vpsrld xmm0, xmm5, 0x7
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpxorq xmm2, xmm2, xmm3
+        vpxorq xmm5, xmm5, xmm2
+        vpxorq xmm8, xmm4, xmm5
+        vpclmulqdq xmm5, xmm8, xmm8, 0x0
+        vpclmulqdq xmm4, xmm8, xmm8, 0x11
+        vpclmulqdq xmm1, xmm8, xmm8, 0x10
+        vpclmulqdq xmm0, xmm8, xmm8, 0x1
+        vpxorq xmm1, xmm1, xmm0
+        vpslldq xmm0, xmm1, 0x8
+        vpsrldq xmm1, xmm1, 0x8
+        vpxorq xmm5, xmm5, xmm0
+        vpxorq xmm4, xmm4, xmm1
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
+        vpslld xmm0, xmm5, 0x19
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxorq xmm5, xmm5, xmm2
+        vpsrld xmm2, xmm5, 0x1
+        vpsrld xmm1, xmm5, 0x2
+        vpsrld xmm0, xmm5, 0x7
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpxorq xmm2, xmm2, xmm3
+        vpxorq xmm5, xmm5, xmm2
+        vpxorq xmm6, xmm4, xmm5
+        vpclmulqdq xmm5, xmm6, xmm6, 0x0
+        vpclmulqdq xmm4, xmm6, xmm6, 0x11
+        vpclmulqdq xmm1, xmm6, xmm6, 0x10
+        vpclmulqdq xmm0, xmm6, xmm6, 0x1
+        vpxorq xmm1, xmm1, xmm0
+        vpslldq xmm0, xmm1, 0x8
+        vpsrldq xmm1, xmm1, 0x8
+        vpxorq xmm5, xmm5, xmm0
+        vpxorq xmm4, xmm4, xmm1
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
+        vpslld xmm0, xmm5, 0x19
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxorq xmm5, xmm5, xmm2
+        vpsrld xmm2, xmm5, 0x1
+        vpsrld xmm1, xmm5, 0x2
+        vpsrld xmm0, xmm5, 0x7
+        vpxorq xmm2, xmm2, xmm1
+        vpxorq xmm2, xmm2, xmm0
+        vpxorq xmm2, xmm2, xmm3
+        vpxorq xmm5, xmm5, xmm2
+        vpxorq xmm1, xmm4, xmm5
+        vinserti32x4 zmm7, zmm8, xmm7, 0x1
+        vinserti32x4 zmm7, zmm7, xmm9, 0x2
+        vinserti32x4 zmm7, zmm7, xmm10, 0x3
+        vshufi32x4 zmm0, zmm8, zmm8, 0x0
+        vshufi32x4 zmm6, zmm6, zmm6, 0x0
+        vshufi32x4 zmm13, zmm1, zmm1, 0x0
+        vpclmulqdq zmm5, zmm7, zmm0, 0x0
+        vpclmulqdq zmm4, zmm7, zmm0, 0x11
+        vpclmulqdq zmm1, zmm7, zmm0, 0x10
+        vpclmulqdq zmm0, zmm7, zmm0, 0x1
         vpxorq zmm1, zmm1, zmm0
         vpslldq zmm0, zmm1, 0x8
         vpsrldq zmm1, zmm1, 0x8
         vpxorq zmm5, zmm5, zmm0
         vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
-        vpslld zmm2, zmm5, 0x1f
-        vpslld zmm1, zmm5, 0x1e
-        vpslld zmm0, zmm5, 0x19
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpsrldq zmm3, zmm2, 0x4
-        vpslldq zmm2, zmm2, 0xc
-        vpxorq zmm5, zmm5, zmm2
-        vpsrld zmm2, zmm5, 0x1
-        vpsrld zmm1, zmm5, 0x2
-        vpsrld zmm0, zmm5, 0x7
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpxorq zmm2, zmm2, zmm3
-        vpxorq zmm5, zmm5, zmm2
-        vpxorq zmm11, zmm4, zmm5
-        vpclmulqdq zmm5, zmm6, zmm7, 0x0
-        vpclmulqdq zmm4, zmm6, zmm7, 0x11
-        vpclmulqdq zmm1, zmm6, zmm7, 0x10
-        vpclmulqdq zmm0, zmm6, zmm7, 0x1
-        vpxorq zmm1, zmm1, zmm0
-        vpslldq zmm0, zmm1, 0x8
-        vpsrldq zmm1, zmm1, 0x8
-        vpxorq zmm5, zmm5, zmm0
-        vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
-        vpslld zmm2, zmm5, 0x1f
-        vpslld zmm1, zmm5, 0x1e
-        vpslld zmm0, zmm5, 0x19
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpsrldq zmm3, zmm2, 0x4
-        vpslldq zmm2, zmm2, 0xc
-        vpxorq zmm5, zmm5, zmm2
-        vpsrld zmm2, zmm5, 0x1
-        vpsrld zmm1, zmm5, 0x2
-        vpsrld zmm0, zmm5, 0x7
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpxorq zmm2, zmm2, zmm3
-        vpxorq zmm5, zmm5, zmm2
-        vpxorq zmm10, zmm4, zmm5
-        vpclmulqdq zmm5, zmm11, zmm7, 0x0
-        vpclmulqdq zmm4, zmm11, zmm7, 0x11
-        vpclmulqdq zmm1, zmm11, zmm7, 0x10
-        vpclmulqdq zmm0, zmm11, zmm7, 0x1
-        vpxorq zmm1, zmm1, zmm0
-        vpslldq zmm0, zmm1, 0x8
-        vpsrldq zmm1, zmm1, 0x8
-        vpxorq zmm5, zmm5, zmm0
-        vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
-        vpslld zmm2, zmm5, 0x1f
-        vpslld zmm1, zmm5, 0x1e
-        vpslld zmm0, zmm5, 0x19
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpsrldq zmm3, zmm2, 0x4
-        vpslldq zmm2, zmm2, 0xc
-        vpxorq zmm5, zmm5, zmm2
-        vpsrld zmm2, zmm5, 0x1
-        vpsrld zmm1, zmm5, 0x2
-        vpsrld zmm0, zmm5, 0x7
-        vpxorq zmm2, zmm2, zmm1
-        vpxorq zmm2, zmm2, zmm0
-        vpxorq zmm2, zmm2, zmm3
-        vpxorq zmm5, zmm5, zmm2
-        vpxorq zmm9, zmm4, zmm5
-        vpclmulqdq zmm5, zmm6, zmm12, 0x0
-        vpclmulqdq zmm4, zmm6, zmm12, 0x11
-        vpclmulqdq zmm1, zmm6, zmm12, 0x10
-        vpclmulqdq zmm0, zmm6, zmm12, 0x1
-        vpxorq zmm1, zmm1, zmm0
-        vpslldq zmm0, zmm1, 0x8
-        vpsrldq zmm1, zmm1, 0x8
-        vpxorq zmm5, zmm5, zmm0
-        vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
         vpslld zmm2, zmm5, 0x1f
         vpslld zmm1, zmm5, 0x1e
         vpslld zmm0, zmm5, 0x19
@@ -2535,25 +2569,15 @@ rktcrypto_gcm_htab_vaes:
         vpxorq zmm2, zmm2, zmm3
         vpxorq zmm5, zmm5, zmm2
         vpxorq zmm8, zmm4, zmm5
-        vpclmulqdq zmm5, zmm11, zmm12, 0x0
-        vpclmulqdq zmm4, zmm11, zmm12, 0x11
-        vpclmulqdq zmm1, zmm11, zmm12, 0x10
-        vpclmulqdq zmm0, zmm11, zmm12, 0x1
+        vpclmulqdq zmm5, zmm7, zmm6, 0x0
+        vpclmulqdq zmm4, zmm7, zmm6, 0x11
+        vpclmulqdq zmm1, zmm7, zmm6, 0x10
+        vpclmulqdq zmm0, zmm7, zmm6, 0x1
         vpxorq zmm1, zmm1, zmm0
         vpslldq zmm0, zmm1, 0x8
         vpsrldq zmm1, zmm1, 0x8
         vpxorq zmm5, zmm5, zmm0
         vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
         vpslld zmm2, zmm5, 0x1f
         vpslld zmm1, zmm5, 0x1e
         vpslld zmm0, zmm5, 0x19
@@ -2569,26 +2593,91 @@ rktcrypto_gcm_htab_vaes:
         vpxorq zmm2, zmm2, zmm0
         vpxorq zmm2, zmm2, zmm3
         vpxorq zmm5, zmm5, zmm2
-        vpxorq zmm7, zmm4, zmm5
-        vpclmulqdq zmm5, zmm10, zmm12, 0x0
-        vpclmulqdq zmm4, zmm10, zmm12, 0x11
-        vpclmulqdq zmm1, zmm10, zmm12, 0x10
-        vpclmulqdq zmm0, zmm10, zmm12, 0x1
+        vpxorq zmm9, zmm4, zmm5
+        vpclmulqdq zmm5, zmm8, zmm6, 0x0
+        vpclmulqdq zmm4, zmm8, zmm6, 0x11
+        vpclmulqdq zmm1, zmm8, zmm6, 0x10
+        vpclmulqdq zmm0, zmm8, zmm6, 0x1
         vpxorq zmm1, zmm1, zmm0
         vpslldq zmm0, zmm1, 0x8
         vpsrldq zmm1, zmm1, 0x8
         vpxorq zmm5, zmm5, zmm0
         vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
+        vpslld zmm2, zmm5, 0x1f
+        vpslld zmm1, zmm5, 0x1e
+        vpslld zmm0, zmm5, 0x19
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpsrldq zmm3, zmm2, 0x4
+        vpslldq zmm2, zmm2, 0xc
+        vpxorq zmm5, zmm5, zmm2
+        vpsrld zmm2, zmm5, 0x1
+        vpsrld zmm1, zmm5, 0x2
+        vpsrld zmm0, zmm5, 0x7
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpxorq zmm2, zmm2, zmm3
+        vpxorq zmm5, zmm5, zmm2
+        vpxorq zmm10, zmm4, zmm5
+        vpclmulqdq zmm5, zmm7, zmm13, 0x0
+        vpclmulqdq zmm4, zmm7, zmm13, 0x11
+        vpclmulqdq zmm1, zmm7, zmm13, 0x10
+        vpclmulqdq zmm0, zmm7, zmm13, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpslldq zmm0, zmm1, 0x8
+        vpsrldq zmm1, zmm1, 0x8
+        vpxorq zmm5, zmm5, zmm0
+        vpxorq zmm4, zmm4, zmm1
+        vpslld zmm2, zmm5, 0x1f
+        vpslld zmm1, zmm5, 0x1e
+        vpslld zmm0, zmm5, 0x19
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpsrldq zmm3, zmm2, 0x4
+        vpslldq zmm2, zmm2, 0xc
+        vpxorq zmm5, zmm5, zmm2
+        vpsrld zmm2, zmm5, 0x1
+        vpsrld zmm1, zmm5, 0x2
+        vpsrld zmm0, zmm5, 0x7
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpxorq zmm2, zmm2, zmm3
+        vpxorq zmm5, zmm5, zmm2
+        vpxorq zmm11, zmm4, zmm5
+        vpclmulqdq zmm5, zmm8, zmm13, 0x0
+        vpclmulqdq zmm4, zmm8, zmm13, 0x11
+        vpclmulqdq zmm1, zmm8, zmm13, 0x10
+        vpclmulqdq zmm0, zmm8, zmm13, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpslldq zmm0, zmm1, 0x8
+        vpsrldq zmm1, zmm1, 0x8
+        vpxorq zmm5, zmm5, zmm0
+        vpxorq zmm4, zmm4, zmm1
+        vpslld zmm2, zmm5, 0x1f
+        vpslld zmm1, zmm5, 0x1e
+        vpslld zmm0, zmm5, 0x19
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpsrldq zmm3, zmm2, 0x4
+        vpslldq zmm2, zmm2, 0xc
+        vpxorq zmm5, zmm5, zmm2
+        vpsrld zmm2, zmm5, 0x1
+        vpsrld zmm1, zmm5, 0x2
+        vpsrld zmm0, zmm5, 0x7
+        vpxorq zmm2, zmm2, zmm1
+        vpxorq zmm2, zmm2, zmm0
+        vpxorq zmm2, zmm2, zmm3
+        vpxorq zmm5, zmm5, zmm2
+        vpxorq zmm12, zmm4, zmm5
+        vpclmulqdq zmm5, zmm9, zmm13, 0x0
+        vpclmulqdq zmm4, zmm9, zmm13, 0x11
+        vpclmulqdq zmm1, zmm9, zmm13, 0x10
+        vpclmulqdq zmm0, zmm9, zmm13, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpslldq zmm0, zmm1, 0x8
+        vpsrldq zmm1, zmm1, 0x8
+        vpxorq zmm5, zmm5, zmm0
+        vpxorq zmm4, zmm4, zmm1
         vpslld zmm2, zmm5, 0x1f
         vpslld zmm1, zmm5, 0x1e
         vpslld zmm0, zmm5, 0x19
@@ -2605,25 +2694,15 @@ rktcrypto_gcm_htab_vaes:
         vpxorq zmm2, zmm2, zmm3
         vpxorq zmm5, zmm5, zmm2
         vpxorq zmm6, zmm4, zmm5
-        vpclmulqdq zmm5, zmm9, zmm12, 0x0
-        vpclmulqdq zmm4, zmm9, zmm12, 0x11
-        vpclmulqdq zmm1, zmm9, zmm12, 0x10
-        vpclmulqdq zmm0, zmm9, zmm12, 0x1
+        vpclmulqdq zmm5, zmm10, zmm13, 0x0
+        vpclmulqdq zmm4, zmm10, zmm13, 0x11
+        vpclmulqdq zmm1, zmm10, zmm13, 0x10
+        vpclmulqdq zmm0, zmm10, zmm13, 0x1
         vpxorq zmm1, zmm1, zmm0
         vpslldq zmm0, zmm1, 0x8
         vpsrldq zmm1, zmm1, 0x8
         vpxorq zmm5, zmm5, zmm0
         vpxorq zmm4, zmm4, zmm1
-        vpsrld zmm2, zmm5, 0x1f
-        vpsrld zmm1, zmm4, 0x1f
-        vpslld zmm5, zmm5, 0x1
-        vpslld zmm4, zmm4, 0x1
-        vpsrldq zmm0, zmm2, 0xc
-        vpslldq zmm1, zmm1, 0x4
-        vpslldq zmm2, zmm2, 0x4
-        vporq zmm5, zmm5, zmm2
-        vporq zmm4, zmm4, zmm1
-        vporq zmm4, zmm4, zmm0
         vpslld zmm2, zmm5, 0x1f
         vpslld zmm1, zmm5, 0x1e
         vpslld zmm0, zmm5, 0x19
@@ -2639,14 +2718,76 @@ rktcrypto_gcm_htab_vaes:
         vpxorq zmm2, zmm2, zmm0
         vpxorq zmm2, zmm2, zmm3
         vpxorq zmm5, zmm5, zmm2
-        vpxorq zmm0, zmm4, zmm5
-        vmovdqu64 zmmword ptr [rdi], zmm0
+        vpxorq zmm1, zmm4, zmm5
+        vmovdqu64 zmmword ptr [rdi], zmm1
         vmovdqu64 zmmword ptr [rdi + 64], zmm6
-        vmovdqu64 zmmword ptr [rdi + 128], zmm7
-        vmovdqu64 zmmword ptr [rdi + 192], zmm8
-        vmovdqu64 zmmword ptr [rdi + 256], zmm9
-        vmovdqu64 zmmword ptr [rdi + 320], zmm10
-        vmovdqu64 zmmword ptr [rdi + 384], zmm11
+        vmovdqu64 zmmword ptr [rdi + 128], zmm12
+        vmovdqu64 zmmword ptr [rdi + 192], zmm11
+        vmovdqu64 zmmword ptr [rdi + 256], zmm10
+        vmovdqu64 zmmword ptr [rdi + 320], zmm9
+        vmovdqu64 zmmword ptr [rdi + 384], zmm8
+        vmovdqu64 zmmword ptr [rdi + 448], zmm7
+        vpshufd zmm0, zmm1, 0x4e
+        vpxorq zmm0, zmm0, zmm1
+        vmovdqu64 zmmword ptr [rdi + 512], zmm0
+        vpshufd zmm0, zmm6, 0x4e
+        vpxorq zmm0, zmm0, zmm6
+        vmovdqu64 zmmword ptr [rdi + 576], zmm0
+        vpshufd zmm0, zmm12, 0x4e
+        vpxorq zmm0, zmm0, zmm12
+        vmovdqu64 zmmword ptr [rdi + 640], zmm0
+        vpshufd zmm0, zmm11, 0x4e
+        vpxorq zmm0, zmm0, zmm11
+        vmovdqu64 zmmword ptr [rdi + 704], zmm0
+        vpshufd zmm0, zmm10, 0x4e
+        vpxorq zmm0, zmm0, zmm10
+        vmovdqu64 zmmword ptr [rdi + 768], zmm0
+        vpshufd zmm0, zmm9, 0x4e
+        vpxorq zmm0, zmm0, zmm9
+        vmovdqu64 zmmword ptr [rdi + 832], zmm0
+        vpshufd zmm0, zmm8, 0x4e
+        vpxorq zmm0, zmm0, zmm8
+        vmovdqu64 zmmword ptr [rdi + 896], zmm0
+        vpshufd zmm0, zmm7, 0x4e
+        vpxorq zmm0, zmm0, zmm7
+        vmovdqu64 zmmword ptr [rdi + 960], zmm0
+        vmovdqa64 zmm2, zmmword ptr [rip + gcm_vaes_xpow128]
+        vpsllq zmm1, zmm10, 0x3f
+        vpsraq zmm1, zmm1, 0x3f
+        vpslldq zmm1, zmm1, 0x8
+        vpsllq zmm0, zmm10, 0x3f
+        vpsrldq zmm0, zmm0, 0x8
+        vpsrlq zmm10, zmm10, 0x1
+        vporq zmm10, zmm10, zmm0
+        vpternlogq zmm10, zmm1, zmm2, 0x78
+        vmovdqu64 zmmword ptr [rdi + 1024], zmm10
+        vpsllq zmm1, zmm9, 0x3f
+        vpsraq zmm1, zmm1, 0x3f
+        vpslldq zmm1, zmm1, 0x8
+        vpsllq zmm0, zmm9, 0x3f
+        vpsrldq zmm0, zmm0, 0x8
+        vpsrlq zmm9, zmm9, 0x1
+        vporq zmm9, zmm9, zmm0
+        vpternlogq zmm9, zmm1, zmm2, 0x78
+        vmovdqu64 zmmword ptr [rdi + 1088], zmm9
+        vpsllq zmm1, zmm8, 0x3f
+        vpsraq zmm1, zmm1, 0x3f
+        vpslldq zmm1, zmm1, 0x8
+        vpsllq zmm0, zmm8, 0x3f
+        vpsrldq zmm0, zmm0, 0x8
+        vpsrlq zmm8, zmm8, 0x1
+        vporq zmm8, zmm8, zmm0
+        vpternlogq zmm8, zmm1, zmm2, 0x78
+        vmovdqu64 zmmword ptr [rdi + 1152], zmm8
+        vpsllq zmm1, zmm7, 0x3f
+        vpsraq zmm1, zmm1, 0x3f
+        vpslldq zmm1, zmm1, 0x8
+        vpsllq zmm0, zmm7, 0x3f
+        vpsrldq zmm0, zmm0, 0x8
+        vpsrlq zmm7, zmm7, 0x1
+        vporq zmm7, zmm7, zmm0
+        vpternlogq zmm7, zmm1, zmm2, 0x78
+        vmovdqu64 zmmword ptr [rdi + 1216], zmm7
         vzeroupper
         ret
         .size   rktcrypto_gcm_htab_vaes, .-rktcrypto_gcm_htab_vaes

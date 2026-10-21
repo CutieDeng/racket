@@ -59,8 +59,8 @@ intptr_t rktcrypto_gcm_crypt_vaes(const struct rktcrypto_gcm_vaes_ctx *c,
    those entries duplicated per lane (its Karatsuba cross term), htab[1024..1279] = plain
    H^16..H^1, the table the region helper takes (htab[1264..1279] is H itself). */
 void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280]);
-/* rktasm/x86 kernel (rktcrypto_gcm_vaes.S): rows 0..6 of the table from row 7 and c = [H^4 | H^8 | H^16] */
-void rktcrypto_gcm_htab_vaes(unsigned char htab[512], const unsigned char c[48]);
+/* rktasm/x86 kernel (rktcrypto_gcm_vaes.S): the whole 1280-byte table from the hash key block H = AES_K(0) */
+void rktcrypto_gcm_htab_vaes(unsigned char htab[1280], const unsigned char hblock[16]);
 /* GHASH a region into acc (byte-reversed): the VPCLMULQDQ kernel for the 64-byte multiple prefix
    of regions of 256 bytes and more, the PCLMUL intrinsics for the rest; a partial final block is
    zero-padded. */
