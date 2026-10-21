@@ -12,6 +12,7 @@
 #include "rktcrypto_cpu.h"
 
 void mont_mul_p256_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4]);
+void mont_sqr_p256_x86(uint64_t r[4], const uint64_t a[4]);
 typedef struct { uint64_t m[4]; uint64_t n0; uint64_t rr[4]; } mont_ctx_t;
 void mont_mul_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const mont_ctx_t *ctx);
 /* the group order n and its -n^-1 mod 2^64 */
@@ -98,6 +99,14 @@ int main(void)
     mont_mul_p256_x86(r2, a, b);
     tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("MUL MISMATCH t=%d a=%016llx.. b=%016llx..\n", t, (unsigned long long)a[3], (unsigned long long)b[3]); }
   }
+  /* dedicated squaring against the reference multiply */
+  for (t = 0; t < 100000; t++) {
+    uint64_t a[4], r1[4], r2[4];
+    special(a, (int)(rnd64() % 8));
+    ref_mont_mul(r1, a, a);
+    mont_sqr_p256_x86(r2, a);
+    tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("SQR MISMATCH t=%d a=%016llx..\n", t, (unsigned long long)a[3]); }
+  }
   /* generic kernel against the generic reference, modulus n (and p through the generic path) */
   { mont_ctx_t cn, cp; memcpy(cn.m, N, 32); cn.n0 = compute_n0(N[0]); memcpy(cp.m, P, 32); cp.n0 = compute_n0(P[0]);
     for (t = 0; t < 100000; t++) {
@@ -132,7 +141,7 @@ int main(void)
     tot++; if (rktcrypto_p256_ecdsa_verify(sig, msg, 48, pub_a) != 0) { bad++; if (bad <= 5) printf("TAMPERED SIG ACCEPTED t=%d\n", t); }
   }
   /* BENCH: field multiplications per second and pubkey (fixed-base scalar mult) ops, kernel vs portable */
-  { uint64_t a[4], b[4]; unsigned char priv[32], pub[65]; int r; double ma = 0, mb = 0, pa = 0, pb = 0;
+  { uint64_t a[4], b[4]; unsigned char priv[32], pub[65]; int r; double ma = 0, mb = 0, sq = 0, pa = 0, pb = 0;
     special(a, 0); special(b, 0); for (i = 0; i < 32; i++) priv[i] = (unsigned char)(i + 1);
     for (r = 0; r < 5; r++) {
       double t0, t1, v;
@@ -140,12 +149,14 @@ int main(void)
       v = 2000000.0 / (t1 - t0) / 1e6; if (v > ma) ma = v;
       t0 = now(); for (i = 0; i < 2000000; i++) ref_mont_mul(a, a, b); t1 = now();
       v = 2000000.0 / (t1 - t0) / 1e6; if (v > mb) mb = v;
+      t0 = now(); for (i = 0; i < 2000000; i++) mont_sqr_p256_x86(a, a); t1 = now();
+      v = 2000000.0 / (t1 - t0) / 1e6; if (v > sq) sq = v;
       kernel(1); t0 = now(); for (i = 0; i < 2000; i++) rktcrypto_p256_pubkey(pub, priv); t1 = now();
       v = 2000.0 / (t1 - t0) / 1e3; if (v > pa) pa = v;
       kernel(0); t0 = now(); for (i = 0; i < 2000; i++) rktcrypto_p256_pubkey(pub, priv); t1 = now(); kernel(1);
       v = 2000.0 / (t1 - t0) / 1e3; if (v > pb) pb = v;
     }
-    printf("BENCH p256-mont-mul-x86: %.1f Mops/s\nBENCH p256-mont-mul-ref: %.1f Mops/s\nBENCH p256-pubkey-x86: %.1f kops/s\nBENCH p256-pubkey-portable: %.1f kops/s\n", ma, mb, pa, pb); }
+    printf("BENCH p256-mont-mul-x86: %.1f Mops/s\nBENCH p256-mont-sqr-x86: %.1f Mops/s\nBENCH p256-mont-mul-ref: %.1f Mops/s\nBENCH p256-pubkey-x86: %.1f kops/s\nBENCH p256-pubkey-portable: %.1f kops/s\n", ma, sq, mb, pa, pb); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");
   return bad ? 1 : 0;
 }

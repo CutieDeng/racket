@@ -149,6 +149,123 @@ mont_mul_p256_x86:
         ret
         .size   mont_mul_p256_x86, .-mont_mul_p256_x86
 
+        .globl  mont_sqr_p256_x86
+        .type   mont_sqr_p256_x86, @function
+        .p2align 5
+mont_sqr_p256_x86:
+        push    rbx
+        push    r12
+        push    r13
+        push    r14
+        push    r15
+        mov rdx, qword ptr [rsi]
+        mulx r15, r14, qword ptr [rsi + 8]
+        mulx r13, r12, qword ptr [rsi + 16]
+        mulx rbx, rcx, qword ptr [rsi + 24]
+        add r15, r12
+        adc r13, rcx
+        adc rbx, 0x0
+        mov rdx, qword ptr [rsi + 8]
+        mulx r11, rcx, qword ptr [rsi + 24]
+        add rbx, rcx
+        adc r11, 0x0
+        mulx rcx, r12, qword ptr [rsi + 16]
+        add r13, r12
+        adc rbx, rcx
+        adc r11, 0x0
+        mov rdx, qword ptr [rsi + 16]
+        mulx r10, r12, qword ptr [rsi + 24]
+        add r11, r12
+        adc r10, 0x0
+        xor r9, r9
+        add r14, r14
+        adc r15, r15
+        adc r13, r13
+        adc rbx, rbx
+        adc r11, r11
+        adc r10, r10
+        adc r9, 0x0
+        mov rdx, qword ptr [rsi]
+        mulx rcx, rax, rdx
+        add r14, rcx
+        mov rdx, qword ptr [rsi + 8]
+        mulx rcx, r12, rdx
+        adc r15, r12
+        adc r13, rcx
+        mov rdx, qword ptr [rsi + 16]
+        mulx rcx, r12, rdx
+        adc rbx, r12
+        adc r11, rcx
+        mov rdx, qword ptr [rsi + 24]
+        mulx rcx, r12, rdx
+        adc r10, r12
+        adc r9, rcx
+        mov r8, 0x0
+        mov rdx, rax
+        mov r12, rax
+        shl r12, 0x20
+        mulx rax, rcx, qword ptr [rip + p256_x86_consts]
+        shr rdx, 0x20
+        add r14, r12
+        adc r15, rdx
+        adc r13, rcx
+        adc rbx, rax
+        adc r11, 0x0
+        mov rdx, r14
+        mov r12, r14
+        shl r12, 0x20
+        mulx rax, rcx, qword ptr [rip + p256_x86_consts]
+        shr rdx, 0x20
+        add r15, r12
+        adc r13, rdx
+        adc rbx, rcx
+        adc r11, rax
+        adc r10, 0x0
+        mov rdx, r15
+        mov r12, r15
+        shl r12, 0x20
+        mulx rax, rcx, qword ptr [rip + p256_x86_consts]
+        shr rdx, 0x20
+        add r13, r12
+        adc rbx, rdx
+        adc r11, rcx
+        adc r10, rax
+        adc r9, 0x0
+        mov rdx, r13
+        mov r12, r13
+        shl r12, 0x20
+        mulx rax, rcx, qword ptr [rip + p256_x86_consts]
+        shr rdx, 0x20
+        add rbx, r12
+        adc r11, rdx
+        adc r10, rcx
+        adc r9, rax
+        adc r8, 0x0
+        mov rsi, rbx
+        mov rdx, r11
+        mov rcx, r10
+        mov rax, r9
+        sub rsi, -0x1
+        sbb rdx, qword ptr [rip + p256_x86_consts + 8]
+        sbb rcx, 0x0
+        sbb rax, qword ptr [rip + p256_x86_consts]
+        sbb r8, 0x0
+        cmovc rsi, rbx
+        cmovc rdx, r11
+        cmovc rcx, r10
+        cmovc rax, r9
+        mov qword ptr [rdi], rsi
+        mov qword ptr [rdi + 8], rdx
+        mov qword ptr [rdi + 16], rcx
+        mov qword ptr [rdi + 24], rax
+        pop     r15
+        pop     r14
+        pop     r13
+        pop     r12
+        pop     rbx
+        ret
+        .size   mont_sqr_p256_x86, .-mont_sqr_p256_x86
+
         .globl  mont_mul_x86
         .type   mont_mul_x86, @function
         .p2align 5

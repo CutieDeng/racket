@@ -119,6 +119,7 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
    order keeps the portable CIOS. The feature test reads the cached CPUID word each time
    (an inline flag test), which keeps the test hook that flips features effective. */
 extern void mont_mul_p256_x86(u64 r[4],const u64 a[4],const u64 b[4]);
+extern void mont_sqr_p256_x86(u64 r[4],const u64 a[4]);
 extern void mont_mul_x86(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
 static inline int p256_x86(void){ return rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX); }
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
@@ -129,9 +130,12 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
 static inline void fp_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4]){
   if (p256_x86()) mont_mul_p256_x86(r,a,b); else mont_mul_portable(r,a,b,&FP);
 }
+static inline void fp_sqr_dispatch(u64 r[4],const u64 a[4]){
+  if (p256_x86()) mont_sqr_p256_x86(r,a); else mont_mul_portable(r,a,a,&FP);
+}
 #define mont_mul mont_mul_dispatch
 #define fp_mul(r,a,b) fp_mul_dispatch((r),(a),(b))
-#define fp_sqr(r,a)   fp_mul_dispatch((r),(a),(a))
+#define fp_sqr(r,a)   fp_sqr_dispatch((r),(a))
 #else
 #define mont_mul mont_mul_portable
 #define fp_mul(r,a,b) mont_mul_portable((r),(a),(b),&FP)
