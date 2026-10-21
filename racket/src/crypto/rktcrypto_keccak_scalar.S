@@ -24,38 +24,38 @@ keccak_f1600_scalar_x86:
         push    r14
         push    r15
         sub     rsp, 240
-        mov r15, qword ptr [rdi]
-        xor r15, qword ptr [rdi + 40]
-        xor r15, qword ptr [rdi + 80]
-        xor r15, qword ptr [rdi + 120]
-        xor r15, qword ptr [rdi + 160]
-        mov qword ptr [rsp + 200], r15
-        mov r15, qword ptr [rdi + 8]
-        xor r15, qword ptr [rdi + 48]
-        xor r15, qword ptr [rdi + 88]
-        xor r15, qword ptr [rdi + 128]
-        xor r15, qword ptr [rdi + 168]
-        mov qword ptr [rsp + 208], r15
-        mov r15, qword ptr [rdi + 16]
-        xor r15, qword ptr [rdi + 56]
-        xor r15, qword ptr [rdi + 96]
-        xor r15, qword ptr [rdi + 136]
-        xor r15, qword ptr [rdi + 176]
-        mov qword ptr [rsp + 216], r15
-        mov r15, qword ptr [rdi + 24]
-        xor r15, qword ptr [rdi + 64]
-        xor r15, qword ptr [rdi + 104]
-        xor r15, qword ptr [rdi + 144]
-        xor r15, qword ptr [rdi + 184]
-        mov qword ptr [rsp + 224], r15
-        mov r15, qword ptr [rdi + 32]
-        xor r15, qword ptr [rdi + 72]
-        xor r15, qword ptr [rdi + 112]
-        xor r15, qword ptr [rdi + 152]
-        xor r15, qword ptr [rdi + 192]
-        mov qword ptr [rsp + 232], r15
-        lea r14, [rip + keccak_scalar_rc]
-        mov r13d, 0xc
+        mov rax, qword ptr [rdi]
+        xor rax, qword ptr [rdi + 40]
+        xor rax, qword ptr [rdi + 80]
+        xor rax, qword ptr [rdi + 120]
+        xor rax, qword ptr [rdi + 160]
+        mov qword ptr [rsp + 200], rax
+        mov rax, qword ptr [rdi + 8]
+        xor rax, qword ptr [rdi + 48]
+        xor rax, qword ptr [rdi + 88]
+        xor rax, qword ptr [rdi + 128]
+        xor rax, qword ptr [rdi + 168]
+        mov qword ptr [rsp + 208], rax
+        mov rax, qword ptr [rdi + 16]
+        xor rax, qword ptr [rdi + 56]
+        xor rax, qword ptr [rdi + 96]
+        xor rax, qword ptr [rdi + 136]
+        xor rax, qword ptr [rdi + 176]
+        mov qword ptr [rsp + 216], rax
+        mov rax, qword ptr [rdi + 24]
+        xor rax, qword ptr [rdi + 64]
+        xor rax, qword ptr [rdi + 104]
+        xor rax, qword ptr [rdi + 144]
+        xor rax, qword ptr [rdi + 184]
+        mov qword ptr [rsp + 224], rax
+        mov rax, qword ptr [rdi + 32]
+        xor rax, qword ptr [rdi + 72]
+        xor rax, qword ptr [rdi + 112]
+        xor rax, qword ptr [rdi + 152]
+        xor rax, qword ptr [rdi + 192]
+        mov qword ptr [rsp + 232], rax
+        lea r11, [rip + keccak_scalar_rc]
+        mov r10d, 0xc
 .Lkeccak_f1600_scalar_x86_round2:
         mov r12, qword ptr [rsp + 208]
         rol r12, 0x1
@@ -63,382 +63,382 @@ keccak_f1600_scalar_x86:
         mov rbx, qword ptr [rsp + 216]
         rol rbx, 0x1
         xor rbx, qword ptr [rsp + 200]
-        mov r11, qword ptr [rsp + 224]
-        rol r11, 0x1
-        xor r11, qword ptr [rsp + 208]
-        mov r10, qword ptr [rsp + 232]
-        rol r10, 0x1
-        xor r10, qword ptr [rsp + 216]
-        mov r9, qword ptr [rsp + 200]
-        rol r9, 0x1
-        xor r9, qword ptr [rsp + 224]
-        mov r8, qword ptr [rdi]
-        xor r8, r12
-        mov rsi, qword ptr [rdi + 48]
-        xor rsi, rbx
-        rol rsi, 0x2c
-        mov rdx, qword ptr [rdi + 96]
-        xor rdx, r11
-        rol rdx, 0x2b
-        mov rcx, qword ptr [rdi + 144]
-        xor rcx, r10
-        rol rcx, 0x15
-        mov rax, qword ptr [rdi + 192]
-        xor rax, r9
-        rol rax, 0xe
-        andn r15, rsi, rdx
-        xor r15, r8
-        xor r15, qword ptr [r14]
-        mov qword ptr [rsp], r15
-        mov qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rsp + 8], r15
-        mov qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rsp + 16], r15
-        mov qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rsp + 24], r15
-        mov qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rsp + 32], r15
-        mov qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rdi + 24]
-        xor r8, r10
-        rol r8, 0x1c
-        mov rsi, qword ptr [rdi + 72]
-        xor rsi, r9
-        rol rsi, 0x14
-        mov rdx, qword ptr [rdi + 80]
-        xor rdx, r12
-        rol rdx, 0x3
-        mov rcx, qword ptr [rdi + 128]
-        xor rcx, rbx
-        rol rcx, 0x2d
-        mov rax, qword ptr [rdi + 176]
-        xor rax, r11
-        rol rax, 0x3d
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rsp + 40], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rsp + 48], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rsp + 56], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rsp + 64], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rsp + 72], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rdi + 8]
-        xor r8, rbx
+        mov r8, qword ptr [rsp + 224]
         rol r8, 0x1
-        mov rsi, qword ptr [rdi + 56]
-        xor rsi, r11
-        rol rsi, 0x6
-        mov rdx, qword ptr [rdi + 104]
-        xor rdx, r10
-        rol rdx, 0x19
-        mov rcx, qword ptr [rdi + 152]
-        xor rcx, r9
-        rol rcx, 0x8
-        mov rax, qword ptr [rdi + 160]
-        xor rax, r12
-        rol rax, 0x12
-        andn r15, rsi, rdx
+        xor r8, qword ptr [rsp + 208]
+        mov rsi, qword ptr [rsp + 232]
+        rol rsi, 0x1
+        xor rsi, qword ptr [rsp + 216]
+        mov r13, qword ptr [rsp + 200]
+        rol r13, 0x1
+        xor r13, qword ptr [rsp + 224]
+        mov r14, qword ptr [rdi]
+        xor r14, r12
+        mov r9, qword ptr [rdi + 48]
+        xor r9, rbx
+        rol r9, 0x2c
+        mov r15, qword ptr [rdi + 96]
         xor r15, r8
-        mov qword ptr [rsp + 80], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rsp + 88], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rsp + 96], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rsp + 104], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rsp + 112], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rdi + 32]
-        xor r8, r9
-        rol r8, 0x1b
-        mov rsi, qword ptr [rdi + 40]
-        xor rsi, r12
-        rol rsi, 0x24
-        mov rdx, qword ptr [rdi + 88]
+        rol r15, 0x2b
+        mov rdx, qword ptr [rdi + 144]
+        xor rdx, rsi
+        rol rdx, 0x15
+        mov rcx, qword ptr [rdi + 192]
+        xor rcx, r13
+        rol rcx, 0xe
+        andn rax, r9, r15
+        xor rax, r14
+        xor rax, qword ptr [r11]
+        mov qword ptr [rsp], rax
+        mov qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rsp + 8], rax
+        mov qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rsp + 16], rax
+        mov qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rsp + 24], rax
+        mov qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rsp + 32], rax
+        mov qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rdi + 24]
+        xor r14, rsi
+        rol r14, 0x1c
+        mov r9, qword ptr [rdi + 72]
+        xor r9, r13
+        rol r9, 0x14
+        mov r15, qword ptr [rdi + 80]
+        xor r15, r12
+        rol r15, 0x3
+        mov rdx, qword ptr [rdi + 128]
         xor rdx, rbx
-        rol rdx, 0xa
-        mov rcx, qword ptr [rdi + 136]
-        xor rcx, r11
-        rol rcx, 0xf
-        mov rax, qword ptr [rdi + 184]
-        xor rax, r10
-        rol rax, 0x38
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rsp + 120], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
+        rol rdx, 0x2d
+        mov rcx, qword ptr [rdi + 176]
+        xor rcx, r8
+        rol rcx, 0x3d
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rsp + 40], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rsp + 48], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rsp + 56], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rsp + 64], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rsp + 72], rax
+        xor qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rdi + 8]
+        xor r14, rbx
+        rol r14, 0x1
+        mov r9, qword ptr [rdi + 56]
+        xor r9, r8
+        rol r9, 0x6
+        mov r15, qword ptr [rdi + 104]
         xor r15, rsi
-        mov qword ptr [rsp + 128], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rsp + 136], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rsp + 144], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rsp + 152], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rdi + 16]
-        xor r8, r11
-        rol r8, 0x3e
-        mov rsi, qword ptr [rdi + 64]
-        xor rsi, r10
-        rol rsi, 0x37
-        mov rdx, qword ptr [rdi + 112]
-        xor rdx, r9
-        rol rdx, 0x27
-        mov rcx, qword ptr [rdi + 120]
+        rol r15, 0x19
+        mov rdx, qword ptr [rdi + 152]
+        xor rdx, r13
+        rol rdx, 0x8
+        mov rcx, qword ptr [rdi + 160]
         xor rcx, r12
-        rol rcx, 0x29
-        mov rax, qword ptr [rdi + 168]
-        xor rax, rbx
-        rol rax, 0x2
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rsp + 160], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rsp + 168], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rsp + 176], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rsp + 184], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rsp + 192], r15
-        xor qword ptr [rsp + 232], r15
+        rol rcx, 0x12
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rsp + 80], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rsp + 88], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rsp + 96], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rsp + 104], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rsp + 112], rax
+        xor qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rdi + 32]
+        xor r14, r13
+        rol r14, 0x1b
+        mov r9, qword ptr [rdi + 40]
+        xor r9, r12
+        rol r9, 0x24
+        mov r15, qword ptr [rdi + 88]
+        xor r15, rbx
+        rol r15, 0xa
+        mov rdx, qword ptr [rdi + 136]
+        xor rdx, r8
+        rol rdx, 0xf
+        mov rcx, qword ptr [rdi + 184]
+        xor rcx, rsi
+        rol rcx, 0x38
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rsp + 120], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rsp + 128], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rsp + 136], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rsp + 144], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rsp + 152], rax
+        xor qword ptr [rsp + 232], rax
+        mov r9, qword ptr [rdi + 16]
+        xor r9, r8
+        rol r9, 0x3e
+        mov r8, qword ptr [rdi + 64]
+        xor r8, rsi
+        rol r8, 0x37
+        mov rsi, qword ptr [rdi + 112]
+        xor rsi, r13
+        rol rsi, 0x27
+        mov rdx, qword ptr [rdi + 120]
+        xor rdx, r12
+        rol rdx, 0x29
+        mov rcx, qword ptr [rdi + 168]
+        xor rcx, rbx
+        rol rcx, 0x2
+        andn rax, r8, rsi
+        xor rax, r9
+        mov qword ptr [rsp + 160], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, rsi, rdx
+        xor rax, r8
+        mov qword ptr [rsp + 168], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, rsi
+        mov qword ptr [rsp + 176], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r9
+        xor rax, rdx
+        mov qword ptr [rsp + 184], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r9, r8
+        xor rax, rcx
+        mov qword ptr [rsp + 192], rax
+        xor qword ptr [rsp + 232], rax
         mov r12, qword ptr [rsp + 208]
         rol r12, 0x1
         xor r12, qword ptr [rsp + 232]
         mov rbx, qword ptr [rsp + 216]
         rol rbx, 0x1
         xor rbx, qword ptr [rsp + 200]
-        mov r11, qword ptr [rsp + 224]
-        rol r11, 0x1
-        xor r11, qword ptr [rsp + 208]
-        mov r10, qword ptr [rsp + 232]
-        rol r10, 0x1
-        xor r10, qword ptr [rsp + 216]
-        mov r9, qword ptr [rsp + 200]
-        rol r9, 0x1
-        xor r9, qword ptr [rsp + 224]
-        mov r8, qword ptr [rsp]
-        xor r8, r12
-        mov rsi, qword ptr [rsp + 48]
-        xor rsi, rbx
-        rol rsi, 0x2c
-        mov rdx, qword ptr [rsp + 96]
-        xor rdx, r11
-        rol rdx, 0x2b
-        mov rcx, qword ptr [rsp + 144]
-        xor rcx, r10
-        rol rcx, 0x15
-        mov rax, qword ptr [rsp + 192]
-        xor rax, r9
-        rol rax, 0xe
-        andn r15, rsi, rdx
-        xor r15, r8
-        xor r15, qword ptr [r14 + 8]
-        mov qword ptr [rdi], r15
-        mov qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rdi + 8], r15
-        mov qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rdi + 16], r15
-        mov qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rdi + 24], r15
-        mov qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rdi + 32], r15
-        mov qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rsp + 24]
-        xor r8, r10
-        rol r8, 0x1c
-        mov rsi, qword ptr [rsp + 72]
-        xor rsi, r9
-        rol rsi, 0x14
-        mov rdx, qword ptr [rsp + 80]
-        xor rdx, r12
-        rol rdx, 0x3
-        mov rcx, qword ptr [rsp + 128]
-        xor rcx, rbx
-        rol rcx, 0x2d
-        mov rax, qword ptr [rsp + 176]
-        xor rax, r11
-        rol rax, 0x3d
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rdi + 40], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rdi + 48], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rdi + 56], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rdi + 64], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rdi + 72], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rsp + 8]
-        xor r8, rbx
+        mov r8, qword ptr [rsp + 224]
         rol r8, 0x1
-        mov rsi, qword ptr [rsp + 56]
-        xor rsi, r11
-        rol rsi, 0x6
-        mov rdx, qword ptr [rsp + 104]
-        xor rdx, r10
-        rol rdx, 0x19
-        mov rcx, qword ptr [rsp + 152]
-        xor rcx, r9
-        rol rcx, 0x8
-        mov rax, qword ptr [rsp + 160]
-        xor rax, r12
-        rol rax, 0x12
-        andn r15, rsi, rdx
+        xor r8, qword ptr [rsp + 208]
+        mov rsi, qword ptr [rsp + 232]
+        rol rsi, 0x1
+        xor rsi, qword ptr [rsp + 216]
+        mov r13, qword ptr [rsp + 200]
+        rol r13, 0x1
+        xor r13, qword ptr [rsp + 224]
+        mov r14, qword ptr [rsp]
+        xor r14, r12
+        mov r9, qword ptr [rsp + 48]
+        xor r9, rbx
+        rol r9, 0x2c
+        mov r15, qword ptr [rsp + 96]
         xor r15, r8
-        mov qword ptr [rdi + 80], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rdi + 88], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rdi + 96], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rdi + 104], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rdi + 112], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rsp + 32]
-        xor r8, r9
-        rol r8, 0x1b
-        mov rsi, qword ptr [rsp + 40]
-        xor rsi, r12
-        rol rsi, 0x24
-        mov rdx, qword ptr [rsp + 88]
+        rol r15, 0x2b
+        mov rdx, qword ptr [rsp + 144]
+        xor rdx, rsi
+        rol rdx, 0x15
+        mov rcx, qword ptr [rsp + 192]
+        xor rcx, r13
+        rol rcx, 0xe
+        andn rax, r9, r15
+        xor rax, r14
+        xor rax, qword ptr [r11 + 8]
+        mov qword ptr [rdi], rax
+        mov qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rdi + 8], rax
+        mov qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rdi + 16], rax
+        mov qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rdi + 24], rax
+        mov qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rdi + 32], rax
+        mov qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rsp + 24]
+        xor r14, rsi
+        rol r14, 0x1c
+        mov r9, qword ptr [rsp + 72]
+        xor r9, r13
+        rol r9, 0x14
+        mov r15, qword ptr [rsp + 80]
+        xor r15, r12
+        rol r15, 0x3
+        mov rdx, qword ptr [rsp + 128]
         xor rdx, rbx
-        rol rdx, 0xa
-        mov rcx, qword ptr [rsp + 136]
-        xor rcx, r11
-        rol rcx, 0xf
-        mov rax, qword ptr [rsp + 184]
-        xor rax, r10
-        rol rax, 0x38
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rdi + 120], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
+        rol rdx, 0x2d
+        mov rcx, qword ptr [rsp + 176]
+        xor rcx, r8
+        rol rcx, 0x3d
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rdi + 40], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rdi + 48], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rdi + 56], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rdi + 64], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rdi + 72], rax
+        xor qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rsp + 8]
+        xor r14, rbx
+        rol r14, 0x1
+        mov r9, qword ptr [rsp + 56]
+        xor r9, r8
+        rol r9, 0x6
+        mov r15, qword ptr [rsp + 104]
         xor r15, rsi
-        mov qword ptr [rdi + 128], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rdi + 136], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rdi + 144], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rdi + 152], r15
-        xor qword ptr [rsp + 232], r15
-        mov r8, qword ptr [rsp + 16]
-        xor r8, r11
-        rol r8, 0x3e
-        mov rsi, qword ptr [rsp + 64]
-        xor rsi, r10
-        rol rsi, 0x37
-        mov rdx, qword ptr [rsp + 112]
-        xor rdx, r9
-        rol rdx, 0x27
-        mov rcx, qword ptr [rsp + 120]
+        rol r15, 0x19
+        mov rdx, qword ptr [rsp + 152]
+        xor rdx, r13
+        rol rdx, 0x8
+        mov rcx, qword ptr [rsp + 160]
         xor rcx, r12
-        rol rcx, 0x29
-        mov rax, qword ptr [rsp + 168]
-        xor rax, rbx
-        rol rax, 0x2
-        andn r15, rsi, rdx
-        xor r15, r8
-        mov qword ptr [rdi + 160], r15
-        xor qword ptr [rsp + 200], r15
-        andn r15, rdx, rcx
-        xor r15, rsi
-        mov qword ptr [rdi + 168], r15
-        xor qword ptr [rsp + 208], r15
-        andn r15, rcx, rax
-        xor r15, rdx
-        mov qword ptr [rdi + 176], r15
-        xor qword ptr [rsp + 216], r15
-        andn r15, rax, r8
-        xor r15, rcx
-        mov qword ptr [rdi + 184], r15
-        xor qword ptr [rsp + 224], r15
-        andn r15, r8, rsi
-        xor r15, rax
-        mov qword ptr [rdi + 192], r15
-        xor qword ptr [rsp + 232], r15
-        add r14, 0x10
-        sub r13d, 0x1
+        rol rcx, 0x12
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rdi + 80], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rdi + 88], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rdi + 96], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rdi + 104], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rdi + 112], rax
+        xor qword ptr [rsp + 232], rax
+        mov r14, qword ptr [rsp + 32]
+        xor r14, r13
+        rol r14, 0x1b
+        mov r9, qword ptr [rsp + 40]
+        xor r9, r12
+        rol r9, 0x24
+        mov r15, qword ptr [rsp + 88]
+        xor r15, rbx
+        rol r15, 0xa
+        mov rdx, qword ptr [rsp + 136]
+        xor rdx, r8
+        rol rdx, 0xf
+        mov rcx, qword ptr [rsp + 184]
+        xor rcx, rsi
+        rol rcx, 0x38
+        andn rax, r9, r15
+        xor rax, r14
+        mov qword ptr [rdi + 120], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, r15, rdx
+        xor rax, r9
+        mov qword ptr [rdi + 128], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, r15
+        mov qword ptr [rdi + 136], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r14
+        xor rax, rdx
+        mov qword ptr [rdi + 144], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r14, r9
+        xor rax, rcx
+        mov qword ptr [rdi + 152], rax
+        xor qword ptr [rsp + 232], rax
+        mov r9, qword ptr [rsp + 16]
+        xor r9, r8
+        rol r9, 0x3e
+        mov r8, qword ptr [rsp + 64]
+        xor r8, rsi
+        rol r8, 0x37
+        mov rsi, qword ptr [rsp + 112]
+        xor rsi, r13
+        rol rsi, 0x27
+        mov rdx, qword ptr [rsp + 120]
+        xor rdx, r12
+        rol rdx, 0x29
+        mov rcx, qword ptr [rsp + 168]
+        xor rcx, rbx
+        rol rcx, 0x2
+        andn rax, r8, rsi
+        xor rax, r9
+        mov qword ptr [rdi + 160], rax
+        xor qword ptr [rsp + 200], rax
+        andn rax, rsi, rdx
+        xor rax, r8
+        mov qword ptr [rdi + 168], rax
+        xor qword ptr [rsp + 208], rax
+        andn rax, rdx, rcx
+        xor rax, rsi
+        mov qword ptr [rdi + 176], rax
+        xor qword ptr [rsp + 216], rax
+        andn rax, rcx, r9
+        xor rax, rdx
+        mov qword ptr [rdi + 184], rax
+        xor qword ptr [rsp + 224], rax
+        andn rax, r9, r8
+        xor rax, rcx
+        mov qword ptr [rdi + 192], rax
+        xor qword ptr [rsp + 232], rax
+        add r11, 0x10
+        sub r10d, 0x1
         jnz .Lkeccak_f1600_scalar_x86_round2
         add     rsp, 240
         pop     r15

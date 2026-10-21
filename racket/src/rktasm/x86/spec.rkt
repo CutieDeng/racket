@@ -194,10 +194,12 @@
     ;; a mask decorator reads the mask register; merge-masking (no {z}) also reads the destination
     (for ([d decors] #:when (eq? (car d) 'mask)) (set! uses (cons (cadr d) uses)))
     (define merge? (and (masked? u) (not (assq 'z decors))))
+    ;; a conditional write (cmovcc and friends) leaves the old value in place when the condition
+    ;; fails, so for allocation it reads its destination like a read-modify-write
     (case action
       [(r cr) (use!)]
-      [(w cw) (when merge? (use!)) (def!)]
-      [(rw crw rcw) (use!) (def!)]
+      [(w) (when merge? (use!)) (def!)]
+      [(cw rw crw rcw) (use!) (def!)]
       [else (void)])
     ;; memory operands read their address registers
     (when (and (pair? u) (eq? (car u) 'mem))
@@ -209,8 +211,8 @@
       (define u (list 'reg (operand-shape-fixed sh)))
       (case action
         [(r cr) (set! uses (cons u uses))]
-        [(w cw) (set! defs (cons u defs))]
-        [(rw crw rcw) (set! uses (cons u uses)) (set! defs (cons u defs))]
+        [(w) (set! defs (cons u defs))]
+        [(cw rw crw rcw) (set! uses (cons u uses)) (set! defs (cons u defs))]
         [else (void)])))
   (define fl (form-flags form))
   (define toks (if fl (string-split (symbol->string fl)) '()))

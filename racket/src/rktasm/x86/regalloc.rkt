@@ -136,7 +136,8 @@
 (define (allocate-fn f)
   (parameterize ([current-vec-pool (if (eq? (fn-simd f) 'avx512) vec-pool-avx512 vec-pool)])
     ;; spill loop: each round that fails to colour names one value to move to the frame
-    (let loop ([body (expand-calls (fn-body f))] [spilled '()] [bytes 0] [rounds 0] [moved '()])
+    (let loop ([body (vector->list (rename-webs (list->vector (expand-calls (fn-body f))) (fn-ins f) (fn-outs f) (fn-inouts f)))]
+               [spilled '()] [bytes 0] [rounds 0] [moved '()])
       (define g (fn (fn-name f) (fn-export? f) (fn-ins f) (fn-outs f) (fn-inouts f) body (fn-save f) (fn-line f)))
       (set-fn-simd! g (fn-simd f))   ; #:auto fields are not constructor arguments
       (set-fn-frame! g (fn-frame f))
@@ -161,16 +162,24 @@
                           (list x))))]))
          (loop body* spilled bytes (add1 rounds) (cons name moved))]
         [else
-         (define size (case (spill-request-cls r) [(gpr) 8] [(k) 8] [else 64]))
+         ;; vector width: the widest view the body gives the value (zmm under .simd avx512 regardless,
+         ;; so the slot layout stays 64-byte); VEX moves once any v-prefixed instruction is present
+         (define (view-width v) (case v [(xmm) 16] [(ymm) 32] [(zmm) 64] [else 0]))
+         (define width
+           (if (eq? (fn-simd f) 'avx512) 64
+               (max 16 (for*/fold ([w 0]) ([x body] #:when (instr? x) [o (instr-ops x)])
+                         (match o [(list* 'vreg _ nm v _) (if (eq? nm (spill-request-name r)) (max w (view-width v)) w)] [_ w])))))
+         (define vex? (for/or ([x body]) (and (instr? x) (regexp-match? #rx"^v" (symbol->string (instr-mnemonic x))))))
+         (define size (case (spill-request-cls r) [(gpr) 8] [(k) 8] [else width]))
          (define off (* size (quotient (+ bytes size -1) size)))   ; align the slot to its size
-         (loop (spill-vreg body (spill-request-name r) (spill-request-cls r) off)
+         (loop (spill-vreg body (spill-request-name r) (spill-request-cls r) off width vex?)
                (cons (cons (spill-request-name r) off) spilled) (+ off size) (add1 rounds) moved)]))))
 
 ;; ---------------------------------------------------------------- spill rewriting
 ;; Every instruction that mentions `name` gets a fresh temporary for it: a load from the slot
 ;; before (when it reads), a store after (when it writes). Loads and stores are plain moves,
 ;; which leave the flags alone, so adc/adox chains survive.
-(define (spill-vreg body name cls off)
+(define (spill-vreg body name cls off [width 64] [vex? #t])
   (define key (vreg-key name))
   (define counter 0)
   (define (mentions? u)
@@ -189,16 +198,23 @@
       [_ u]))
   (define (rename-decor d tmp) (match d [(list 'mask r) (list 'mask (rename r tmp))] [_ d]))
   (define slot (lambda (size) (list 'mem (list 'reg 'rsp) #f 1 off '__spill size '())))
+  ;; a vector value is moved at the widest view the function gives it: 16 bytes with movdqu (vmovdqu
+  ;; once the function is VEX/EVEX code), 32 with vmovdqu ymm, 64 with vmovdqu64 zmm
+  (define-values (vmn vview vsize)
+    (case width
+      [(16) (values (if vex? 'vmovdqu 'movdqu) 'xmm 'xmmword)]
+      [(32) (values 'vmovdqu 'ymm 'ymmword)]
+      [else (values 'vmovdqu64 'zmm 'zmmword)]))
   (define (load-instr tmp line)
     (case cls
       [(gpr) (instr 'mov (list (list 'vreg 'gpr tmp 'q) (slot 'qword)) "spill load" line)]
       [(k) (instr 'kmovq (list (list 'vreg 'k tmp 'k) (slot 'qword)) "spill load" line)]
-      [else (instr 'vmovdqu64 (list (list 'vreg 'zmm tmp 'zmm) (slot 'zmmword)) "spill load" line)]))
+      [else (instr vmn (list (list 'vreg vview tmp vview) (slot vsize)) "spill load" line)]))
   (define (store-instr tmp line)
     (case cls
       [(gpr) (instr 'mov (list (slot 'qword) (list 'vreg 'gpr tmp 'q)) "spill store" line)]
       [(k) (instr 'kmovq (list (slot 'qword) (list 'vreg 'k tmp 'k)) "spill store" line)]
-      [else (instr 'vmovdqu64 (list (slot 'zmmword) (list 'vreg 'zmm tmp 'zmm)) "spill store" line)]))
+      [else (instr vmn (list (slot vsize) (list 'vreg vview tmp vview)) "spill store" line)]))
   (append*
    (for/list ([x body])
      (cond
@@ -211,6 +227,114 @@
                 (list y)
                 (if (memq key defs) (list (store-instr tmp (instr-line x))) '()))]
        [else (list x)]))))
+;; ---------------------------------------------------------------- def-use webs
+;; A virtual register name reused for unrelated values (a scratch name in two phases of a loop
+;; body) would otherwise be one allocation node interfering with the union of both phases' live
+;; sets. Reaching definitions split each name into its def-use webs: definitions joined through a
+;; shared use, and a read-modify-write instruction joining its own definition with the ones its
+;; read sees. Every web but the first (the one holding the entry definition of a parameter, or a
+;; result's web that reaches ret) gets a fresh name `name~wK`, and the webs are allocated
+;; independently. Runs once, before the spill rounds.
+(define (rename-webs body ins outs inouts)
+  (define n (vector-length body))
+  (define label-index (for/hasheq ([x (in-vector body)] [i (in-naturals)] #:when (label? x)) (values (label-name x) i)))
+  (define (succs i)
+    (define x (vector-ref body i))
+    (cond
+      [(label? x) (if (< (add1 i) n) (list (add1 i)) '())]
+      [(eq? (instr-mnemonic x) 'ret) '()]
+      [(and (memq (instr-mnemonic x) jumps) (= 1 (length (instr-ops x))) (eq? (car (car (instr-ops x))) 'label))
+       (define t (hash-ref label-index (cadr (car (instr-ops x)))))
+       (if (eq? (instr-mnemonic x) 'jmp) (list t) (append (if (< (add1 i) n) (list (add1 i)) '()) (list t)))]
+      [else (if (< (add1 i) n) (list (add1 i)) '())]))
+  (define uses (make-vector n '())) (define defs (make-vector n '()))
+  (for ([i n])
+    (define x (vector-ref body i))
+    (when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive)))
+      (define-values (u d c) (instr-uses/defs x))
+      (vector-set! uses i (filter vreg-key? u)) (vector-set! defs i (filter vreg-key? d))))
+  (define in-keys (remove-duplicates (filter values (map operand-key (append ins inouts)))))
+  (define out-keys (remove-duplicates (filter values (map operand-key (append outs inouts)))))
+  ;; reaching definitions per key as a bit set of definition sites: bit 0 = the entry, bit s+1 = instruction s
+  (define (site-bit s) (arithmetic-shift 1 (add1 s)))
+  (define (sites-of mask) (for/list ([b (in-range (integer-length mask))] #:when (bitwise-bit-set? mask b)) (sub1 b)))
+  (define entry (for/hasheq ([k in-keys]) (values k (site-bit -1))))
+  (define (transfer i in) (for/fold ([h in]) ([d (vector-ref defs i)]) (hash-set h d (site-bit i))))
+  (define preds (make-vector n '()))
+  (for ([i n]) (for ([s (succs i)]) (vector-set! preds s (cons i (vector-ref preds s)))))
+  (define rd-in (make-vector n (hasheq)))
+  (let loop ()
+    (define changed #f)
+    (for ([i n])
+      (define in
+        (for/fold ([h (if (= i 0) entry (hasheq))]) ([p (vector-ref preds i)])
+          (for/fold ([h h]) ([(k m) (in-hash (transfer p (vector-ref rd-in p)))])
+            (hash-set h k (bitwise-ior m (hash-ref h k 0))))))
+      (unless (equal? in (vector-ref rd-in i)) (set! changed #t) (vector-set! rd-in i in)))
+    (when changed (loop)))
+  (define (reaching i k) (sites-of (hash-ref (vector-ref rd-in i) k 0)))
+  ;; union-find over (key . site)
+  (define parent (make-hash))
+  (define (find x) (define p (hash-ref parent x x)) (if (equal? p x) x (let ([r (find p)]) (hash-set! parent x r) r)))
+  (define (union! a b) (define ra (find a)) (define rb (find b)) (unless (equal? ra rb) (hash-set! parent ra rb)))
+  (define (join! k sites) (for ([s (cdr sites)]) (union! (cons k (car sites)) (cons k s))))
+  (for ([i n])
+    (define x (vector-ref body i))
+    (define d (vector-ref defs i))
+    (for ([k (vector-ref uses i)])
+      (define sites (reaching i k))
+      (when (pair? sites)
+        (join! k sites)
+        (when (memq k d) (union! (cons k i) (cons k (car sites)))))) ; read-modify-write: one web
+    (when (and (instr? x) (eq? (instr-mnemonic x) 'ret))
+      ;; results: everything that reaches any ret is one web (it ends in the ABI register either
+      ;; way); an in/out parameter's entry web joins it
+      (for ([k out-keys])
+        (define sites (reaching i k))
+        (when (pair? sites)
+          (join! k sites)
+          (union! (cons k 'ret) (cons k (car sites)))
+          (when (memq k in-keys) (union! (cons k -1) (cons k (car sites))))))))
+  ;; naming: the parameter's entry web and the result's ret web keep the plain name, so does the
+  ;; first web met of any other name; later webs get name~wK
+  (define web-name (make-hash))
+  (define counter (make-hasheq))
+  (define (name-of k site)
+    (define root (find (cons k site)))
+    (hash-ref! web-name root
+               (lambda ()
+                 (define c (hash-ref counter k 0))
+                 (hash-set! counter k (add1 c))
+                 (if (= c 0) (vreg-key-name k) (string->symbol (format "~a~~w~a" (vreg-key-name k) c))))))
+  (for ([k in-keys]) (name-of k -1))
+  (for ([k out-keys]) (unless (memq k in-keys) (name-of k 'ret)))
+  ;; mask decorators ({k.m}) read their register: rename them as uses wherever they appear
+  (define (rename-decors d i) (for/list ([x d]) (match x [(list 'mask r) (list 'mask (rename r i 'use))] [_ x])))
+  (define (rename o i mode)   ; mode: 'def = this instruction's definition, 'use = the reaching web
+    (match o
+      [(list 'vreg cls name view decor)
+       (define k (vreg-key name))
+       (define site (if (eq? mode 'def) i (let ([s (reaching i k)]) (and (pair? s) (car s)))))
+       (list 'vreg cls (if site (name-of k site) name) view (rename-decors decor i))]
+      [(list 'vreg cls name view)
+       (define k (vreg-key name))
+       (define site (if (eq? mode 'def) i (let ([s (reaching i k)]) (and (pair? s) (car s)))))
+       (if site (list 'vreg cls (name-of k site) view) o)]
+      [(list 'reg n decor) (list 'reg n (rename-decors decor i))]
+      [(list 'mem base index a b c d decor)
+       (list 'mem (and base (rename base i 'use)) (and index (rename index i 'use)) a b c d (rename-decors decor i))]
+      [_ o]))
+  (for/vector ([x (in-vector body)] [i (in-naturals)])
+    (if (and (instr? x) (not (eq? (instr-mnemonic x) '.directive)))
+        (let ([d (vector-ref defs i)])
+          (instr (instr-mnemonic x)
+                 (for/list ([o (instr-ops x)])
+                   (match o
+                     [(list* 'vreg cls name rest) (rename o i (if (memq (vreg-key name) d) 'def 'use))]
+                     [_ (rename o i 'use)]))
+                 (instr-text x) (instr-line x)))
+        x)))
+
 (define (allocate-fn* f [moved '()])
   (define body (list->vector (fn-body f)))
   (define n (vector-length body))

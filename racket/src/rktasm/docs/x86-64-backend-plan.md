@@ -359,6 +359,18 @@ integration 77/77；基准 chacha20-poly1305 6328→**7494 MB/s**（Racket 层�
 待查 Racket 侧 seal! 路径的固定/比例开销）。后续候选：IFMA Poly 塞进单组 ChaCha 的
 空闲 FP 槽（单组 IPC 1.9 留有余量，估 ~10 GB/s）。
 
+**分配器 def-use web 拆分（2026-10-21，已验证）**：起因=ChaCha 双组内核里 B 组收尾复用 A 组的暂存名 t0..t3 时多溢出
+4 个状态寄存器：分配器按"名"建节点，t0 同时与 A 阶段（x0..15）和 B 阶段（y0..15）的活跃集干涉，而 x、y 在轮阶段又
+两两干涉占满 32 色，t0 需第 33 色。现在 `regalloc.rkt` 在溢出轮之前先做到达定义（按名的定义位 bitset 前向数据流）
++ 并查集把每个名拆成 def-use web（共享一次使用的定义归一 web；读改写指令把自身定义并入其读到的 web；参数的入口
+web、结果到达 ret 的 web 保留原名，其余命名 `name~wK`），各 web 独立分配。连带修正：XED 的条件写 `cw`（cmovcc）
+此前当纯定义，web 拆分后 `sub r0..; cmovc r0, acc` 的两个定义分成两 web 而被分到不同寄存器（generic mont_mul 10%
+mismatch）——现按读改写处理；掩码修饰符 `{k.m}` 内的 k 寄存器读也参与重命名（aes_ctr 全计数器路径此前错 mask）；
+向量溢出按函数宽度选 movdqu xmm / vmovdqu ymm / vmovdqu64 zmm（非 AVX-512 函数不再被塞进 zmm 指令）。
+`tests/alloc-tests.rkt` 修复了 10 处陈旧断言（ret 计入函数体、溢出取代报错、发射格式单空格、调用对齐）并在失败时
+以非零退出；新增 web 测试。全部 14 个内核重新分配（x25519 少一个 push/pop 对、p256 少 8 个），lan-11 14 gate 全过、
+AES 差分 0/65121。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

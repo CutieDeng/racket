@@ -63,171 +63,171 @@ keccak_f1600_x86:
         kmovw k2, eax
         mov eax, 0x1
         kmovw k1, eax
-        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_idx + 128]
-        vmovdqa64 zmm14, zmmword ptr [rip + keccak_x86_idx + 192]
-        vmovdqa64 zmm13, zmmword ptr [rip + keccak_x86_idx + 256]
-        vmovdqu64 zmm12{k2}{z}, zmmword ptr [rdi]
-        vmovdqu64 zmm11{k2}{z}, zmmword ptr [rdi + 40]
-        vmovdqu64 zmm10{k2}{z}, zmmword ptr [rdi + 80]
-        vmovdqu64 zmm9{k2}{z}, zmmword ptr [rdi + 120]
-        vmovdqu64 zmm8{k2}{z}, zmmword ptr [rdi + 160]
+        vmovdqa64 zmm5, zmmword ptr [rip + keccak_x86_idx + 128]
+        vmovdqa64 zmm4, zmmword ptr [rip + keccak_x86_idx + 192]
+        vmovdqa64 zmm3, zmmword ptr [rip + keccak_x86_idx + 256]
+        vmovdqu64 zmm11{k2}{z}, zmmword ptr [rdi]
+        vmovdqu64 zmm12{k2}{z}, zmmword ptr [rdi + 40]
+        vmovdqu64 zmm13{k2}{z}, zmmword ptr [rdi + 80]
+        vmovdqu64 zmm14{k2}{z}, zmmword ptr [rdi + 120]
+        vmovdqu64 zmm15{k2}{z}, zmmword ptr [rdi + 160]
         lea rcx, [rip + keccak_x86_rc]
         mov eax, 0xc
 .Lkeccak_f1600_x86_round2:
-        vmovdqa64 zmm6, zmm12
-        vpternlogq zmm6, zmm11, zmm10, 0x96
-        vpternlogq zmm6, zmm9, zmm8, 0x96
-        vpermq zmm0, zmm14, zmm6
-        vpermq zmm6, zmm15, zmm6
-        vprolq zmm6, zmm6, 0x1
-        vpxorq zmm0, zmm0, zmm6
-        vpxorq zmm12, zmm12, zmm0
-        vpxorq zmm11, zmm11, zmm0
-        vpxorq zmm10, zmm10, zmm0
-        vpxorq zmm9, zmm9, zmm0
-        vpxorq zmm8, zmm8, zmm0
-        vprolvq zmm12, zmm12, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm11, zmm11, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm10, zmm10, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm9, zmm9, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm8, zmm8, zmmword ptr [rip + keccak_x86_rho + 256]
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm7, zmm12, zmm11
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm6, zmm10, zmm9
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm5, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm5, zmm0, zmm8
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm7, zmm12, zmm11
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm6, zmm10, zmm9
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm4, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm4, zmm0, zmm8
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm7, zmm12, zmm11
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm6, zmm10, zmm9
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm3, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm3, zmm0, zmm8
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm7, zmm12, zmm11
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm6, zmm10, zmm9
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm2, zmm0, zmm8
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm7, zmm12, zmm11
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm6, zmm10, zmm9
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm1, zmm0, zmm8
-        vpermq zmm6, zmm15, zmm5
-        vpermq zmm0, zmm13, zmm5
-        vpternlogq zmm5, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm4
-        vpermq zmm0, zmm13, zmm4
-        vpternlogq zmm4, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm3
-        vpermq zmm0, zmm13, zmm3
-        vpternlogq zmm3, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm2
-        vpermq zmm0, zmm13, zmm2
-        vpternlogq zmm2, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm1
-        vpermq zmm0, zmm13, zmm1
-        vpternlogq zmm1, zmm6, zmm0, 0xd2
-        vpxorq zmm5{k1}, zmm5, qword ptr [rcx]{1to8}
-        vmovdqa64 zmm6, zmm5
-        vpternlogq zmm6, zmm4, zmm3, 0x96
-        vpternlogq zmm6, zmm2, zmm1, 0x96
-        vpermq zmm0, zmm14, zmm6
-        vpermq zmm6, zmm15, zmm6
-        vprolq zmm6, zmm6, 0x1
-        vpxorq zmm0, zmm0, zmm6
-        vpxorq zmm5, zmm5, zmm0
-        vpxorq zmm4, zmm4, zmm0
-        vpxorq zmm3, zmm3, zmm0
-        vpxorq zmm2, zmm2, zmm0
+        vmovdqa64 zmm0, zmm11
+        vpternlogq zmm0, zmm12, zmm13, 0x96
+        vpternlogq zmm0, zmm14, zmm15, 0x96
+        vpermq zmm1, zmm4, zmm0
+        vpermq zmm0, zmm5, zmm0
+        vprolq zmm0, zmm0, 0x1
         vpxorq zmm1, zmm1, zmm0
-        vprolvq zmm5, zmm5, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm4, zmm4, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm3, zmm3, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm2, zmm2, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm1, zmm1, zmmword ptr [rip + keccak_x86_rho + 256]
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm7, zmm5, zmm4
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm6, zmm3, zmm2
+        vpxorq zmm11, zmm11, zmm1
+        vpxorq zmm12, zmm12, zmm1
+        vpxorq zmm13, zmm13, zmm1
+        vpxorq zmm14, zmm14, zmm1
+        vpxorq zmm15, zmm15, zmm1
+        vprolvq zmm11, zmm11, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm12, zmm12, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm13, zmm13, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm14, zmm14, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm15, zmm15, zmmword ptr [rip + keccak_x86_rho + 256]
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm2, zmm11, zmm12
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm13, zmm14
         vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm12, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm12, zmm0, zmm1
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm7, zmm5, zmm4
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm6, zmm3, zmm2
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 128]
+        vpermi2q zmm10, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm2, zmm11, zmm12
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm13, zmm14
         vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm11, zmm0, zmm1
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm7, zmm5, zmm4
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm6, zmm3, zmm2
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 320]
+        vpermi2q zmm9, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm2, zmm11, zmm12
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm13, zmm14
         vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm10, zmm0, zmm1
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm7, zmm5, zmm4
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm6, zmm3, zmm2
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm8, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm8, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm2, zmm11, zmm12
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm13, zmm14
         vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm9, zmm0, zmm1
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm7, zmm5, zmm4
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm6, zmm3, zmm2
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm7, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm2, zmm11, zmm12
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm13, zmm14
         vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm0, zmm7, zmm6
-        vmovdqa64 zmm8, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm8, zmm0, zmm1
-        vpermq zmm6, zmm15, zmm12
-        vpermq zmm0, zmm13, zmm12
-        vpternlogq zmm12, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm11
-        vpermq zmm0, zmm13, zmm11
-        vpternlogq zmm11, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm10
-        vpermq zmm0, zmm13, zmm10
-        vpternlogq zmm10, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm9
-        vpermq zmm0, zmm13, zmm9
-        vpternlogq zmm9, zmm6, zmm0, 0xd2
-        vpermq zmm6, zmm15, zmm8
-        vpermq zmm0, zmm13, zmm8
-        vpternlogq zmm8, zmm6, zmm0, 0xd2
-        vpxorq zmm12{k1}, zmm12, qword ptr [rcx + 8]{1to8}
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm6, zmm0, zmm15
+        vpermq zmm1, zmm5, zmm10
+        vpermq zmm0, zmm3, zmm10
+        vpternlogq zmm10, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm9
+        vpermq zmm0, zmm3, zmm9
+        vpternlogq zmm9, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm8
+        vpermq zmm0, zmm3, zmm8
+        vpternlogq zmm8, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm7
+        vpermq zmm0, zmm3, zmm7
+        vpternlogq zmm7, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm6
+        vpermq zmm0, zmm3, zmm6
+        vpternlogq zmm6, zmm1, zmm0, 0xd2
+        vpxorq zmm10{k1}, zmm10, qword ptr [rcx]{1to8}
+        vmovdqa64 zmm0, zmm10
+        vpternlogq zmm0, zmm9, zmm8, 0x96
+        vpternlogq zmm0, zmm7, zmm6, 0x96
+        vpermq zmm1, zmm4, zmm0
+        vpermq zmm0, zmm5, zmm0
+        vprolq zmm0, zmm0, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpxorq zmm10, zmm10, zmm1
+        vpxorq zmm9, zmm9, zmm1
+        vpxorq zmm8, zmm8, zmm1
+        vpxorq zmm7, zmm7, zmm1
+        vpxorq zmm6, zmm6, zmm1
+        vprolvq zmm10, zmm10, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm9, zmm9, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm8, zmm8, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm7, zmm7, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm6, zmm6, zmmword ptr [rip + keccak_x86_rho + 256]
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm2, zmm10, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm8, zmm7
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 128]
+        vpermi2q zmm11, zmm0, zmm6
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm2, zmm10, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm8, zmm7
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm12, zmmword ptr [rip + keccak_x86_pi + 320]
+        vpermi2q zmm12, zmm0, zmm6
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm2, zmm10, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm8, zmm7
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm13, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm13, zmm0, zmm6
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm2, zmm10, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm8, zmm7
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm14, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm14, zmm0, zmm6
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm2, zmm10, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm8, zmm7
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm15, zmm0, zmm6
+        vpermq zmm1, zmm5, zmm11
+        vpermq zmm0, zmm3, zmm11
+        vpternlogq zmm11, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm12
+        vpermq zmm0, zmm3, zmm12
+        vpternlogq zmm12, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm13
+        vpermq zmm0, zmm3, zmm13
+        vpternlogq zmm13, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm14
+        vpermq zmm0, zmm3, zmm14
+        vpternlogq zmm14, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm5, zmm15
+        vpermq zmm0, zmm3, zmm15
+        vpternlogq zmm15, zmm1, zmm0, 0xd2
+        vpxorq zmm11{k1}, zmm11, qword ptr [rcx + 8]{1to8}
         add rcx, 0x10
         sub eax, 0x1
         jnz .Lkeccak_f1600_x86_round2
-        vmovdqu64 zmmword ptr [rdi]{k2}, zmm12
-        vmovdqu64 zmmword ptr [rdi + 40]{k2}, zmm11
-        vmovdqu64 zmmword ptr [rdi + 80]{k2}, zmm10
-        vmovdqu64 zmmword ptr [rdi + 120]{k2}, zmm9
-        vmovdqu64 zmmword ptr [rdi + 160]{k2}, zmm8
+        vmovdqu64 zmmword ptr [rdi]{k2}, zmm11
+        vmovdqu64 zmmword ptr [rdi + 40]{k2}, zmm12
+        vmovdqu64 zmmword ptr [rdi + 80]{k2}, zmm13
+        vmovdqu64 zmmword ptr [rdi + 120]{k2}, zmm14
+        vmovdqu64 zmmword ptr [rdi + 160]{k2}, zmm15
         vzeroupper
         ret
         .size   keccak_f1600_x86, .-keccak_f1600_x86
@@ -240,327 +240,327 @@ keccak_f1600_x2_x86:
         kmovw k2, eax
         mov eax, 0x1
         kmovw k1, eax
-        vmovdqa64 zmm25, zmmword ptr [rip + keccak_x86_idx + 128]
-        vmovdqa64 zmm24, zmmword ptr [rip + keccak_x86_idx + 192]
-        vmovdqa64 zmm23, zmmword ptr [rip + keccak_x86_idx + 256]
-        vmovdqu64 zmm22{k2}{z}, zmmword ptr [rdi]
-        vmovdqu64 zmm21{k2}{z}, zmmword ptr [rsi]
-        vmovdqu64 zmm20{k2}{z}, zmmword ptr [rdi + 40]
-        vmovdqu64 zmm19{k2}{z}, zmmword ptr [rsi + 40]
-        vmovdqu64 zmm18{k2}{z}, zmmword ptr [rdi + 80]
-        vmovdqu64 zmm17{k2}{z}, zmmword ptr [rsi + 80]
-        vmovdqu64 zmm16{k2}{z}, zmmword ptr [rdi + 120]
-        vmovdqu64 zmm15{k2}{z}, zmmword ptr [rsi + 120]
-        vmovdqu64 zmm14{k2}{z}, zmmword ptr [rdi + 160]
-        vmovdqu64 zmm13{k2}{z}, zmmword ptr [rsi + 160]
+        vmovdqa64 zmm14, zmmword ptr [rip + keccak_x86_idx + 128]
+        vmovdqa64 zmm13, zmmword ptr [rip + keccak_x86_idx + 192]
+        vmovdqa64 zmm12, zmmword ptr [rip + keccak_x86_idx + 256]
+        vmovdqu64 zmm11{k2}{z}, zmmword ptr [rdi]
+        vmovdqu64 zmm10{k2}{z}, zmmword ptr [rsi]
+        vmovdqu64 zmm9{k2}{z}, zmmword ptr [rdi + 40]
+        vmovdqu64 zmm8{k2}{z}, zmmword ptr [rsi + 40]
+        vmovdqu64 zmm7{k2}{z}, zmmword ptr [rdi + 80]
+        vmovdqu64 zmm6{k2}{z}, zmmword ptr [rsi + 80]
+        vmovdqu64 zmm5{k2}{z}, zmmword ptr [rdi + 120]
+        vmovdqu64 zmm4{k2}{z}, zmmword ptr [rsi + 120]
+        vmovdqu64 zmm3{k2}{z}, zmmword ptr [rdi + 160]
+        vmovdqu64 zmm2{k2}{z}, zmmword ptr [rsi + 160]
         lea rcx, [rip + keccak_x86_rc]
         mov eax, 0xc
 .Lkeccak_f1600_x2_x86_round2x:
-        vmovdqa64 zmm9, zmm22
-        vpternlogq zmm9, zmm20, zmm18, 0x96
-        vpternlogq zmm9, zmm16, zmm14, 0x96
-        vpermq zmm11, zmm24, zmm9
-        vpermq zmm9, zmm25, zmm9
-        vprolq zmm9, zmm9, 0x1
-        vpxorq zmm11, zmm11, zmm9
-        vmovdqa64 zmm9, zmm21
-        vpternlogq zmm9, zmm19, zmm17, 0x96
-        vpternlogq zmm9, zmm15, zmm13, 0x96
-        vpermq zmm10, zmm24, zmm9
-        vpermq zmm9, zmm25, zmm9
-        vprolq zmm9, zmm9, 0x1
-        vpxorq zmm10, zmm10, zmm9
-        vpxorq zmm22, zmm22, zmm11
-        vpxorq zmm21, zmm21, zmm10
-        vpxorq zmm20, zmm20, zmm11
-        vpxorq zmm19, zmm19, zmm10
-        vpxorq zmm18, zmm18, zmm11
-        vpxorq zmm17, zmm17, zmm10
-        vpxorq zmm16, zmm16, zmm11
-        vpxorq zmm15, zmm15, zmm10
-        vpxorq zmm14, zmm14, zmm11
-        vpxorq zmm13, zmm13, zmm10
-        vprolvq zmm22, zmm22, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm21, zmm21, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm20, zmm20, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm19, zmm19, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm18, zmm18, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm17, zmm17, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm16, zmm16, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm15, zmm15, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm14, zmm14, zmmword ptr [rip + keccak_x86_rho + 256]
-        vprolvq zmm13, zmm13, zmmword ptr [rip + keccak_x86_rho + 256]
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm11, zmm22, zmm20
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm10, zmm18, zmm16
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm12, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm12, zmm9, zmm14
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm11, zmm21, zmm19
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm10, zmm17, zmm15
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm8, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm8, zmm9, zmm13
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm11, zmm22, zmm20
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm10, zmm18, zmm16
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm7, zmm9, zmm14
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm11, zmm21, zmm19
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm10, zmm17, zmm15
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm6, zmm9, zmm13
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm11, zmm22, zmm20
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm10, zmm18, zmm16
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm5, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm5, zmm9, zmm14
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm11, zmm21, zmm19
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm10, zmm17, zmm15
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm4, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm4, zmm9, zmm13
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm11, zmm22, zmm20
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm10, zmm18, zmm16
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm3, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm3, zmm9, zmm14
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm11, zmm21, zmm19
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm10, zmm17, zmm15
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm2, zmm9, zmm13
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm11, zmm22, zmm20
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm10, zmm18, zmm16
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm1, zmm9, zmm14
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm11, zmm21, zmm19
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm10, zmm17, zmm15
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm0, zmm9, zmm13
-        vpermq zmm11, zmm25, zmm12
-        vpermq zmm10, zmm23, zmm12
-        vpternlogq zmm12, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm8
-        vpermq zmm10, zmm23, zmm8
-        vpternlogq zmm8, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm7
-        vpermq zmm10, zmm23, zmm7
-        vpternlogq zmm7, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm6
-        vpermq zmm10, zmm23, zmm6
-        vpternlogq zmm6, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm5
-        vpermq zmm10, zmm23, zmm5
-        vpternlogq zmm5, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm4
-        vpermq zmm10, zmm23, zmm4
-        vpternlogq zmm4, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm3
-        vpermq zmm10, zmm23, zmm3
-        vpternlogq zmm3, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm2
-        vpermq zmm10, zmm23, zmm2
-        vpternlogq zmm2, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm1
-        vpermq zmm10, zmm23, zmm1
-        vpternlogq zmm1, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm0
-        vpermq zmm10, zmm23, zmm0
-        vpternlogq zmm0, zmm11, zmm10, 0xd2
-        vpxorq zmm12{k1}, zmm12, qword ptr [rcx]{1to8}
-        vpxorq zmm8{k1}, zmm8, qword ptr [rcx]{1to8}
-        vmovdqa64 zmm9, zmm12
-        vpternlogq zmm9, zmm7, zmm5, 0x96
-        vpternlogq zmm9, zmm3, zmm1, 0x96
-        vpermq zmm11, zmm24, zmm9
-        vpermq zmm9, zmm25, zmm9
-        vprolq zmm9, zmm9, 0x1
-        vpxorq zmm11, zmm11, zmm9
-        vmovdqa64 zmm9, zmm8
-        vpternlogq zmm9, zmm6, zmm4, 0x96
-        vpternlogq zmm9, zmm2, zmm0, 0x96
-        vpermq zmm10, zmm24, zmm9
-        vpermq zmm9, zmm25, zmm9
-        vprolq zmm9, zmm9, 0x1
-        vpxorq zmm10, zmm10, zmm9
-        vpxorq zmm12, zmm12, zmm11
-        vpxorq zmm8, zmm8, zmm10
-        vpxorq zmm7, zmm7, zmm11
-        vpxorq zmm6, zmm6, zmm10
-        vpxorq zmm5, zmm5, zmm11
-        vpxorq zmm4, zmm4, zmm10
-        vpxorq zmm3, zmm3, zmm11
-        vpxorq zmm2, zmm2, zmm10
-        vpxorq zmm1, zmm1, zmm11
-        vpxorq zmm0, zmm0, zmm10
-        vprolvq zmm12, zmm12, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm8, zmm8, zmmword ptr [rip + keccak_x86_rho]
-        vprolvq zmm7, zmm7, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm6, zmm6, zmmword ptr [rip + keccak_x86_rho + 64]
-        vprolvq zmm5, zmm5, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm4, zmm4, zmmword ptr [rip + keccak_x86_rho + 128]
-        vprolvq zmm3, zmm3, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm2, zmm2, zmmword ptr [rip + keccak_x86_rho + 192]
-        vprolvq zmm1, zmm1, zmmword ptr [rip + keccak_x86_rho + 256]
-        vprolvq zmm0, zmm0, zmmword ptr [rip + keccak_x86_rho + 256]
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm11, zmm12, zmm7
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm10, zmm5, zmm3
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm22, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm22, zmm9, zmm1
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi]
-        vpermi2q zmm11, zmm8, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 64]
-        vpermi2q zmm10, zmm4, zmm2
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
+        vmovdqa64 zmm0, zmm11
+        vpternlogq zmm0, zmm9, zmm7, 0x96
+        vpternlogq zmm0, zmm5, zmm3, 0x96
+        vpermq zmm15, zmm13, zmm0
+        vpermq zmm0, zmm14, zmm0
+        vprolq zmm0, zmm0, 0x1
+        vpxorq zmm15, zmm15, zmm0
+        vmovdqa64 zmm0, zmm10
+        vpternlogq zmm0, zmm8, zmm6, 0x96
+        vpternlogq zmm0, zmm4, zmm2, 0x96
+        vpermq zmm1, zmm13, zmm0
+        vpermq zmm0, zmm14, zmm0
+        vprolq zmm0, zmm0, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpxorq zmm11, zmm11, zmm15
+        vpxorq zmm10, zmm10, zmm1
+        vpxorq zmm9, zmm9, zmm15
+        vpxorq zmm8, zmm8, zmm1
+        vpxorq zmm7, zmm7, zmm15
+        vpxorq zmm6, zmm6, zmm1
+        vpxorq zmm5, zmm5, zmm15
+        vpxorq zmm4, zmm4, zmm1
+        vpxorq zmm3, zmm3, zmm15
+        vpxorq zmm2, zmm2, zmm1
+        vprolvq zmm11, zmm11, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm10, zmm10, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm9, zmm9, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm8, zmm8, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm7, zmm7, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm6, zmm6, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm5, zmm5, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm4, zmm4, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm3, zmm3, zmmword ptr [rip + keccak_x86_rho + 256]
+        vprolvq zmm2, zmm2, zmmword ptr [rip + keccak_x86_rho + 256]
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm15, zmm11, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm7, zmm5
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm24, zmmword ptr [rip + keccak_x86_pi + 128]
+        vpermi2q zmm24, zmm0, zmm3
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm15, zmm10, zmm8
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm6, zmm4
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
         vmovdqa64 zmm21, zmmword ptr [rip + keccak_x86_pi + 128]
-        vpermi2q zmm21, zmm9, zmm0
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm11, zmm12, zmm7
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm10, zmm5, zmm3
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
+        vpermi2q zmm21, zmm0, zmm2
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm15, zmm11, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm7, zmm5
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm23, zmmword ptr [rip + keccak_x86_pi + 320]
+        vpermi2q zmm23, zmm0, zmm3
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm15, zmm10, zmm8
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm6, zmm4
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
         vmovdqa64 zmm20, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm20, zmm9, zmm1
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 192]
-        vpermi2q zmm11, zmm8, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 256]
-        vpermi2q zmm10, zmm4, zmm2
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm19, zmmword ptr [rip + keccak_x86_pi + 320]
-        vpermi2q zmm19, zmm9, zmm0
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm11, zmm12, zmm7
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm10, zmm5, zmm3
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm18, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm18, zmm9, zmm1
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 384]
-        vpermi2q zmm11, zmm8, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 448]
-        vpermi2q zmm10, zmm4, zmm2
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm17, zmmword ptr [rip + keccak_x86_pi + 512]
-        vpermi2q zmm17, zmm9, zmm0
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm11, zmm12, zmm7
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm10, zmm5, zmm3
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm16, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm16, zmm9, zmm1
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 576]
-        vpermi2q zmm11, zmm8, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 640]
-        vpermi2q zmm10, zmm4, zmm2
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 704]
-        vpermi2q zmm15, zmm9, zmm0
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm11, zmm12, zmm7
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm10, zmm5, zmm3
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm14, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm14, zmm9, zmm1
-        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 768]
-        vpermi2q zmm11, zmm8, zmm6
-        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 832]
-        vpermi2q zmm10, zmm4, zmm2
-        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 960]
-        vpermi2q zmm9, zmm11, zmm10
-        vmovdqa64 zmm13, zmmword ptr [rip + keccak_x86_pi + 896]
-        vpermi2q zmm13, zmm9, zmm0
-        vpermq zmm11, zmm25, zmm22
-        vpermq zmm10, zmm23, zmm22
-        vpternlogq zmm22, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm21
-        vpermq zmm10, zmm23, zmm21
-        vpternlogq zmm21, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm20
-        vpermq zmm10, zmm23, zmm20
-        vpternlogq zmm20, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm19
-        vpermq zmm10, zmm23, zmm19
-        vpternlogq zmm19, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm18
-        vpermq zmm10, zmm23, zmm18
-        vpternlogq zmm18, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm17
-        vpermq zmm10, zmm23, zmm17
-        vpternlogq zmm17, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm16
-        vpermq zmm10, zmm23, zmm16
-        vpternlogq zmm16, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm15
-        vpermq zmm10, zmm23, zmm15
-        vpternlogq zmm15, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm14
-        vpermq zmm10, zmm23, zmm14
-        vpternlogq zmm14, zmm11, zmm10, 0xd2
-        vpermq zmm11, zmm25, zmm13
-        vpermq zmm10, zmm23, zmm13
-        vpternlogq zmm13, zmm11, zmm10, 0xd2
-        vpxorq zmm22{k1}, zmm22, qword ptr [rcx + 8]{1to8}
-        vpxorq zmm21{k1}, zmm21, qword ptr [rcx + 8]{1to8}
+        vpermi2q zmm20, zmm0, zmm2
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm15, zmm11, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm7, zmm5
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm22, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm22, zmm0, zmm3
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm15, zmm10, zmm8
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm6, zmm4
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm19, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm19, zmm0, zmm2
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm15, zmm11, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm7, zmm5
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm18, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm18, zmm0, zmm3
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm15, zmm10, zmm8
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm6, zmm4
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm17, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm17, zmm0, zmm2
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm15, zmm11, zmm9
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm7, zmm5
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm15, zmm1
+        vmovdqa64 zmm16, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm16, zmm0, zmm3
+        vmovdqa64 zmm3, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm3, zmm10, zmm8
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm6, zmm4
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm3, zmm1
+        vmovdqa64 zmm15, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm15, zmm0, zmm2
+        vpermq zmm1, zmm14, zmm24
+        vpermq zmm0, zmm12, zmm24
+        vpternlogq zmm24, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm21
+        vpermq zmm0, zmm12, zmm21
+        vpternlogq zmm21, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm23
+        vpermq zmm0, zmm12, zmm23
+        vpternlogq zmm23, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm20
+        vpermq zmm0, zmm12, zmm20
+        vpternlogq zmm20, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm22
+        vpermq zmm0, zmm12, zmm22
+        vpternlogq zmm22, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm19
+        vpermq zmm0, zmm12, zmm19
+        vpternlogq zmm19, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm18
+        vpermq zmm0, zmm12, zmm18
+        vpternlogq zmm18, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm17
+        vpermq zmm0, zmm12, zmm17
+        vpternlogq zmm17, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm16
+        vpermq zmm0, zmm12, zmm16
+        vpternlogq zmm16, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm15
+        vpermq zmm0, zmm12, zmm15
+        vpternlogq zmm15, zmm1, zmm0, 0xd2
+        vpxorq zmm24{k1}, zmm24, qword ptr [rcx]{1to8}
+        vpxorq zmm21{k1}, zmm21, qword ptr [rcx]{1to8}
+        vmovdqa64 zmm0, zmm24
+        vpternlogq zmm0, zmm23, zmm22, 0x96
+        vpternlogq zmm0, zmm18, zmm16, 0x96
+        vpermq zmm2, zmm13, zmm0
+        vpermq zmm0, zmm14, zmm0
+        vprolq zmm0, zmm0, 0x1
+        vpxorq zmm2, zmm2, zmm0
+        vmovdqa64 zmm0, zmm21
+        vpternlogq zmm0, zmm20, zmm19, 0x96
+        vpternlogq zmm0, zmm17, zmm15, 0x96
+        vpermq zmm1, zmm13, zmm0
+        vpermq zmm0, zmm14, zmm0
+        vprolq zmm0, zmm0, 0x1
+        vpxorq zmm1, zmm1, zmm0
+        vpxorq zmm24, zmm24, zmm2
+        vpxorq zmm21, zmm21, zmm1
+        vpxorq zmm23, zmm23, zmm2
+        vpxorq zmm20, zmm20, zmm1
+        vpxorq zmm22, zmm22, zmm2
+        vpxorq zmm19, zmm19, zmm1
+        vpxorq zmm18, zmm18, zmm2
+        vpxorq zmm17, zmm17, zmm1
+        vpxorq zmm16, zmm16, zmm2
+        vpxorq zmm15, zmm15, zmm1
+        vprolvq zmm24, zmm24, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm21, zmm21, zmmword ptr [rip + keccak_x86_rho]
+        vprolvq zmm23, zmm23, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm20, zmm20, zmmword ptr [rip + keccak_x86_rho + 64]
+        vprolvq zmm22, zmm22, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm19, zmm19, zmmword ptr [rip + keccak_x86_rho + 128]
+        vprolvq zmm18, zmm18, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm17, zmm17, zmmword ptr [rip + keccak_x86_rho + 192]
+        vprolvq zmm16, zmm16, zmmword ptr [rip + keccak_x86_rho + 256]
+        vprolvq zmm15, zmm15, zmmword ptr [rip + keccak_x86_rho + 256]
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm2, zmm24, zmm23
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm22, zmm18
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm11, zmmword ptr [rip + keccak_x86_pi + 128]
+        vpermi2q zmm11, zmm0, zmm16
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi]
+        vpermi2q zmm2, zmm21, zmm20
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 64]
+        vpermi2q zmm1, zmm19, zmm17
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm10, zmmword ptr [rip + keccak_x86_pi + 128]
+        vpermi2q zmm10, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm2, zmm24, zmm23
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm22, zmm18
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm9, zmmword ptr [rip + keccak_x86_pi + 320]
+        vpermi2q zmm9, zmm0, zmm16
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 192]
+        vpermi2q zmm2, zmm21, zmm20
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 256]
+        vpermi2q zmm1, zmm19, zmm17
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm8, zmmword ptr [rip + keccak_x86_pi + 320]
+        vpermi2q zmm8, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm2, zmm24, zmm23
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm22, zmm18
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm7, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm7, zmm0, zmm16
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 384]
+        vpermi2q zmm2, zmm21, zmm20
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 448]
+        vpermi2q zmm1, zmm19, zmm17
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm6, zmmword ptr [rip + keccak_x86_pi + 512]
+        vpermi2q zmm6, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm2, zmm24, zmm23
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm22, zmm18
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm5, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm5, zmm0, zmm16
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 576]
+        vpermi2q zmm2, zmm21, zmm20
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 640]
+        vpermi2q zmm1, zmm19, zmm17
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm4, zmmword ptr [rip + keccak_x86_pi + 704]
+        vpermi2q zmm4, zmm0, zmm15
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm2, zmm24, zmm23
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm22, zmm18
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm3, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm3, zmm0, zmm16
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 768]
+        vpermi2q zmm2, zmm21, zmm20
+        vmovdqa64 zmm1, zmmword ptr [rip + keccak_x86_pi + 832]
+        vpermi2q zmm1, zmm19, zmm17
+        vmovdqa64 zmm0, zmmword ptr [rip + keccak_x86_pi + 960]
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm2, zmmword ptr [rip + keccak_x86_pi + 896]
+        vpermi2q zmm2, zmm0, zmm15
+        vpermq zmm1, zmm14, zmm11
+        vpermq zmm0, zmm12, zmm11
+        vpternlogq zmm11, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm10
+        vpermq zmm0, zmm12, zmm10
+        vpternlogq zmm10, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm9
+        vpermq zmm0, zmm12, zmm9
+        vpternlogq zmm9, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm8
+        vpermq zmm0, zmm12, zmm8
+        vpternlogq zmm8, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm7
+        vpermq zmm0, zmm12, zmm7
+        vpternlogq zmm7, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm6
+        vpermq zmm0, zmm12, zmm6
+        vpternlogq zmm6, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm5
+        vpermq zmm0, zmm12, zmm5
+        vpternlogq zmm5, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm4
+        vpermq zmm0, zmm12, zmm4
+        vpternlogq zmm4, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm3
+        vpermq zmm0, zmm12, zmm3
+        vpternlogq zmm3, zmm1, zmm0, 0xd2
+        vpermq zmm1, zmm14, zmm2
+        vpermq zmm0, zmm12, zmm2
+        vpternlogq zmm2, zmm1, zmm0, 0xd2
+        vpxorq zmm11{k1}, zmm11, qword ptr [rcx + 8]{1to8}
+        vpxorq zmm10{k1}, zmm10, qword ptr [rcx + 8]{1to8}
         add rcx, 0x10
         sub eax, 0x1
         jnz .Lkeccak_f1600_x2_x86_round2x
-        vmovdqu64 zmmword ptr [rdi]{k2}, zmm22
-        vmovdqu64 zmmword ptr [rsi]{k2}, zmm21
-        vmovdqu64 zmmword ptr [rdi + 40]{k2}, zmm20
-        vmovdqu64 zmmword ptr [rsi + 40]{k2}, zmm19
-        vmovdqu64 zmmword ptr [rdi + 80]{k2}, zmm18
-        vmovdqu64 zmmword ptr [rsi + 80]{k2}, zmm17
-        vmovdqu64 zmmword ptr [rdi + 120]{k2}, zmm16
-        vmovdqu64 zmmword ptr [rsi + 120]{k2}, zmm15
-        vmovdqu64 zmmword ptr [rdi + 160]{k2}, zmm14
-        vmovdqu64 zmmword ptr [rsi + 160]{k2}, zmm13
+        vmovdqu64 zmmword ptr [rdi]{k2}, zmm11
+        vmovdqu64 zmmword ptr [rsi]{k2}, zmm10
+        vmovdqu64 zmmword ptr [rdi + 40]{k2}, zmm9
+        vmovdqu64 zmmword ptr [rsi + 40]{k2}, zmm8
+        vmovdqu64 zmmword ptr [rdi + 80]{k2}, zmm7
+        vmovdqu64 zmmword ptr [rsi + 80]{k2}, zmm6
+        vmovdqu64 zmmword ptr [rdi + 120]{k2}, zmm5
+        vmovdqu64 zmmword ptr [rsi + 120]{k2}, zmm4
+        vmovdqu64 zmmword ptr [rdi + 160]{k2}, zmm3
+        vmovdqu64 zmmword ptr [rsi + 160]{k2}, zmm2
         vzeroupper
         ret
         .size   keccak_f1600_x2_x86, .-keccak_f1600_x2_x86

@@ -13,37 +13,37 @@ rktcrypto_poly1305_blocks_x86:
         push    r13
         push    r14
         push    r15
-        mov r15, rdx
+        mov r14, rdx
         test rcx, rcx
         jz .Lrktcrypto_poly1305_blocks_x86_done
         mov rdx, qword ptr [rdi]
-        mov r14, qword ptr [rdi + 8]
+        mov r15, qword ptr [rdi + 8]
         mov r13, qword ptr [rdi + 16]
         mov r12, qword ptr [rsi]
         mov rbx, qword ptr [rsi + 8]
-        mov rbp, qword ptr [rsi + 16]
+        mov r11, qword ptr [rsi + 16]
 .Lrktcrypto_poly1305_blocks_x86_blk:
-        add rdx, qword ptr [r15]
-        adc r14, qword ptr [r15 + 8]
+        add rdx, qword ptr [r14]
+        adc r15, qword ptr [r14 + 8]
         adc r13, r8
-        mulx r11, r10, r12
+        mulx rbp, r10, r12
         mulx r9, rsi, rbx
-        mov rdx, r14
-        mulx r14, rax, r12
+        mov rdx, r15
+        mulx r15, rax, r12
         add rsi, rax
-        adc r9, r14
-        mulx r14, rax, rbp
+        adc r9, r15
+        mulx rdx, rax, r11
         add r10, rax
-        adc r11, r14
+        adc rbp, rdx
         mov rax, r13
-        imul rax, rbp
+        imul rax, r11
         add rsi, rax
         adc r9, 0x0
         imul r13, r12
-        add r11, rsi
+        add rbp, rsi
         adc r9, r13
         mov rdx, r10
-        mov r14, r11
+        mov r15, rbp
         mov rax, -0x4
         and rax, r9
         mov r13, r9
@@ -51,13 +51,13 @@ rktcrypto_poly1305_blocks_x86:
         and r13, 0x3
         add rax, r9
         add rdx, rax
-        adc r14, 0x0
+        adc r15, 0x0
         adc r13, 0x0
-        add r15, 0x10
+        add r14, 0x10
         sub rcx, 0x1
         jnz .Lrktcrypto_poly1305_blocks_x86_blk
         mov qword ptr [rdi], rdx
-        mov qword ptr [rdi + 8], r14
+        mov qword ptr [rdi + 8], r15
         mov qword ptr [rdi + 16], r13
 .Lrktcrypto_poly1305_blocks_x86_done:
         pop     r15

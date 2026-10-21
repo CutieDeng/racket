@@ -46,8 +46,8 @@ rktcrypto_sha512_blocks_avx512_x86:
         sub     rsp, 640
         test rdx, rdx
         jz .Lrktcrypto_sha512_blocks_avx512_x86_done
-        vmovdqa64 ymm9, ymmword ptr [rip + sha512_avx512_bswap]
-        vpxorq ymm8, ymm8, ymm8
+        vmovdqa64 ymm7, ymmword ptr [rip + sha512_avx512_bswap]
+        vpxorq ymm6, ymm6, ymm6
         mov r15, qword ptr [rdi]
         mov r14, qword ptr [rdi + 8]
         mov r13, qword ptr [rdi + 16]
@@ -57,35 +57,35 @@ rktcrypto_sha512_blocks_avx512_x86:
         mov r10, qword ptr [rdi + 48]
         mov r9, qword ptr [rdi + 56]
 .Lrktcrypto_sha512_blocks_avx512_x86_blk:
-        vmovdqu64 ymm7, ymmword ptr [rsi]
-        vpshufb ymm7, ymm7, ymm9
-        vpaddq ymm6, ymm7, ymmword ptr [rip + sha512_avx512_k]
-        vmovdqu64 ymmword ptr [rsp], ymm6
+        vmovdqu64 ymm2, ymmword ptr [rsi]
+        vpshufb ymm2, ymm2, ymm7
+        vpaddq ymm0, ymm2, ymmword ptr [rip + sha512_avx512_k]
+        vmovdqu64 ymmword ptr [rsp], ymm0
         vmovdqu64 ymm5, ymmword ptr [rsi + 32]
-        vpshufb ymm5, ymm5, ymm9
-        vpaddq ymm6, ymm5, ymmword ptr [rip + sha512_avx512_k + 32]
-        vmovdqu64 ymmword ptr [rsp + 32], ymm6
+        vpshufb ymm5, ymm5, ymm7
+        vpaddq ymm0, ymm5, ymmword ptr [rip + sha512_avx512_k + 32]
+        vmovdqu64 ymmword ptr [rsp + 32], ymm0
         vmovdqu64 ymm4, ymmword ptr [rsi + 64]
-        vpshufb ymm4, ymm4, ymm9
-        vpaddq ymm6, ymm4, ymmword ptr [rip + sha512_avx512_k + 64]
-        vmovdqu64 ymmword ptr [rsp + 64], ymm6
-        vmovdqu64 ymm3, ymmword ptr [rsi + 96]
-        vpshufb ymm3, ymm3, ymm9
-        vpaddq ymm6, ymm3, ymmword ptr [rip + sha512_avx512_k + 96]
-        vmovdqu64 ymmword ptr [rsp + 96], ymm6
-        valignq ymm2, ymm5, ymm7, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm3, ymm4, 0x1
+        vpshufb ymm4, ymm4, ymm7
+        vpaddq ymm0, ymm4, ymmword ptr [rip + sha512_avx512_k + 64]
+        vmovdqu64 ymmword ptr [rsp + 64], ymm0
+        vmovdqu64 ymm8, ymmword ptr [rsi + 96]
+        vpshufb ymm8, ymm8, ymm7
+        vpaddq ymm0, ymm8, ymmword ptr [rip + sha512_avx512_k + 96]
+        vmovdqu64 ymmword ptr [rsp + 96], ymm0
+        valignq ymm1, ymm5, ymm2, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm8, ymm4, 0x1
         add r9, qword ptr [rsp]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -94,10 +94,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -106,18 +106,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm7
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm3, 0x13
-        vprorq ymm2, ymm3, 0x3d
-        vpsrlq ymm0, ymm3, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpaddq ymm3, ymm3, ymm2
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm8, 0x13
+        vprorq ymm1, ymm8, 0x3d
+        vpsrlq ymm0, ymm8, 0x6
+        vpxorq ymm2, ymm2, ymm1
         add r10, qword ptr [rsp + 8]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -126,10 +126,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -138,18 +138,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r11, qword ptr [rsp + 16]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -158,10 +158,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -170,18 +170,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm7, ymm6, ymm1
-        vpaddq ymm1, ymm7, ymmword ptr [rip + sha512_avx512_k + 128]
-        vmovdqu64 ymmword ptr [rsp + 128], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm9, ymm3, ymm2
+        vpaddq ymm0, ymm9, ymmword ptr [rip + sha512_avx512_k + 128]
+        vmovdqu64 ymmword ptr [rsp + 128], ymm0
         add rbx, qword ptr [rsp + 24]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -190,10 +190,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -202,19 +202,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm4, ymm5, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm7, ymm3, 0x1
+        valignq ymm1, ymm4, ymm5, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm9, ymm8, 0x1
         add r12, qword ptr [rsp + 32]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -223,10 +223,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -235,18 +235,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm5
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm7, 0x13
-        vprorq ymm2, ymm7, 0x3d
-        vpsrlq ymm0, ymm7, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpaddq ymm3, ymm3, ymm5
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm9, 0x13
+        vprorq ymm1, ymm9, 0x3d
+        vpsrlq ymm0, ymm9, 0x6
+        vpxorq ymm2, ymm2, ymm1
         add r13, qword ptr [rsp + 40]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -255,10 +255,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -267,18 +267,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r14, qword ptr [rsp + 48]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -287,10 +287,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -299,18 +299,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm5, ymm6, ymm1
-        vpaddq ymm1, ymm5, ymmword ptr [rip + sha512_avx512_k + 160]
-        vmovdqu64 ymmword ptr [rsp + 160], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm5, ymm3, ymm2
+        vpaddq ymm0, ymm5, ymmword ptr [rip + sha512_avx512_k + 160]
+        vmovdqu64 ymmword ptr [rsp + 160], ymm0
         add r15, qword ptr [rsp + 56]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -319,10 +319,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -331,19 +331,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r15, r8
-        valignq ymm2, ymm3, ymm4, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm5, ymm7, 0x1
+        valignq ymm1, ymm8, ymm4, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm5, ymm9, 0x1
         add r9, qword ptr [rsp + 64]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -352,10 +352,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -364,18 +364,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm4
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm5, 0x13
-        vprorq ymm2, ymm5, 0x3d
+        vpaddq ymm3, ymm3, ymm4
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm5, 0x13
+        vprorq ymm1, ymm5, 0x3d
         vpsrlq ymm0, ymm5, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpxorq ymm2, ymm2, ymm1
         add r10, qword ptr [rsp + 72]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -384,10 +384,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -396,18 +396,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r11, qword ptr [rsp + 80]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -416,10 +416,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -428,18 +428,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm4, ymm6, ymm1
-        vpaddq ymm1, ymm4, ymmword ptr [rip + sha512_avx512_k + 192]
-        vmovdqu64 ymmword ptr [rsp + 192], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm4, ymm3, ymm2
+        vpaddq ymm0, ymm4, ymmword ptr [rip + sha512_avx512_k + 192]
+        vmovdqu64 ymmword ptr [rsp + 192], ymm0
         add rbx, qword ptr [rsp + 88]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -448,10 +448,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -460,19 +460,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm7, ymm3, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm4, ymm5, 0x1
+        valignq ymm1, ymm9, ymm8, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm4, ymm5, 0x1
         add r12, qword ptr [rsp + 96]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -481,10 +481,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -493,18 +493,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm3
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm4, 0x13
-        vprorq ymm2, ymm4, 0x3d
+        vpaddq ymm3, ymm3, ymm8
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm4, 0x13
+        vprorq ymm1, ymm4, 0x3d
         vpsrlq ymm0, ymm4, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpxorq ymm2, ymm2, ymm1
         add r13, qword ptr [rsp + 104]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -513,10 +513,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -525,18 +525,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r14, qword ptr [rsp + 112]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -545,10 +545,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -557,18 +557,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm3, ymm6, ymm1
-        vpaddq ymm1, ymm3, ymmword ptr [rip + sha512_avx512_k + 224]
-        vmovdqu64 ymmword ptr [rsp + 224], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm8, ymm3, ymm2
+        vpaddq ymm0, ymm8, ymmword ptr [rip + sha512_avx512_k + 224]
+        vmovdqu64 ymmword ptr [rsp + 224], ymm0
         add r15, qword ptr [rsp + 120]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -577,10 +577,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -589,19 +589,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r15, r8
-        valignq ymm2, ymm5, ymm7, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm3, ymm4, 0x1
+        valignq ymm1, ymm5, ymm9, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm8, ymm4, 0x1
         add r9, qword ptr [rsp + 128]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -610,10 +610,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -622,18 +622,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm7
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm3, 0x13
-        vprorq ymm2, ymm3, 0x3d
-        vpsrlq ymm0, ymm3, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpaddq ymm3, ymm3, ymm9
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm8, 0x13
+        vprorq ymm1, ymm8, 0x3d
+        vpsrlq ymm0, ymm8, 0x6
+        vpxorq ymm2, ymm2, ymm1
         add r10, qword ptr [rsp + 136]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -642,10 +642,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -654,18 +654,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r11, qword ptr [rsp + 144]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -674,10 +674,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -686,18 +686,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm7, ymm6, ymm1
-        vpaddq ymm1, ymm7, ymmword ptr [rip + sha512_avx512_k + 256]
-        vmovdqu64 ymmword ptr [rsp + 256], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm9, ymm3, ymm2
+        vpaddq ymm0, ymm9, ymmword ptr [rip + sha512_avx512_k + 256]
+        vmovdqu64 ymmword ptr [rsp + 256], ymm0
         add rbx, qword ptr [rsp + 152]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -706,10 +706,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -718,19 +718,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm4, ymm5, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm7, ymm3, 0x1
+        valignq ymm1, ymm4, ymm5, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm9, ymm8, 0x1
         add r12, qword ptr [rsp + 160]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -739,10 +739,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -751,18 +751,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm5
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm7, 0x13
-        vprorq ymm2, ymm7, 0x3d
-        vpsrlq ymm0, ymm7, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpaddq ymm3, ymm3, ymm5
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm9, 0x13
+        vprorq ymm1, ymm9, 0x3d
+        vpsrlq ymm0, ymm9, 0x6
+        vpxorq ymm2, ymm2, ymm1
         add r13, qword ptr [rsp + 168]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -771,10 +771,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -783,18 +783,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r14, qword ptr [rsp + 176]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -803,10 +803,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -815,18 +815,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm5, ymm6, ymm1
-        vpaddq ymm1, ymm5, ymmword ptr [rip + sha512_avx512_k + 288]
-        vmovdqu64 ymmword ptr [rsp + 288], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm5, ymm3, ymm2
+        vpaddq ymm0, ymm5, ymmword ptr [rip + sha512_avx512_k + 288]
+        vmovdqu64 ymmword ptr [rsp + 288], ymm0
         add r15, qword ptr [rsp + 184]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -835,10 +835,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -847,19 +847,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r15, r8
-        valignq ymm2, ymm3, ymm4, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm5, ymm7, 0x1
+        valignq ymm1, ymm8, ymm4, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm5, ymm9, 0x1
         add r9, qword ptr [rsp + 192]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -868,10 +868,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -880,18 +880,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm4
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm5, 0x13
-        vprorq ymm2, ymm5, 0x3d
+        vpaddq ymm3, ymm3, ymm4
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm5, 0x13
+        vprorq ymm1, ymm5, 0x3d
         vpsrlq ymm0, ymm5, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpxorq ymm2, ymm2, ymm1
         add r10, qword ptr [rsp + 200]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -900,10 +900,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -912,18 +912,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r11, qword ptr [rsp + 208]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -932,10 +932,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -944,18 +944,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm4, ymm6, ymm1
-        vpaddq ymm1, ymm4, ymmword ptr [rip + sha512_avx512_k + 320]
-        vmovdqu64 ymmword ptr [rsp + 320], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm4, ymm3, ymm2
+        vpaddq ymm0, ymm4, ymmword ptr [rip + sha512_avx512_k + 320]
+        vmovdqu64 ymmword ptr [rsp + 320], ymm0
         add rbx, qword ptr [rsp + 216]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -964,10 +964,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -976,19 +976,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm7, ymm3, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm4, ymm5, 0x1
+        valignq ymm1, ymm9, ymm8, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm4, ymm5, 0x1
         add r12, qword ptr [rsp + 224]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -997,10 +997,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -1009,18 +1009,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm3
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm4, 0x13
-        vprorq ymm2, ymm4, 0x3d
+        vpaddq ymm3, ymm3, ymm8
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm4, 0x13
+        vprorq ymm1, ymm4, 0x3d
         vpsrlq ymm0, ymm4, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpxorq ymm2, ymm2, ymm1
         add r13, qword ptr [rsp + 232]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -1029,10 +1029,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -1041,18 +1041,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
         add r14, qword ptr [rsp + 240]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -1061,10 +1061,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -1073,18 +1073,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm3, ymm6, ymm1
-        vpaddq ymm1, ymm3, ymmword ptr [rip + sha512_avx512_k + 352]
-        vmovdqu64 ymmword ptr [rsp + 352], ymm1
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm8, ymm3, ymm2
+        vpaddq ymm0, ymm8, ymmword ptr [rip + sha512_avx512_k + 352]
+        vmovdqu64 ymmword ptr [rsp + 352], ymm0
         add r15, qword ptr [rsp + 248]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -1093,10 +1093,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -1105,19 +1105,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r15, r8
-        valignq ymm2, ymm5, ymm7, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm3, ymm4, 0x1
+        valignq ymm1, ymm5, ymm9, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm8, ymm4, 0x1
         add r9, qword ptr [rsp + 256]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -1126,10 +1126,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -1138,18 +1138,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm7
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm3, 0x13
-        vprorq ymm2, ymm3, 0x3d
-        vpsrlq ymm0, ymm3, 0x6
-        vpxorq ymm1, ymm1, ymm2
+        vpaddq ymm3, ymm3, ymm9
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm8, 0x13
+        vprorq ymm1, ymm8, 0x3d
+        vpsrlq ymm0, ymm8, 0x6
+        vpxorq ymm2, ymm2, ymm1
         add r10, qword ptr [rsp + 264]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -1158,10 +1158,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -1170,534 +1170,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r11, qword ptr [rsp + 272]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
-        rorx rcx, r13, 0xe
-        rorx rax, r13, 0x12
-        xor rcx, rax
-        rorx rax, r13, 0x29
-        xor rcx, rax
-        add r11, rcx
-        add r14, r11
-        rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
-        mov rcx, r10
-        and rcx, r9
-        mov rax, r10
-        or rax, r9
-        and rax, r15
-        or rax, rcx
-        add r8, rax
-        add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm7, ymm6, ymm1
-        vpaddq ymm1, ymm7, ymmword ptr [rip + sha512_avx512_k + 384]
-        vmovdqu64 ymmword ptr [rsp + 384], ymm1
-        add rbx, qword ptr [rsp + 280]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
-        rorx rcx, r14, 0xe
-        rorx rax, r14, 0x12
-        xor rcx, rax
-        rorx rax, r14, 0x29
-        xor rcx, rax
-        add rbx, rcx
-        add r15, rbx
-        rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
-        mov rcx, r11
-        and rcx, r10
-        mov rax, r11
-        or rax, r10
-        and rax, r9
-        or rax, rcx
-        add r8, rax
-        add rbx, r8
-        valignq ymm2, ymm4, ymm5, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm7, ymm3, 0x1
-        add r12, qword ptr [rsp + 288]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
-        rorx rcx, r15, 0xe
-        rorx rax, r15, 0x12
-        xor rcx, rax
-        rorx rax, r15, 0x29
-        xor rcx, rax
-        add r12, rcx
-        add r9, r12
-        rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
-        mov rcx, rbx
-        and rcx, r11
-        mov rax, rbx
-        or rax, r11
-        and rax, r10
-        or rax, rcx
-        add r8, rax
-        add r12, r8
-        vpaddq ymm6, ymm6, ymm5
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm7, 0x13
-        vprorq ymm2, ymm7, 0x3d
-        vpsrlq ymm0, ymm7, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r13, qword ptr [rsp + 296]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
-        rorx rcx, r9, 0xe
-        rorx rax, r9, 0x12
-        xor rcx, rax
-        rorx rax, r9, 0x29
-        xor rcx, rax
-        add r13, rcx
-        add r10, r13
-        rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
-        mov rcx, r12
-        and rcx, rbx
-        mov rax, r12
-        or rax, rbx
-        and rax, r11
-        or rax, rcx
-        add r8, rax
-        add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r14, qword ptr [rsp + 304]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
-        rorx rcx, r10, 0xe
-        rorx rax, r10, 0x12
-        xor rcx, rax
-        rorx rax, r10, 0x29
-        xor rcx, rax
-        add r14, rcx
-        add r11, r14
-        rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
-        mov rcx, r13
-        and rcx, r12
-        mov rax, r13
-        or rax, r12
-        and rax, rbx
-        or rax, rcx
-        add r8, rax
-        add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm5, ymm6, ymm1
-        vpaddq ymm1, ymm5, ymmword ptr [rip + sha512_avx512_k + 416]
-        vmovdqu64 ymmword ptr [rsp + 416], ymm1
-        add r15, qword ptr [rsp + 312]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
-        rorx rcx, r11, 0xe
-        rorx rax, r11, 0x12
-        xor rcx, rax
-        rorx rax, r11, 0x29
-        xor rcx, rax
-        add r15, rcx
-        add rbx, r15
-        rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
-        mov rcx, r14
-        and rcx, r13
-        mov rax, r14
-        or rax, r13
-        and rax, r12
-        or rax, rcx
-        add r8, rax
-        add r15, r8
-        valignq ymm2, ymm3, ymm4, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm5, ymm7, 0x1
-        add r9, qword ptr [rsp + 320]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
-        rorx rcx, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor rcx, rax
-        rorx rax, rbx, 0x29
-        xor rcx, rax
-        add r9, rcx
-        add r12, r9
-        rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov rax, r15
-        or rax, r14
-        and rax, r13
-        or rax, rcx
-        add r8, rax
-        add r9, r8
-        vpaddq ymm6, ymm6, ymm4
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm5, 0x13
-        vprorq ymm2, ymm5, 0x3d
-        vpsrlq ymm0, ymm5, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r10, qword ptr [rsp + 328]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
-        rorx rcx, r12, 0xe
-        rorx rax, r12, 0x12
-        xor rcx, rax
-        rorx rax, r12, 0x29
-        xor rcx, rax
-        add r10, rcx
-        add r13, r10
-        rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
-        mov rcx, r9
-        and rcx, r15
-        mov rax, r9
-        or rax, r15
-        and rax, r14
-        or rax, rcx
-        add r8, rax
-        add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r11, qword ptr [rsp + 336]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
-        rorx rcx, r13, 0xe
-        rorx rax, r13, 0x12
-        xor rcx, rax
-        rorx rax, r13, 0x29
-        xor rcx, rax
-        add r11, rcx
-        add r14, r11
-        rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
-        mov rcx, r10
-        and rcx, r9
-        mov rax, r10
-        or rax, r9
-        and rax, r15
-        or rax, rcx
-        add r8, rax
-        add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm4, ymm6, ymm1
-        vpaddq ymm1, ymm4, ymmword ptr [rip + sha512_avx512_k + 448]
-        vmovdqu64 ymmword ptr [rsp + 448], ymm1
-        add rbx, qword ptr [rsp + 344]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
-        rorx rcx, r14, 0xe
-        rorx rax, r14, 0x12
-        xor rcx, rax
-        rorx rax, r14, 0x29
-        xor rcx, rax
-        add rbx, rcx
-        add r15, rbx
-        rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
-        mov rcx, r11
-        and rcx, r10
-        mov rax, r11
-        or rax, r10
-        and rax, r9
-        or rax, rcx
-        add r8, rax
-        add rbx, r8
-        valignq ymm2, ymm7, ymm3, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm4, ymm5, 0x1
-        add r12, qword ptr [rsp + 352]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
-        rorx rcx, r15, 0xe
-        rorx rax, r15, 0x12
-        xor rcx, rax
-        rorx rax, r15, 0x29
-        xor rcx, rax
-        add r12, rcx
-        add r9, r12
-        rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
-        mov rcx, rbx
-        and rcx, r11
-        mov rax, rbx
-        or rax, r11
-        and rax, r10
-        or rax, rcx
-        add r8, rax
-        add r12, r8
-        vpaddq ymm6, ymm6, ymm3
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm4, 0x13
-        vprorq ymm2, ymm4, 0x3d
-        vpsrlq ymm0, ymm4, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r13, qword ptr [rsp + 360]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
-        rorx rcx, r9, 0xe
-        rorx rax, r9, 0x12
-        xor rcx, rax
-        rorx rax, r9, 0x29
-        xor rcx, rax
-        add r13, rcx
-        add r10, r13
-        rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
-        mov rcx, r12
-        and rcx, rbx
-        mov rax, r12
-        or rax, rbx
-        and rax, r11
-        or rax, rcx
-        add r8, rax
-        add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r14, qword ptr [rsp + 368]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
-        rorx rcx, r10, 0xe
-        rorx rax, r10, 0x12
-        xor rcx, rax
-        rorx rax, r10, 0x29
-        xor rcx, rax
-        add r14, rcx
-        add r11, r14
-        rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
-        mov rcx, r13
-        and rcx, r12
-        mov rax, r13
-        or rax, r12
-        and rax, rbx
-        or rax, rcx
-        add r8, rax
-        add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm3, ymm6, ymm1
-        vpaddq ymm1, ymm3, ymmword ptr [rip + sha512_avx512_k + 480]
-        vmovdqu64 ymmword ptr [rsp + 480], ymm1
-        add r15, qword ptr [rsp + 376]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
-        rorx rcx, r11, 0xe
-        rorx rax, r11, 0x12
-        xor rcx, rax
-        rorx rax, r11, 0x29
-        xor rcx, rax
-        add r15, rcx
-        add rbx, r15
-        rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
-        mov rcx, r14
-        and rcx, r13
-        mov rax, r14
-        or rax, r13
-        and rax, r12
-        or rax, rcx
-        add r8, rax
-        add r15, r8
-        valignq ymm2, ymm5, ymm7, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm3, ymm4, 0x1
-        add r9, qword ptr [rsp + 384]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
-        rorx rcx, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor rcx, rax
-        rorx rax, rbx, 0x29
-        xor rcx, rax
-        add r9, rcx
-        add r12, r9
-        rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov rax, r15
-        or rax, r14
-        and rax, r13
-        or rax, rcx
-        add r8, rax
-        add r9, r8
-        vpaddq ymm6, ymm6, ymm7
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm3, 0x13
-        vprorq ymm2, ymm3, 0x3d
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
         vpsrlq ymm0, ymm3, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r10, qword ptr [rsp + 392]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
-        rorx rcx, r12, 0xe
-        rorx rax, r12, 0x12
-        xor rcx, rax
-        rorx rax, r12, 0x29
-        xor rcx, rax
-        add r10, rcx
-        add r13, r10
-        rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
-        mov rcx, r9
-        and rcx, r15
-        mov rax, r9
-        or rax, r15
-        and rax, r14
-        or rax, rcx
-        add r8, rax
-        add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r11, qword ptr [rsp + 400]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        add r11, qword ptr [rsp + 272]
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -1706,10 +1190,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -1718,18 +1202,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm7, ymm6, ymm1
-        vpaddq ymm1, ymm7, ymmword ptr [rip + sha512_avx512_k + 512]
-        vmovdqu64 ymmword ptr [rsp + 512], ymm1
-        add rbx, qword ptr [rsp + 408]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm9, ymm3, ymm2
+        vpaddq ymm0, ymm9, ymmword ptr [rip + sha512_avx512_k + 384]
+        vmovdqu64 ymmword ptr [rsp + 384], ymm0
+        add rbx, qword ptr [rsp + 280]
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -1738,10 +1222,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -1750,19 +1234,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm4, ymm5, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm7, ymm3, 0x1
-        add r12, qword ptr [rsp + 416]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        valignq ymm1, ymm4, ymm5, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm9, ymm8, 0x1
+        add r12, qword ptr [rsp + 288]
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -1771,10 +1255,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -1783,18 +1267,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm5
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm7, 0x13
-        vprorq ymm2, ymm7, 0x3d
-        vpsrlq ymm0, ymm7, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r13, qword ptr [rsp + 424]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        vpaddq ymm3, ymm3, ymm5
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm9, 0x13
+        vprorq ymm1, ymm9, 0x3d
+        vpsrlq ymm0, ymm9, 0x6
+        vpxorq ymm2, ymm2, ymm1
+        add r13, qword ptr [rsp + 296]
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -1803,10 +1287,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -1815,18 +1299,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r14, qword ptr [rsp + 432]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r14, qword ptr [rsp + 304]
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -1835,10 +1319,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -1847,18 +1331,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm5, ymm6, ymm1
-        vpaddq ymm1, ymm5, ymmword ptr [rip + sha512_avx512_k + 544]
-        vmovdqu64 ymmword ptr [rsp + 544], ymm1
-        add r15, qword ptr [rsp + 440]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm5, ymm3, ymm2
+        vpaddq ymm0, ymm5, ymmword ptr [rip + sha512_avx512_k + 416]
+        vmovdqu64 ymmword ptr [rsp + 416], ymm0
+        add r15, qword ptr [rsp + 312]
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -1867,10 +1351,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -1879,19 +1363,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r15, r8
-        valignq ymm2, ymm3, ymm4, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm5, ymm7, 0x1
-        add r9, qword ptr [rsp + 448]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        valignq ymm1, ymm8, ymm4, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm5, ymm9, 0x1
+        add r9, qword ptr [rsp + 320]
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -1900,10 +1384,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -1912,18 +1396,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r9, r8
-        vpaddq ymm6, ymm6, ymm4
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm5, 0x13
-        vprorq ymm2, ymm5, 0x3d
+        vpaddq ymm3, ymm3, ymm4
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm5, 0x13
+        vprorq ymm1, ymm5, 0x3d
         vpsrlq ymm0, ymm5, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r10, qword ptr [rsp + 456]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        vpxorq ymm2, ymm2, ymm1
+        add r10, qword ptr [rsp + 328]
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -1932,10 +1416,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -1944,18 +1428,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r10, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r11, qword ptr [rsp + 464]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r11, qword ptr [rsp + 336]
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -1964,10 +1448,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -1976,18 +1460,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r11, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm4, ymm6, ymm1
-        vpaddq ymm1, ymm4, ymmword ptr [rip + sha512_avx512_k + 576]
-        vmovdqu64 ymmword ptr [rsp + 576], ymm1
-        add rbx, qword ptr [rsp + 472]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm4, ymm3, ymm2
+        vpaddq ymm0, ymm4, ymmword ptr [rip + sha512_avx512_k + 448]
+        vmovdqu64 ymmword ptr [rsp + 448], ymm0
+        add rbx, qword ptr [rsp + 344]
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -1996,10 +1480,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -2008,19 +1492,19 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add rbx, r8
-        valignq ymm2, ymm7, ymm3, 0x1
-        vprorq ymm6, ymm2, 0x1
-        vprorq ymm1, ymm2, 0x8
-        vpsrlq ymm2, ymm2, 0x7
-        vpxorq ymm6, ymm6, ymm1
-        vpxorq ymm6, ymm6, ymm2
-        valignq ymm1, ymm4, ymm5, 0x1
-        add r12, qword ptr [rsp + 480]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        valignq ymm1, ymm9, ymm8, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm4, ymm5, 0x1
+        add r12, qword ptr [rsp + 352]
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -2029,10 +1513,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -2041,18 +1525,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r12, r8
-        vpaddq ymm6, ymm6, ymm3
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm4, 0x13
-        vprorq ymm2, ymm4, 0x3d
+        vpaddq ymm3, ymm3, ymm8
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm4, 0x13
+        vprorq ymm1, ymm4, 0x3d
         vpsrlq ymm0, ymm4, 0x6
-        vpxorq ymm1, ymm1, ymm2
-        add r13, qword ptr [rsp + 488]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        vpxorq ymm2, ymm2, ymm1
+        add r13, qword ptr [rsp + 360]
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -2061,10 +1545,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -2073,18 +1557,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r13, r8
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm8, ymm1, 0x2
-        vpaddq ymm6, ymm6, ymm1
-        vprorq ymm1, ymm6, 0x13
-        vprorq ymm2, ymm6, 0x3d
-        vpsrlq ymm0, ymm6, 0x6
-        add r14, qword ptr [rsp + 496]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r14, qword ptr [rsp + 368]
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -2093,10 +1577,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -2105,18 +1589,18 @@ rktcrypto_sha512_blocks_avx512_x86:
         or rax, rcx
         add r8, rax
         add r14, r8
-        vpxorq ymm1, ymm1, ymm2
-        vpxorq ymm1, ymm1, ymm0
-        valignq ymm1, ymm1, ymm8, 0x2
-        vpaddq ymm3, ymm6, ymm1
-        vpaddq ymm1, ymm3, ymmword ptr [rip + sha512_avx512_k + 608]
-        vmovdqu64 ymmword ptr [rsp + 608], ymm1
-        add r15, qword ptr [rsp + 504]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm8, ymm3, ymm2
+        vpaddq ymm0, ymm8, ymmword ptr [rip + sha512_avx512_k + 480]
+        vmovdqu64 ymmword ptr [rsp + 480], ymm0
+        add r15, qword ptr [rsp + 376]
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -2125,10 +1609,526 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
+        mov rcx, r14
+        and rcx, r13
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
+        add r8, rax
+        add r15, r8
+        valignq ymm1, ymm5, ymm9, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm8, ymm4, 0x1
+        add r9, qword ptr [rsp + 384]
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx r8, r15, 0x1c
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
+        mov rcx, r15
+        and rcx, r14
+        mov rax, r15
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r8, rax
+        add r9, r8
+        vpaddq ymm3, ymm3, ymm9
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm8, 0x13
+        vprorq ymm1, ymm8, 0x3d
+        vpsrlq ymm0, ymm8, 0x6
+        vpxorq ymm2, ymm2, ymm1
+        add r10, qword ptr [rsp + 392]
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
+        rorx rax, r12, 0x12
+        xor rcx, rax
+        rorx rax, r12, 0x29
+        xor rcx, rax
+        add r10, rcx
+        add r13, r10
+        rorx r8, r9, 0x1c
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
+        mov rcx, r9
+        and rcx, r15
+        mov rax, r9
+        or rax, r15
+        and rax, r14
+        or rax, rcx
+        add r8, rax
+        add r10, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r11, qword ptr [rsp + 400]
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
+        rorx rax, r13, 0x12
+        xor rcx, rax
+        rorx rax, r13, 0x29
+        xor rcx, rax
+        add r11, rcx
+        add r14, r11
+        rorx r8, r10, 0x1c
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
+        mov rcx, r10
+        and rcx, r9
+        mov rax, r10
+        or rax, r9
+        and rax, r15
+        or rax, rcx
+        add r8, rax
+        add r11, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm9, ymm3, ymm2
+        vpaddq ymm0, ymm9, ymmword ptr [rip + sha512_avx512_k + 512]
+        vmovdqu64 ymmword ptr [rsp + 512], ymm0
+        add rbx, qword ptr [rsp + 408]
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
+        rorx rax, r14, 0x12
+        xor rcx, rax
+        rorx rax, r14, 0x29
+        xor rcx, rax
+        add rbx, rcx
+        add r15, rbx
+        rorx r8, r11, 0x1c
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
+        mov rcx, r11
+        and rcx, r10
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add r8, rax
+        add rbx, r8
+        valignq ymm1, ymm4, ymm5, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm9, ymm8, 0x1
+        add r12, qword ptr [rsp + 416]
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r15, 0xe
+        rorx rax, r15, 0x12
+        xor rcx, rax
+        rorx rax, r15, 0x29
+        xor rcx, rax
+        add r12, rcx
+        add r9, r12
+        rorx r8, rbx, 0x1c
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
+        mov rcx, rbx
+        and rcx, r11
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r8, rax
+        add r12, r8
+        vpaddq ymm3, ymm3, ymm5
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm9, 0x13
+        vprorq ymm1, ymm9, 0x3d
+        vpsrlq ymm0, ymm9, 0x6
+        vpxorq ymm2, ymm2, ymm1
+        add r13, qword ptr [rsp + 424]
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
+        rorx rax, r9, 0x12
+        xor rcx, rax
+        rorx rax, r9, 0x29
+        xor rcx, rax
+        add r13, rcx
+        add r10, r13
+        rorx r8, r12, 0x1c
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
+        mov rcx, r12
+        and rcx, rbx
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r8, rax
+        add r13, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r14, qword ptr [rsp + 432]
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
+        rorx rcx, r10, 0xe
+        rorx rax, r10, 0x12
+        xor rcx, rax
+        rorx rax, r10, 0x29
+        xor rcx, rax
+        add r14, rcx
+        add r11, r14
+        rorx r8, r13, 0x1c
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
+        mov rcx, r13
+        and rcx, r12
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r8, rax
+        add r14, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm5, ymm3, ymm2
+        vpaddq ymm0, ymm5, ymmword ptr [rip + sha512_avx512_k + 544]
+        vmovdqu64 ymmword ptr [rsp + 544], ymm0
+        add r15, qword ptr [rsp + 440]
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
+        rorx rcx, r11, 0xe
+        rorx rax, r11, 0x12
+        xor rcx, rax
+        rorx rax, r11, 0x29
+        xor rcx, rax
+        add r15, rcx
+        add rbx, r15
+        rorx r8, r14, 0x1c
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
+        mov rcx, r14
+        and rcx, r13
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
+        add r8, rax
+        add r15, r8
+        valignq ymm1, ymm8, ymm4, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm5, ymm9, 0x1
+        add r9, qword ptr [rsp + 448]
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx r8, r15, 0x1c
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
+        mov rcx, r15
+        and rcx, r14
+        mov rax, r15
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r8, rax
+        add r9, r8
+        vpaddq ymm3, ymm3, ymm4
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm5, 0x13
+        vprorq ymm1, ymm5, 0x3d
+        vpsrlq ymm0, ymm5, 0x6
+        vpxorq ymm2, ymm2, ymm1
+        add r10, qword ptr [rsp + 456]
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
+        rorx rax, r12, 0x12
+        xor rcx, rax
+        rorx rax, r12, 0x29
+        xor rcx, rax
+        add r10, rcx
+        add r13, r10
+        rorx r8, r9, 0x1c
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
+        mov rcx, r9
+        and rcx, r15
+        mov rax, r9
+        or rax, r15
+        and rax, r14
+        or rax, rcx
+        add r8, rax
+        add r10, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r11, qword ptr [rsp + 464]
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
+        rorx rax, r13, 0x12
+        xor rcx, rax
+        rorx rax, r13, 0x29
+        xor rcx, rax
+        add r11, rcx
+        add r14, r11
+        rorx r8, r10, 0x1c
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
+        mov rcx, r10
+        and rcx, r9
+        mov rax, r10
+        or rax, r9
+        and rax, r15
+        or rax, rcx
+        add r8, rax
+        add r11, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm4, ymm3, ymm2
+        vpaddq ymm0, ymm4, ymmword ptr [rip + sha512_avx512_k + 576]
+        vmovdqu64 ymmword ptr [rsp + 576], ymm0
+        add rbx, qword ptr [rsp + 472]
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
+        rorx rax, r14, 0x12
+        xor rcx, rax
+        rorx rax, r14, 0x29
+        xor rcx, rax
+        add rbx, rcx
+        add r15, rbx
+        rorx r8, r11, 0x1c
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
+        mov rcx, r11
+        and rcx, r10
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add r8, rax
+        add rbx, r8
+        valignq ymm1, ymm9, ymm8, 0x1
+        vprorq ymm3, ymm1, 0x1
+        vprorq ymm0, ymm1, 0x8
+        vpsrlq ymm1, ymm1, 0x7
+        vpxorq ymm3, ymm3, ymm0
+        vpxorq ymm3, ymm3, ymm1
+        valignq ymm0, ymm4, ymm5, 0x1
+        add r12, qword ptr [rsp + 480]
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r15, 0xe
+        rorx rax, r15, 0x12
+        xor rcx, rax
+        rorx rax, r15, 0x29
+        xor rcx, rax
+        add r12, rcx
+        add r9, r12
+        rorx r8, rbx, 0x1c
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
+        mov rcx, rbx
+        and rcx, r11
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r8, rax
+        add r12, r8
+        vpaddq ymm3, ymm3, ymm8
+        vpaddq ymm3, ymm3, ymm0
+        vprorq ymm2, ymm4, 0x13
+        vprorq ymm1, ymm4, 0x3d
+        vpsrlq ymm0, ymm4, 0x6
+        vpxorq ymm2, ymm2, ymm1
+        add r13, qword ptr [rsp + 488]
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
+        rorx rax, r9, 0x12
+        xor rcx, rax
+        rorx rax, r9, 0x29
+        xor rcx, rax
+        add r13, rcx
+        add r10, r13
+        rorx r8, r12, 0x1c
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
+        mov rcx, r12
+        and rcx, rbx
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r8, rax
+        add r13, r8
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm6, ymm2, 0x2
+        vpaddq ymm3, ymm3, ymm2
+        vprorq ymm2, ymm3, 0x13
+        vprorq ymm1, ymm3, 0x3d
+        vpsrlq ymm0, ymm3, 0x6
+        add r14, qword ptr [rsp + 496]
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
+        rorx rcx, r10, 0xe
+        rorx rax, r10, 0x12
+        xor rcx, rax
+        rorx rax, r10, 0x29
+        xor rcx, rax
+        add r14, rcx
+        add r11, r14
+        rorx r8, r13, 0x1c
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
+        mov rcx, r13
+        and rcx, r12
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r8, rax
+        add r14, r8
+        vpxorq ymm2, ymm2, ymm1
+        vpxorq ymm2, ymm2, ymm0
+        valignq ymm2, ymm2, ymm6, 0x2
+        vpaddq ymm0, ymm3, ymm2
+        vpaddq ymm0, ymm0, ymmword ptr [rip + sha512_avx512_k + 608]
+        vmovdqu64 ymmword ptr [rsp + 608], ymm0
+        add r15, qword ptr [rsp + 504]
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
+        rorx rcx, r11, 0xe
+        rorx rax, r11, 0x12
+        xor rcx, rax
+        rorx rax, r11, 0x29
+        xor rcx, rax
+        add r15, rcx
+        add rbx, r15
+        rorx r8, r14, 0x1c
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -2138,11 +2138,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r15, r8
         add r9, qword ptr [rsp + 512]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -2151,10 +2151,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -2164,11 +2164,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r9, r8
         add r10, qword ptr [rsp + 520]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -2177,10 +2177,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -2190,11 +2190,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r10, r8
         add r11, qword ptr [rsp + 528]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -2203,10 +2203,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -2216,11 +2216,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r11, r8
         add rbx, qword ptr [rsp + 536]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -2229,10 +2229,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -2242,11 +2242,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add rbx, r8
         add r12, qword ptr [rsp + 544]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -2255,10 +2255,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -2268,11 +2268,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r12, r8
         add r13, qword ptr [rsp + 552]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -2281,10 +2281,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -2294,11 +2294,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r13, r8
         add r14, qword ptr [rsp + 560]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -2307,10 +2307,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -2320,11 +2320,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r14, r8
         add r15, qword ptr [rsp + 568]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -2333,10 +2333,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14
@@ -2346,11 +2346,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r15, r8
         add r9, qword ptr [rsp + 576]
-        mov r8, r11
-        xor r8, r10
-        and r8, rbx
-        xor r8, r10
-        add r9, r8
+        mov rax, r11
+        xor rax, r10
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
         rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
         xor rcx, rax
@@ -2359,10 +2359,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r9, rcx
         add r12, r9
         rorx r8, r15, 0x1c
-        rorx rcx, r15, 0x22
-        xor r8, rcx
-        rorx rcx, r15, 0x27
-        xor r8, rcx
+        rorx rax, r15, 0x22
+        xor r8, rax
+        rorx rax, r15, 0x27
+        xor r8, rax
         mov rcx, r15
         and rcx, r14
         mov rax, r15
@@ -2372,11 +2372,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r9, r8
         add r10, qword ptr [rsp + 584]
-        mov r8, rbx
-        xor r8, r11
-        and r8, r12
-        xor r8, r11
-        add r10, r8
+        mov rax, rbx
+        xor rax, r11
+        and rax, r12
+        xor rax, r11
+        add r10, rax
         rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
         xor rcx, rax
@@ -2385,10 +2385,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r10, rcx
         add r13, r10
         rorx r8, r9, 0x1c
-        rorx rcx, r9, 0x22
-        xor r8, rcx
-        rorx rcx, r9, 0x27
-        xor r8, rcx
+        rorx rax, r9, 0x22
+        xor r8, rax
+        rorx rax, r9, 0x27
+        xor r8, rax
         mov rcx, r9
         and rcx, r15
         mov rax, r9
@@ -2398,11 +2398,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r10, r8
         add r11, qword ptr [rsp + 592]
-        mov r8, r12
-        xor r8, rbx
-        and r8, r13
-        xor r8, rbx
-        add r11, r8
+        mov rax, r12
+        xor rax, rbx
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
         rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
         xor rcx, rax
@@ -2411,10 +2411,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r11, rcx
         add r14, r11
         rorx r8, r10, 0x1c
-        rorx rcx, r10, 0x22
-        xor r8, rcx
-        rorx rcx, r10, 0x27
-        xor r8, rcx
+        rorx rax, r10, 0x22
+        xor r8, rax
+        rorx rax, r10, 0x27
+        xor r8, rax
         mov rcx, r10
         and rcx, r9
         mov rax, r10
@@ -2424,11 +2424,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r11, r8
         add rbx, qword ptr [rsp + 600]
-        mov r8, r13
-        xor r8, r12
-        and r8, r14
-        xor r8, r12
-        add rbx, r8
+        mov rax, r13
+        xor rax, r12
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
         rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
         xor rcx, rax
@@ -2437,10 +2437,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add rbx, rcx
         add r15, rbx
         rorx r8, r11, 0x1c
-        rorx rcx, r11, 0x22
-        xor r8, rcx
-        rorx rcx, r11, 0x27
-        xor r8, rcx
+        rorx rax, r11, 0x22
+        xor r8, rax
+        rorx rax, r11, 0x27
+        xor r8, rax
         mov rcx, r11
         and rcx, r10
         mov rax, r11
@@ -2450,11 +2450,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add rbx, r8
         add r12, qword ptr [rsp + 608]
-        mov r8, r14
-        xor r8, r13
-        and r8, r15
-        xor r8, r13
-        add r12, r8
+        mov rax, r14
+        xor rax, r13
+        and rax, r15
+        xor rax, r13
+        add r12, rax
         rorx rcx, r15, 0xe
         rorx rax, r15, 0x12
         xor rcx, rax
@@ -2463,10 +2463,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r12, rcx
         add r9, r12
         rorx r8, rbx, 0x1c
-        rorx rcx, rbx, 0x22
-        xor r8, rcx
-        rorx rcx, rbx, 0x27
-        xor r8, rcx
+        rorx rax, rbx, 0x22
+        xor r8, rax
+        rorx rax, rbx, 0x27
+        xor r8, rax
         mov rcx, rbx
         and rcx, r11
         mov rax, rbx
@@ -2476,11 +2476,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r12, r8
         add r13, qword ptr [rsp + 616]
-        mov r8, r15
-        xor r8, r14
-        and r8, r9
-        xor r8, r14
-        add r13, r8
+        mov rax, r15
+        xor rax, r14
+        and rax, r9
+        xor rax, r14
+        add r13, rax
         rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
         xor rcx, rax
@@ -2489,10 +2489,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r13, rcx
         add r10, r13
         rorx r8, r12, 0x1c
-        rorx rcx, r12, 0x22
-        xor r8, rcx
-        rorx rcx, r12, 0x27
-        xor r8, rcx
+        rorx rax, r12, 0x22
+        xor r8, rax
+        rorx rax, r12, 0x27
+        xor r8, rax
         mov rcx, r12
         and rcx, rbx
         mov rax, r12
@@ -2502,11 +2502,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r13, r8
         add r14, qword ptr [rsp + 624]
-        mov r8, r9
-        xor r8, r15
-        and r8, r10
-        xor r8, r15
-        add r14, r8
+        mov rax, r9
+        xor rax, r15
+        and rax, r10
+        xor rax, r15
+        add r14, rax
         rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
         xor rcx, rax
@@ -2515,10 +2515,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r14, rcx
         add r11, r14
         rorx r8, r13, 0x1c
-        rorx rcx, r13, 0x22
-        xor r8, rcx
-        rorx rcx, r13, 0x27
-        xor r8, rcx
+        rorx rax, r13, 0x22
+        xor r8, rax
+        rorx rax, r13, 0x27
+        xor r8, rax
         mov rcx, r13
         and rcx, r12
         mov rax, r13
@@ -2528,11 +2528,11 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r8, rax
         add r14, r8
         add r15, qword ptr [rsp + 632]
-        mov r8, r10
-        xor r8, r9
-        and r8, r11
-        xor r8, r9
-        add r15, r8
+        mov rax, r10
+        xor rax, r9
+        and rax, r11
+        xor rax, r9
+        add r15, rax
         rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
         xor rcx, rax
@@ -2541,10 +2541,10 @@ rktcrypto_sha512_blocks_avx512_x86:
         add r15, rcx
         add rbx, r15
         rorx r8, r14, 0x1c
-        rorx rcx, r14, 0x22
-        xor r8, rcx
-        rorx rcx, r14, 0x27
-        xor r8, rcx
+        rorx rax, r14, 0x22
+        xor r8, rax
+        rorx rax, r14, 0x27
+        xor r8, rax
         mov rcx, r14
         and rcx, r13
         mov rax, r14

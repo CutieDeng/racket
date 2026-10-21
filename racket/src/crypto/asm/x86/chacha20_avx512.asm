@@ -204,36 +204,36 @@ unit:
 .for i, 0, 16
   vmovdqu64 zmm.y${i}, zmmword ptr [rsp + ${64 * i}]
 .endfor
-  ;; finish set B (scratch u0..u3: a scratch name reused from set A's finish would stay live
-  ;; across the loop body for the allocator and cost four state registers): original state back (the counter word gets its lane index), transpose, XOR, store
+  ;; finish set B (the scratch names are reused: the allocator splits a name into its def-use
+  ;; webs, so these t0..t3 are values of their own, interfering with the y's only): original state back (the counter word gets its lane index), transpose, XOR, store
 .for i, 0, 12
   vpaddd zmm.y${i}, zmm.y${i}, dword ptr [q.st + ${4 * i}]{1to16}
 .endfor
-  vpbroadcastd zmm.u0, dword ptr [q.st + 48]
-  vpaddd zmm.u0, zmm.u0, zmmword ptr [rip + chacha20_avx512_idx16]
-  vpaddd zmm.y12, zmm.y12, zmm.u0
+  vpbroadcastd zmm.t0, dword ptr [q.st + 48]
+  vpaddd zmm.t0, zmm.t0, zmmword ptr [rip + chacha20_avx512_idx16]
+  vpaddd zmm.y12, zmm.y12, zmm.t0
 .for i, 13, 16
   vpaddd zmm.y${i}, zmm.y${i}, dword ptr [q.st + ${4 * i}]{1to16}
 .endfor
 .for g, 0, 4
-  vpunpckldq zmm.u0, zmm.y${4 * g}, zmm.y${4 * g + 1}
-  vpunpckhdq zmm.u1, zmm.y${4 * g}, zmm.y${4 * g + 1}
-  vpunpckldq zmm.u2, zmm.y${4 * g + 2}, zmm.y${4 * g + 3}
-  vpunpckhdq zmm.u3, zmm.y${4 * g + 2}, zmm.y${4 * g + 3}
-  vpunpcklqdq zmm.y${4 * g}, zmm.u0, zmm.u2
-  vpunpckhqdq zmm.y${4 * g + 1}, zmm.u0, zmm.u2
-  vpunpcklqdq zmm.y${4 * g + 2}, zmm.u1, zmm.u3
-  vpunpckhqdq zmm.y${4 * g + 3}, zmm.u1, zmm.u3
+  vpunpckldq zmm.t0, zmm.y${4 * g}, zmm.y${4 * g + 1}
+  vpunpckhdq zmm.t1, zmm.y${4 * g}, zmm.y${4 * g + 1}
+  vpunpckldq zmm.t2, zmm.y${4 * g + 2}, zmm.y${4 * g + 3}
+  vpunpckhdq zmm.t3, zmm.y${4 * g + 2}, zmm.y${4 * g + 3}
+  vpunpcklqdq zmm.y${4 * g}, zmm.t0, zmm.t2
+  vpunpckhqdq zmm.y${4 * g + 1}, zmm.t0, zmm.t2
+  vpunpcklqdq zmm.y${4 * g + 2}, zmm.t1, zmm.t3
+  vpunpckhqdq zmm.y${4 * g + 3}, zmm.t1, zmm.t3
 .endfor
 .for m, 0, 4
-  vshufi32x4 zmm.u0, zmm.y${m}, zmm.y${4 + m}, 0x44
-  vshufi32x4 zmm.u1, zmm.y${m}, zmm.y${4 + m}, 0xee
-  vshufi32x4 zmm.u2, zmm.y${8 + m}, zmm.y${12 + m}, 0x44
-  vshufi32x4 zmm.u3, zmm.y${8 + m}, zmm.y${12 + m}, 0xee
-  vshufi32x4 zmm.y${m}, zmm.u0, zmm.u2, 0x88
-  vshufi32x4 zmm.y${4 + m}, zmm.u0, zmm.u2, 0xdd
-  vshufi32x4 zmm.y${8 + m}, zmm.u1, zmm.u3, 0x88
-  vshufi32x4 zmm.y${12 + m}, zmm.u1, zmm.u3, 0xdd
+  vshufi32x4 zmm.t0, zmm.y${m}, zmm.y${4 + m}, 0x44
+  vshufi32x4 zmm.t1, zmm.y${m}, zmm.y${4 + m}, 0xee
+  vshufi32x4 zmm.t2, zmm.y${8 + m}, zmm.y${12 + m}, 0x44
+  vshufi32x4 zmm.t3, zmm.y${8 + m}, zmm.y${12 + m}, 0xee
+  vshufi32x4 zmm.y${m}, zmm.t0, zmm.t2, 0x88
+  vshufi32x4 zmm.y${4 + m}, zmm.t0, zmm.t2, 0xdd
+  vshufi32x4 zmm.y${8 + m}, zmm.t1, zmm.t3, 0x88
+  vshufi32x4 zmm.y${12 + m}, zmm.t1, zmm.t3, 0xdd
 .endfor
 .for b, 0, 16
   vpxord zmm.y${b}, zmm.y${b}, zmmword ptr [q.in + ${1024 + 64 * b}]

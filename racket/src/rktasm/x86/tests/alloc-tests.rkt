@@ -5,6 +5,10 @@
 ;; properties the SHA-256 bring-up relies on.
 (require racket/list racket/match racket/string rackunit "../parse.rkt" "../spec.rkt" "../regalloc.rkt" "../emit.rkt")
 
+;; rackunit reports failures and continues; count them so the run exits non-zero
+(define failures 0)
+(current-check-handler (let ([h (current-check-handler)]) (lambda (e) (set! failures (add1 failures)) (h e))))
+
 (define (alloc src)
   (define items (parse-string src 'test))
   (define f (findf fn? items))
@@ -83,10 +87,9 @@
   ;; the coalesced copy is gone: only one mov from memory, one add, one store remain
   (check-equal? (length (filter instr? (fn-body (alloc-result-fn r)))) 4))
 
-;; 5. out of registers is an error that names the pressure point
-(check-exn #rx"out of vec registers.*17 vec registers live"
-  (lambda ()
-    (alloc (string-append "
+;; 5. seventeen live xmm values in an SSE function spill at xmm width (movdqu, 16-byte slots): no
+;;    AVX-512 instruction may appear in a kernel that does not declare .simd avx512
+(let* ([r (alloc (string-append "
 .function big export (
   in: q.p
 )
@@ -94,7 +97,11 @@
       (string-join (for/list ([i 17]) (format "  movdqu xmm.v~a, xmmword ptr [q.p + ~a]" i (* 16 i))) "\n")
       "\n"
       (string-join (for/list ([i 17]) (format "  movdqu xmmword ptr [q.p + ~a], xmm.v~a" (* 16 i) i)) "\n")
-      "\n  ret\n.end"))))
+      "\n  ret\n.end"))]
+       [text (emitted r)])
+  (check-true (pair? (alloc-result-spills r)))
+  (check-true (regexp-match? #rx"movdqu xmm[0-9]+, xmmword ptr \\[rsp" text))
+  (check-false (regexp-match? #rx"zmm|vmovdqu" text)))
 
 ;; 6. loop liveness: a value defined before a loop and used after it stays allocated across the body
 (let ([r (alloc "
@@ -132,8 +139,10 @@ top:
     (string-join (for/list ([i 24]) (format "  vmovdqu64 zmm.v~a, zmmword ptr [q.p + ~a]" i (* 64 i))) "\n") "\n"
     (string-join (for/list ([i 24]) (format "  vmovdqu64 zmmword ptr [q.p + ~a], zmm.v~a" (* 64 i) i)) "\n")
     "\n  ret\n.end"))
-(check-exn #rx"out of vec registers" (lambda () (alloc (wide-kernel #f))))
+;; without .simd avx512 the pool is xmm0-15: 24 zmm values spill (at zmm width); with it they fit
+(check-true (pair? (alloc-result-spills (alloc (wide-kernel #f)))))
 (let ([r (alloc (wide-kernel #t))])
+  (check-true (null? (alloc-result-spills r)))
   (check-true (and (for/or ([m (alloc-result-mapping r)]) (memq (cdr m) '(xmm16 xmm17 xmm18 xmm19 xmm20 xmm21 xmm22 xmm23))) #t)))
 (check-true (operands-need-evex? '((reg zmm16) (reg zmm1))))
 (check-false (operands-need-evex? '((reg zmm15) (reg zmm1))))
@@ -186,9 +195,9 @@ ok\\@:
   ret
 .end")]
        [body (filter instr? (fn-body (alloc-result-fn r)))])
-  ;; mov, add, then two CLAMP expansions of three instructions each
-  (check-equal? (length body) 8)
-  (check-equal? (map instr-mnemonic body) '(mov add test jns neg test jns neg))
+  ;; mov, add, two CLAMP expansions of three instructions each, ret
+  (check-equal? (length body) 9)
+  (check-equal? (map instr-mnemonic body) '(mov add test jns neg test jns neg ret))
   (check-equal? (length (filter label? (fn-body (alloc-result-fn r)))) 2))
 (check-exn #rx"expects 2 argument" (lambda () (alloc "
 .macro P a, b
@@ -235,7 +244,8 @@ other:
   mov d.ret, 2
   ret
 .end")])
-  (check-not-equal? (mapping-ref r 'a) 'rax))
+  ;; the result register is not live from entry, so the first value takes rax (first-fit)
+  (check-equal? (mapping-ref r 'a) 'rax))
 (displayln "alloc-tests: zeroing idiom checks passed")
 
 ;; 13. spilling: twenty simultaneously live GPR values allocate with frame slots (loads before
@@ -251,8 +261,8 @@ other:
        [r (alloc src)]
        [text (emitted r)])
   (check-true (pair? (alloc-result-spills r)))
-  (check-true (regexp-match? #rx"mov     [a-z0-9]+, qword ptr \\[rsp \\+ [0-9]+\\]" text))
-  (check-true (regexp-match? #rx"mov     qword ptr \\[rsp \\+ [0-9]+\\], [a-z0-9]+" text))
+  (check-true (regexp-match? #rx"mov [a-z0-9]+, qword ptr \\[rsp \\+ [0-9]+\\]" text))
+  (check-true (regexp-match? #rx"mov qword ptr \\[rsp \\+ [0-9]+\\], [a-z0-9]+" text))
   (check-true (regexp-match? #rx"sub     rsp, [0-9]+" text)))
 ;; vector spills use 64-byte slots with vmovdqu64 and leave the .frame area intact
 (let* ([src (string-append "
@@ -285,8 +295,42 @@ other:
   ret
 .end")]
        [text (emitted r)])
-  (check-true (memq (mapping-ref r 'keep) '(rbx rbp r12 r13 r14 r15)))
-  (check-true (regexp-match? #rx"mov     rdi, rsi\n        lea     rsi, \\[rdi \\+ 8\\]|lea     rsi, \\[rdi \\+ 8\\]" text))
+  (check-not-false (memq (mapping-ref r 'keep) '(rbx rbp r12 r13 r14 r15)))
+  ;; the address is taken into a temporary, then the arguments land in rdi/rsi
+  (check-true (regexp-match? #rx"lea [a-z0-9]+, \\[rdi \\+ 8\\]" text))
+  (check-true (regexp-match? #rx"mov rdi, rsi" text))
   (check-true (regexp-match? #rx"call    helper@PLT" text))
-  (check-true (regexp-match? #rx"sub     rsp, 8\n" text)))
+  ;; one callee-saved push leaves rsp 16-byte aligned at the call: no padding
+  (check-true (regexp-match? #rx"push    rbx" text))
+  (check-false (regexp-match? #rx"sub     rsp" text)))
 (displayln "alloc-tests: call checks passed")
+
+;; 15. def-use webs: a scratch name reused in two phases is two values. Here x0..x15 are live in
+;;     phase A (with scratch t), all 32 state values are live in the middle, and y0..y15 in phase B
+;;     (scratch t again): as one node t would interfere with all 32 state registers and spill.
+(let* ([src (string-append "
+.function webs export (
+  in: q.p
+)
+  .simd avx512
+" (string-join (for/list ([i 16]) (format "  vmovdqu64 zmm.x~a, zmmword ptr [q.p + ~a]" i (* 64 i))) "\n") "
+  vpxorq zmm.t, zmm.x0, zmm.x1
+  vpxorq zmm.x2, zmm.x2, zmm.t
+" (string-join (for/list ([i 16]) (format "  vmovdqu64 zmm.y~a, zmmword ptr [q.p + ~a]" i (+ 1024 (* 64 i)))) "\n") "
+" (string-join (for/list ([i 16]) (format "  vpxorq zmm.x~a, zmm.x~a, zmm.y~a" i i i)) "\n") "
+" (string-join (for/list ([i 16]) (format "  vmovdqu64 zmmword ptr [q.p + ~a], zmm.x~a" (* 64 i) i)) "\n") "
+  vpxorq zmm.t, zmm.y0, zmm.y1
+  vpxorq zmm.y2, zmm.y2, zmm.t
+" (string-join (for/list ([i 16]) (format "  vmovdqu64 zmmword ptr [q.p + ~a], zmm.y~a" (+ 1024 (* 64 i)) i)) "\n") "
+  ret
+.end")]
+       [r (alloc src)])
+  (check-true (null? (alloc-result-spills r)))
+  ;; both webs are allocated; the second one carries a ~w suffix
+  (check-not-false (assq 't (alloc-result-mapping r)))
+  (check-not-false (assq 't~w1 (alloc-result-mapping r))))
+(displayln "alloc-tests: def-use web checks passed")
+
+(unless (zero? failures)
+  (eprintf "alloc-tests: ~a check(s) FAILED\n" failures)
+  (exit 1))

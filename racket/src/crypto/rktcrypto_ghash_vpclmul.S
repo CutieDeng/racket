@@ -13,32 +13,32 @@ ghash_vpclmul_bswap:
         .type   rktcrypto_ghash_vpclmul, @function
         .p2align 5
 rktcrypto_ghash_vpclmul:
-        vbroadcasti32x4 zmm7, xmmword ptr [rip + ghash_vpclmul_bswap]
+        vbroadcasti32x4 zmm6, xmmword ptr [rip + ghash_vpclmul_bswap]
         vmovdqu xmm1, xmmword ptr [rsi]
         cmp rcx, 0x100
         jb .Lrktcrypto_ghash_vpclmul_tail64
 .Lrktcrypto_ghash_vpclmul_loop256:
         vmovdqu64 zmm0, zmmword ptr [rdx]
-        vpshufb zmm0, zmm0, zmm7
-        vmovdqu64 zmm6, zmmword ptr [rdx + 64]
-        vpshufb zmm6, zmm6, zmm7
+        vpshufb zmm0, zmm0, zmm6
+        vmovdqu64 zmm7, zmmword ptr [rdx + 64]
+        vpshufb zmm7, zmm7, zmm6
         vmovdqu64 zmm3, zmmword ptr [rdx + 128]
-        vpshufb zmm3, zmm3, zmm7
+        vpshufb zmm3, zmm3, zmm6
         vmovdqu64 zmm2, zmmword ptr [rdx + 192]
-        vpshufb zmm2, zmm2, zmm7
+        vpshufb zmm2, zmm2, zmm6
         vpxorq zmm0, zmm0, zmm1
         vpclmulqdq zmm5, zmm0, zmmword ptr [rdi], 0x0
         vpclmulqdq zmm4, zmm0, zmmword ptr [rdi], 0x11
         vpclmulqdq zmm1, zmm0, zmmword ptr [rdi], 0x10
         vpclmulqdq zmm0, zmm0, zmmword ptr [rdi], 0x1
         vpxorq zmm1, zmm1, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [rdi + 64], 0x0
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rdi + 64], 0x0
         vpxorq zmm5, zmm5, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [rdi + 64], 0x11
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rdi + 64], 0x11
         vpxorq zmm4, zmm4, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [rdi + 64], 0x10
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rdi + 64], 0x10
         vpxorq zmm1, zmm1, zmm0
-        vpclmulqdq zmm0, zmm6, zmmword ptr [rdi + 64], 0x1
+        vpclmulqdq zmm0, zmm7, zmmword ptr [rdi + 64], 0x1
         vpxorq zmm1, zmm1, zmm0
         vpclmulqdq zmm0, zmm3, zmmword ptr [rdi + 128], 0x0
         vpxorq zmm5, zmm5, zmm0
@@ -63,7 +63,7 @@ rktcrypto_ghash_vpclmul:
         test rcx, rcx
         jz .Lrktcrypto_ghash_vpclmul_done
         vmovdqu64 zmm0, zmmword ptr [rdx]
-        vpshufb zmm0, zmm0, zmm7
+        vpshufb zmm0, zmm0, zmm6
         vpxorq zmm0, zmm0, zmm1
         vpclmulqdq zmm5, zmm0, zmmword ptr [rdi + 192], 0x0
         vpclmulqdq zmm4, zmm0, zmmword ptr [rdi + 192], 0x11
@@ -85,24 +85,24 @@ rktcrypto_ghash_vpclmul:
         vpxorq ymm4, ymm4, ymm0
         vextracti32x4 xmm0, ymm4, 0x1
         vpxorq xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm5, 0x1f
-        vpsrld xmm3, xmm4, 0x1f
+        vpsrld xmm2, xmm5, 0x1f
+        vpsrld xmm1, xmm4, 0x1f
         vpslld xmm5, xmm5, 0x1
         vpslld xmm4, xmm4, 0x1
-        vpsrldq xmm0, xmm1, 0xc
-        vpslldq xmm3, xmm3, 0x4
+        vpsrldq xmm0, xmm2, 0xc
         vpslldq xmm1, xmm1, 0x4
-        vpor xmm5, xmm5, xmm1
-        vpor xmm4, xmm4, xmm3
+        vpslldq xmm2, xmm2, 0x4
+        vpor xmm5, xmm5, xmm2
+        vpor xmm4, xmm4, xmm1
         vpor xmm4, xmm4, xmm0
-        vpslld xmm1, xmm5, 0x1f
-        vpslld xmm3, xmm5, 0x1e
+        vpslld xmm2, xmm5, 0x1f
+        vpslld xmm1, xmm5, 0x1e
         vpslld xmm0, xmm5, 0x19
-        vpxor xmm1, xmm1, xmm3
-        vpxor xmm1, xmm1, xmm0
-        vpsrldq xmm3, xmm1, 0x4
-        vpslldq xmm1, xmm1, 0xc
-        vpxor xmm5, xmm5, xmm1
+        vpxor xmm2, xmm2, xmm1
+        vpxor xmm2, xmm2, xmm0
+        vpsrldq xmm3, xmm2, 0x4
+        vpslldq xmm2, xmm2, 0xc
+        vpxor xmm5, xmm5, xmm2
         vpsrld xmm2, xmm5, 0x1
         vpsrld xmm1, xmm5, 0x2
         vpsrld xmm0, xmm5, 0x7

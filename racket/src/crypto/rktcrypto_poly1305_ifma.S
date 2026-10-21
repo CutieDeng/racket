@@ -31,28 +31,28 @@ rktcrypto_poly1305_blocks_ifma:
         jne .Lrktcrypto_poly1305_blocks_ifma_grp
         add rsi, 0x140
 .Lrktcrypto_poly1305_blocks_ifma_grp:
-        vmovdqu64 zmm3, zmmword ptr [rdx]
-        vmovdqu64 zmm2, zmmword ptr [rdx + 64]
-        vmovdqa64 zmm1, zmm11
-        vpermi2q zmm1, zmm3, zmm2
-        vmovdqa64 zmm0, zmm10
-        vpermi2q zmm0, zmm3, zmm2
-        vpandq zmm3, zmm1, zmm9
-        vpsrlq zmm2, zmm1, 0x2c
-        vpandq zmm1, zmm0, zmm7
-        vpsllq zmm1, zmm1, 0x14
-        vporq zmm2, zmm2, zmm1
-        vpsrlq zmm0, zmm0, 0x18
+        vmovdqu64 zmm2, zmmword ptr [rdx]
+        vmovdqu64 zmm1, zmmword ptr [rdx + 64]
+        vmovdqa64 zmm0, zmm11
+        vpermi2q zmm0, zmm2, zmm1
+        vmovdqa64 zmm3, zmm10
+        vpermi2q zmm3, zmm2, zmm1
+        vpandq zmm2, zmm0, zmm9
+        vpsrlq zmm1, zmm0, 0x2c
+        vpandq zmm0, zmm3, zmm7
+        vpsllq zmm0, zmm0, 0x14
+        vporq zmm1, zmm1, zmm0
+        vpsrlq zmm0, zmm3, 0x18
         vporq zmm0, zmm0, zmm6
-        vpaddq zmm14, zmm14, zmm3
-        vpaddq zmm13, zmm13, zmm2
+        vpaddq zmm14, zmm14, zmm2
+        vpaddq zmm13, zmm13, zmm1
         vpaddq zmm12, zmm12, zmm0
         vpxorq zmm5, zmm5, zmm5
         vpxorq zmm4, zmm4, zmm4
         vpxorq zmm3, zmm3, zmm3
         vpxorq zmm2, zmm2, zmm2
-        vpxorq zmm1, zmm1, zmm1
         vpxorq zmm0, zmm0, zmm0
+        vpxorq zmm1, zmm1, zmm1
         vpmadd52luq zmm5, zmm14, zmmword ptr [rsi]
         vpmadd52huq zmm2, zmm14, zmmword ptr [rsi]
         vpmadd52luq zmm5, zmm13, zmmword ptr [rsi + 256]
@@ -60,36 +60,36 @@ rktcrypto_poly1305_blocks_ifma:
         vpmadd52luq zmm5, zmm12, zmmword ptr [rsi + 192]
         vpmadd52huq zmm2, zmm12, zmmword ptr [rsi + 192]
         vpmadd52luq zmm4, zmm14, zmmword ptr [rsi + 64]
-        vpmadd52huq zmm1, zmm14, zmmword ptr [rsi + 64]
+        vpmadd52huq zmm0, zmm14, zmmword ptr [rsi + 64]
         vpmadd52luq zmm4, zmm13, zmmword ptr [rsi]
-        vpmadd52huq zmm1, zmm13, zmmword ptr [rsi]
+        vpmadd52huq zmm0, zmm13, zmmword ptr [rsi]
         vpmadd52luq zmm4, zmm12, zmmword ptr [rsi + 256]
-        vpmadd52huq zmm1, zmm12, zmmword ptr [rsi + 256]
+        vpmadd52huq zmm0, zmm12, zmmword ptr [rsi + 256]
         vpmadd52luq zmm3, zmm14, zmmword ptr [rsi + 128]
-        vpmadd52huq zmm0, zmm14, zmmword ptr [rsi + 128]
+        vpmadd52huq zmm1, zmm14, zmmword ptr [rsi + 128]
         vpmadd52luq zmm3, zmm13, zmmword ptr [rsi + 64]
-        vpmadd52huq zmm0, zmm13, zmmword ptr [rsi + 64]
+        vpmadd52huq zmm1, zmm13, zmmword ptr [rsi + 64]
         vpmadd52luq zmm3, zmm12, zmmword ptr [rsi]
-        vpmadd52huq zmm0, zmm12, zmmword ptr [rsi]
+        vpmadd52huq zmm1, zmm12, zmmword ptr [rsi]
         vpsllq zmm2, zmm2, 0x8
         vpaddq zmm4, zmm4, zmm2
-        vpsllq zmm1, zmm1, 0x8
-        vpaddq zmm3, zmm3, zmm1
-        vpsllq zmm1, zmm0, 0xc
-        vpaddq zmm5, zmm5, zmm1
-        vpsllq zmm1, zmm0, 0xa
-        vpaddq zmm5, zmm5, zmm1
-        vpsrlq zmm1, zmm5, 0x2c
+        vpsllq zmm0, zmm0, 0x8
+        vpaddq zmm3, zmm3, zmm0
+        vpsllq zmm0, zmm1, 0xc
+        vpaddq zmm5, zmm5, zmm0
+        vpsllq zmm0, zmm1, 0xa
+        vpaddq zmm5, zmm5, zmm0
+        vpsrlq zmm0, zmm5, 0x2c
         vpandq zmm14, zmm5, zmm9
-        vpaddq zmm4, zmm4, zmm1
-        vpsrlq zmm1, zmm4, 0x2c
+        vpaddq zmm4, zmm4, zmm0
+        vpsrlq zmm0, zmm4, 0x2c
         vpandq zmm13, zmm4, zmm9
-        vpaddq zmm3, zmm3, zmm1
-        vpsrlq zmm1, zmm3, 0x2a
+        vpaddq zmm3, zmm3, zmm0
+        vpsrlq zmm0, zmm3, 0x2a
         vpandq zmm12, zmm3, zmm8
-        vpaddq zmm14, zmm14, zmm1
-        vpsllq zmm1, zmm1, 0x2
-        vpaddq zmm14, zmm14, zmm1
+        vpaddq zmm14, zmm14, zmm0
+        vpsllq zmm0, zmm0, 0x2
+        vpaddq zmm14, zmm14, zmm0
         add rdx, 0x80
         sub rcx, 0x1
         jz .Lrktcrypto_poly1305_blocks_ifma_done
@@ -98,26 +98,26 @@ rktcrypto_poly1305_blocks_ifma:
         add rsi, 0x140
         jmp .Lrktcrypto_poly1305_blocks_ifma_grp
 .Lrktcrypto_poly1305_blocks_ifma_done:
-        vextracti64x4 ymm1, zmm14, 0x1
-        vpaddq ymm14, ymm14, ymm1
-        vextracti32x4 xmm1, ymm14, 0x1
-        vpaddq xmm14, xmm14, xmm1
-        vpsrldq xmm1, xmm14, 0x8
-        vpaddq xmm14, xmm14, xmm1
+        vextracti64x4 ymm0, zmm14, 0x1
+        vpaddq ymm14, ymm14, ymm0
+        vextracti32x4 xmm0, ymm14, 0x1
+        vpaddq xmm14, xmm14, xmm0
+        vpsrldq xmm0, xmm14, 0x8
+        vpaddq xmm14, xmm14, xmm0
         vmovq qword ptr [rdi], xmm14
-        vextracti64x4 ymm1, zmm13, 0x1
-        vpaddq ymm13, ymm13, ymm1
-        vextracti32x4 xmm1, ymm13, 0x1
-        vpaddq xmm13, xmm13, xmm1
-        vpsrldq xmm1, xmm13, 0x8
-        vpaddq xmm13, xmm13, xmm1
+        vextracti64x4 ymm0, zmm13, 0x1
+        vpaddq ymm13, ymm13, ymm0
+        vextracti32x4 xmm0, ymm13, 0x1
+        vpaddq xmm13, xmm13, xmm0
+        vpsrldq xmm0, xmm13, 0x8
+        vpaddq xmm13, xmm13, xmm0
         vmovq qword ptr [rdi + 8], xmm13
-        vextracti64x4 ymm1, zmm12, 0x1
-        vpaddq ymm12, ymm12, ymm1
-        vextracti32x4 xmm1, ymm12, 0x1
-        vpaddq xmm12, xmm12, xmm1
-        vpsrldq xmm1, xmm12, 0x8
-        vpaddq xmm12, xmm12, xmm1
+        vextracti64x4 ymm0, zmm12, 0x1
+        vpaddq ymm12, ymm12, ymm0
+        vextracti32x4 xmm0, ymm12, 0x1
+        vpaddq xmm12, xmm12, xmm0
+        vpsrldq xmm0, xmm12, 0x8
+        vpaddq xmm12, xmm12, xmm0
         vmovq qword ptr [rdi + 16], xmm12
         vzeroupper
         ret

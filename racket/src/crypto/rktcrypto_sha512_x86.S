@@ -39,3327 +39,3327 @@ rktcrypto_sha512_blocks_x86:
         push    r15
         test rdx, rdx
         jz .Lrktcrypto_sha512_blocks_x86_done
-        mov r15, qword ptr [rdi]
-        mov r14, qword ptr [rdi + 8]
-        mov r13, qword ptr [rdi + 16]
-        mov r12, qword ptr [rdi + 24]
-        mov rbx, qword ptr [rdi + 32]
-        mov r11, qword ptr [rdi + 40]
-        mov r10, qword ptr [rdi + 48]
-        mov r9, qword ptr [rdi + 56]
+        mov r14, qword ptr [rdi]
+        mov r13, qword ptr [rdi + 8]
+        mov r12, qword ptr [rdi + 16]
+        mov rbx, qword ptr [rdi + 24]
+        mov r11, qword ptr [rdi + 32]
+        mov r10, qword ptr [rdi + 40]
+        mov r9, qword ptr [rdi + 48]
+        mov r8, qword ptr [rdi + 56]
 .Lrktcrypto_sha512_blocks_x86_blk:
-        mov r8, qword ptr [rsi]
-        bswap r8
-        mov qword ptr [rdi + 64], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
+        mov rax, qword ptr [rsi]
+        bswap rax
+        mov qword ptr [rdi + 64], rax
+        add r8, rax
+        add r8, qword ptr [rip + sha512_x86_k]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
+        add r8, rax
+        rorx rcx, r11, 0xe
+        rorx rax, r11, 0x12
+        xor rcx, rax
+        rorx rax, r11, 0x29
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
+        rorx rcx, r14, 0x1c
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
+        mov rcx, r14
+        and rcx, r13
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
+        add r8, rax
+        mov rax, qword ptr [rsi + 8]
+        bswap rax
+        mov qword ptr [rdi + 72], rax
+        add r9, rax
+        add r9, qword ptr [rip + sha512_x86_k + 8]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
+        xor rcx, rax
         add r9, rcx
-        mov rcx, r15
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
         and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
-        mov r8, qword ptr [rsi + 8]
-        bswap r8
-        mov qword ptr [rdi + 72], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 8]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rax, qword ptr [rsi + 16]
+        bswap rax
+        mov qword ptr [rdi + 80], rax
+        add r10, rax
+        add r10, qword ptr [rip + sha512_x86_k + 16]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov r8, qword ptr [rsi + 16]
-        bswap r8
-        mov qword ptr [rdi + 80], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 16]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rax, qword ptr [rsi + 24]
+        bswap rax
+        mov qword ptr [rdi + 88], rax
+        add r11, rax
+        add r11, qword ptr [rip + sha512_x86_k + 24]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov r8, qword ptr [rsi + 24]
-        bswap r8
-        mov qword ptr [rdi + 88], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 24]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rax, qword ptr [rsi + 32]
+        bswap rax
+        mov qword ptr [rdi + 96], rax
+        add rbx, rax
+        add rbx, qword ptr [rip + sha512_x86_k + 32]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov r8, qword ptr [rsi + 32]
-        bswap r8
-        mov qword ptr [rdi + 96], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 32]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rax, qword ptr [rsi + 40]
+        bswap rax
+        mov qword ptr [rdi + 104], rax
+        add r12, rax
+        add r12, qword ptr [rip + sha512_x86_k + 40]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov r8, qword ptr [rsi + 40]
-        bswap r8
-        mov qword ptr [rdi + 104], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 40]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rax, qword ptr [rsi + 48]
+        bswap rax
+        mov qword ptr [rdi + 112], rax
+        add r13, rax
+        add r13, qword ptr [rip + sha512_x86_k + 48]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov r8, qword ptr [rsi + 48]
-        bswap r8
-        mov qword ptr [rdi + 112], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 48]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rax, qword ptr [rsi + 56]
+        bswap rax
+        mov qword ptr [rdi + 120], rax
+        add r14, rax
+        add r14, qword ptr [rip + sha512_x86_k + 56]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov r8, qword ptr [rsi + 56]
-        bswap r8
-        mov qword ptr [rdi + 120], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 56]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rax, qword ptr [rsi + 64]
+        bswap rax
+        mov qword ptr [rdi + 128], rax
+        add r8, rax
+        add r8, qword ptr [rip + sha512_x86_k + 64]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
+        add r8, rax
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov r8, qword ptr [rsi + 64]
-        bswap r8
-        mov qword ptr [rdi + 128], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 64]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
+        add r8, rax
+        mov rax, qword ptr [rsi + 72]
+        bswap rax
+        mov qword ptr [rdi + 136], rax
+        add r9, rax
+        add r9, qword ptr [rip + sha512_x86_k + 72]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
         rorx rax, rbx, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
+        xor rcx, rax
         add r9, rcx
-        mov rcx, r15
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
         and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
-        mov r8, qword ptr [rsi + 72]
-        bswap r8
-        mov qword ptr [rdi + 136], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 72]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rax, qword ptr [rsi + 80]
+        bswap rax
+        mov qword ptr [rdi + 144], rax
+        add r10, rax
+        add r10, qword ptr [rip + sha512_x86_k + 80]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov r8, qword ptr [rsi + 80]
-        bswap r8
-        mov qword ptr [rdi + 144], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 80]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rax, qword ptr [rsi + 88]
+        bswap rax
+        mov qword ptr [rdi + 152], rax
+        add r11, rax
+        add r11, qword ptr [rip + sha512_x86_k + 88]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov r8, qword ptr [rsi + 88]
-        bswap r8
-        mov qword ptr [rdi + 152], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 88]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rax, qword ptr [rsi + 96]
+        bswap rax
+        mov qword ptr [rdi + 160], rax
+        add rbx, rax
+        add rbx, qword ptr [rip + sha512_x86_k + 96]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov r8, qword ptr [rsi + 96]
-        bswap r8
-        mov qword ptr [rdi + 160], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 96]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rax, qword ptr [rsi + 104]
+        bswap rax
+        mov qword ptr [rdi + 168], rax
+        add r12, rax
+        add r12, qword ptr [rip + sha512_x86_k + 104]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov r8, qword ptr [rsi + 104]
-        bswap r8
-        mov qword ptr [rdi + 168], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 104]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rax, qword ptr [rsi + 112]
+        bswap rax
+        mov qword ptr [rdi + 176], rax
+        add r13, rax
+        add r13, qword ptr [rip + sha512_x86_k + 112]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov r8, qword ptr [rsi + 112]
-        bswap r8
-        mov qword ptr [rdi + 176], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 112]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rax, qword ptr [rsi + 120]
+        bswap rax
+        mov qword ptr [rdi + 184], rax
+        add r14, rax
+        add r14, qword ptr [rip + sha512_x86_k + 120]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov r8, qword ptr [rsi + 120]
-        bswap r8
-        mov qword ptr [rdi + 184], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 120]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 176]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 72]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 72]
+        rorx rax, rax, 0x8
+        xor rcx, rax
         add r15, rcx
-        rorx r8, r11, 0xe
+        add r15, qword ptr [rdi + 136]
+        add r15, qword ptr [rdi + 64]
+        mov qword ptr [rdi + 64], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 128]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
+        add r8, rax
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 176]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 136]
-        add r8, qword ptr [rdi + 64]
-        mov qword ptr [rdi + 64], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 128]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 184]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 144]
-        add r8, qword ptr [rdi + 72]
-        mov qword ptr [rdi + 72], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 136]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 80]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 80]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 144]
+        add r15, qword ptr [rdi + 72]
+        mov qword ptr [rdi + 72], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 136]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 64]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 88]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 88]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 152]
+        add r15, qword ptr [rdi + 80]
+        mov qword ptr [rdi + 80], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 144]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 64]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 72]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 152]
-        add r8, qword ptr [rdi + 80]
-        mov qword ptr [rdi + 80], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 144]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 96]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 96]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 160]
+        add r15, qword ptr [rdi + 88]
+        mov qword ptr [rdi + 88], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 152]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 72]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 80]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 160]
-        add r8, qword ptr [rdi + 88]
-        mov qword ptr [rdi + 88], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 152]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 104]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 104]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 168]
+        add r15, qword ptr [rdi + 96]
+        mov qword ptr [rdi + 96], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 160]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 80]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 88]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 168]
-        add r8, qword ptr [rdi + 96]
-        mov qword ptr [rdi + 96], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 160]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 112]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 112]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 176]
+        add r15, qword ptr [rdi + 104]
+        mov qword ptr [rdi + 104], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 168]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 88]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 96]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 176]
-        add r8, qword ptr [rdi + 104]
-        mov qword ptr [rdi + 104], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 168]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 120]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 120]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 184]
+        add r15, qword ptr [rdi + 112]
+        mov qword ptr [rdi + 112], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 176]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 96]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 104]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 184]
-        add r8, qword ptr [rdi + 112]
-        mov qword ptr [rdi + 112], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 176]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 128]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 128]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 64]
+        add r15, qword ptr [rdi + 120]
+        mov qword ptr [rdi + 120], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 184]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 104]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 112]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 136]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 136]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 72]
+        add r15, qword ptr [rdi + 128]
+        mov qword ptr [rdi + 128], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 192]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 64]
-        add r8, qword ptr [rdi + 120]
-        mov qword ptr [rdi + 120], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 184]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 112]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 72]
-        add r8, qword ptr [rdi + 128]
-        mov qword ptr [rdi + 128], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 192]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 120]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 80]
-        add r8, qword ptr [rdi + 136]
-        mov qword ptr [rdi + 136], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 200]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 144]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 144]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 80]
+        add r15, qword ptr [rdi + 136]
+        mov qword ptr [rdi + 136], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 200]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 128]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 152]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 152]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 88]
+        add r15, qword ptr [rdi + 144]
+        mov qword ptr [rdi + 144], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 208]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 128]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 136]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 88]
-        add r8, qword ptr [rdi + 144]
-        mov qword ptr [rdi + 144], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 208]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 160]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 160]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 96]
+        add r15, qword ptr [rdi + 152]
+        mov qword ptr [rdi + 152], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 216]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 136]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 144]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 96]
-        add r8, qword ptr [rdi + 152]
-        mov qword ptr [rdi + 152], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 216]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 168]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 168]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 104]
+        add r15, qword ptr [rdi + 160]
+        mov qword ptr [rdi + 160], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 224]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 144]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 152]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 104]
-        add r8, qword ptr [rdi + 160]
-        mov qword ptr [rdi + 160], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 224]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 176]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 176]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 112]
+        add r15, qword ptr [rdi + 168]
+        mov qword ptr [rdi + 168], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 232]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 152]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 160]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 112]
-        add r8, qword ptr [rdi + 168]
-        mov qword ptr [rdi + 168], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 232]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 184]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 184]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 120]
+        add r15, qword ptr [rdi + 176]
+        mov qword ptr [rdi + 176], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 240]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 160]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 168]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 120]
-        add r8, qword ptr [rdi + 176]
-        mov qword ptr [rdi + 176], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 240]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 64]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 64]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 128]
+        add r15, qword ptr [rdi + 184]
+        mov qword ptr [rdi + 184], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 248]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 168]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 176]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 72]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 72]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 136]
+        add r15, qword ptr [rdi + 64]
+        mov qword ptr [rdi + 64], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 256]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 128]
-        add r8, qword ptr [rdi + 184]
-        mov qword ptr [rdi + 184], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 248]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 176]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 136]
-        add r8, qword ptr [rdi + 64]
-        mov qword ptr [rdi + 64], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 256]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 184]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 144]
-        add r8, qword ptr [rdi + 72]
-        mov qword ptr [rdi + 72], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 264]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 80]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 80]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 144]
+        add r15, qword ptr [rdi + 72]
+        mov qword ptr [rdi + 72], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 264]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 64]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 88]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 88]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 152]
+        add r15, qword ptr [rdi + 80]
+        mov qword ptr [rdi + 80], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 272]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 64]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 72]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 152]
-        add r8, qword ptr [rdi + 80]
-        mov qword ptr [rdi + 80], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 272]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 96]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 96]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 160]
+        add r15, qword ptr [rdi + 88]
+        mov qword ptr [rdi + 88], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 280]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 72]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 80]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 160]
-        add r8, qword ptr [rdi + 88]
-        mov qword ptr [rdi + 88], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 280]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 104]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 104]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 168]
+        add r15, qword ptr [rdi + 96]
+        mov qword ptr [rdi + 96], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 288]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 80]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 88]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 168]
-        add r8, qword ptr [rdi + 96]
-        mov qword ptr [rdi + 96], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 288]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 112]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 112]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 176]
+        add r15, qword ptr [rdi + 104]
+        mov qword ptr [rdi + 104], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 296]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 88]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 96]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 176]
-        add r8, qword ptr [rdi + 104]
-        mov qword ptr [rdi + 104], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 296]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 120]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 120]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 184]
+        add r15, qword ptr [rdi + 112]
+        mov qword ptr [rdi + 112], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 304]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 96]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 104]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 184]
-        add r8, qword ptr [rdi + 112]
-        mov qword ptr [rdi + 112], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 304]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 128]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 128]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 64]
+        add r15, qword ptr [rdi + 120]
+        mov qword ptr [rdi + 120], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 312]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 104]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 112]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 136]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 136]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 72]
+        add r15, qword ptr [rdi + 128]
+        mov qword ptr [rdi + 128], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 320]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 64]
-        add r8, qword ptr [rdi + 120]
-        mov qword ptr [rdi + 120], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 312]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 112]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 72]
-        add r8, qword ptr [rdi + 128]
-        mov qword ptr [rdi + 128], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 320]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 120]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 80]
-        add r8, qword ptr [rdi + 136]
-        mov qword ptr [rdi + 136], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 328]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 144]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 144]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 80]
+        add r15, qword ptr [rdi + 136]
+        mov qword ptr [rdi + 136], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 328]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 128]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 152]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 152]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 88]
+        add r15, qword ptr [rdi + 144]
+        mov qword ptr [rdi + 144], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 336]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 128]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 136]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 88]
-        add r8, qword ptr [rdi + 144]
-        mov qword ptr [rdi + 144], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 336]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 160]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 160]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 96]
+        add r15, qword ptr [rdi + 152]
+        mov qword ptr [rdi + 152], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 344]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 136]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 144]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 96]
-        add r8, qword ptr [rdi + 152]
-        mov qword ptr [rdi + 152], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 344]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 168]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 168]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 104]
+        add r15, qword ptr [rdi + 160]
+        mov qword ptr [rdi + 160], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 352]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 144]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 152]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 104]
-        add r8, qword ptr [rdi + 160]
-        mov qword ptr [rdi + 160], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 352]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 176]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 176]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 112]
+        add r15, qword ptr [rdi + 168]
+        mov qword ptr [rdi + 168], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 360]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 152]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 160]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 112]
-        add r8, qword ptr [rdi + 168]
-        mov qword ptr [rdi + 168], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 360]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 184]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 184]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 120]
+        add r15, qword ptr [rdi + 176]
+        mov qword ptr [rdi + 176], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 368]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 160]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 168]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 120]
-        add r8, qword ptr [rdi + 176]
-        mov qword ptr [rdi + 176], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 368]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 64]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 64]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 128]
+        add r15, qword ptr [rdi + 184]
+        mov qword ptr [rdi + 184], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 376]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 168]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 176]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 72]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 72]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 136]
+        add r15, qword ptr [rdi + 64]
+        mov qword ptr [rdi + 64], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 384]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 128]
-        add r8, qword ptr [rdi + 184]
-        mov qword ptr [rdi + 184], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 376]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 176]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 136]
-        add r8, qword ptr [rdi + 64]
-        mov qword ptr [rdi + 64], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 384]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 184]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 144]
-        add r8, qword ptr [rdi + 72]
-        mov qword ptr [rdi + 72], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 392]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 80]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 80]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 144]
+        add r15, qword ptr [rdi + 72]
+        mov qword ptr [rdi + 72], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 392]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 64]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 88]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 88]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 152]
+        add r15, qword ptr [rdi + 80]
+        mov qword ptr [rdi + 80], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 400]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 64]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 72]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 152]
-        add r8, qword ptr [rdi + 80]
-        mov qword ptr [rdi + 80], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 400]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 96]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 96]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 160]
+        add r15, qword ptr [rdi + 88]
+        mov qword ptr [rdi + 88], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 408]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 72]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 80]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 160]
-        add r8, qword ptr [rdi + 88]
-        mov qword ptr [rdi + 88], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 408]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 104]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 104]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 168]
+        add r15, qword ptr [rdi + 96]
+        mov qword ptr [rdi + 96], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 416]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 80]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 88]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 168]
-        add r8, qword ptr [rdi + 96]
-        mov qword ptr [rdi + 96], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 416]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 112]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 112]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 176]
+        add r15, qword ptr [rdi + 104]
+        mov qword ptr [rdi + 104], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 424]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 88]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 96]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 176]
-        add r8, qword ptr [rdi + 104]
-        mov qword ptr [rdi + 104], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 424]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 120]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 120]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 184]
+        add r15, qword ptr [rdi + 112]
+        mov qword ptr [rdi + 112], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 432]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 96]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 104]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 184]
-        add r8, qword ptr [rdi + 112]
-        mov qword ptr [rdi + 112], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 432]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 128]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 128]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 64]
+        add r15, qword ptr [rdi + 120]
+        mov qword ptr [rdi + 120], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 440]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 104]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 112]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 136]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 136]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 72]
+        add r15, qword ptr [rdi + 128]
+        mov qword ptr [rdi + 128], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 448]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 64]
-        add r8, qword ptr [rdi + 120]
-        mov qword ptr [rdi + 120], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 440]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 112]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 72]
-        add r8, qword ptr [rdi + 128]
-        mov qword ptr [rdi + 128], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 448]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 120]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 80]
-        add r8, qword ptr [rdi + 136]
-        mov qword ptr [rdi + 136], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 456]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 144]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 144]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 80]
+        add r15, qword ptr [rdi + 136]
+        mov qword ptr [rdi + 136], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 456]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 128]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 152]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 152]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 88]
+        add r15, qword ptr [rdi + 144]
+        mov qword ptr [rdi + 144], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 464]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 128]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 136]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 88]
-        add r8, qword ptr [rdi + 144]
-        mov qword ptr [rdi + 144], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 464]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 160]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 160]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 96]
+        add r15, qword ptr [rdi + 152]
+        mov qword ptr [rdi + 152], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 472]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 136]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 144]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 96]
-        add r8, qword ptr [rdi + 152]
-        mov qword ptr [rdi + 152], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 472]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 168]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 168]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 104]
+        add r15, qword ptr [rdi + 160]
+        mov qword ptr [rdi + 160], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 480]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 144]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 152]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 104]
-        add r8, qword ptr [rdi + 160]
-        mov qword ptr [rdi + 160], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 480]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 176]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 176]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 112]
+        add r15, qword ptr [rdi + 168]
+        mov qword ptr [rdi + 168], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 488]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 152]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 160]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 112]
-        add r8, qword ptr [rdi + 168]
-        mov qword ptr [rdi + 168], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 488]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 184]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 184]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 120]
+        add r15, qword ptr [rdi + 176]
+        mov qword ptr [rdi + 176], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 496]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 160]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 168]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 120]
-        add r8, qword ptr [rdi + 176]
-        mov qword ptr [rdi + 176], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 496]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 64]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 64]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 128]
+        add r15, qword ptr [rdi + 184]
+        mov qword ptr [rdi + 184], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 504]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 168]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 176]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 72]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 72]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 136]
+        add r15, qword ptr [rdi + 64]
+        mov qword ptr [rdi + 64], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 512]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 128]
-        add r8, qword ptr [rdi + 184]
-        mov qword ptr [rdi + 184], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 504]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 176]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 72]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 136]
-        add r8, qword ptr [rdi + 64]
-        mov qword ptr [rdi + 64], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 512]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 184]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 80]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 144]
-        add r8, qword ptr [rdi + 72]
-        mov qword ptr [rdi + 72], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 520]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 80]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 80]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 144]
+        add r15, qword ptr [rdi + 72]
+        mov qword ptr [rdi + 72], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 520]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 64]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 88]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 88]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 152]
+        add r15, qword ptr [rdi + 80]
+        mov qword ptr [rdi + 80], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 528]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 64]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 72]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 88]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 152]
-        add r8, qword ptr [rdi + 80]
-        mov qword ptr [rdi + 80], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 528]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 96]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 96]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 160]
+        add r15, qword ptr [rdi + 88]
+        mov qword ptr [rdi + 88], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 536]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 72]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 80]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 96]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 160]
-        add r8, qword ptr [rdi + 88]
-        mov qword ptr [rdi + 88], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 536]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 104]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 104]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 168]
+        add r15, qword ptr [rdi + 96]
+        mov qword ptr [rdi + 96], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 544]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 80]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 88]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 104]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 168]
-        add r8, qword ptr [rdi + 96]
-        mov qword ptr [rdi + 96], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 544]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 112]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 112]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 176]
+        add r15, qword ptr [rdi + 104]
+        mov qword ptr [rdi + 104], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 552]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 88]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 96]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 112]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 176]
-        add r8, qword ptr [rdi + 104]
-        mov qword ptr [rdi + 104], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 552]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 120]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 120]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 184]
+        add r15, qword ptr [rdi + 112]
+        mov qword ptr [rdi + 112], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 560]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 96]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 104]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 120]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 184]
-        add r8, qword ptr [rdi + 112]
-        mov qword ptr [rdi + 112], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 560]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 128]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 128]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 64]
+        add r15, qword ptr [rdi + 120]
+        mov qword ptr [rdi + 120], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 568]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 104]
-        rorx r8, rcx, 0x13
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        mov rcx, qword ptr [rdi + 112]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 128]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 136]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 136]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 72]
+        add r15, qword ptr [rdi + 128]
+        mov qword ptr [rdi + 128], r15
+        add r8, r15
+        add r8, qword ptr [rip + sha512_x86_k + 576]
+        mov rax, r9
+        xor rax, r10
+        and rax, r11
+        xor rax, r9
         add r8, rax
-        add r8, qword ptr [rdi + 64]
-        add r8, qword ptr [rdi + 120]
-        mov qword ptr [rdi + 120], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 568]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
+        rorx rcx, r11, 0xe
         rorx rax, r11, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
+        xor rcx, rax
+        add r8, rcx
+        add rbx, r8
         rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
+        rorx rax, r14, 0x22
+        xor rcx, rax
+        rorx rax, r14, 0x27
+        xor rcx, rax
+        add r8, rcx
         mov rcx, r14
         and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        mov rcx, qword ptr [rdi + 112]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 136]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
+        mov rax, r14
+        or rax, r13
+        and rax, r12
+        or rax, rcx
         add r8, rax
-        add r8, qword ptr [rdi + 72]
-        add r8, qword ptr [rdi + 128]
-        mov qword ptr [rdi + 128], r8
-        add r9, r8
-        add r9, qword ptr [rip + sha512_x86_k + 576]
-        mov rcx, r10
-        xor rcx, r11
-        and rcx, rbx
-        xor rcx, r10
-        add r9, rcx
-        rorx r8, rbx, 0xe
-        rorx rax, rbx, 0x12
-        xor r8, rax
-        rorx rax, rbx, 0x29
-        xor r8, rax
-        add r9, r8
-        add r12, r9
-        rorx rcx, r15, 0x1c
-        rorx r8, r15, 0x22
-        xor rcx, r8
-        rorx r8, r15, 0x27
-        xor rcx, r8
-        add r9, rcx
-        mov rcx, r15
-        and rcx, r14
-        mov r8, r15
-        or r8, r14
-        and r8, r13
-        or r8, rcx
-        add r9, r8
         mov rcx, qword ptr [rdi + 120]
-        rorx r8, rcx, 0x13
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 144]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 80]
-        add r8, qword ptr [rdi + 136]
-        mov qword ptr [rdi + 136], r8
-        add r10, r8
-        add r10, qword ptr [rip + sha512_x86_k + 584]
-        mov rcx, r11
-        xor rcx, rbx
-        and rcx, r12
-        xor rcx, r11
-        add r10, rcx
-        rorx r8, r12, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 144]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 144]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 80]
+        add r15, qword ptr [rdi + 136]
+        mov qword ptr [rdi + 136], r15
+        add r9, r15
+        add r9, qword ptr [rip + sha512_x86_k + 584]
+        mov rax, r10
+        xor rax, r11
+        and rax, rbx
+        xor rax, r10
+        add r9, rax
+        rorx rcx, rbx, 0xe
+        rorx rax, rbx, 0x12
+        xor rcx, rax
+        rorx rax, rbx, 0x29
+        xor rcx, rax
+        add r9, rcx
+        add r12, r9
+        rorx rcx, r8, 0x1c
+        rorx rax, r8, 0x22
+        xor rcx, rax
+        rorx rax, r8, 0x27
+        xor rcx, rax
+        add r9, rcx
+        mov rcx, r8
+        and rcx, r14
+        mov rax, r8
+        or rax, r14
+        and rax, r13
+        or rax, rcx
+        add r9, rax
+        mov rcx, qword ptr [rdi + 128]
+        rorx r15, rcx, 0x13
+        rorx rax, rcx, 0x3d
+        xor r15, rax
+        shr rcx, 0x6
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 152]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 152]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 88]
+        add r15, qword ptr [rdi + 144]
+        mov qword ptr [rdi + 144], r15
+        add r10, r15
+        add r10, qword ptr [rip + sha512_x86_k + 592]
+        mov rax, r11
+        xor rax, rbx
+        and rax, r12
+        xor rax, r11
+        add r10, rax
+        rorx rcx, r12, 0xe
         rorx rax, r12, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r12, 0x29
-        xor r8, rax
-        add r10, r8
+        xor rcx, rax
+        add r10, rcx
         add r13, r10
         rorx rcx, r9, 0x1c
-        rorx r8, r9, 0x22
-        xor rcx, r8
-        rorx r8, r9, 0x27
-        xor rcx, r8
+        rorx rax, r9, 0x22
+        xor rcx, rax
+        rorx rax, r9, 0x27
+        xor rcx, rax
         add r10, rcx
         mov rcx, r9
-        and rcx, r15
-        mov r8, r9
-        or r8, r15
-        and r8, r14
-        or r8, rcx
-        add r10, r8
-        mov rcx, qword ptr [rdi + 128]
-        rorx r8, rcx, 0x13
+        and rcx, r8
+        mov rax, r9
+        or rax, r8
+        and rax, r14
+        or rax, rcx
+        add r10, rax
+        mov rcx, qword ptr [rdi + 136]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 152]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 88]
-        add r8, qword ptr [rdi + 144]
-        mov qword ptr [rdi + 144], r8
-        add r11, r8
-        add r11, qword ptr [rip + sha512_x86_k + 592]
-        mov rcx, rbx
-        xor rcx, r12
-        and rcx, r13
-        xor rcx, rbx
-        add r11, rcx
-        rorx r8, r13, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 160]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 160]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 96]
+        add r15, qword ptr [rdi + 152]
+        mov qword ptr [rdi + 152], r15
+        add r11, r15
+        add r11, qword ptr [rip + sha512_x86_k + 600]
+        mov rax, rbx
+        xor rax, r12
+        and rax, r13
+        xor rax, rbx
+        add r11, rax
+        rorx rcx, r13, 0xe
         rorx rax, r13, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r13, 0x29
-        xor r8, rax
-        add r11, r8
+        xor rcx, rax
+        add r11, rcx
         add r14, r11
         rorx rcx, r10, 0x1c
-        rorx r8, r10, 0x22
-        xor rcx, r8
-        rorx r8, r10, 0x27
-        xor rcx, r8
+        rorx rax, r10, 0x22
+        xor rcx, rax
+        rorx rax, r10, 0x27
+        xor rcx, rax
         add r11, rcx
         mov rcx, r10
         and rcx, r9
-        mov r8, r10
-        or r8, r9
-        and r8, r15
-        or r8, rcx
-        add r11, r8
-        mov rcx, qword ptr [rdi + 136]
-        rorx r8, rcx, 0x13
+        mov rax, r10
+        or rax, r9
+        and rax, r8
+        or rax, rcx
+        add r11, rax
+        mov rcx, qword ptr [rdi + 144]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 160]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 96]
-        add r8, qword ptr [rdi + 152]
-        mov qword ptr [rdi + 152], r8
-        add rbx, r8
-        add rbx, qword ptr [rip + sha512_x86_k + 600]
-        mov rcx, r12
-        xor rcx, r13
-        and rcx, r14
-        xor rcx, r12
-        add rbx, rcx
-        rorx r8, r14, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 168]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 168]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 104]
+        add r15, qword ptr [rdi + 160]
+        mov qword ptr [rdi + 160], r15
+        add rbx, r15
+        add rbx, qword ptr [rip + sha512_x86_k + 608]
+        mov rax, r12
+        xor rax, r13
+        and rax, r14
+        xor rax, r12
+        add rbx, rax
+        rorx rcx, r14, 0xe
         rorx rax, r14, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r14, 0x29
-        xor r8, rax
-        add rbx, r8
-        add r15, rbx
+        xor rcx, rax
+        add rbx, rcx
+        add r8, rbx
         rorx rcx, r11, 0x1c
-        rorx r8, r11, 0x22
-        xor rcx, r8
-        rorx r8, r11, 0x27
-        xor rcx, r8
+        rorx rax, r11, 0x22
+        xor rcx, rax
+        rorx rax, r11, 0x27
+        xor rcx, rax
         add rbx, rcx
         mov rcx, r11
         and rcx, r10
-        mov r8, r11
-        or r8, r10
-        and r8, r9
-        or r8, rcx
-        add rbx, r8
-        mov rcx, qword ptr [rdi + 144]
-        rorx r8, rcx, 0x13
+        mov rax, r11
+        or rax, r10
+        and rax, r9
+        or rax, rcx
+        add rbx, rax
+        mov rcx, qword ptr [rdi + 152]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 168]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 104]
-        add r8, qword ptr [rdi + 160]
-        mov qword ptr [rdi + 160], r8
-        add r12, r8
-        add r12, qword ptr [rip + sha512_x86_k + 608]
-        mov rcx, r13
-        xor rcx, r14
-        and rcx, r15
-        xor rcx, r13
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 176]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 176]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 112]
+        add r15, qword ptr [rdi + 168]
+        mov qword ptr [rdi + 168], r15
+        add r12, r15
+        add r12, qword ptr [rip + sha512_x86_k + 616]
+        mov rax, r13
+        xor rax, r14
+        and rax, r8
+        xor rax, r13
+        add r12, rax
+        rorx rcx, r8, 0xe
+        rorx rax, r8, 0x12
+        xor rcx, rax
+        rorx rax, r8, 0x29
+        xor rcx, rax
         add r12, rcx
-        rorx r8, r15, 0xe
-        rorx rax, r15, 0x12
-        xor r8, rax
-        rorx rax, r15, 0x29
-        xor r8, rax
-        add r12, r8
         add r9, r12
         rorx rcx, rbx, 0x1c
-        rorx r8, rbx, 0x22
-        xor rcx, r8
-        rorx r8, rbx, 0x27
-        xor rcx, r8
+        rorx rax, rbx, 0x22
+        xor rcx, rax
+        rorx rax, rbx, 0x27
+        xor rcx, rax
         add r12, rcx
         mov rcx, rbx
         and rcx, r11
-        mov r8, rbx
-        or r8, r11
-        and r8, r10
-        or r8, rcx
-        add r12, r8
-        mov rcx, qword ptr [rdi + 152]
-        rorx r8, rcx, 0x13
+        mov rax, rbx
+        or rax, r11
+        and rax, r10
+        or rax, rcx
+        add r12, rax
+        mov rcx, qword ptr [rdi + 160]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 176]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 112]
-        add r8, qword ptr [rdi + 168]
-        mov qword ptr [rdi + 168], r8
-        add r13, r8
-        add r13, qword ptr [rip + sha512_x86_k + 616]
-        mov rcx, r14
-        xor rcx, r15
-        and rcx, r9
-        xor rcx, r14
-        add r13, rcx
-        rorx r8, r9, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 184]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 184]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 120]
+        add r15, qword ptr [rdi + 176]
+        mov qword ptr [rdi + 176], r15
+        add r13, r15
+        add r13, qword ptr [rip + sha512_x86_k + 624]
+        mov rax, r14
+        xor rax, r8
+        and rax, r9
+        xor rax, r14
+        add r13, rax
+        rorx rcx, r9, 0xe
         rorx rax, r9, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r9, 0x29
-        xor r8, rax
-        add r13, r8
+        xor rcx, rax
+        add r13, rcx
         add r10, r13
         rorx rcx, r12, 0x1c
-        rorx r8, r12, 0x22
-        xor rcx, r8
-        rorx r8, r12, 0x27
-        xor rcx, r8
+        rorx rax, r12, 0x22
+        xor rcx, rax
+        rorx rax, r12, 0x27
+        xor rcx, rax
         add r13, rcx
         mov rcx, r12
         and rcx, rbx
-        mov r8, r12
-        or r8, rbx
-        and r8, r11
-        or r8, rcx
-        add r13, r8
-        mov rcx, qword ptr [rdi + 160]
-        rorx r8, rcx, 0x13
+        mov rax, r12
+        or rax, rbx
+        and rax, r11
+        or rax, rcx
+        add r13, rax
+        mov rcx, qword ptr [rdi + 168]
+        rorx r15, rcx, 0x13
         rorx rax, rcx, 0x3d
-        xor r8, rax
+        xor r15, rax
         shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 184]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 120]
-        add r8, qword ptr [rdi + 176]
-        mov qword ptr [rdi + 176], r8
-        add r14, r8
-        add r14, qword ptr [rip + sha512_x86_k + 624]
-        mov rcx, r15
-        xor rcx, r9
-        and rcx, r10
-        xor rcx, r15
-        add r14, rcx
-        rorx r8, r10, 0xe
+        xor r15, rcx
+        mov rax, qword ptr [rdi + 64]
+        rorx rcx, rax, 0x1
+        shr rax, 0x7
+        xor rcx, rax
+        mov rax, qword ptr [rdi + 64]
+        rorx rax, rax, 0x8
+        xor rcx, rax
+        add r15, rcx
+        add r15, qword ptr [rdi + 128]
+        add r15, qword ptr [rdi + 184]
+        mov qword ptr [rdi + 184], r15
+        add r14, r15
+        add r14, qword ptr [rip + sha512_x86_k + 632]
+        mov rax, r8
+        xor rax, r9
+        and rax, r10
+        xor rax, r8
+        add r14, rax
+        rorx rcx, r10, 0xe
         rorx rax, r10, 0x12
-        xor r8, rax
+        xor rcx, rax
         rorx rax, r10, 0x29
-        xor r8, rax
-        add r14, r8
+        xor rcx, rax
+        add r14, rcx
         add r11, r14
         rorx rcx, r13, 0x1c
-        rorx r8, r13, 0x22
-        xor rcx, r8
-        rorx r8, r13, 0x27
-        xor rcx, r8
+        rorx rax, r13, 0x22
+        xor rcx, rax
+        rorx rax, r13, 0x27
+        xor rcx, rax
         add r14, rcx
         mov rcx, r13
         and rcx, r12
-        mov r8, r13
-        or r8, r12
-        and r8, rbx
-        or r8, rcx
-        add r14, r8
-        mov rcx, qword ptr [rdi + 168]
-        rorx r8, rcx, 0x13
-        rorx rax, rcx, 0x3d
-        xor r8, rax
-        shr rcx, 0x6
-        xor r8, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rax, rcx, 0x1
-        shr rcx, 0x7
-        xor rax, rcx
-        mov rcx, qword ptr [rdi + 64]
-        rorx rcx, rcx, 0x8
-        xor rax, rcx
-        add r8, rax
-        add r8, qword ptr [rdi + 128]
-        add r8, qword ptr [rdi + 184]
-        mov qword ptr [rdi + 184], r8
-        add r15, r8
-        add r15, qword ptr [rip + sha512_x86_k + 632]
-        mov rcx, r9
-        xor rcx, r10
-        and rcx, r11
-        xor rcx, r9
-        add r15, rcx
-        rorx r8, r11, 0xe
-        rorx rax, r11, 0x12
-        xor r8, rax
-        rorx rax, r11, 0x29
-        xor r8, rax
-        add r15, r8
-        add rbx, r15
-        rorx rcx, r14, 0x1c
-        rorx r8, r14, 0x22
-        xor rcx, r8
-        rorx r8, r14, 0x27
-        xor rcx, r8
-        add r15, rcx
-        mov rcx, r14
-        and rcx, r13
-        mov r8, r14
-        or r8, r13
-        and r8, r12
-        or r8, rcx
-        add r15, r8
-        add r15, qword ptr [rdi]
-        mov qword ptr [rdi], r15
-        add r14, qword ptr [rdi + 8]
-        mov qword ptr [rdi + 8], r14
-        add r13, qword ptr [rdi + 16]
-        mov qword ptr [rdi + 16], r13
-        add r12, qword ptr [rdi + 24]
-        mov qword ptr [rdi + 24], r12
-        add rbx, qword ptr [rdi + 32]
-        mov qword ptr [rdi + 32], rbx
-        add r11, qword ptr [rdi + 40]
-        mov qword ptr [rdi + 40], r11
-        add r10, qword ptr [rdi + 48]
-        mov qword ptr [rdi + 48], r10
-        add r9, qword ptr [rdi + 56]
-        mov qword ptr [rdi + 56], r9
+        mov rax, r13
+        or rax, r12
+        and rax, rbx
+        or rax, rcx
+        add r14, rax
+        add r14, qword ptr [rdi]
+        mov qword ptr [rdi], r14
+        add r13, qword ptr [rdi + 8]
+        mov qword ptr [rdi + 8], r13
+        add r12, qword ptr [rdi + 16]
+        mov qword ptr [rdi + 16], r12
+        add rbx, qword ptr [rdi + 24]
+        mov qword ptr [rdi + 24], rbx
+        add r11, qword ptr [rdi + 32]
+        mov qword ptr [rdi + 32], r11
+        add r10, qword ptr [rdi + 40]
+        mov qword ptr [rdi + 40], r10
+        add r9, qword ptr [rdi + 48]
+        mov qword ptr [rdi + 48], r9
+        add r8, qword ptr [rdi + 56]
+        mov qword ptr [rdi + 56], r8
         add rsi, 0x80
         sub rdx, 0x1
         jnz .Lrktcrypto_sha512_blocks_x86_blk
