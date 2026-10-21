@@ -119,7 +119,7 @@ int main(void)
       tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("GENERIC MUL MISMATCH t=%d ctx=%s\n", t, c == &cn ? "n" : "p"); }
     } }
   /* public API: pubkey / ECDH / ECDSA with the kernel vs without */
-  for (t = 0; t < 40; t++) {
+  for (t = 0; t < 300; t++) {
     unsigned char priv[32], priv2[32], pub_a[65], pub_b[65], pub2[65], sh_a[32], sh_b[32], sig[64], msg[48]; int ra, rb;
     for (i = 0; i < 32; i++) { priv[i] = (unsigned char)rnd64(); priv2[i] = (unsigned char)rnd64(); }
     for (i = 0; i < 48; i++) msg[i] = (unsigned char)rnd64();

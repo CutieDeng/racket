@@ -121,6 +121,10 @@ static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],cons
 extern void mont_mul_p256_x86(u64 r[4],const u64 a[4],const u64 b[4]);
 extern void mont_sqr_p256_x86(u64 r[4],const u64 a[4]);
 extern void mont_mul_x86(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx);
+struct jac_s; /* the point kernels take the jac layout X@0 Y@32 Z@64 */
+extern void jac_double_x86(void *r,const void *p);
+extern int  mixed_add_x86(void *r,const void *p,const void *q);
+#define HAVE_P256_POINT_X86 1
 static inline int p256_x86(void){ return rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX); }
 static inline void mont_mul_dispatch(u64 r[4],const u64 a[4],const u64 b[4],const mont_ctx *ctx){
   if (!p256_x86())  mont_mul_portable(r,a,b,ctx);
@@ -399,7 +403,12 @@ static void __attribute__((unused)) jac_double_portable(jac *r,const jac *p){
   for(i=0;i<4;i++){ r->X[i]=X3[i]; r->Y[i]=Y3[i]; r->Z[i]=Z3[i]; }
 }
 #ifndef JAC_DOUBLE_ASM
-static void jac_double(jac *r,const jac *p){ jac_double_portable(r,p); }
+static void jac_double(jac *r,const jac *p){
+#ifdef HAVE_P256_POINT_X86
+  if (p256_x86()) { if(fp_iszero(p->Z)){ *r=*p; return; } jac_double_x86(r,p); return; }   /* rktasm/x86 kernel */
+#endif
+  jac_double_portable(r,p);
+}
 #endif
 
 static void jac_add(jac *r,const jac *p,const jac *q){
@@ -448,6 +457,16 @@ static void mixed_add(jac *r,const jac *p,const jac *q){
   mixed_add_hw(r,p,q); return;
 }
 static void __attribute__((unused)) mixed_add_portable(jac *r,const jac *p,const jac *q){
+#elif defined(HAVE_P256_POINT_X86)
+  if (p256_x86()) {                                             /* rktasm/x86 kernel */
+    int i;
+    if(fp_iszero(p->Z)){ *r=*q; return; }
+    switch (mixed_add_x86(r,p,q)) {
+      case 0: return;
+      case 1: jac_double(r,p); return;
+      default: for(i=0;i<4;i++){ r->X[i]=0;r->Y[i]=0;r->Z[i]=0;} r->X[0]=1;r->Y[0]=1; return;
+    }
+  }
 #endif
   u64 Z1Z1[4],U2[4],S2[4],H[4],Rr[4],HH[4],HHH[4],t[4],t2[4],tt[4],X3[4],Z3[4];
   int i;
