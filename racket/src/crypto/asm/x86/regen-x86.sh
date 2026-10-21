@@ -4,6 +4,8 @@
 #   regen-x86.sh check [kernel]    regenerate to a temp file and require a byte-identical committed .S
 #   regen-x86.sh gate  [kernel]    x86-64 Linux only: build the C harness against the committed .S,
 #                                  run the differential/KAT, print the BENCH lines (fails on any mismatch)
+#   regen-x86.sh gensrc [--write] emitted .asm sources (GENSRC table): regenerate from their Racket
+#                                  emitter and require a byte-identical committed .asm (--write: rewrite it)
 #   regen-x86.sh list
 # The generator runs on any host (clang cross round trip is optional: RT=1); the gate needs the
 # target ISA (SHA-NI/AES-NI/...) on the running CPU, i.e. lan-11-class hardware.
@@ -37,8 +39,21 @@ gen() { # $1=kernel $2=out
   ( cd "$ROOT" && "$RACKET" "$RKTASM" ${RT:+--roundtrip} -o "$2" "asm/x86/$1.asm" )
 }
 cmd=${1:-}; k=${2:-}
+# emitted .asm sources: kernel | emitter (run from racket/src/crypto, output path as its argument)
+GENSRC="gcm_vaes|asm/gen/gcm-vaes-x86.rkt"
+
 case "$cmd" in
   list) rows | cut -d'|' -f1 ;;
+  gensrc)
+    rc=0
+    IFS=$NL; for row in $GENSRC; do IFS=' 	$NL'
+      kk=$(echo "$row" | cut -d'|' -f1); emitter=$(echo "$row" | cut -d'|' -f2); src="asm/x86/$kk.asm"
+      if [ "$k" = "--write" ]; then ( cd "$ROOT" && "$RACKET" "$emitter" "$src" ) && echo "gensrc($kk): wrote $src"; continue; fi
+      tmp=$(mktemp "${TMPDIR:-/tmp}/rktasm-x86-gensrc.XXXXXX")
+      if ( cd "$ROOT" && "$RACKET" "$emitter" "$tmp" ) && cmp -s "$tmp" "$ROOT/$src"; then echo "gensrc($kk): byte-identical $src"
+      else echo "gensrc($kk): DIFFERS from committed $src (emitter $emitter)"; rc=1; fi
+      rm -f "$tmp"
+    done; exit $rc ;;
   regen)
     [ -n "$k" ] || { echo "regen needs a kernel"; exit 2; }
     row=$(rows "$k"); [ -n "$row" ] || { echo "unknown kernel $k"; exit 2; }
@@ -66,5 +81,5 @@ case "$cmd" in
       else echo "gate($kk): FAIL"; sed 's/^/  /' "$bin.txt" 2>/dev/null | tail -8; rc=1; fi
       rm -f "$bin" "$bin.txt"
     done; exit $rc ;;
-  *) echo "usage: regen-x86.sh {regen <kernel> | check [kernel] | gate [kernel] | list}"; exit 2 ;;
+  *) echo "usage: regen-x86.sh {regen <kernel> | check [kernel] | gate [kernel] | gensrc [--write] | list}"; exit 2 ;;
 esac

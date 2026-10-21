@@ -46,7 +46,7 @@ void rktcrypto_ghash_vpclmul(const unsigned char htab[256], unsigned char acc[16
 /* Fused AES-GCM bulk pass (rktcrypto_gcm_vaes.S): the context layout is shared with the kernel */
 struct rktcrypto_gcm_vaes_ctx {
   const unsigned char *rk;     /* 0  */
-  const unsigned char *htab;   /* 8  H^32..H^1 descending in eight 64-byte rows, byte-reversed (rktcrypto_gcm_vaes_setup) */
+  const unsigned char *htab;   /* 8  H^32..H^1 times x^-1 in eight 64-byte rows, then eight rows of their (lo ^ hi) halves (rktcrypto_gcm_vaes_setup) */
   unsigned char *ctr;          /* 16 big-endian counter block, advanced by the kernel */
   unsigned char *acc;          /* 24 GHASH accumulator, byte-reversed, updated by the kernel */
   intptr_t nr;                 /* 32 */
@@ -54,9 +54,11 @@ struct rktcrypto_gcm_vaes_ctx {
 };
 intptr_t rktcrypto_gcm_crypt_vaes(const struct rktcrypto_gcm_vaes_ctx *c,
                                   const unsigned char *in, unsigned char *out, intptr_t len);
-/* H^32..H^1 (descending, byte-reversed, 512 bytes) from the GCM hash key h = (hi, lo) big-endian
-   words; htab + 256 is the H^16..H^1 table the region helper takes, htab[496..511] is H itself. */
-void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[512]);
+/* From the GCM hash key h = (hi, lo) big-endian words: htab[0..511] = H^32..H^1 times x^-1
+   (descending, byte-reversed) for the fused kernel, htab[512..1023] = the (lo ^ hi) halves of
+   those entries duplicated per lane (its Karatsuba cross term), htab[1024..1279] = plain
+   H^16..H^1, the table the region helper takes (htab[1264..1279] is H itself). */
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280]);
 /* rktasm/x86 kernel (rktcrypto_gcm_vaes.S): rows 0..6 of the table from row 7 and c = [H^4 | H^8 | H^16] */
 void rktcrypto_gcm_htab_vaes(unsigned char htab[512], const unsigned char c[48]);
 /* GHASH a region into acc (byte-reversed): the VPCLMULQDQ kernel for the 64-byte multiple prefix

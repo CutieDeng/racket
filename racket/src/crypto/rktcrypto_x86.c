@@ -485,8 +485,22 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
    with data register j; row 7 = [H^4 H^3 H^2 H] and the multipliers H^4, H^8, H^16 are computed
    here (five serial multiplications), the other rows by the vectorised kernel (seven lane-wise
    multiplications in three dependent levels) or, without the kernel, serially. */
+/* Multiply a byte-reversed (bit-reflected) field element by x^-1 in place. The fused kernel's
+   table rows carry this factor: the carry-less product of two reflected operands is the reflected
+   256-bit product of the field elements times x, so with H^k * x^-1 in the table the raw sums
+   reduce with the modular fold alone (no one-bit shift). Dividing by x shifts the reflected value
+   left by one; a set x^0 coefficient (bit 127) adds x^-1 = x^127 + x^6 + x + 1 (bits 0, 121, 126, 127). */
+static void gcm_scale_xinv(unsigned char *e)
+{
+  uint64_t lo, hi, top;
+  memcpy(&lo, e, 8); memcpy(&hi, e + 8, 8);
+  top = hi >> 63; hi = (hi << 1) | (lo >> 63); lo <<= 1;
+  if (top) { lo ^= 1; hi ^= 0xC200000000000000ULL; }
+  memcpy(e, &lo, 8); memcpy(e + 8, &hi, 8);
+}
+
 __attribute__((target("pclmul,sse4.1,ssse3")))
-void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[512])
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280])
 {
   const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
   unsigned char hb[16], c[48] __attribute__((aligned(16))); __m128i H, H2, H3, H4, H8, H16; int i;
@@ -508,6 +522,14 @@ void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[512])
     (void)c; (void)H8; (void)H16;
     for (k = 27; k >= 0; k--) { p = gcm_gfmul(p, H); _mm_storeu_si128((__m128i *)(htab + 16 * k), p); } }
 #endif
+  memcpy(htab + 1024, htab + 256, 256);                   /* plain H^16..H^1 for the region helper */
+  for (i = 0; i < 32; i++) {
+    uint64_t lo, hi, k;
+    gcm_scale_xinv(htab + 16 * i);                          /* the kernel's rows carry x^-1 */
+    memcpy(&lo, htab + 16 * i, 8); memcpy(&hi, htab + 16 * i + 8, 8);
+    k = lo ^ hi;                                            /* Karatsuba rows: lo ^ hi in both halves */
+    memcpy(htab + 512 + 16 * i, &k, 8); memcpy(htab + 512 + 16 * i + 8, &k, 8);
+  }
 }
 
 /* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then
