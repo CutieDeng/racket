@@ -29,14 +29,16 @@ keccak_avx512|rktcrypto_keccak_avx512.S|asm/tests/test_keccak_x86.c|rktcrypto_cp
 keccak_scalar|rktcrypto_keccak_scalar.S|asm/tests/test_keccak_x86.c|rktcrypto_cpu.c rktcrypto_x86.c
 sha512_x86|rktcrypto_sha512_x86.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
 sha512_avx512|rktcrypto_sha512_avx512.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
+ed25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_ed25519_x86.c|rktcrypto_ed25519.c rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c|asm/x86/x25519_x86.asm
 x25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_x25519_x86.c|rktcrypto_x25519.c rktcrypto_cpu.c rktcrypto_x86.c
 poly1305_ifma|rktcrypto_poly1305_ifma.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 '
 rows() { echo "$TABLE" | grep -v '^$' | { if [ -n "${1:-}" ]; then grep "^$1|"; else cat; fi; }; }
 NL='
 '
-gen() { # $1=kernel $2=out
-  ( cd "$ROOT" && "$RACKET" "$RKTASM" ${RT:+--roundtrip} -o "$2" "asm/x86/$1.asm" )
+gen() { # $1=kernel $2=out  (a row's fifth column names the .asm when it is not asm/x86/<kernel>.asm)
+  src=$(rows "$1" | cut -d'|' -f5); [ -n "$src" ] || src="asm/x86/$1.asm"
+  ( cd "$ROOT" && "$RACKET" "$RKTASM" ${RT:+--roundtrip} -o "$2" "$src" )
 }
 cmd=${1:-}; k=${2:-}
 # emitted .asm sources: kernel | emitter (run from racket/src/crypto, output path as its argument)
@@ -75,7 +77,7 @@ case "$cmd" in
       kk=$(echo "$row" | cut -d'|' -f1); out=$(echo "$row" | cut -d'|' -f2)
       h=$(echo "$row" | cut -d'|' -f3); deps=$(echo "$row" | cut -d'|' -f4)
       bin=$(mktemp "${TMPDIR:-/tmp}/rktasm-x86-gate.XXXXXX")
-      alls=$(rows | cut -d'|' -f2 | tr '\n' ' ')
+      alls=$(rows | cut -d'|' -f2 | sort -u | tr '\n' ' ')   # two rows may share one .S
       if ( cd "$ROOT" && $CC -O2 -I. -o "$bin" "$h" $alls $deps ) && "$bin" > "$bin.txt" 2>&1; then
         echo "gate($kk): PASS  $(grep -c '^BENCH' "$bin.txt") BENCH line(s)"; grep '^BENCH\|mismatches' "$bin.txt" | sed 's/^/  /'
       else echo "gate($kk): FAIL"; sed 's/^/  /' "$bin.txt" 2>/dev/null | tail -8; rc=1; fi

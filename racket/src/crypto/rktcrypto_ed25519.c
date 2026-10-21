@@ -525,7 +525,213 @@ static void sha512_3(const unsigned char *m1,intptr_t l1,const unsigned char *m2
   rktcrypto_sha512_core_final(&c,out,64);
 }
 
+
+#if defined(__x86_64__) && defined(__ELF__)
+/* ---------------- x86-64 path: radix-2^64 field on the rktasm/x86 kernels ----------------
+   Four 64-bit limbs, loosely reduced (below 2^256), multiplied and squared by fe64_mul_x86 /
+   fe64_sqr_x86 (MULX/ADX, rktcrypto_x25519_x86.S); the point operations are the ed25519_*_x86
+   kernels of the same file (field macros composed over frame slots), the comb lookup an AVX-512
+   compare-and-blend over the window's sixteen 128-byte entries. The comb table is the one the
+   radix-2^51 code builds, converted. Selected at runtime when BMI2/ADX and AVX-512 are present;
+   the radix-2^51 code above stays the portable path and the oracle (asm/tests/test_ed25519_x86.c). */
+#include "rktcrypto_cpu.h"
+#include "rktcrypto_x86.h"
+
+typedef uint64_t fe64[4];
+typedef struct { fe64 X, Y, Z, T; } ge64;                          /* 128 bytes, the kernels' layout */
+typedef struct { fe64 yplusx, yminusx, xy2d, pad; } gec64;         /* 128 bytes: one comb entry */
+
+static void fe64_0(fe64 h){ h[0]=h[1]=h[2]=h[3]=0; }
+static void fe64_1(fe64 h){ fe64_0(h); h[0]=1; }
+static void fe64_copy(fe64 h,const fe64 f){ memcpy(h,f,32); }
+static void fe64_add(fe64 h,const fe64 f,const fe64 g){
+  unsigned __int128 c=0; int i;
+  for(i=0;i<4;i++){ c+=(unsigned __int128)f[i]+g[i]; h[i]=(uint64_t)c; c>>=64; }
+  c=(unsigned __int128)h[0]+(uint64_t)c*38; h[0]=(uint64_t)c; c>>=64;
+  for(i=1;i<4;i++){ c+=h[i]; h[i]=(uint64_t)c; c>>=64; }
+  h[0]+=(uint64_t)c*38;
+}
+static void fe64_sub(fe64 h,const fe64 f,const fe64 g){
+  unsigned __int128 x; uint64_t b=0; int i;
+  for(i=0;i<4;i++){ x=(unsigned __int128)f[i]-g[i]-b; h[i]=(uint64_t)x; b=(uint64_t)(x>>64)&1; }
+  x=(unsigned __int128)h[0]-b*38; h[0]=(uint64_t)x; b=(uint64_t)(x>>64)&1;
+  for(i=1;i<4;i++){ x=(unsigned __int128)h[i]-b; h[i]=(uint64_t)x; b=(uint64_t)(x>>64)&1; }
+  h[0]-=b*38;
+}
+static void fe64_neg(fe64 h,const fe64 f){ fe64 z; fe64_0(z); fe64_sub(h,z,f); }
+static void fe64_frombytes(fe64 h,const unsigned char *s){
+  int i; for(i=0;i<4;i++) h[i]=load64_le(s+8*i);
+  h[3]&=0x7fffffffffffffffULL;
+}
+static void fe64_tobytes(unsigned char *s,const fe64 hh){
+  uint64_t h[4],t[4],q; unsigned __int128 c; int i;
+  memcpy(h,hh,32);
+  q=h[3]>>63; h[3]&=0x7fffffffffffffffULL;
+  c=(unsigned __int128)h[0]+19*q; h[0]=(uint64_t)c; c>>=64;
+  for(i=1;i<4;i++){ c+=h[i]; h[i]=(uint64_t)c; c>>=64; }
+  c=(unsigned __int128)h[0]+19; t[0]=(uint64_t)c; c>>=64;
+  for(i=1;i<4;i++){ c+=h[i]; t[i]=(uint64_t)c; c>>=64; }
+  q=(t[3]>>63)|(uint64_t)c;
+  c=(unsigned __int128)h[0]+19*q; h[0]=(uint64_t)c; c>>=64;
+  for(i=1;i<4;i++){ c+=h[i]; h[i]=(uint64_t)c; c>>=64; }
+  h[3]&=0x7fffffffffffffffULL;
+  for(i=0;i<4;i++) store64_le(s+8*i,h[i]);
+}
+static void fe64_from51(fe64 h,const fe f){ unsigned char s[32]; fe_tobytes(s,f); fe64_frombytes(h,s); }
+static int fe64_isnegative(const fe64 f){ unsigned char s[32]; fe64_tobytes(s,f); return s[0]&1; }
+static int fe64_iszero(const fe64 f){ unsigned char s[32],acc=0; int i; fe64_tobytes(s,f); for(i=0;i<32;i++) acc|=s[i]; return acc==0; }
+static void fe64_invert(fe64 out,const fe64 z){
+  fe64 t0,t1,t2,t3; int i;
+  fe64_sqr_x86(t0,z); fe64_sqr_x86(t1,t0); fe64_sqr_x86(t1,t1); fe64_mul_x86(t1,z,t1); fe64_mul_x86(t0,t0,t1);
+  fe64_sqr_x86(t2,t0); fe64_mul_x86(t1,t1,t2);
+  fe64_sqr_x86(t2,t1); for(i=1;i<5;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t1,t2,t1);
+  fe64_sqr_x86(t2,t1); for(i=1;i<10;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t2,t2,t1);
+  fe64_sqr_x86(t3,t2); for(i=1;i<20;i++) fe64_sqr_x86(t3,t3); fe64_mul_x86(t2,t3,t2);
+  fe64_sqr_x86(t2,t2); for(i=1;i<10;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t1,t2,t1);
+  fe64_sqr_x86(t2,t1); for(i=1;i<50;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t2,t2,t1);
+  fe64_sqr_x86(t3,t2); for(i=1;i<100;i++) fe64_sqr_x86(t3,t3); fe64_mul_x86(t2,t3,t2);
+  fe64_sqr_x86(t2,t2); for(i=1;i<50;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t1,t2,t1);
+  fe64_sqr_x86(t1,t1); for(i=1;i<5;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(out,t1,t0);
+}
+static void fe64_pow22523(fe64 out,const fe64 z){
+  fe64 t0,t1,t2; int i;
+  fe64_sqr_x86(t0,z); fe64_sqr_x86(t1,t0); fe64_sqr_x86(t1,t1); fe64_mul_x86(t1,z,t1); fe64_mul_x86(t0,t0,t1);
+  fe64_sqr_x86(t0,t0); fe64_mul_x86(t0,t1,t0);
+  fe64_sqr_x86(t1,t0); for(i=1;i<5;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(t0,t1,t0);
+  fe64_sqr_x86(t1,t0); for(i=1;i<10;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(t1,t1,t0);
+  fe64_sqr_x86(t2,t1); for(i=1;i<20;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t1,t2,t1);
+  fe64_sqr_x86(t1,t1); for(i=1;i<10;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(t0,t1,t0);
+  fe64_sqr_x86(t1,t0); for(i=1;i<50;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(t1,t1,t0);
+  fe64_sqr_x86(t2,t1); for(i=1;i<100;i++) fe64_sqr_x86(t2,t2); fe64_mul_x86(t1,t2,t1);
+  fe64_sqr_x86(t1,t1); for(i=1;i<50;i++) fe64_sqr_x86(t1,t1); fe64_mul_x86(t0,t1,t0);
+  fe64_sqr_x86(t0,t0); fe64_sqr_x86(t0,t0); fe64_mul_x86(out,t0,z);
+}
+
+/* curve constants and the comb table, converted from the radix-2^51 definitions on first use */
+static fe64 ed64_d, ed64_d2, ed64_sqrtm1;
+static gec64 ed64_comb[64][16] __attribute__((aligned(64)));
+static int ed64_inited=0;
+static void ed64_init(void){
+  fe d,d2,s; int w,i;
+  curve_d(d); curve_d2(d2); curve_sqrtm1(s);
+  fe64_from51(ed64_d,d); fe64_from51(ed64_d2,d2); fe64_from51(ed64_sqrtm1,s);
+  if(!ed_comb_inited) ed_comb_init(d2);
+  for(w=0;w<64;w++) for(i=0;i<16;i++){
+    fe64_from51(ed64_comb[w][i].yplusx,ed_comb[w][i].yplusx);
+    fe64_from51(ed64_comb[w][i].yminusx,ed_comb[w][i].yminusx);
+    fe64_from51(ed64_comb[w][i].xy2d,ed_comb[w][i].xy2d);
+    fe64_0(ed64_comb[w][i].pad);
+  }
+  ed64_inited=1;
+}
+
+static void ge64_identity(ge64 *p){ fe64_0(p->X); fe64_1(p->Y); fe64_1(p->Z); fe64_0(p->T); }
+/* affine encodings of two points with one inversion (Montgomery's trick) */
+static void ge64_tobytes2(unsigned char *s1,const ge64 *p1,unsigned char *s2,const ge64 *p2){
+  fe64 zz,inv,r1,r2,x,y;
+  fe64_mul_x86(zz,p1->Z,p2->Z); fe64_invert(inv,zz);
+  fe64_mul_x86(r1,inv,p2->Z); fe64_mul_x86(r2,inv,p1->Z);
+  fe64_mul_x86(x,p1->X,r1); fe64_mul_x86(y,p1->Y,r1); fe64_tobytes(s1,y); s1[31]^=(unsigned char)(fe64_isnegative(x)<<7);
+  fe64_mul_x86(x,p2->X,r2); fe64_mul_x86(y,p2->Y,r2); fe64_tobytes(s2,y); s2[31]^=(unsigned char)(fe64_isnegative(x)<<7);
+}
+static void ge64_tobytes(unsigned char *s,const ge64 *p){
+  fe64 recip,x,y;
+  fe64_invert(recip,p->Z);
+  fe64_mul_x86(x,p->X,recip); fe64_mul_x86(y,p->Y,recip);
+  fe64_tobytes(s,y);
+  s[31]^=(unsigned char)(fe64_isnegative(x)<<7);
+}
+static int ge64_frombytes(ge64 *h,const unsigned char *s){
+  fe64 u,v,v3,vxx,check,x,y,one;
+  unsigned char sign=s[31]>>7;
+  fe64_frombytes(y,s); fe64_1(one);
+  fe64_sqr_x86(u,y); fe64_mul_x86(v,u,ed64_d);
+  fe64_sub(u,u,one); fe64_add(v,v,one);
+  fe64_sqr_x86(v3,v); fe64_mul_x86(v3,v3,v);
+  fe64_sqr_x86(x,v3); fe64_mul_x86(x,x,v); fe64_mul_x86(x,x,u);
+  fe64_pow22523(x,x);
+  fe64_mul_x86(x,x,v3); fe64_mul_x86(x,x,u);
+  fe64_sqr_x86(vxx,x); fe64_mul_x86(vxx,vxx,v);
+  fe64_sub(check,vxx,u);
+  if(!fe64_iszero(check)){
+    fe64_add(check,vxx,u);
+    if(!fe64_iszero(check)) return 0;
+    fe64_mul_x86(x,x,ed64_sqrtm1);
+  }
+  if(fe64_isnegative(x)!=(int)sign) fe64_neg(x,x);
+  fe64_copy(h->X,x); fe64_copy(h->Y,y); fe64_1(h->Z); fe64_mul_x86(h->T,x,y);
+  return 1;
+}
+static void ge64_scalarmult_base(ge64 *r,const unsigned char s[32]){
+  gec64 sel __attribute__((aligned(64))); int w;
+  ge64_identity(r);
+  for(w=0;w<64;w++){
+    uint64_t nib=(s[w>>1]>>((w&1)*4))&0xF;
+    ed25519_lookup_x86((uint64_t*)&sel,(const uint64_t*)ed64_comb[w],nib);
+    ed25519_madd_x86((uint64_t*)r,(const uint64_t*)r,(const uint64_t*)&sel);
+  }
+}
+/* variable-base s*P, verification only (public data, direct table indexing) */
+static void ge64_scalarmult_win(ge64 *r,const unsigned char s[32],const ge64 *p){
+  ge64 T[16]; int i,w;
+  ge64_identity(&T[0]); T[1]=*p;
+  for(i=2;i<16;i++) ed25519_add_x86((uint64_t*)&T[i],(const uint64_t*)&T[i-1],(const uint64_t*)p,ed64_d2);
+  ge64_identity(r);
+  for(w=63;w>=0;w--){
+    unsigned digit=(s[w>>1]>>((w&1)*4))&0xF;
+    ed25519_dbl_x86((uint64_t*)r,(const uint64_t*)r); ed25519_dbl_x86((uint64_t*)r,(const uint64_t*)r);
+    ed25519_dbl_x86((uint64_t*)r,(const uint64_t*)r); ed25519_dbl_x86((uint64_t*)r,(const uint64_t*)r);
+    ed25519_add_x86((uint64_t*)r,(const uint64_t*)r,(const uint64_t*)&T[digit],ed64_d2);
+  }
+}
+static int ed25519_x86_ready(void){
+  if(!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)&&rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512))) return 0;
+  if(!ed64_inited) ed64_init();
+  return 1;
+}
+static int ed25519_pubkey_x86(unsigned char pk[32],const unsigned char seed[32]){
+  unsigned char h[64]; ge64 A;
+  sha512_3(seed,32,0,0,0,0,h);
+  h[0]&=248;h[31]&=127;h[31]|=64;
+  ge64_scalarmult_base(&A,h);
+  ge64_tobytes(pk,&A);
+  return 1;
+}
+static int ed25519_sign_x86(unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char seed[32]){
+  unsigned char h[64],rr[64],k[64],pk[32],a[32]; ge64 R,A;
+  sha512_3(seed,32,0,0,0,0,h);
+  h[0]&=248;h[31]&=127;h[31]|=64;
+  memcpy(a,h,32);
+  ge64_scalarmult_base(&A,a);
+  sha512_3(h+32,32,msg,msglen,0,0,rr);
+  sc_reduce(rr);
+  ge64_scalarmult_base(&R,rr);
+  ge64_tobytes2(pk,&A,sig,&R);                 /* one inversion for both encodings */
+  sha512_3(sig,32,pk,32,msg,msglen,k);
+  sc_reduce(k);
+  sc_muladd(sig+32,k,a,rr);
+  return 1;
+}
+static int ed25519_verify_x86(const unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char pk[32]){
+  unsigned char h[64],rcheck[32]; ge64 A,R,sB,hA,neg,sBmhA; int i,diff=0;
+  if(!ge64_frombytes(&A,pk)) return 0;
+  if(!ge64_frombytes(&R,sig)) return 0;
+  sha512_3(sig,32,pk,32,msg,msglen,h);
+  sc_reduce(h);
+  ge64_scalarmult_base(&sB,sig+32);
+  ge64_scalarmult_win(&hA,h,&A);
+  neg=hA; fe64_neg(neg.X,hA.X); fe64_neg(neg.T,hA.T);
+  ed25519_add_x86((uint64_t*)&sBmhA,(const uint64_t*)&sB,(const uint64_t*)&neg,ed64_d2);
+  ge64_tobytes(rcheck,&sBmhA);
+  for(i=0;i<32;i++) diff|=rcheck[i]^sig[i];
+  return diff==0;
+}
+#endif
+
 int rktcrypto_ed25519_pubkey(unsigned char pk[32],const unsigned char seed[32]){
+#if defined(__x86_64__) && defined(__ELF__)
+  if(ed25519_x86_ready()) return ed25519_pubkey_x86(pk,seed);
+#endif
   unsigned char h[64]; ge A,B; fe d2;
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
@@ -539,6 +745,9 @@ int rktcrypto_ed25519_sign(unsigned char sig[64],
                            const unsigned char *msg,intptr_t msglen,
                            const unsigned char seed[32]){
   unsigned char h[64],rr[64],k[64],pk[32],a[32]; ge R,A,B; fe d2;
+#if defined(__x86_64__) && defined(__ELF__)
+  if(ed25519_x86_ready()) return ed25519_sign_x86(sig,msg,msglen,seed);
+#endif
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
   memcpy(a,h,32);
@@ -566,6 +775,9 @@ int rktcrypto_ed25519_verify(const unsigned char sig[64],
       0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x10};
     int j,lt=0; for(j=31;j>=0;j--){ if(sig[32+j]!=L[j]){ lt=sig[32+j]<L[j]; break; } }
     if(!lt) return 0; }               /* S >= L (or S == L) */
+#if defined(__x86_64__) && defined(__ELF__)
+  if(ed25519_x86_ready()) return ed25519_verify_x86(sig,msg,msglen,pk);
+#endif
   curve_d2(d2); ge_base(&B);
   if(!ge_frombytes(&A,pk)) return 0;
   if(!ge_frombytes(&R,sig)) return 0;

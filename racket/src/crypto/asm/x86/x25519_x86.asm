@@ -340,3 +340,116 @@
   FE64_MULM(q.st + 32, rsp + 256, rsp + 288)        ; z2 = E * T
   ret
 .end
+
+;; ---- Ed25519 point operations on the same field (twisted Edwards a = -1, extended coordinates)
+;; ge64 = {X, Y, Z, T} (four 32-byte elements, 128 bytes); gec64 = {Y+X, Y-X, 2d*X*Y} (96 bytes,
+;; padded to 128 in the comb table). The result may alias the first input: every input word is
+;; consumed into the frame before the result is written. Oracle: the radix-2^51 C point code
+;; (rktcrypto_ed25519.c) through the public API with the BMI2/ADX bit cleared;
+;; gate: asm/tests/test_ed25519_x86.c.
+;;   void ed25519_madd_x86(uint64_t r[16], const uint64_t p[16], const uint64_t q[12])  r = p + q
+;; frame slots: t@0 A@32 B@64 C@96 D@128 E@160 F@192 G@224 H@256
+.function ed25519_madd_x86 export (
+  in: q.r, q.p, q.q
+)
+  .frame 288
+  FE64_SUBM(rsp + 0, q.p + 32, q.p + 0)             ; t = Y1 - X1
+  FE64_MULM(rsp + 32, rsp + 0, q.q + 32)            ; A = t * (Y2 - X2)
+  FE64_ADDM(rsp + 0, q.p + 32, q.p + 0)             ; t = Y1 + X1
+  FE64_MULM(rsp + 64, rsp + 0, q.q + 0)             ; B = t * (Y2 + X2)
+  FE64_MULM(rsp + 96, q.p + 96, q.q + 64)           ; C = T1 * 2d*X2*Y2
+  FE64_ADDM(rsp + 128, q.p + 64, q.p + 64)          ; D = 2 * Z1
+  FE64_SUBM(rsp + 160, rsp + 64, rsp + 32)          ; E = B - A
+  FE64_SUBM(rsp + 192, rsp + 128, rsp + 96)         ; F = D - C
+  FE64_ADDM(rsp + 224, rsp + 128, rsp + 96)         ; G = D + C
+  FE64_ADDM(rsp + 256, rsp + 64, rsp + 32)          ; H = B + A
+  FE64_MULM(q.r + 0, rsp + 160, rsp + 192)          ; X3 = E * F
+  FE64_MULM(q.r + 32, rsp + 224, rsp + 256)         ; Y3 = G * H
+  FE64_MULM(q.r + 96, rsp + 160, rsp + 256)         ; T3 = E * H
+  FE64_MULM(q.r + 64, rsp + 192, rsp + 224)         ; Z3 = F * G
+  ret
+.end
+
+;;   void ed25519_add_x86(uint64_t r[16], const uint64_t p[16], const uint64_t q[16], const uint64_t d2[4])
+;; unified addition (dbl-safe); frame slots: t@0 u@32 A@64 B@96 C@128 D@160 E@192 F@224 G@256 H@288
+.function ed25519_add_x86 export (
+  in: q.r, q.p, q.q, q.d2
+)
+  .frame 320
+  FE64_SUBM(rsp + 0, q.p + 32, q.p + 0)             ; t = Y1 - X1
+  FE64_SUBM(rsp + 32, q.q + 32, q.q + 0)            ; u = Y2 - X2
+  FE64_MULM(rsp + 64, rsp + 0, rsp + 32)            ; A = t * u
+  FE64_ADDM(rsp + 0, q.p + 32, q.p + 0)             ; t = Y1 + X1
+  FE64_ADDM(rsp + 32, q.q + 32, q.q + 0)            ; u = Y2 + X2
+  FE64_MULM(rsp + 96, rsp + 0, rsp + 32)            ; B = t * u
+  FE64_MULM(rsp + 128, q.p + 96, q.q + 96)          ; C = T1 * T2
+  FE64_MULM(rsp + 128, rsp + 128, q.d2)             ; C = C * 2d
+  FE64_MULM(rsp + 160, q.p + 64, q.q + 64)          ; D = Z1 * Z2
+  FE64_ADDM(rsp + 160, rsp + 160, rsp + 160)        ; D = 2 * D
+  FE64_SUBM(rsp + 192, rsp + 96, rsp + 64)          ; E = B - A
+  FE64_SUBM(rsp + 224, rsp + 160, rsp + 128)        ; F = D - C
+  FE64_ADDM(rsp + 256, rsp + 160, rsp + 128)        ; G = D + C
+  FE64_ADDM(rsp + 288, rsp + 96, rsp + 64)          ; H = B + A
+  FE64_MULM(q.r + 0, rsp + 192, rsp + 224)          ; X3 = E * F
+  FE64_MULM(q.r + 32, rsp + 256, rsp + 288)         ; Y3 = G * H
+  FE64_MULM(q.r + 96, rsp + 192, rsp + 288)         ; T3 = E * H
+  FE64_MULM(q.r + 64, rsp + 224, rsp + 256)         ; Z3 = F * G
+  ret
+.end
+
+;;   void ed25519_dbl_x86(uint64_t r[16], const uint64_t p[16])   (dbl-2008-hwcd, a = -1)
+;; frame slots: A@0 B@32 C@64 E@96 F@128 G@160 H@192 t@224 zero@256
+.function ed25519_dbl_x86 export (
+  in: q.r, q.p
+)
+  .frame 288
+  xor q.z, q.z
+  mov qword ptr [rsp + 256], q.z
+  mov qword ptr [rsp + 264], q.z
+  mov qword ptr [rsp + 272], q.z
+  mov qword ptr [rsp + 280], q.z
+  FE64_SQRM(rsp + 0, q.p + 0)                       ; A = X^2
+  FE64_SQRM(rsp + 32, q.p + 32)                     ; B = Y^2
+  FE64_SQRM(rsp + 64, q.p + 64)                     ; C = Z^2
+  FE64_ADDM(rsp + 64, rsp + 64, rsp + 64)           ; C = 2 * C
+  FE64_ADDM(rsp + 224, q.p + 0, q.p + 32)           ; t = X + Y
+  FE64_SQRM(rsp + 96, rsp + 224)                    ; E = t^2
+  FE64_SUBM(rsp + 96, rsp + 96, rsp + 0)            ; E = E - A
+  FE64_SUBM(rsp + 96, rsp + 96, rsp + 32)           ; E = E - B
+  FE64_SUBM(rsp + 160, rsp + 32, rsp + 0)           ; G = B - A
+  FE64_SUBM(rsp + 128, rsp + 160, rsp + 64)         ; F = G - C
+  FE64_SUBM(rsp + 192, rsp + 256, rsp + 0)          ; H = -A
+  FE64_SUBM(rsp + 192, rsp + 192, rsp + 32)         ; H = H - B
+  FE64_MULM(q.r + 0, rsp + 96, rsp + 128)           ; X3 = E * F
+  FE64_MULM(q.r + 32, rsp + 160, rsp + 192)         ; Y3 = G * H
+  FE64_MULM(q.r + 96, rsp + 96, rsp + 192)          ; T3 = E * H
+  FE64_MULM(q.r + 64, rsp + 128, rsp + 160)         ; Z3 = F * G
+  ret
+.end
+
+;;   void ed25519_lookup_x86(uint64_t out[16], const uint64_t table[16 * 16], uint64_t nib)
+;; constant-time selection of entry `nib` (0..15) of a comb window: every 128-byte entry is
+;; loaded and compared, the match blended in (AVX-512 masks, no data-dependent addressing)
+.rodata ed25519_lookup_idx align=64
+.for d, 0, 16
+  .long ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}
+.endfor
+.end
+.function ed25519_lookup_x86 export (
+  in: q.out, q.tab, q.nib
+)
+  .simd avx512
+  vpbroadcastd zmm.want, d.nib
+  vpxorq zmm.a0, zmm.a0, zmm.a0
+  vpxorq zmm.a1, zmm.a1, zmm.a1
+.for d, 0, 16
+  vpcmpeqd k.m, zmm.want, zmmword ptr [rip + ed25519_lookup_idx + ${64 * d}]
+  vmovdqa64 zmm.e0, zmmword ptr [q.tab + ${128 * d}]
+  vmovdqa64 zmm.e1, zmmword ptr [q.tab + ${128 * d + 64}]
+  vpblendmd zmm.a0{k.m}, zmm.a0, zmm.e0
+  vpblendmd zmm.a1{k.m}, zmm.a1, zmm.e1
+.endfor
+  vmovdqu64 zmmword ptr [q.out], zmm.a0
+  vmovdqu64 zmmword ptr [q.out + 64], zmm.a1
+  ret
+.end

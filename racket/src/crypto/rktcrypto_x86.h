@@ -101,6 +101,13 @@ void fe64_sqr_x86(uint64_t r[4], const uint64_t a[4]);
 void fe64_mul121665_x86(uint64_t r[4], const uint64_t a[4]);
 /* one ladder step on st = {x2, z2, x3, z3} with the base coordinate x1, all in registers/frame slots */
 void x25519_step_x86(uint64_t st[16], const uint64_t x1[4]);
+/* Ed25519 point kernels on the same field (same .S): ge = {X, Y, Z, T} (128 bytes), gec = {Y+X, Y-X, 2dXY}
+   (96 bytes, 128 in the comb table); the result may alias the first input */
+void ed25519_madd_x86(uint64_t r[16], const uint64_t p[16], const uint64_t q[12]);
+void ed25519_add_x86(uint64_t r[16], const uint64_t p[16], const uint64_t q[16], const uint64_t d2[4]);
+void ed25519_dbl_x86(uint64_t r[16], const uint64_t p[16]);
+/* constant-time selection of entry nib (0..15) of a 16 x 128-byte comb window (AVX-512) */
+void ed25519_lookup_x86(uint64_t out[16], const uint64_t table[256], uint64_t nib);
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);
