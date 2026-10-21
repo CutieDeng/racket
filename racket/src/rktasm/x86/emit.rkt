@@ -8,6 +8,8 @@
 
 ;; function whose body is being emitted: local labels print as .L<fn>_<label>
 (define current-fn (make-parameter #f))
+;; byte offset of the allocator's spill slots from rsp (above the .frame area)
+(define current-spill-base (make-parameter 0))
 (define (label->text n) (if (current-fn) (format ".L~a_~a" (current-fn) n) (symbol->string n)))
 
 (define callee-saved '(rbx rbp r12 r13 r14 r15))
@@ -31,7 +33,9 @@
   (match u
     [(list 'imm n) (if (< n 0) (format "-0x~a" (number->string (- n) 16)) (format "0x~a" (number->string n 16)))]
     [(list 'label n) (label->text n)]
-    [(list 'mem base index scale disp sym size decor)
+    [(list 'mem base index scale disp0 sym0 size decor)
+     ;; spill slots: [rsp + __spill + off] -> [rsp + (base + off)]
+     (define-values (disp sym) (if (eq? sym0 '__spill) (values (+ disp0 (current-spill-base)) #f) (values disp0 sym0)))
      (define parts
        (append (if base (list (reg->text base)) '())
                (if index (list (if (= scale 1) (reg->text index) (format "~a*~a" (reg->text index) scale))) '())
@@ -83,18 +87,24 @@
   ;; prologue: callee-saved pushes, then the .frame scratch; the frame size is rounded so that
   ;; rsp is 16-byte aligned in the body (return address + pushes + frame)
   (for ([r saves]) (fprintf out "        push    ~a\n" r))
+  (define user-frame (let ([v (fn-frame f)]) (if (number? v) v 0)))   ; the struct's #:auto fields share one auto-value
+  (define spill-bytes (let ([v (fn-spill f)]) (if (number? v) v 0)))
+  (define spill-base (if (> spill-bytes 0) (* 64 (quotient (+ user-frame 63) 64)) 0))
+  (define has-call? (for/or ([x (fn-body f)]) (and (instr? x) (eq? (instr-mnemonic x) 'call))))
   (define frame
-    (let ([n (let ([v (fn-frame f)]) (if (number? v) v 0))])   ; the struct's #:auto fields share one auto-value
-      (if (zero? n) 0
+    (let ([n (+ (if (> spill-bytes 0) spill-base user-frame) spill-bytes)])
+      (if (and (zero? n) (not has-call?)) 0
           (let* ([n16 (* 16 (quotient (+ n 15) 16))]
                  [odd? (odd? (add1 (length saves)))])   ; return address + pushes = odd number of qwords?
             (+ n16 (if odd? 8 0))))))
   (when (> frame 0) (fprintf out "        sub     rsp, ~a\n" frame))
-  (parameterize ([current-fn name])
+  (parameterize ([current-fn name] [current-spill-base spill-base])
   (for ([x (fn-body f)])
     (cond
       [(label? x) (fprintf out "~a:\n" (label->text (label-name x)))]
       [(eq? (instr-mnemonic x) '.directive) (fprintf out "        ~a\n" (instr-text x))]
+      [(and (eq? (instr-mnemonic x) 'call) (pair? (instr-ops x)) (eq? (car (car (instr-ops x))) 'label))
+       (fprintf out "        call    ~a@PLT\n" (cadr (car (instr-ops x))))]
       [(eq? (instr-mnemonic x) 'ret)
        (when uses-wide? (fprintf out "        vzeroupper\n"))
        (when (> frame 0) (fprintf out "        add     rsp, ~a\n" frame))

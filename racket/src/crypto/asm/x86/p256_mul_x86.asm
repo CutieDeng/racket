@@ -434,8 +434,8 @@
   in: q.r, q.p, rdx
   out: q.ret
 )
-  .frame 392
-  mov qword ptr [rsp + 384], q.r                 ; r is needed only at the end: free its register
+  .frame 384
+  mov q.rr, q.r                                  ; a copy the allocator may spill (r itself is rdi)
   mov q.q, rdx
   P256_SQRM(rsp + 0, q.p + 64)                   ; Z1Z1 = Z1^2
   P256_MULM(rsp + 64, q.q + 32, q.p + 64)        ; S2 = Y2*Z1
@@ -460,7 +460,6 @@
   P256_SUBM(rsp + 256, rsp + 224, rsp + 320)     ; T2 = T - X3
   P256_MULM(rsp + 256, rsp + 128, rsp + 256)     ; T2 = R*(T - X3)
   P256_SUBM(rsp + 256, rsp + 256, rsp + 288)     ; Y3 = T2 - TT
-  mov q.rr, qword ptr [rsp + 384]
 .for k, 0, 4
   mov q.t0, qword ptr [rsp + ${320 + 8 * k}]
   mov qword ptr [q.rr + ${8 * k}], q.t0
@@ -480,5 +479,17 @@ hzero:
   mov d.t1, 1
   test q.t0, q.t0
   cmovz d.ret, d.t1                              ; H = 0 and R = 0: double
+  ret
+.end
+
+;; ---- .call probe: r = (a*b)*c through two calls of mont_mul_p256_x86 (ABI path check) ------
+;;   void p256_mul3_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const uint64_t c[4])
+.function p256_mul3_x86 export (
+  in: q.r, q.a, rdx, q.c
+)
+  .frame 32
+  mov q.b, rdx
+  .call mont_mul_p256_x86(qword ptr [rsp], q.a, q.b)
+  .call mont_mul_p256_x86(q.r, qword ptr [rsp], q.c)
   ret
 .end

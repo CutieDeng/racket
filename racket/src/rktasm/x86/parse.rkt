@@ -12,6 +12,8 @@
 ;;     .frame N                         ; N bytes of stack scratch, addressed as [rsp + off] (0 <= off < N)
 ;;   .macro NAME p1, p2 ... .endm      ; parameterised text macro (\\p1 in the body), invoked as NAME(a, b)
 ;;   ${expr}                          ; compile-time integer expression, evaluated on every line
+;;   .call NAME(a, b, ...)            ; SysV call: args to rdi rsi rdx rcx r8 r9 (lea for [mem]), result in rax,
+;;                                    ;   every caller-saved register (and all vector/mask registers) clobbered
 ;;   .end
 ;;   .rodata NAME [align=N]             ; constant block, raw data directives inside
 ;;     .long 1, 2, 3
@@ -23,7 +25,7 @@
 (provide parse-file parse-string
          (struct-out fn) (struct-out rodata) (struct-out instr) (struct-out label))
 
-(struct fn (name export? ins outs inouts body save line [simd #:auto] [frame #:auto]) #:transparent #:mutable #:auto-value 'sse)
+(struct fn (name export? ins outs inouts body save line [simd #:auto] [frame #:auto] [spill #:auto]) #:transparent #:mutable #:auto-value 'sse)
 (struct rodata (name align lines line) #:transparent)
 (struct instr (mnemonic ops text line) #:transparent)
 (struct label (name line) #:transparent)
@@ -157,6 +159,12 @@
        => (lambda (m) (unless cur (parse-error ln ".save outside .function")) (set-fn-save! cur (string->symbol (cadr m))))]
       [(regexp-match #px"^\\.simd\\s+(sse|avx2|avx512)$" s)
        => (lambda (m) (unless cur (parse-error ln ".simd outside .function")) (set-fn-simd! cur (string->symbol (cadr m))))]
+      [(regexp-match #px"^\\.call\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*\\((.*)\\)\\s*$" s)
+       => (lambda (m)
+            (unless cur (parse-error ln ".call outside .function"))
+            (define args (for/list ([t (split-operands (caddr m))]) (parse-operand t ln)))
+            (when (> (length args) 6) (parse-error ln ".call takes at most six register arguments"))
+            (add-body! (instr 'call (cons (list 'label (string->symbol (cadr m))) args) s ln)))]
       [(regexp-match #px"^\\.frame\\s+([0-9]+)$" s)
        => (lambda (m) (unless cur (parse-error ln ".frame outside .function")) (set-fn-frame! cur (string->number (cadr m))))]
       [(regexp-match #px"^([A-Za-z_.][A-Za-z0-9_.]*):$" s)

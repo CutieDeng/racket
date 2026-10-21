@@ -47,6 +47,14 @@ gcc 编 harness + 已提交 `.S`，对 C/intrinsics oracle 差分 + KAT + `BENCH
 - `${expr}` 在任何一行都求值（解析器把整个源包进一个隐式单次 `.for`），宏参数可直接参与算术。
 - 分配器把清零惯用法（`xor r, r`、`sub r, r`、`pxor/vpxorq x, x`）视为纯定义而非读取（否则一个在出口处
   `xor d.ret, d.ret` 的 out 寄存器会从入口一直活到出口）；寄存器不足时错误信息列出压力点的活跃值。
+- 溢出：着色失败时分配器选压力点上"活跃最久、提及最少"的值放进帧槽（每次读取前装入短命临时量、每次定义后
+  存回；GPR 8 B、向量 64 B 槽，用 `mov`/`vmovdqu64`/`kmovq`，不动标志位，adc/adox 链安全），重做分配直到成功；
+  溢出区放在 `.frame` 区之上，发射器自动扩帧。`as.rkt --dump-alloc` 打印 `spilled name@off`。
+- `.call NAME(a, b, …)`：SysV 调用（≤6 个寄存器实参；实参先进临时量再进 rdi rsi rdx rcx r8 r9，`[mem]`
+  用 lea 取址），调用指令定义全部 caller-saved GPR、全部向量与掩码寄存器（跨调用活跃的值自动落到
+  callee-saved 寄存器或溢出），结果在 rax；发射 `call NAME@PLT`，并保证调用点 rsp 16 字节对齐。
+- ABI 预着色的兜底：入参/出参若跨越其 ABI 寄存器的重定义（如跨 `.call` 存活），分配器自动在入口拷出
+  （或在每个 `ret` 前拷入 rax），不再报 "argument conflicts with its register"。
 - 内核合成配方（X25519 阶梯、P-256 点运算）：把域运算体写成内存操作数宏（参数为"基址 + 偏移"文本，
   如 `rsp + 32`、`q.p + 64`），临时量放 `.frame` 槽，一次调用完成整步，消掉调用/push/pop 开销。
 

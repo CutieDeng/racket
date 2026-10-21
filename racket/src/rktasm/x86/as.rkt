@@ -27,13 +27,14 @@
 (define (err line fmt . args)
   (set! errors (add1 errors))
   (eprintf "~a:~a: ~a\n" in-path line (apply format fmt args)))
-(define jumps '(jmp jo jno jb jc jnae jae jnb jnc je jz jne jnz jbe jna ja jnbe js jns jp jpe jnp jpo jl jnge jge jnl jle jng jg jnle jrcxz jecxz loop loope loopne call))
+(define jumps '(jmp jo jno jb jc jnae jae jnb jnc je jz jne jnz jbe jna ja jnbe js jns jp jpe jnp jpo jl jnge jge jnl jle jng jg jnle jrcxz jecxz loop loope loopne))
 (for ([it items] #:when (fn? it))
   (define labels (for/list ([x (fn-body it)] #:when (label? x)) (label-name x)))
   (for ([x (fn-body it)] #:when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive))))
     (define mn (instr-mnemonic x))
     (define ops (instr-ops x))
     (cond
+      [(and (eq? mn 'call) (pair? ops) (eq? (car (car ops)) 'label)) (void)]   ; .call NAME(...), expanded by the allocator
       [(and (memq mn jumps) (= 1 (length ops)) (eq? (car (car ops)) 'label))
        (unless (memq (cadr (car ops)) labels) (err (instr-line x) "unknown label ~a" (cadr (car ops))))]
       [(null? (spec-forms mn)) (err (instr-line x) "unknown mnemonic ~a" mn)]
@@ -56,6 +57,9 @@
        (when (and (dump-alloc?) (pair? (alloc-result-mapping r)))
          (printf "~a: ~a\n" (fn-name it)
                  (string-join (for/list ([m (alloc-result-mapping r)]) (format "~a=~a" (car m) (cdr m))) " ")))
+       (when (and (dump-alloc?) (pair? (alloc-result-spills r)))
+         (printf "~a: spilled ~a\n" (fn-name it)
+                 (string-join (for/list ([s (alloc-result-spills r)]) (format "~a@~a" (car s) (cdr s))) " ")))
        (define out (alloc-result-fn r))
        ;; registers 16-31 (from .simd avx512) need an EVEX form of the instruction
        (for ([x (fn-body out)] #:when (and (instr? x) (not (eq? (instr-mnemonic x) '.directive))))

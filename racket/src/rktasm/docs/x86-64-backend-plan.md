@@ -284,6 +284,17 @@ pubkey/ECDH/ECDSA 交叉验证 + 域级差分）；harness pubkey 138→153 kops
 28.3→24.3 µs（41.1k ops/s vs OpenSSL 41.3k → **1.00×**）、ecdsa sign 10.4→10.1（99.5k vs 95.8k → **1.04×**）、
 verify 34.9→30.7（32.6k vs 31.2k → **1.04×**）。
 
+**X1-2b/2c 已落地（2026-10-21）——分配器的溢出与 ABI 能力**（用户指出：要的是带寄存器约束/ABI 语义的算子，
+而非文本宏绕开）：
+- 溢出：Chaitin-Briggs 着色失败时不再报错，选压力点上活跃最久/提及最少的值进帧槽（用前装入临时量、定义后存回，
+  纯 `mov`/`vmovdqu64`/`kmovq` 不碰标志位），循环重分配；溢出区在 `.frame` 之上，发射器扩帧。
+- `.call NAME(a,…)`：实参经临时量进 SysV 寄存器（`[mem]` 走 lea），调用定义全部 caller-saved GPR + 全部向量/掩码
+  寄存器，跨调用值自动进 callee-saved 或溢出；`call NAME@PLT`；调用点 rsp 16 对齐。
+- 预着色兜底：入参/出参跨其 ABI 寄存器重定义（典型：跨 `.call`）时自动入口拷出/`ret` 前拷入，不再报
+  "argument conflicts with its register"；配合调用实参临时量解决入参被前一个实参搬运覆盖的问题。
+- 真机验证：mixed_add_x86 改为让分配器自动溢出 r 指针（替代手工帧槽），加 `.call` 探针 `p256_mul3_x86`
+  （两次 `.call mont_mul_p256_x86`），走 P-256 门禁。主机测试 +3 组（溢出 GPR/向量、.call）。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

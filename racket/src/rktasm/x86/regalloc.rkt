@@ -6,8 +6,10 @@
 ;; jumps), an interference graph that includes the physical registers the body
 ;; names explicitly or implicitly (so a vreg never lands on xmm0 while xmm0
 ;; carries sha256rnds2's implicit operand), copy coalescing (Briggs / George),
-;; Chaitin-Briggs simplify-select. No spilling: a kernel that needs more
-;; registers than the pool holds is an error that names the pressure point.
+;; Chaitin-Briggs simplify-select with spilling: when select finds no colour, the
+;; longest-lived, least-used value at the pressure point goes to a frame slot (loads
+;; before each use into a short-lived temporary, stores after each definition) and
+;; the allocation is redone; the emitter sizes the frame for the spill area.
 ;;
 ;; Precoloring: `in:` vregs take the SysV argument registers by position
 ;; (rdi rsi rdx rcx r8 r9), `out:` the first takes rax, `inout:` like `in:`
@@ -18,8 +20,11 @@
 ;; never hash iteration order, so regeneration is byte-stable.
 (require racket/list racket/match racket/string "parse.rkt" "spec.rkt")
 (provide allocate-fn (struct-out alloc-result))
+(require racket/function)
 
-(struct alloc-result (fn mapping) #:transparent)   ; mapping: (listof (cons name phys-base))
+(struct alloc-result (fn mapping [spills #:auto]) #:transparent #:mutable)   ; mapping: (listof (cons name phys-base))
+(struct spill-request (name cls) #:transparent)   ; raised by the colouring when a value must go to memory
+(struct precolor-request (name kind phys) #:transparent)   ; an argument/result that cannot stay in its ABI register
 
 ;; ---------------------------------------------------------------- pools
 (define gpr-pool '(rax rcx rdx rsi rdi r8 r9 r10 r11 rbx r12 r13 r14 r15 rbp))
@@ -27,6 +32,9 @@
 (define vec-pool-avx512 (for/list ([i 32]) (string->symbol (format "xmm~a" i))))   ; xmm16-31 only under pressure
 (define k-pool '(k1 k2 k3 k4 k5 k6 k7))
 (define sysv-gpr-args '(rdi rsi rdx rcx r8 r9))
+(define caller-saved-gprs '(rax rcx rdx rsi rdi r8 r9 r10 r11))
+(define call-clobbers
+  (append caller-saved-gprs (for/list ([i 32]) (string->symbol (format "xmm~a" i))) '(k0 k1 k2 k3 k4 k5 k6 k7)))
 (define current-vec-pool (make-parameter vec-pool))
 (define (pool-of cls) (case cls [(gpr) gpr-pool] [(vec) (current-vec-pool)] [(k) k-pool]))
 
@@ -58,7 +66,7 @@
     [_ '()]))
 
 ;; ---------------------------------------------------------------- per-instruction use/def
-(define jumps '(jmp jo jno jb jc jnae jae jnb jnc je jz jne jnz jbe jna ja jnbe js jns jp jpe jnp jpo jl jnge jge jnl jle jng jg jnle jrcxz jecxz call))
+(define jumps '(jmp jo jno jb jc jnae jae jnb jnc je jz jne jnz jbe jna ja jnbe js jns jp jpe jnp jpo jl jnge jge jnl jle jng jg jnle jrcxz jecxz))   ; a call falls through
 (define copy-mnemonics '(mov movdqa movdqu movaps movups movapd movupd vmovdqa vmovdqu vmovdqa32 vmovdqa64 vmovdqu32 vmovdqu64 vmovaps vmovups vmovapd vmovupd kmovb kmovw kmovd kmovq))
 
 ;; -> (values uses defs copy?)   uses/defs: lists of node keys (deduplicated, in operand order)
@@ -67,6 +75,11 @@
   (define ops (instr-ops x))
   (cond
     [(eq? mn '.directive) (values '() '() #f)]
+    ;; .call: the argument registers were loaded by the moves inserted before it; the call reads
+    ;; them and clobbers every caller-saved register (the result arrives in rax)
+    [(and (eq? mn 'call) (pair? ops) (eq? (car (car ops)) 'label))
+     (define nargs (let ([m (regexp-match #rx"^call ([0-9]+)$" (instr-text x))]) (if m (string->number (cadr m)) 0)))
+     (values (take sysv-gpr-args nargs) call-clobbers #f)]
     [(and (memq mn jumps) (= 1 (length ops)) (eq? (car (car ops)) 'label)) (values '() '() #f)]
     [else
      (define f (or (match-form mn ops) (error 'x86-regalloc "line ~a: no form for ~a" (instr-line x) (instr-text x))))
@@ -98,10 +111,107 @@
      (values uses defs copy?)]))
 
 ;; ---------------------------------------------------------------- liveness
+;; .call NAME(a, b, ...): materialise the arguments in the SysV registers right before the call
+;; (a register argument is moved, a memory operand's address is taken with lea); the call
+;; instruction itself keeps only the label so the emitter prints `call NAME@PLT`.
+(define (expand-calls body)
+  (append*
+   (for/list ([x body])
+     (cond
+       [(and (instr? x) (eq? (instr-mnemonic x) 'call) (pair? (instr-ops x)) (eq? (car (car (instr-ops x))) 'label))
+        (define args (cdr (instr-ops x)))
+        (define tmps (for/list ([a args] [i (in-naturals)]) (list 'vreg 'gpr (string->symbol (format "~~ca~a_~a" (instr-line x) i)) 'q)))
+        (append
+         ;; every argument into a temporary first, so an argument that reads an ABI register
+         ;; (an incoming parameter) is not clobbered by an earlier move
+         (for/list ([a args] [t tmps])
+           (if (and (pair? a) (eq? (car a) 'mem))
+               (instr 'lea (list t (list 'mem (list-ref a 1) (list-ref a 2) (list-ref a 3) (list-ref a 4) (list-ref a 5) #f '())) "call argument" (instr-line x))
+               (instr 'mov (list t a) "call argument" (instr-line x))))
+         (for/list ([t tmps] [r sysv-gpr-args])
+           (instr 'mov (list (list 'reg r) t) "call argument" (instr-line x)))
+         (list (instr 'call (list (car (instr-ops x))) (format "call ~a" (length args)) (instr-line x))))]
+       [else (list x)]))))
+
 (define (allocate-fn f)
   (parameterize ([current-vec-pool (if (eq? (fn-simd f) 'avx512) vec-pool-avx512 vec-pool)])
-    (allocate-fn* f)))
-(define (allocate-fn* f)
+    ;; spill loop: each round that fails to colour names one value to move to the frame
+    (let loop ([body (expand-calls (fn-body f))] [spilled '()] [bytes 0] [rounds 0] [moved '()])
+      (define g (fn (fn-name f) (fn-export? f) (fn-ins f) (fn-outs f) (fn-inouts f) body (fn-save f) (fn-line f)))
+      (set-fn-simd! g (fn-simd f))   ; #:auto fields are not constructor arguments
+      (set-fn-frame! g (fn-frame f))
+      (define r (with-handlers ([spill-request? values] [precolor-request? values]) (allocate-fn* g moved)))
+      (cond
+        [(alloc-result? r)
+         (set-fn-spill! (alloc-result-fn r) bytes)
+         (set-alloc-result-spills! r (reverse spilled))
+         r]
+        [(> rounds 100) (error 'x86-regalloc "~a: still out of registers after ~a spills" (fn-name f) rounds)]
+        [(precolor-request? r)
+         ;; the parameter (or result) lives across a redefinition of its ABI register (a .call, an
+         ;; explicit use): copy it out at entry (or into the register before every ret) instead
+         (define name (precolor-request-name r)) (define phys (precolor-request-phys r))
+         (define body*
+           (case (precolor-request-kind r)
+             [(in) (cons (instr 'mov (list (list 'vreg 'gpr name 'q) (list 'reg phys)) "parameter copy" (fn-line f)) body)]
+             [else (append*
+                    (for/list ([x body])
+                      (if (and (instr? x) (eq? (instr-mnemonic x) 'ret))
+                          (list (instr 'mov (list (list 'reg phys) (list 'vreg 'gpr name 'q)) "result copy" (instr-line x)) x)
+                          (list x))))]))
+         (loop body* spilled bytes (add1 rounds) (cons name moved))]
+        [else
+         (define size (case (spill-request-cls r) [(gpr) 8] [(k) 8] [else 64]))
+         (define off (* size (quotient (+ bytes size -1) size)))   ; align the slot to its size
+         (loop (spill-vreg body (spill-request-name r) (spill-request-cls r) off)
+               (cons (cons (spill-request-name r) off) spilled) (+ off size) (add1 rounds) moved)]))))
+
+;; ---------------------------------------------------------------- spill rewriting
+;; Every instruction that mentions `name` gets a fresh temporary for it: a load from the slot
+;; before (when it reads), a store after (when it writes). Loads and stores are plain moves,
+;; which leave the flags alone, so adc/adox chains survive.
+(define (spill-vreg body name cls off)
+  (define key (vreg-key name))
+  (define counter 0)
+  (define (mentions? u)
+    (match u
+      [(list* 'vreg _ n _) (eq? n name)]
+      [(list 'mem base index _ _ _ _ decor) (or (and base (mentions? base)) (and index (mentions? index)) (ormap mentions? (map cdr (filter (lambda (d) (eq? (car d) 'mask)) decor))))]
+      [(list 'reg _ decor) (ormap mentions? (map cdr (filter (lambda (d) (eq? (car d) 'mask)) decor)))]
+      [_ #f]))
+  (define (rename u tmp)
+    (match u
+      [(list 'vreg c n v) (if (eq? n name) (list 'vreg c tmp v) u)]
+      [(list 'vreg c n v d) (list 'vreg c (if (eq? n name) tmp n) v (map (lambda (x) (rename-decor x tmp)) d))]
+      [(list 'reg n d) (list 'reg n (map (lambda (x) (rename-decor x tmp)) d))]
+      [(list 'mem base index scale disp sym size decor)
+       (list 'mem (and base (rename base tmp)) (and index (rename index tmp)) scale disp sym size (map (lambda (x) (rename-decor x tmp)) decor))]
+      [_ u]))
+  (define (rename-decor d tmp) (match d [(list 'mask r) (list 'mask (rename r tmp))] [_ d]))
+  (define slot (lambda (size) (list 'mem (list 'reg 'rsp) #f 1 off '__spill size '())))
+  (define (load-instr tmp line)
+    (case cls
+      [(gpr) (instr 'mov (list (list 'vreg 'gpr tmp 'q) (slot 'qword)) "spill load" line)]
+      [(k) (instr 'kmovq (list (list 'vreg 'k tmp 'k) (slot 'qword)) "spill load" line)]
+      [else (instr 'vmovdqu64 (list (list 'vreg 'zmm tmp 'zmm) (slot 'zmmword)) "spill load" line)]))
+  (define (store-instr tmp line)
+    (case cls
+      [(gpr) (instr 'mov (list (slot 'qword) (list 'vreg 'gpr tmp 'q)) "spill store" line)]
+      [(k) (instr 'kmovq (list (slot 'qword) (list 'vreg 'k tmp 'k)) "spill store" line)]
+      [else (instr 'vmovdqu64 (list (slot 'zmmword) (list 'vreg 'zmm tmp 'zmm)) "spill store" line)]))
+  (append*
+   (for/list ([x body])
+     (cond
+       [(and (instr? x) (not (eq? (instr-mnemonic x) '.directive)) (ormap mentions? (instr-ops x)))
+        (define-values (uses defs copy?) (instr-uses/defs x))
+        (set! counter (add1 counter))
+        (define tmp (string->symbol (format "~a~~sp~a" name counter)))
+        (define y (instr (instr-mnemonic x) (map (lambda (u) (rename u tmp)) (instr-ops x)) (instr-text x) (instr-line x)))
+        (append (if (memq key uses) (list (load-instr tmp (instr-line x))) '())
+                (list y)
+                (if (memq key defs) (list (store-instr tmp (instr-line x))) '()))]
+       [else (list x)]))))
+(define (allocate-fn* f [moved '()])
   (define body (list->vector (fn-body f)))
   (define n (vector-length body))
   ;; vreg classes + first-appearance order; view consistency
@@ -134,8 +244,9 @@
          (error 'x86-regalloc "signature register ~a cannot take ~a" name phys))
        (hash-set! precolor k phys)]
       [_ (void)]))
-  (for ([r (append (fn-ins f) (fn-inouts f))] [p sysv-gpr-args]) (precolor! r p))
-  (for ([r (fn-outs f)] [p '(rax)]) (precolor! r p))
+  (define (moved? r) (match r [(list* 'vreg _ name _) (memq name moved)] [_ #f]))
+  (for ([r (append (fn-ins f) (fn-inouts f))] [p sysv-gpr-args]) (unless (moved? r) (precolor! r p)))
+  (for ([r (fn-outs f)] [p '(rax)]) (unless (moved? r) (precolor! r p)))
   (when (> (length (append (fn-ins f) (fn-inouts f))) (length sysv-gpr-args))
     (error 'x86-regalloc "~a: more than ~a register arguments" (fn-name f) (length sysv-gpr-args)))
   ;; control flow
@@ -213,7 +324,8 @@
   ;; precolored vregs become their physical register
   (for ([k order] #:when (hash-ref precolor k #f))
     (define p (hash-ref precolor k))
-    (when (memq p (neighbours k)) (error 'x86-regalloc "argument ~a conflicts with its register ~a" (vreg-key-name k) p))
+    (when (memq p (neighbours k))
+      (raise (precolor-request (vreg-key-name k) (if (memq (list 'vreg 'gpr (vreg-key-name k) 'q) (fn-outs f)) 'out 'in) p)))
     (merge! p k))
   (define (significant? k) (>= (degree k) (K k)))
   (define (try-coalesce!)
@@ -256,7 +368,19 @@
     (define taken (filter values (map color-of (neighbours k))))
     (define c (for/first ([p (pool-of (node-class k))] #:unless (memq p taken)) p))
     (unless c
-      (error 'x86-regalloc "~a: out of ~a registers for ~a: ~a" (fn-name f) (node-class k) (vreg-key-name k) (pressure-note k)))
+      ;; pick the value to spill: among k and its neighbours (not fixed, not already a spill
+      ;; temporary), the one live across the most instructions per mention
+      (define cands (filter (lambda (m) (and (vreg-key? m) (not (fixed? m))
+                                             (not (regexp-match? #rx"~sp[0-9]+$" (symbol->string m)))))
+                            (cons k (neighbours k))))
+      (define (live-count m) (for/sum ([i n]) (if (memq m (vector-ref live-out i)) 1 0)))
+      (define (mentions m) (for/sum ([i n]) (if (or (memq m (vector-ref uses i)) (memq m (vector-ref defs i))) 1 0)))
+      (define victim
+        (and (pair? cands)
+             (argmax (lambda (m) (/ (add1 (live-count m)) (add1 (mentions m)))) cands)))
+      (unless victim
+        (error 'x86-regalloc "~a: out of ~a registers for ~a and nothing left to spill: ~a" (fn-name f) (node-class k) (vreg-key-name k) (pressure-note k)))
+      (raise (spill-request (vreg-key-name victim) (node-class victim))))
     (hash-set! color k c))
   ;; ---- rewrite
   (define mapping (for/list ([k order]) (cons (vreg-key-name k) (color-of (find k)))))
@@ -288,4 +412,5 @@
   (define out (fn (fn-name f) (fn-export? f) (map rw (fn-ins f)) (map rw (fn-outs f)) (map rw (fn-inouts f)) new-body (fn-save f) (fn-line f)))
   (set-fn-simd! out (fn-simd f))
   (set-fn-frame! out (fn-frame f))
+  (set-fn-spill! out (fn-spill f))
   (alloc-result out mapping))

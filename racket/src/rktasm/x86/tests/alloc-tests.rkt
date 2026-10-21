@@ -237,3 +237,56 @@ other:
 .end")])
   (check-not-equal? (mapping-ref r 'a) 'rax))
 (displayln "alloc-tests: zeroing idiom checks passed")
+
+;; 13. spilling: twenty simultaneously live GPR values allocate with frame slots (loads before
+;;     uses, stores after definitions), and the frame is sized for them
+(let* ([src (string-append "
+.function sp export (
+  in: q.p
+)
+" (string-join (for/list ([i 20]) (format "  mov q.v~a, qword ptr [q.p + ~a]" i (* 8 i))) "\n") "\n"
+   (string-join (for/list ([i 20]) (format "  add q.v~a, q.v~a" (modulo (+ i 1) 20) i)) "\n") "\n"
+   (string-join (for/list ([i 20]) (format "  mov qword ptr [q.p + ~a], q.v~a" (* 8 i) i)) "\n")
+   "\n  ret\n.end")]
+       [r (alloc src)]
+       [text (emitted r)])
+  (check-true (pair? (alloc-result-spills r)))
+  (check-true (regexp-match? #rx"mov     [a-z0-9]+, qword ptr \\[rsp \\+ [0-9]+\\]" text))
+  (check-true (regexp-match? #rx"mov     qword ptr \\[rsp \\+ [0-9]+\\], [a-z0-9]+" text))
+  (check-true (regexp-match? #rx"sub     rsp, [0-9]+" text)))
+;; vector spills use 64-byte slots with vmovdqu64 and leave the .frame area intact
+(let* ([src (string-append "
+.function spv export (
+  in: q.p
+)
+  .frame 40
+" (string-join (for/list ([i 18]) (format "  vmovdqu64 zmm.v~a, zmmword ptr [q.p + ~a]" i (* 64 i))) "\n") "\n"
+   (string-join (for/list ([i 18]) (format "  vpaddq zmm.v~a, zmm.v~a, zmm.v~a" (modulo (+ i 1) 18) i (modulo (+ i 2) 18))) "\n") "\n"
+   (string-join (for/list ([i 18]) (format "  vmovdqu64 zmmword ptr [q.p + ~a], zmm.v~a" (* 64 i) i)) "\n")
+   "\n  ret\n.end")]
+       [r (alloc src)]
+       [text (emitted r)])
+  (check-true (pair? (alloc-result-spills r)))
+  ;; the spill base is the .frame size rounded up to 64, so every slot address is >= 64
+  (check-true (regexp-match? #rx"vmovdqu64 zmm[0-9]+, zmmword ptr \\[rsp \\+ (6[4-9]|[7-9][0-9]|[1-9][0-9][0-9]+)\\]" text)))
+(displayln "alloc-tests: spill checks passed")
+
+;; 14. .call: arguments go to rdi/rsi (lea for a memory operand), a value live across the call
+;;     lands in a callee-saved register, the frame keeps rsp 16-byte aligned, and the result is rax
+(let* ([r (alloc "
+.function cl export (
+  in: q.p, q.n
+  out: q.res
+)
+  mov q.keep, qword ptr [q.p]
+  .call helper(q.n, qword ptr [q.p + 8])
+  add q.keep, rax
+  mov q.res, q.keep
+  ret
+.end")]
+       [text (emitted r)])
+  (check-true (memq (mapping-ref r 'keep) '(rbx rbp r12 r13 r14 r15)))
+  (check-true (regexp-match? #rx"mov     rdi, rsi\n        lea     rsi, \\[rdi \\+ 8\\]|lea     rsi, \\[rdi \\+ 8\\]" text))
+  (check-true (regexp-match? #rx"call    helper@PLT" text))
+  (check-true (regexp-match? #rx"sub     rsp, 8\n" text)))
+(displayln "alloc-tests: call checks passed")

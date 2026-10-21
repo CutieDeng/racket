@@ -13,6 +13,7 @@
 
 void mont_mul_p256_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4]);
 void mont_sqr_p256_x86(uint64_t r[4], const uint64_t a[4]);
+void p256_mul3_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const uint64_t c[4]);
 typedef struct { uint64_t m[4]; uint64_t n0; uint64_t rr[4]; } mont_ctx_t;
 void mont_mul_x86(uint64_t r[4], const uint64_t a[4], const uint64_t b[4], const mont_ctx_t *ctx);
 /* the group order n and its -n^-1 mod 2^64 */
@@ -98,6 +99,14 @@ int main(void)
     ref_mont_mul(r1, a, b);
     mont_mul_p256_x86(r2, a, b);
     tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("MUL MISMATCH t=%d a=%016llx.. b=%016llx..\n", t, (unsigned long long)a[3], (unsigned long long)b[3]); }
+  }
+  /* the .call probe: (a*b)*c through two calls of the multiply kernel */
+  for (t = 0; t < 20000; t++) {
+    uint64_t a[4], b[4], c[4], r1[4], r2[4];
+    special(a, (int)(rnd64() % 8)); special(b, (int)(rnd64() % 8)); special(c, (int)(rnd64() % 8));
+    ref_mont_mul(r1, a, b); ref_mont_mul(r1, r1, c);
+    p256_mul3_x86(r2, a, b, c);
+    tot++; if (memcmp(r1, r2, 32)) { bad++; if (bad <= 5) printf("CALL PROBE MISMATCH t=%d\n", t); }
   }
   /* dedicated squaring against the reference multiply */
   for (t = 0; t < 100000; t++) {
