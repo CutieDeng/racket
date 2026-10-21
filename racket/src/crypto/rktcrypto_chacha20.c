@@ -304,6 +304,19 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
   if (units < 2 || poly->buf_len != 0) return 0;
   if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX))) return 0;
   chacha20_setup(st, key, nonce, 1);
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_IFMA)) {
+    /* with the eight-way IFMA Poly1305 the MAC runs at about 17 GB/s, so two passes over the
+       units (ChaCha20 at 10.7 GB/s, then Poly1305) beat the scalar-fused kernel; the
+       ciphertext is absorbed before it is overwritten when decrypting in place */
+    if (encrypt) {
+      rktcrypto_chacha20_blocks_avx512(st, in, out, units);
+      rktcrypto_poly1305_update(poly, out, units * 1024);
+    } else {
+      rktcrypto_poly1305_update(poly, in, units * 1024);
+      rktcrypto_chacha20_blocks_avx512(st, in, out, units);
+    }
+    return units * 1024;
+  }
   rktcrypto_poly1305_export64(poly, hr);
   if (encrypt) {
     /* unit 0 on the plain kernel; each fused unit absorbs the PREVIOUS unit's ciphertext,

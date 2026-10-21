@@ -65,6 +65,59 @@ void rktcrypto_poly1305_import64(rktcrypto_poly1305_ctx_t *ctx, const uint64_t h
 }
 #endif
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* h = h * r mod 2^130 - 5 in radix 2^64, the same arithmetic as the MULX kernel (r = {r0, r1, s1},
+   r clamped so r0, r1 < 2^60 and s1 = r1 + r1>>2 < 2^61; h2 small). Partially reduced result. */
+static void poly_mul130(uint64_t h[3], const uint64_t r[3])
+{
+  unsigned __int128 p;
+  uint64_t h0 = h[0], h1 = h[1], h2 = h[2], r0 = r[0], r1 = r[1], s1 = r[2];
+  uint64_t n0, d1, d2, d3, lo, hi, t, c;
+  p = (unsigned __int128)h0 * r0; n0 = (uint64_t)p; d1 = (uint64_t)(p >> 64);
+  p = (unsigned __int128)h0 * r1; d2 = (uint64_t)p; d3 = (uint64_t)(p >> 64);
+  p = (unsigned __int128)h1 * r0; lo = (uint64_t)p; hi = (uint64_t)(p >> 64);
+  d2 += lo; c = d2 < lo; d3 += hi + c;
+  p = (unsigned __int128)h1 * s1; lo = (uint64_t)p; hi = (uint64_t)(p >> 64);
+  n0 += lo; c = n0 < lo; d1 += hi + c;
+  t = h2 * s1; d2 += t; c = d2 < t; d3 += c;
+  h2 = h2 * r0;
+  d1 += d2; c = d1 < d2; d3 += h2 + c;
+  t = d3 & ~(uint64_t)3; h2 = d3 & 3; d3 >>= 2; t += d3;        /* 5 * (d3 >> 2) */
+  h0 = n0 + t; c = h0 < t;
+  h1 = d1 + c; c = h1 < c;
+  h2 += c;
+  h[0] = h0; h[1] = h1; h[2] = h2;
+}
+/* full reduction of a partially reduced value: subtract p when h >= 2^130 - 5 */
+static void poly_reduce130(uint64_t h[3])
+{
+  uint64_t g0, g1, g2, c;
+  g0 = h[0] + 5; c = g0 < 5;
+  g1 = h[1] + c; c = g1 < c;
+  g2 = h[2] + c;
+  if (g2 >> 2) { h[0] = g0; h[1] = g1; h[2] = g2 & 3; }
+}
+static void poly_to44(const uint64_t x[3], uint64_t l[3])
+{
+  l[0] = x[0] & 0xfffffffffffULL;
+  l[1] = ((x[0] >> 44) | (x[1] << 20)) & 0xfffffffffffULL;
+  l[2] = (x[1] >> 24) | (x[2] << 40);
+}
+/* rows 0..4: r^8 limbs and 20*limbs broadcast; rows 5..9: lane k = r^(8-k) likewise */
+void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80])
+{
+  uint64_t pw[9][3], l[3]; int k, j;
+  pw[1][0] = r[0]; pw[1][1] = r[1]; pw[1][2] = 0;
+  for (k = 2; k <= 8; k++) { memcpy(pw[k], pw[k - 1], 24); poly_mul130(pw[k], r); poly_reduce130(pw[k]); }
+  poly_to44(pw[8], l);
+  for (j = 0; j < 8; j++) { tab[j] = l[0]; tab[8 + j] = l[1]; tab[16 + j] = l[2]; tab[24 + j] = 20 * l[1]; tab[32 + j] = 20 * l[2]; }
+  for (k = 0; k < 8; k++) {
+    poly_to44(pw[8 - k], l);
+    tab[40 + k] = l[0]; tab[48 + k] = l[1]; tab[56 + k] = l[2]; tab[64 + k] = 20 * l[1]; tab[72 + k] = 20 * l[2];
+  }
+}
+#endif
+
 static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *m,
                             intptr_t bytes, uint32_t hibit)
 {
@@ -77,9 +130,33 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
      prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */
   if (bytes >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
     uint64_t hr[6];
-    intptr_t nblk = bytes / 16;
+    intptr_t nblk;
     rktcrypto_poly1305_export64(ctx, hr);           /* ctx->h still equals h0..h4 here */
-    rktcrypto_poly1305_blocks_x86(hr, hr + 3, m, nblk, hibit ? 1 : 0);
+    if (bytes >= 256 && hibit && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_IFMA)) {
+      /* eight-way IFMA on whole groups of eight blocks; radix 2^64 <-> 2^44 around it */
+      uint64_t tab[80] __attribute__((aligned(64))), l[3];
+      unsigned __int128 x;
+      intptr_t groups = bytes / 128;
+      rktcrypto_poly1305_ifma_table(hr + 3, tab);
+      poly_to44(hr, l);
+      rktcrypto_poly1305_blocks_ifma(l, tab, m, groups);
+      /* radix 2^44 lane sums (limbs below 2^48) back to radix 2^64: l0 + l1*2^44 + l2*2^88 */
+      x = (unsigned __int128)l[0] + ((unsigned __int128)l[1] << 44);
+      hr[0] = (uint64_t)x;
+      x = (x >> 64) + ((unsigned __int128)l[2] << 24);
+      hr[1] = (uint64_t)x;
+      hr[2] = (uint64_t)(x >> 64);
+      /* the lane sum can exceed 2^130 by a few bits; the radix-2^64 kernel needs h2 small, so
+         fold the bits above 2^130 back (2^130 = 5) */
+      { uint64_t top = hr[2] >> 2;
+        hr[2] &= 3;
+        x = (unsigned __int128)hr[0] + top * 5; hr[0] = (uint64_t)x;
+        x = (x >> 64) + hr[1]; hr[1] = (uint64_t)x;
+        hr[2] += (uint64_t)(x >> 64); }
+      m += groups * 128; bytes -= groups * 128;
+    }
+    nblk = bytes / 16;
+    if (nblk > 0) rktcrypto_poly1305_blocks_x86(hr, hr + 3, m, nblk, hibit ? 1 : 0);
     rktcrypto_poly1305_import64(ctx, hr);
     h0 = ctx->h[0]; h1 = ctx->h[1]; h2 = ctx->h[2]; h3 = ctx->h[3]; h4 = ctx->h[4];
     m += nblk * 16; bytes -= nblk * 16;

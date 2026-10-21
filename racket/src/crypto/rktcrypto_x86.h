@@ -70,6 +70,10 @@ void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *i
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);
+/* rktasm/x86 kernel (rktcrypto_poly1305_ifma.S): eight blocks per vector in radix 2^44; h44 in = lane 0,
+   out = the lane sum; tab = the 10 x 8 qword table from rktcrypto_poly1305_ifma_table; groups x 128 bytes */
+void rktcrypto_poly1305_blocks_ifma(uint64_t h44[3], const uint64_t tab[80], const unsigned char *m, intptr_t groups);
+void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
 /* rktasm/x86 kernel (rktcrypto_chacha20poly1305_x86.S): `units` x 1024 bytes of ChaCha20 XOR while Poly1305
    absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */
 void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned char *in, unsigned char *out,

@@ -26,6 +26,7 @@ p256_mul_x86|rktcrypto_p256_mul_x86.S|asm/tests/test_p256_x86.c|rktcrypto_*.c
 keccak_avx512|rktcrypto_keccak_avx512.S|asm/tests/test_keccak_x86.c|rktcrypto_cpu.c rktcrypto_x86.c
 sha512_x86|rktcrypto_sha512_x86.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
 x25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_x25519_x86.c|rktcrypto_x25519.c rktcrypto_cpu.c rktcrypto_x86.c
+poly1305_ifma|rktcrypto_poly1305_ifma.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 '
 rows() { echo "$TABLE" | grep -v '^$' | { if [ -n "${1:-}" ]; then grep "^$1|"; else cat; fi; }; }
 NL='
