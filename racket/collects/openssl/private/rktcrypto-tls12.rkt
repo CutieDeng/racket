@@ -55,7 +55,16 @@
              ckey cfixed skey sfixed
              chacha?
              [rseq #:mutable] [wseq #:mutable]
-             we-are-client?))
+             we-are-client?
+             lock                   ; held while a thread reads from `in`
+             [pending #:mutable]    ; records read while draining during a write
+             [inbuf #:mutable]))    ; partial record pulled in by a draining write
+(define (make-r12 in out aead ckey cfixed skey sfixed chacha? client?)
+  (r12 in out aead ckey cfixed skey sfixed chacha? 0 0 client? (make-semaphore 1) '() #""))
+(define (r12-read-exact! r n)
+  (buffered-read-exact! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b)) n))
+(define (r12-fill-nb! r)
+  (fill-record-nb! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b))))
 
 (define (seq->bytes n)
   (bytes (bitwise-and (arithmetic-shift n -56) 255) (bitwise-and (arithmetic-shift n -48) 255)
@@ -90,12 +99,22 @@
        (define nonce (bytes-append fixed expl))
        (bytes-append expl (aead-seal (r12-aead r) key nonce a frag))]))
   (set-r12-wseq! r (add1 seq))
+  (define rec (bytes-append (bytes type 3 3)
+                            (bytes (arithmetic-shift (bytes-length body) -8) (bitwise-and (bytes-length body) 255))
+                            body))
+  ;; see `write-draining`: never block on a full transport while the peer
+  ;; is sending to us (queue what it sends instead)
   (with-transport-errors
-    (write-bytes (bytes-append (bytes type 3 3)
-                               (bytes (arithmetic-shift (bytes-length body) -8) (bitwise-and (bytes-length body) 255))
-                               body)
-                 (r12-out r))
-    (flush-output (r12-out r))))
+    (write-draining (r12-out r) (r12-in r) rec (r12-lock r)
+                    (lambda ()
+                      (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) #f)])
+                        (case (r12-fill-nb! r)
+                          [(record)
+                           (define-values (type pt) (r12-read/raw r))
+                           (set-r12-pending! r (append (r12-pending r) (list (cons type pt))))
+                           #t]
+                          [(eof) #f]
+                          [else #t]))))))
 
 (define (read-exact in n)
   (define bs (with-transport-errors (read-bytes n in)))
@@ -104,10 +123,21 @@
 
 ;; read one record -> (values type plaintext)  (plaintext #f for pass-through CCS)
 (define (r12-read r)
-  (define hdr (read-exact (r12-in r) 5))
+  (call-with-semaphore
+   (r12-lock r)
+   (lambda ()
+     (define pending (r12-pending r))
+     (cond
+       [(pair? pending)
+        (set-r12-pending! r (cdr pending))
+        (values (caar pending) (cdar pending))]
+       [else (r12-read/raw r)]))))
+
+(define (r12-read/raw r)
+  (define hdr (r12-read-exact! r 5))
   (define type (bytes-ref hdr 0))
   (define len (+ (* 256 (bytes-ref hdr 3)) (bytes-ref hdr 4)))
-  (define body (read-exact (r12-in r) len))
+  (define body (r12-read-exact! r len))
   (cond
     [(= type 20) (values 20 #f)]                 ; change_cipher_spec (plaintext)
     [(and (= type 21) (not (r12-cseq-installed? r)))
@@ -251,7 +281,7 @@
   (when ccv (write-plaintext rl-out 22 ccv))
   (write-plaintext rl-out 20 (bytes 1))         ; ChangeCipherSpec
 
-  (define r (r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? 0 0 #t))
+  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #t))
 
   ;; client Finished: PRF(master,"client finished",Hash(handshake))[0:12]
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
@@ -310,7 +340,7 @@
   (define skey (subbytes kb key-len (* 2 key-len)))
   (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
   (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? 0 0 #t))
+  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #t))
   ;; server flight: optional NewSessionTicket (plaintext) then ChangeCipherSpec
   (let loop ()
     (define hdr (read-exact rl-in 5))
@@ -465,7 +495,7 @@
   (define skey (subbytes kb key-len (* 2 key-len)))
   (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
   (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? 0 0 #f))
+  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #f))
 
   ;; read client CCS + Finished
   (read-until-ccs rl-in)
@@ -514,7 +544,7 @@
   (define skey (subbytes kb key-len (* 2 key-len)))
   (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
   (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? 0 0 #f))
+  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #f))
   (write-plaintext rl-out 20 (bytes 1))                       ; server ChangeCipherSpec
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (tr+ (bytes-append (u8 20) (u24 12) sfin-vd))               ; server Finished in the transcript

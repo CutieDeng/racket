@@ -289,11 +289,19 @@
   (make-input-port name read-in #f on-close))
 
 (define (make-ssl-output conn name on-close)
+  ;; Every write goes out as a TLS record at once, so the buffer mode is
+  ;; nominal; it is kept so `file-stream-buffer-mode` works on SSL ports as
+  ;; it did with the libssl-based implementation.
+  (define buffer-mode 'block)
   (make-output-port name always-evt
                     (lambda (bstr start end non-block? breakable?)
                       (if (= start end) 0
                           (tls-conn-write-bytes conn (subbytes bstr start end))))
-                    (lambda () (tls-conn-close-notify conn) (on-close))))
+                    (lambda () (tls-conn-close-notify conn) (on-close))
+                    #f #f #f #f void 1
+                    (case-lambda
+                      [() buffer-mode]
+                      [(mode) (set! buffer-mode mode)])))
 
 (define (ports->ssl-ports i o
                           #:mode [mode 'connect]

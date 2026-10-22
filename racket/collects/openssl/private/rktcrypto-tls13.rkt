@@ -91,10 +91,45 @@
 ;; =====================================================================
 (struct rl (in out
             [raead #:mutable] [rkey #:mutable] [riv #:mutable] [rseq #:mutable]
-            [waead #:mutable] [wkey #:mutable] [wiv #:mutable] [wseq #:mutable]))
+            [waead #:mutable] [wkey #:mutable] [wiv #:mutable] [wseq #:mutable]
+            lock                  ; held while a thread reads from `in`
+            [pending #:mutable]   ; records read while draining during a write: list of (type . payload)
+            [inbuf #:mutable]))   ; partial record accumulated by the non-blocking reader
 
 (define (make-rl in out)
-  (rl in out #f #f #f 0 #f #f #f 0))
+  (rl in out #f #f #f 0 #f #f #f 0 (make-semaphore 1) '() #""))
+
+;; Writes all of `bs` to `out` without blocking indefinitely while the
+;; peer has data for us. A plain blocking write deadlocks when both sides
+;; write at once into full transport buffers and neither reads -- which
+;; happens routinely: the server writes NewSessionTicket right after the
+;; handshake, while the client has started writing application data.
+;; When the transport cannot take more, wait for it to drain OR for input
+;; to arrive; in the latter case `read-one!` reads one record and queues
+;; it for the next read. `lock` is the read lock: if another thread is
+;; already reading (and thus draining the peer), wait for it instead.
+;; `read-one!` returns #f at transport EOF, after which only the output
+;; side is waited on.
+(define (write-draining out in bs lock read-one!)
+  (define len (bytes-length bs))
+  (let loop ([off 0] [drain? #t])
+    (when (< off len)
+      (define n (write-bytes-avail* bs out off len))
+      (cond
+        [(and n (> n 0)) (loop (+ off n) drain?)]
+        [(not drain?) (sync out) (loop off #f)]
+        [else
+         (define which (sync (handle-evt out (lambda (_) 'out)) (handle-evt in (lambda (_) 'in))))
+         (cond
+           [(eq? which 'out) (loop off #t)]
+           [(semaphore-try-wait? lock)
+            (define more? (dynamic-wind void read-one! (lambda () (semaphore-post lock))))
+            (loop off (and more? #t))]
+           [else
+            ;; another thread is reading: it keeps the peer draining
+            (sync (handle-evt out void) (semaphore-peek-evt lock))
+            (loop off #t)])]))))
+(provide write-draining)
 
 ;; report raw transport I/O errors as TLS (network) errors, so that
 ;; callers' network-retry logic applies to them as it did with the
@@ -110,15 +145,104 @@
     (raise (tls-error "unexpected EOF from peer")))
   bs)
 
+;; ---- partial-record buffering, shared with the 1.2 record layer ----
+;; `get-buf`/`set-buf!` access the layer's partial-record buffer. The
+;; read lock is held by the caller.
+;; Exactly `n` bytes: first from the buffer, then (blocking) from the port.
+(define (buffered-read-exact! in get-buf set-buf! n)
+  (define buf (get-buf))
+  (cond
+    [(>= (bytes-length buf) n)
+     (set-buf! (subbytes buf n))
+     (subbytes buf 0 n)]
+    [else
+     (define rest (read-n in (- n (bytes-length buf))))
+     (set-buf! #"")
+     (bytes-append buf rest)]))
+;; Pull whatever the transport has right now into the buffer, never
+;; blocking: 'record once a whole record (5-byte header + length) is
+;; buffered, 'eof at a transport EOF with nothing buffered, 'wait when more
+;; input is needed. A partial record stays buffered, so progress never
+;; depends on the transport holding a whole record at once (a pipe of
+;; capacity 1 must work), nor on the peer finishing a record before we
+;; finish ours.
+(define (fill-record-nb! in get-buf set-buf!)
+  (let loop ()
+    (define buf (get-buf))
+    (define have (bytes-length buf))
+    (define need (if (< have 5) 5 (+ 5 (be->int buf 3 5))))
+    (cond
+      [(>= have need) 'record]
+      [else
+       (define tmp (make-bytes (- need have)))
+       (define g (with-transport-errors (read-bytes-avail!* tmp in)))
+       (cond
+         [(eof-object? g)
+          (if (zero? have) 'eof (raise (tls-error "unexpected EOF from peer")))]
+         [(and (exact-integer? g) (> g 0))
+          (set-buf! (bytes-append buf (subbytes tmp 0 g)))
+          (loop)]
+         [else 'wait])])))
+(provide buffered-read-exact! fill-record-nb! read-n)
+
+(define (rl-read-exact! r n)
+  (buffered-read-exact! (rl-in r) (lambda () (rl-inbuf r)) (lambda (b) (set-rl-inbuf! r b)) n))
+(define (rl-fill-nb! r)
+  (fill-record-nb! (rl-in r) (lambda () (rl-inbuf r)) (lambda (b) (set-rl-inbuf! r b))))
+
 ;; Reads one record; returns (values content-type payload-bytes). Decrypts
 ;; when a read key is installed (skipping the outer app_data type and the
-;; inner content-type/padding).
+;; inner content-type/padding). Records queued by a draining write come
+;; first.
 (define (rl-read-record r)
-  (define hdr (read-n (rl-in r) 5))
+  (call-with-semaphore
+   (rl-lock r)
+   (lambda ()
+     (define pending (rl-pending r))
+     (cond
+       [(pair? pending)
+        (set-rl-pending! r (cdr pending))
+        (values (caar pending) (cdar pending))]
+       [else (rl-read-record/raw r)]))))
+
+;; Non-blocking variant: (values type payload) when a whole record is
+;; available (queued, or assembled from what the transport has right now),
+;; (values 'eof #f) at a clean transport EOF, or (values #f evt) with an evt
+;; that becomes ready when more input arrives.
+(define (rl-try-read-record r)
+  (call-with-semaphore
+   (rl-lock r)
+   (lambda ()
+     (define pending (rl-pending r))
+     (cond
+       [(pair? pending)
+        (set-rl-pending! r (cdr pending))
+        (values (caar pending) (cdar pending))]
+       [else
+        (case (rl-fill-nb! r)
+          [(record) (rl-read-record/raw r)]
+          [(eof) (values 'eof #f)]
+          [else (values #f (rl-in r))])]))))
+
+;; One step of reading for the draining writer (read lock held by the
+;; caller): queue a record if a whole one is available now; never blocks.
+;; Returns #f at transport EOF.
+(define (rl-drain-one! r)
+  (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) #f)])
+    (case (rl-fill-nb! r)
+      [(record)
+       (define-values (type payload) (rl-read-record/raw r))
+       (set-rl-pending! r (append (rl-pending r) (list (cons type payload))))
+       #t]
+      [(eof) #f]
+      [else #t])))
+
+(define (rl-read-record/raw r)
+  (define hdr (rl-read-exact! r 5))
   (define len (be->int hdr 3 5))
   ;; RFC 8446 §5.2: TLSCiphertext.length MUST NOT exceed 2^14 + 256.
   (when (> len 16640) (raise (tls-alert 22 "record_overflow")))
-  (define body (read-n (rl-in r) len))
+  (define body (rl-read-exact! r len))
   (cond
     ;; Only application_data (23) records are AEAD-protected in TLS 1.3.
     ;; ChangeCipherSpec (20) and any plaintext alert (21) pass through even
@@ -140,17 +264,15 @@
 ;; Writes a record of `type` with `payload`, encrypting when a write key is
 ;; installed. Splits >16KiB payloads.
 (define (rl-write-record r type payload)
-  (with-transport-errors
+  (define rec
     (cond
       [(rl-wkey r)
        (define inner (bytes-append payload (u8 type)))
-       (define rec (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner))
-       (set-rl-wseq! r (add1 (rl-wseq r)))
-       (write-bytes rec (rl-out r))]
-      [else
-       (write-bytes (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)
-                    (rl-out r))])
-    (flush-output (rl-out r))))
+       (begin0 (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner)
+               (set-rl-wseq! r (add1 (rl-wseq r))))]
+      [else (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)]))
+  (with-transport-errors
+    (write-draining (rl-out r) (rl-in r) rec (rl-lock r) (lambda () (rl-drain-one! r)))))
 
 (define (rl-set-read-key! r aead key iv) (set-rl-raead! r aead) (set-rl-rkey! r key) (set-rl-riv! r iv) (set-rl-rseq! r 0))
 (define (rl-set-write-key! r aead key iv) (set-rl-waead! r aead) (set-rl-wkey! r key) (set-rl-wiv! r iv) (set-rl-wseq! r 0))
@@ -399,54 +521,38 @@
       (rl-write-record r 22 (bytes 24 0 0 1 0))                            ; KeyUpdate{not_requested}
       (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
       (rl-set-write-key! r (ku-aead kus) sk siv)))
+  ;; one record -> application bytes, eof, or 'again (nothing for the caller)
+  (define (dispatch type payload)
+    (cond
+      [(and (= type 23) (positive? (bytes-length payload))) payload]
+      [(= type 21) (alert->eof payload)]                 ; close_notify -> eof; fatal -> raise
+      [(= type 22)                                       ; NewSessionTicket(4) / KeyUpdate(24)
+       (cond
+         [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0))) (do-key-update! payload)]
+         [(and (>= (bytes-length payload) 1) (= 4 (bytes-ref payload 0))) (capture-nst! payload)])
+       'again]
+      [else 'again]))
+  (define (transport-eof? e) (and (exn:tls? e) (not (exn:tls-alert e))))
   (define (recv)
     (let loop ()
-      (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
+      (with-handlers ([transport-eof? (lambda (_) eof)])
         (define-values (type payload) (rl-read-record r))
-        (cond
-          [(and (= type 23) (positive? (bytes-length payload))) payload]
-          [(= type 23) (loop)]
-          [(= type 21) (alert->eof payload)]                 ; close_notify -> eof; fatal -> raise
-          [(= type 22)                                       ; NewSessionTicket(4) / KeyUpdate(24)
-           (cond
-             [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0)))
-              (do-key-update! payload)]
-             [(and (>= (bytes-length payload) 1) (= 4 (bytes-ref payload 0)))
-              (capture-nst! payload)])
-           (loop)]
-          [else (loop)]))))
+        (define v (dispatch type payload))
+        (if (eq? v 'again) (loop) v))))
   ;; A1: non-blocking receive. Returns one app-data chunk (bytes), eof, or an
-  ;; evt that becomes ready only when the *next whole TLS record* has arrived
-  ;; (peek-bytes-evt) — so a caller can sync without a busy loop and a partial
-  ;; record on the wire never blocks. Handshake/NST/KeyUpdate records are
-  ;; consumed inline exactly as the blocking `recv` does.
+  ;; evt that becomes ready when more input has arrived -- so a caller can
+  ;; sync without a busy loop. Handshake/NST/KeyUpdate records are consumed
+  ;; inline exactly as the blocking `recv` does.
   (define (recv-nb)
     (let loop ()
-      (define in (rl-in r))
-      (define hb (make-bytes 5))
-      (define g (peek-bytes-avail!* hb 0 #f in))            ; record header, non-blocking
-      (cond
-        [(eof-object? g) eof]
-        [(not (and (number? g) (>= g 5))) (peek-bytes-evt 5 0 #f in)]   ; header not buffered
-        [else
-         (define total (+ 5 (be->int hb 3 5)))
-         (define g2 (peek-bytes-avail!* (make-bytes 1) (- total 1) #f in)) ; is the last byte present?
-         (cond
-           [(eof-object? g2) eof]
-           [(not (and (number? g2) (= g2 1))) (peek-bytes-evt total 0 #f in)] ; record incomplete
-           [else                                              ; full record buffered → read won't block
-            (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
-              (define-values (type payload) (rl-read-record r))
-              (cond
-                [(and (= type 23) (positive? (bytes-length payload))) payload]
-                [(= type 23) (loop)]
-                [(= type 21) (alert->eof payload)]
-                [(= type 22)
-                 (cond
-                   [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0))) (do-key-update! payload)]
-                   [(and (>= (bytes-length payload) 1) (= 4 (bytes-ref payload 0))) (capture-nst! payload)])
-                 (loop)]
-                [else (loop)]))])])))
+      (with-handlers ([transport-eof? (lambda (_) eof)])
+        (define-values (type payload) (rl-try-read-record r))
+        (cond
+          [(not type) payload]                           ; an evt: more input needed
+          [(eq? type 'eof) eof]
+          [else
+           (define v (dispatch type payload))
+           (if (eq? v 'again) (loop) v)]))))
   (define (send bs)
     (let loop ([off 0])
       (when (< off (bytes-length bs))
@@ -502,7 +608,7 @@
      (cond
        [(eof-object? st) (set-tls-conn-closed! c #t) eof]
        [(bytes? st) (set-tls-conn-rbuf! c st) (tls-conn-read-in! c bstr)]
-       [else (wrap-evt st (lambda (_) 0))])]           ; peek-bytes-evt: fires on a full record
+       [else (wrap-evt st (lambda (_) 0))])]           ; evt: more input has arrived
     [else
      (define got ((tls-conn-recv c)))
      (cond
@@ -517,10 +623,16 @@
 
 ;; close_notify only closes the write direction (RFC 8446 6.1); reads keep
 ;; draining until the peer's close_notify or transport EOF sets `closed`.
+;; Once the peer has closed its side, nothing is sent: the peer has
+;; stopped reading at the TLS level, so a close_notify could only sit in
+;; (or block on) the transport, and the libssl-based implementation sent
+;; nothing in this state either (callers reuse the underlying ports after
+;; both sides closed and expect them to be clean).
 (define (tls-conn-close-notify c)
   (unless (tls-conn-wclosed c)
     (set-tls-conn-wclosed! c #t)
-    ((tls-conn-shut c))))
+    (unless (tls-conn-closed c)
+      ((tls-conn-shut c)))))
 
 ;; Close the write direction without sending close_notify, for
 ;; ssl-abandon-port: the peer sees no shutdown and keeps sending.
