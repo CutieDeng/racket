@@ -21,6 +21,8 @@ sha256|rktcrypto_sha256_x86.S|asm/tests/test_sha256_x86.c|rktcrypto_x86.c rktcry
 aes_ctr_vaes|rktcrypto_aes_ctr_vaes.S|asm/tests/test_aes_ctr_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c
 ghash_vpclmul|rktcrypto_ghash_vpclmul.S|asm/tests/test_ghash_vpclmul.c|rktcrypto_x86.c rktcrypto_cpu.c
 gcm_vaes|rktcrypto_gcm_vaes.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
+gcm_aesni|rktcrypto_gcm_aesni.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
+chacha20_avx2|rktcrypto_chacha20_avx2.S|asm/tests/test_chacha20_avx512.c|rktcrypto_chacha20.c rktcrypto_poly1305.c rktcrypto_aead.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 chacha20_avx512|rktcrypto_chacha20_avx512.S|asm/tests/test_chacha20_avx512.c|rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_poly1305.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 poly1305_x86|rktcrypto_poly1305_x86.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 chacha20poly1305_x86|rktcrypto_chacha20poly1305_x86.S|asm/tests/test_chacha20poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
@@ -42,7 +44,8 @@ gen() { # $1=kernel $2=out  (a row's fifth column names the .asm when it is not 
 }
 cmd=${1:-}; k=${2:-}
 # emitted .asm sources: kernel | emitter (run from racket/src/crypto, output path as its argument)
-GENSRC="gcm_vaes|asm/gen/gcm-vaes-x86.rkt"
+GENSRC="gcm_vaes|asm/gen/gcm-vaes-x86.rkt
+gcm_aesni|asm/gen/gcm-aesni-x86.rkt"
 
 case "$cmd" in
   list) rows | cut -d'|' -f1 ;;

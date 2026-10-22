@@ -19,6 +19,7 @@ static void x86(int on)
   if (on) rktcrypto_cpu_override_features(0, 0);
   else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_BMI2ADX, 1);
 }
+static void avx2_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_AVX512, 1); }
 static int hexeq(const unsigned char *b, const char *hex, int n)
 {
   int i; for (i = 0; i < n; i++) { unsigned v; if (sscanf(hex + 2 * i, "%2x", &v) != 1 || v != b[i]) return 0; } return 1;
@@ -37,6 +38,8 @@ int main(void)
     x86(0); rktcrypto_ed25519_pubkey(pkb, seed); rktcrypto_ed25519_sign(sigb, msg, len, seed); x86(1);
     tot++; if (memcmp(pka, pkb, 32)) { bad++; if (bad <= 5) printf("PUBKEY MISMATCH t=%d\n", t); continue; }
     tot++; if (memcmp(siga, sigb, 64)) { bad++; if (bad <= 5) printf("SIGN MISMATCH t=%d len=%ld\n", t, len); continue; }
+    avx2_tier(); rktcrypto_ed25519_sign(sigb, msg, len, seed); i = rktcrypto_ed25519_verify(siga, msg, len, pka); x86(1);
+    tot++; if (memcmp(siga, sigb, 64) || i != 1) { bad++; if (bad <= 5) printf("AVX2-TIER MISMATCH t=%d len=%ld\n", t, len); continue; }
     tot++; if (rktcrypto_ed25519_verify(siga, msg, len, pka) != 1) { bad++; if (bad <= 5) printf("VERIFY FAIL (x86) t=%d\n", t); continue; }
     x86(0); i = rktcrypto_ed25519_verify(siga, msg, len, pka); x86(1);
     tot++; if (i != 1) { bad++; if (bad <= 5) printf("VERIFY FAIL (portable) t=%d\n", t); continue; }
@@ -64,6 +67,9 @@ int main(void)
       x86(0); t0 = now(); for (i = 0; i < 1000; i++) rktcrypto_ed25519_sign(sig, msg, 64, seed); t1 = now(); if (t1 - t0 < sb) sb = t1 - t0;
       t0 = now(); for (i = 0; i < 1000; i++) rktcrypto_ed25519_verify(sig, msg, 64, pk); t1 = now(); if (t1 - t0 < vb) vb = t1 - t0; x86(1);
     }
+    { double sc = 1e9; for (r = 0; r < 5; r++) { double t0, t1;
+        avx2_tier(); t0 = now(); for (i = 0; i < 1000; i++) rktcrypto_ed25519_sign(sig, msg, 64, seed); t1 = now(); x86(1); if (t1 - t0 < sc) sc = t1 - t0; }
+      printf("BENCH ed25519-sign-avx2-tier: %.2f us\n", sc * 1e3); }
     printf("BENCH ed25519-sign-x86: %.2f us\nBENCH ed25519-verify-x86: %.2f us\nBENCH ed25519-sign-portable: %.2f us\nBENCH ed25519-verify-portable: %.2f us\n",
            sa * 1e3, va * 1e3, sb * 1e3, vb * 1e3); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");

@@ -29,6 +29,7 @@
                 (1/close-output-port close-output-port)
                 (1/complete-path? complete-path?)
                 (1/copy-file copy-file)
+                (crypto-aead-expand-key crypto-aead-expand-key)
                 (1/crypto-aead-key-size crypto-aead-key-size)
                 (1/crypto-aead-nonce-size crypto-aead-nonce-size)
                 (1/crypto-aead-open! crypto-aead-open!)
@@ -35685,6 +35686,10 @@
   (hash-ref rktcrypto-table 'rktcrypto_digest_oneshot))
 (define rktcrypto_aead_key_size
   (hash-ref rktcrypto-table 'rktcrypto_aead_key_size))
+(define rktcrypto_aead_expanded_key_size
+  (hash-ref rktcrypto-table 'rktcrypto_aead_expanded_key_size))
+(define rktcrypto_aead_expand_key
+  (hash-ref rktcrypto-table 'rktcrypto_aead_expand_key))
 (define rktcrypto_aead_nonce_size
   (hash-ref rktcrypto-table 'rktcrypto_aead_nonce_size))
 (define rktcrypto_aead_tag_size
@@ -35697,6 +35702,10 @@
   (hash-ref rktcrypto-table 'rktcrypto_ed25519_pubkey))
 (define rktcrypto_ed25519_sign
   (hash-ref rktcrypto-table 'rktcrypto_ed25519_sign))
+(define rktcrypto_ed25519_expand
+  (hash-ref rktcrypto-table 'rktcrypto_ed25519_expand))
+(define rktcrypto_ed25519_sign_expanded
+  (hash-ref rktcrypto-table 'rktcrypto_ed25519_sign_expanded))
 (define rktcrypto_ed25519_verify
   (hash-ref rktcrypto-table 'rktcrypto_ed25519_verify))
 (define rktcrypto_p256_pubkey
@@ -36129,9 +36138,16 @@
       (if (bytes? nonce_0)
         (void)
         (raise-argument-error who_0 "bytes?" nonce_0))
-      (if (eqv?
-           (unsafe-bytes-length key_0)
-           (|#%app| rktcrypto_aead_key_size id_0))
+      (if (let ((or-part_0
+                 (eqv?
+                  (unsafe-bytes-length key_0)
+                  (|#%app| rktcrypto_aead_key_size id_0))))
+            (if or-part_0
+              or-part_0
+              (let ((x_0 (|#%app| rktcrypto_aead_expanded_key_size id_0)))
+                (if (positive? x_0)
+                  (eqv? (unsafe-bytes-length key_0) x_0)
+                  #f))))
         (void)
         (raise-arguments-error
          who_0
@@ -36202,6 +36218,42 @@
                      (void)
                      (fail-digest 'crypto-aead-seal!))
                    (void)))))))))))
+(define crypto-aead-expand-key
+  (lambda (alg_0 key_0)
+    (let ((id_0 (aead-alg->id 'crypto-aead-expand-key alg_0)))
+      (begin
+        (if (bytes? key_0)
+          (void)
+          (raise-argument-error 'crypto-aead-expand-key "bytes?" key_0))
+        (begin
+          (if (eqv?
+               (unsafe-bytes-length key_0)
+               (|#%app| rktcrypto_aead_key_size id_0))
+            (void)
+            (raise-arguments-error
+             'crypto-aead-expand-key
+             "wrong key size"
+             "given"
+             (unsafe-bytes-length key_0)
+             "required"
+             (|#%app| rktcrypto_aead_key_size id_0)))
+          (let ((n_0 (|#%app| rktcrypto_aead_expanded_key_size id_0)))
+            (if (eqv? n_0 0)
+              (bytes-copy key_0)
+              (let ((out_0 (make-bytes n_0)))
+                (begin
+                  (if (eqv?
+                       1
+                       (|#%app|
+                        rktcrypto_aead_expand_key
+                        id_0
+                        key_0
+                        (unsafe-bytes-length key_0)
+                        out_0
+                        n_0))
+                    (void)
+                    (fail-digest 'crypto-aead-expand-key))
+                  out_0)))))))))
 (define 1/crypto-aead-open!
   (|#%name|
    crypto-aead-open!
@@ -36457,14 +36509,16 @@
        (if (bytes? seed_0)
          (void)
          (raise-argument-error 'crypto-ed25519-public-key "bytes?" seed_0))
-       (begin
-         (if (eqv? (unsafe-bytes-length seed_0) 32)
-           (void)
-           (raise-arguments-error
-            'crypto-ed25519-public-key
-            "seed must be 32 bytes"
-            "given"
-            (unsafe-bytes-length seed_0)))
+       (if (let ((or-part_0 (eqv? (unsafe-bytes-length seed_0) 32)))
+             (if or-part_0 or-part_0 (eqv? (unsafe-bytes-length seed_0) 64)))
+         (void)
+         (raise-arguments-error
+          'crypto-ed25519-public-key
+          "private key must be 32 or 64 bytes"
+          "given"
+          (unsafe-bytes-length seed_0)))
+       (if (eqv? (unsafe-bytes-length seed_0) 64)
+         (subbytes seed_0 32 64)
          (let ((pk_0 (make-bytes 32)))
            (begin (|#%app| rktcrypto_ed25519_pubkey pk_0 seed_0) pk_0)))))))
 (define 1/crypto-ed25519-sign
@@ -36480,21 +36534,31 @@
            (void)
            (raise-argument-error 'crypto-ed25519-sign "bytes?" msg_0))
          (begin
-           (if (eqv? (unsafe-bytes-length seed_0) 32)
+           (if (let ((or-part_0 (eqv? (unsafe-bytes-length seed_0) 32)))
+                 (if or-part_0
+                   or-part_0
+                   (eqv? (unsafe-bytes-length seed_0) 64)))
              (void)
              (raise-arguments-error
               'crypto-ed25519-sign
-              "seed must be 32 bytes"
+              "private key must be 32 or 64 bytes"
               "given"
               (unsafe-bytes-length seed_0)))
            (let ((sig_0 (make-bytes 64)))
              (begin
-               (|#%app|
-                rktcrypto_ed25519_sign
-                sig_0
-                msg_0
-                (unsafe-bytes-length msg_0)
-                seed_0)
+               (if (eqv? (unsafe-bytes-length seed_0) 64)
+                 (|#%app|
+                  rktcrypto_ed25519_sign_expanded
+                  sig_0
+                  msg_0
+                  (unsafe-bytes-length msg_0)
+                  seed_0)
+                 (|#%app|
+                  rktcrypto_ed25519_sign
+                  sig_0
+                  msg_0
+                  (unsafe-bytes-length msg_0)
+                  seed_0))
                sig_0))))))))
 (define 1/crypto-ed25519-verify
   (|#%name|

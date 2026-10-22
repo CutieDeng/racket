@@ -146,6 +146,16 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_oneshot(int alg,
 #define RKTCRYPTO_AEAD_AES128_CCM          6
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_key_size(int alg);
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_expanded_key_size(int alg);
+/* Size of an expanded key for alg: the key schedule and whatever the algorithm precomputes per
+   key (for AES-GCM the hash key and, where the fused x86 kernel runs, its table). 0 when there
+   is nothing to precompute; then the raw key is used as is. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_expand_key(int alg,
+                                                     const unsigned char *key, intptr_t key_len,
+                                                     unsigned char *out, intptr_t out_len);
+/* Writes the expanded form of key (key_len = key size) to out (out_len >= expanded size).
+   rktcrypto_aead_seal/open accept an expanded key in place of the raw key when key_len equals
+   the expanded size. Returns 1, or 0 on a size mismatch. */
 /* Key size in bytes, or -1 if `alg` is unknown. */
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_nonce_size(int alg);
@@ -350,6 +360,15 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_sign(unsigned char *sig,
                                                   const unsigned char *seed);
 /* Signs msg[0..msglen) with the 32-byte seed, writing a 64-byte
    signature to sig. Constant-time in the secret. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_expand(unsigned char *sk, const unsigned char *seed);
+/* Writes the 64-byte expanded private key seed || public key to sk. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_sign_expanded(unsigned char *sig,
+                                                           const unsigned char *msg, intptr_t msglen,
+                                                           const unsigned char *sk);
+/* Like rktcrypto_ed25519_sign with the 64-byte expanded key: the public key is taken from it
+   instead of being recomputed (half the signing work). Returns 1. */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_verify(const unsigned char *sig,
                                                     const unsigned char *msg, intptr_t msglen,

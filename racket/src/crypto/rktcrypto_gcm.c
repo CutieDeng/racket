@@ -550,26 +550,36 @@ static int gcm_setup(const unsigned char *key, intptr_t keylen, unsigned char rk
    accumulator, then the sub-256-byte tails on the CTR and GHASH paths, the lengths block
    and the tag. Mirrors gcm_hw. Returns 0 (nothing done) when the CPU lacks the extensions
    or the message is shorter than one chunk; the caller then takes the two-pass path. */
-static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const unsigned char nonce[12],
+/* 2: the VAES/VPCLMULQDQ/AVX-512 kernel; 1: the AES-NI/PCLMULQDQ/AVX2 kernel; 0: neither */
+static int gcm_x86_fused_ready(void)
+{
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) &&
+      rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) return 2;
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_PCLMUL) &&
+      rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) return 1;
+  return 0;
+}
+/* htab_pre: the table of an expanded key, or NULL to build it here */
+static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const unsigned char *htab_pre,
+                         const unsigned char nonce[12],
                          const unsigned char *aad, intptr_t aad_len,
                          const unsigned char *in, unsigned char *out, intptr_t len,
                          int encrypt, unsigned char tag[16], int Nr)
 {
-  unsigned char htab[1280] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
+  unsigned char htab_local[1280] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
+  const unsigned char *htab = htab_pre ? htab_pre : htab_local;
   struct rktcrypto_gcm_vaes_ctx c;
   intptr_t done;
   int i;
-  if (len < 512) return 0;
-  if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) &&
-        rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)))
-    return 0;
-  rktcrypto_gcm_vaes_setup(h, htab);
+  { int tier = gcm_x86_fused_ready();
+    if (!tier || len < (tier == 2 ? 512 : 128)) return 0; }
+  if (!htab_pre) rktcrypto_gcm_vaes_setup(h, htab_local);
   memset(acc, 0, 16);
   rktcrypto_ghash_region_x86(htab + 1024, acc, aad, aad_len);
   memcpy(ctr, nonce, 12);
   ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
   c.rk = rk; c.htab = htab; c.ctr = ctr; c.acc = acc; c.nr = Nr; c.enc = encrypt;
-  done = rktcrypto_gcm_crypt_vaes(&c, in, out, len);
+  done = gcm_x86_fused_ready() == 2 ? rktcrypto_gcm_crypt_vaes(&c, in, out, len) : rktcrypto_gcm_crypt_aesni(&c, in, out, len);
   if (done < len) {
     /* the ciphertext is GHASHed before it is overwritten when decrypting in place */
     if (encrypt) {
@@ -595,24 +605,23 @@ static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const
 /* Shared AES-GCM seal/open cores over a variable key length (16/24/32). Nr is
    passed as a literal (14 for AES-256, 10 for AES-128) so the always-inlined
    gcm_hw specializes its round loops per suite -- AES-256 codegen is unchanged. */
-static int gcm_seal_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
-                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
-                         unsigned char *out, intptr_t out_start, int Nr)
+/* seal over a prepared key schedule (htab: the fused kernel's table when already built, else NULL) */
+static int gcm_seal_rk(const unsigned char rk[240], const uint64_t h[2], const unsigned char *htab,
+                       const unsigned char nonce[12],
+                       const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                       const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                       unsigned char *out, intptr_t out_start, int Nr)
 {
-  unsigned char rk[240];
-  uint64_t h[2];
   intptr_t pt_len = pt_end - pt_start, aad_len = aad_end - aad_start;
   unsigned char *ct = out + out_start;
 
   if (pt_len < 0 || aad_len < 0) return 0;
-
-  gcm_setup(key, keylen, rk, h);
+  (void)htab;
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   gcm_hw(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr);
 #else
 # if defined(__x86_64__) && defined(__ELF__)
-  if (gcm_x86_fused(rk, h, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr))
+  if (gcm_x86_fused(rk, h, htab, nonce, aad + aad_start, aad_len, pt + pt_start, ct, pt_len, 1, ct + pt_len, Nr))
     return 1;
 # endif
   { unsigned char ctr[16];
@@ -624,20 +633,30 @@ static int gcm_seal_core(const unsigned char *key, intptr_t keylen, const unsign
   return 1;
 }
 
-static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
+static int gcm_seal_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
                          const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
                          unsigned char *out, intptr_t out_start, int Nr)
 {
-  unsigned char rk[240], tag[16];
+  unsigned char rk[240];
   uint64_t h[2];
+  gcm_setup(key, keylen, rk, h);
+  return gcm_seal_rk(rk, h, NULL, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start, Nr);
+}
+
+static int gcm_open_rk(const unsigned char rk[240], const uint64_t h[2], const unsigned char *htab,
+                       const unsigned char nonce[12],
+                       const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                       const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                       unsigned char *out, intptr_t out_start, int Nr)
+{
+  unsigned char tag[16];
   intptr_t total = ct_end - ct_start, aad_len = aad_end - aad_start, ct_len;
   const unsigned char *cbody = ct + ct_start;
 
   if (total < 16 || aad_len < 0) return 0;
   ct_len = total - 16;
-
-  gcm_setup(key, keylen, rk, h);
+  (void)htab;
 #if defined(__ARM_FEATURE_AES) || defined(__ARM_FEATURE_CRYPTO)
   gcm_hw(rk, h, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag, Nr);
   if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16)) {
@@ -647,7 +666,7 @@ static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsign
   return 1;
 #else
 # if defined(__x86_64__) && defined(__ELF__)
-  if (gcm_x86_fused(rk, h, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag, Nr)) {
+  if (gcm_x86_fused(rk, h, htab, nonce, aad + aad_start, aad_len, cbody, out + out_start, ct_len, 0, tag, Nr)) {
     if (!rktcrypto_ct_bytes_equal(tag, 0, cbody + ct_len, 0, 16)) {
       memset(out + out_start, 0, (size_t)ct_len);   /* decrypted before the check: wipe */
       return 0;
@@ -664,6 +683,48 @@ static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsign
     gctr(rk, ctr, cbody, out + out_start, ct_len, Nr); }
   return 1;
 #endif
+}
+
+static int gcm_open_core(const unsigned char *key, intptr_t keylen, const unsigned char nonce[12],
+                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                         unsigned char *out, intptr_t out_start, int Nr)
+{
+  unsigned char rk[240];
+  uint64_t h[2];
+  gcm_setup(key, keylen, rk, h);
+  return gcm_open_rk(rk, h, NULL, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start, Nr);
+}
+
+/* ---- expanded keys: the schedule, the hash key and (x86-64 ELF, fused path available) its table ---- */
+int rktcrypto_aesgcm_expand_key(const unsigned char *key, intptr_t keylen, struct rktcrypto_aead_xkey *k)
+{
+  k->nr = (uint32_t)gcm_setup(key, keylen, k->rk, k->h);
+  k->htab_valid = 0;
+#if defined(__x86_64__) && defined(__ELF__)
+  if (gcm_x86_fused_ready()) { rktcrypto_gcm_vaes_setup(k->h, k->htab); k->htab_valid = 1; }
+#endif
+  return 1;
+}
+int rktcrypto_aesgcm_seal_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                            unsigned char *out, intptr_t out_start)
+{
+  const unsigned char *htab = k->htab_valid ? k->htab : NULL;
+  return k->nr == 14
+    ? gcm_seal_rk(k->rk, k->h, htab, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start, 14)
+    : gcm_seal_rk(k->rk, k->h, htab, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start, 10);
+}
+int rktcrypto_aesgcm_open_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                            unsigned char *out, intptr_t out_start)
+{
+  const unsigned char *htab = k->htab_valid ? k->htab : NULL;
+  return k->nr == 14
+    ? gcm_open_rk(k->rk, k->h, htab, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start, 14)
+    : gcm_open_rk(k->rk, k->h, htab, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start, 10);
 }
 
 int rktcrypto_aes256gcm_seal(const unsigned char key[32], const unsigned char nonce[12],

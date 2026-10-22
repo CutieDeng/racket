@@ -54,6 +54,9 @@ struct rktcrypto_gcm_vaes_ctx {
 };
 intptr_t rktcrypto_gcm_crypt_vaes(const struct rktcrypto_gcm_vaes_ctx *c,
                                   const unsigned char *in, unsigned char *out, intptr_t len);
+/* the AES-NI + PCLMULQDQ + AVX2 tier (rktcrypto_gcm_aesni.S): same context, 128-byte chunks */
+intptr_t rktcrypto_gcm_crypt_aesni(const struct rktcrypto_gcm_vaes_ctx *c,
+                                   const unsigned char *in, unsigned char *out, intptr_t len);
 /* From the GCM hash key h = (hi, lo) big-endian words: htab[0..511] = H^32..H^1 times x^-1
    (descending, byte-reversed) for the fused kernel, htab[512..1023] = the (lo ^ hi) halves of
    those entries duplicated per lane (its Karatsuba cross term), htab[1024..1279] = plain
@@ -71,6 +74,8 @@ void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc
 void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* same kernel file: `units` x 2048 bytes, two sixteen-block sets interleaved in all 32 registers (state[12] += 32 per unit) */
 void rktcrypto_chacha20_blocks2_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
+/* rktasm/x86 kernel (rktcrypto_chacha20_avx2.S): the AVX2 tier, `units` x 512 bytes, eight blocks per unit */
+void rktcrypto_chacha20_blocks_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);
@@ -108,6 +113,7 @@ void ed25519_add_x86(uint64_t r[16], const uint64_t p[16], const uint64_t q[16],
 void ed25519_dbl_x86(uint64_t r[16], const uint64_t p[16]);
 /* constant-time selection of entry nib (0..15) of a 16 x 128-byte comb window (AVX-512) */
 void ed25519_lookup_x86(uint64_t out[16], const uint64_t table[256], uint64_t nib);
+void ed25519_lookup_avx2_x86(uint64_t out[16], const uint64_t table[256], uint64_t nib);   /* the AVX2 tier */
 /* dispatcher: VAES kernel for the 64-byte multiple prefix when available, AES-NI for the rest */
 void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
                            const unsigned char *in, unsigned char *out, intptr_t len, int inc32);

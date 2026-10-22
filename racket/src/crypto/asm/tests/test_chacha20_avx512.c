@@ -21,11 +21,12 @@ static double now(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
 #define MAXLEN (1 << 20)
 static unsigned char in[MAXLEN + 64], oa[MAXLEN + 64], ob[MAXLEN + 64], aad[256];
 
-static void avx512(int on)
+static void avx512(int on)   /* 1: everything; 0: scalar oracle (no AVX-512, no AVX2 kernel) */
 {
   if (on) rktcrypto_cpu_override_features(0, 0);
-  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_AVX512, 1);
+  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_AVX512 | RKTCRYPTO_CPU_X86_AVX2), 1);
 }
+static void avx2_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_AVX512, 1); }
 
 int main(void)
 {
@@ -43,6 +44,11 @@ int main(void)
     avx512(0); rktcrypto_chacha20_xor(key, nonce, ctr, in, ob, len); avx512(1);
     tot++;
     if (memcmp(oa, ob, len + 64)) { bad++; if (bad <= 5) printf("XOR MISMATCH t=%d len=%ld ctr=%u\n", t, len, ctr); continue; }
+    /* the AVX2 tier (AVX-512 cleared) must agree too */
+    memset(oa, 0x11, len + 64);
+    avx2_tier(); rktcrypto_chacha20_xor(key, nonce, ctr, in, oa, len); avx512(1);
+    tot++;
+    if (memcmp(oa, ob, len + 64)) { bad++; if (bad <= 5) printf("AVX2 XOR MISMATCH t=%d len=%ld ctr=%u\n", t, len, ctr); continue; }
     /* in place */
     memcpy(oa, in, len);
     rktcrypto_chacha20_xor(key, nonce, ctr, oa, oa, len);
@@ -71,6 +77,10 @@ int main(void)
       avx512(0); t0 = now(); for (i = 0; i < 2; i++) rktcrypto_aead_seal(CP, key, 32, nonce, 12, aad, 0, 0, in, 0, MAXLEN, ob, 0); t1 = now(); avx512(1);
       v = 2.0 * MAXLEN / (t1 - t0) / 1e6; if (v > sb) sb = v;
     }
+    { double bc = 0; for (r = 0; r < 5; r++) { double t0, t1, v;
+        avx2_tier(); t0 = now(); for (i = 0; i < 4; i++) rktcrypto_chacha20_xor(key, nonce, 1, in, oa, MAXLEN); t1 = now(); avx512(1);
+        v = 4.0 * MAXLEN / (t1 - t0) / 1e6; if (v > bc) bc = v; }
+      printf("BENCH chacha20-avx2: %.0f MB/s\n", bc); }
     printf("BENCH chacha20-avx512: %.0f MB/s\nBENCH chacha20-scalar: %.0f MB/s\nBENCH chacha20-poly1305-seal-avx512: %.0f MB/s\nBENCH chacha20-poly1305-seal-scalar: %.0f MB/s\n", ba, bb, sa, sb); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");
   return bad ? 1 : 0;

@@ -400,6 +400,32 @@ A/B（perf 周期，交替，三次取最小）：表 75.6→49.5 ns；融合 se
 make base、self-test #t、integration 77/77；基准 aes-256-gcm 29.6→31.3 GB/s（1 MiB）。余下固定开销：密钥调度 ~27 ns、H 与 E(J0)
 各 ~10 ns（可配对流水，−10 ns，未做）、首块内核 ~40 ns、长度块 GHASH 与胶水；上下文复用 API 仍是最大杠杆（用户决定）。
 
+**X3-5 已落地（2026-10-22）——API 扩展与回退层**（用户 2026-10-21 定调"API 可以多做；性能不足和回退的情形增强"）：
+- **展开密钥 API**：C `rktcrypto_aead_expanded_key_size/expand_key`（记录 = 头 16 + AES 密钥调度 240 + H 16 + x86 ELF 上
+  融合内核 1280 字节表；CCM 只用前 272；ChaCha 族无可预计算，返回 0→Racket 层返回密钥副本），`rktcrypto_aead_seal/open`
+  按 key_len == 展开长度识别（校验 magic/alg）；GCM/CCM 核心重构为"已备好密钥调度"版本，融合路径接受预置表。
+  Racket：新内核原语 `crypto-aead-expand-key`（kernel.ss 登记，版本 9.3.10→9.3.11，base 包 info 同步 9.3.11），
+  `crypto-aead-seal!/open!` 接受两种长度；`racket/crypto/aead` 导出 `aead-expand-key`；参考文档与 core 测试已加。
+- **Ed25519 展开私钥**：`rktcrypto_ed25519_expand`（seed||pk）与 `rktcrypto_ed25519_sign_expanded`（免重算公钥）；
+  `crypto-ed25519-sign/public-key` 接受 32/64 字节；`ed25519-expand-private-key`（Racket 侧拼接）。
+- **FFI 表**：`rktcrypto.rktl` 由手工维护改回可全量再生——io.sls 补 `uint32_t/uint64_t` ftype（此前再生会因 pbkdf2/scrypt
+  的 uint32_t 参数炸 io.so 编译）。`make derived` 需 parser-tools-lib + compiler-lib（lan-11 树里离线从本机包目录
+  `raco pkg install -u --copy --deps force` 装入，parser-tools 的 `module+ test` 子模块因无 rackunit 用脚本剥除）；
+  本机 Homebrew Racket 9.3.5 无 `unsafe-hasheq-from-vectors` 不能当 derived 的宿主，只能用树内 racket。
+  **`make derived` 失败会删 racket/src/bc/src/startup.inc，须 `git checkout -- <该文件>` 精确恢复**（已发生一次）。
+- **回退层（无 AVX-512 的 x86：Intel 客户端 / Zen 2–3）**：`chacha20_avx2.asm`（8 块/512 字节单位，16 ymm 装不下 16 字
+  状态+暂存→d 行驻帧槽，每个 QR 取一次写一次，旋转 16/8 用内存掩码 vpshufb、12/7 用移位对，两 QR 交错；帧只 16 字节
+  对齐故全用 vmovdqu）：1.0→4.5 GB/s；`gcm_aesni.asm`（发射器 `asm/gen/gcm-aesni-x86.rkt`：8 条 AES-NI 链 128 字节
+  块，轮密钥/掩码/表行全内存操作数，GHASH 从内存取（加密取上一块输出、解密取当前块输入且装载全在覆写槽之前），
+  Karatsuba + x^-1 表、折叠在块尾）：4.4→7.3–7.7 GB/s；Ed25519 的 AVX2 查表内核 `ed25519_lookup_avx2_x86`
+  （vpcmpeqd 掩码 + vpblendvb 内存操作数）让 fe64 路径在 BMI2 无 AVX-512 时也可用：sign 9.49 µs（AVX-512 查表 9.08）。
+  门禁：gcm_aesni 0/12000、chacha20_avx2 0/8500、ed25519 avx2 层 0/9003（harness 以特征位清除切换层级，oracle 为更低层）。
+- **验收（lan-11，9.3.11）**：make base、self-test #t、core 测试 crypto-aead/crypto-sign 全过、integration 77/77；基准
+  aes-256-gcm 16 KB 23.45→**27.8 GB/s（展开密钥；OpenSSL 25.0 → 1.11×）**、1 MiB 31.0；ed25519 sign 9.1→**6.0 µs（展开私钥；
+  OpenSSL 16.0 → 2.7×）**。rktcrypto.inc/.def 也须随头文件再生（`parse.rkt -c/-d`），否则新入口在 boot 的外部符号表里缺失
+  （"unavailable: librktcrypto is not part of this Racket build"）；版本号变更会换用户作用域目录（9.3.10→9.3.11），
+  构建辅助包须重装。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

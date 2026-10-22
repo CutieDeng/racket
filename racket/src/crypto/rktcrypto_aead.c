@@ -235,6 +235,56 @@ intptr_t rktcrypto_aead_tag_size(int alg)
   }
 }
 
+/* Expanded keys: the AES key schedule plus whatever the algorithm precomputes per key (the GCM
+   hash key and, where the fused x86 kernel runs, its table). 0 = nothing to precompute, the
+   raw key is the expanded key. */
+intptr_t rktcrypto_aead_expanded_key_size(int alg)
+{
+  switch (alg) {
+    case RKTCRYPTO_AEAD_AES256_GCM:
+    case RKTCRYPTO_AEAD_AES128_GCM:
+#if defined(__x86_64__) && defined(__ELF__)
+      return (intptr_t)sizeof(struct rktcrypto_aead_xkey);
+#else
+      return RKTCRYPTO_AEAD_XKEY_BASE;
+#endif
+    case RKTCRYPTO_AEAD_AES256_CCM:
+    case RKTCRYPTO_AEAD_AES128_CCM: return RKTCRYPTO_AEAD_XKEY_BASE;
+    default: return 0;
+  }
+}
+
+int rktcrypto_aead_expand_key(int alg, const unsigned char *key, intptr_t key_len,
+                              unsigned char *out, intptr_t out_len)
+{
+  struct rktcrypto_aead_xkey k;
+  intptr_t need = rktcrypto_aead_expanded_key_size(alg);
+  if (need == 0 || out_len < need) return 0;
+  if (key_len != rktcrypto_aead_key_size(alg)) return 0;
+  memset(&k, 0, sizeof k);
+  k.magic = RKTCRYPTO_AEAD_XKEY_MAGIC; k.alg = (uint32_t)alg;
+  switch (alg) {
+    case RKTCRYPTO_AEAD_AES256_GCM:
+    case RKTCRYPTO_AEAD_AES128_GCM: rktcrypto_aesgcm_expand_key(key, key_len, &k); break;
+    case RKTCRYPTO_AEAD_AES256_CCM:
+    case RKTCRYPTO_AEAD_AES128_CCM: rktcrypto_aesccm_expand_key(key, key_len, &k); break;
+    default: return 0;
+  }
+  memcpy(out, &k, (size_t)need);
+  rktcrypto_secure_clear((unsigned char *)&k, 0, (intptr_t)sizeof k);
+  return 1;
+}
+
+/* key_len equal to the expanded size selects an expanded key (checked by its header) */
+static const struct rktcrypto_aead_xkey *aead_xkey(int alg, const unsigned char *key, intptr_t key_len)
+{
+  intptr_t xs = rktcrypto_aead_expanded_key_size(alg);
+  if (xs == 0 || key_len != xs || xs == rktcrypto_aead_key_size(alg)) return NULL;
+  { const struct rktcrypto_aead_xkey *k = (const struct rktcrypto_aead_xkey *)key;
+    if (k->magic != RKTCRYPTO_AEAD_XKEY_MAGIC || k->alg != (uint32_t)alg) return NULL;
+    return k; }
+}
+
 int rktcrypto_aead_seal(int alg,
                         const unsigned char *key, intptr_t key_len,
                         const unsigned char *nonce, intptr_t nonce_len,
@@ -242,8 +292,18 @@ int rktcrypto_aead_seal(int alg,
                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
                         unsigned char *out, intptr_t out_start)
 {
-  if (key_len != rktcrypto_aead_key_size(alg)) return 0;
+  const struct rktcrypto_aead_xkey *xk = aead_xkey(alg, key, key_len);
   if (nonce_len != rktcrypto_aead_nonce_size(alg)) return 0;
+  if (xk) {
+    switch (alg) {
+      case RKTCRYPTO_AEAD_AES128_GCM:
+      case RKTCRYPTO_AEAD_AES256_GCM: return rktcrypto_aesgcm_seal_x(xk, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start);
+      case RKTCRYPTO_AEAD_AES128_CCM:
+      case RKTCRYPTO_AEAD_AES256_CCM: return rktcrypto_aesccm_seal_x(xk, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start);
+      default: return 0;
+    }
+  }
+  if (key_len != rktcrypto_aead_key_size(alg)) return 0;
   switch (alg) {
     case RKTCRYPTO_AEAD_CHACHA20_POLY1305:
       return rktcrypto_chacha20poly1305_seal(key, nonce, aad, aad_start, aad_end,
@@ -274,8 +334,18 @@ int rktcrypto_aead_open(int alg,
                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
                         unsigned char *out, intptr_t out_start)
 {
-  if (key_len != rktcrypto_aead_key_size(alg)) return 0;
+  const struct rktcrypto_aead_xkey *xk = aead_xkey(alg, key, key_len);
   if (nonce_len != rktcrypto_aead_nonce_size(alg)) return 0;
+  if (xk) {
+    switch (alg) {
+      case RKTCRYPTO_AEAD_AES128_GCM:
+      case RKTCRYPTO_AEAD_AES256_GCM: return rktcrypto_aesgcm_open_x(xk, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start);
+      case RKTCRYPTO_AEAD_AES128_CCM:
+      case RKTCRYPTO_AEAD_AES256_CCM: return rktcrypto_aesccm_open_x(xk, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start);
+      default: return 0;
+    }
+  }
+  if (key_len != rktcrypto_aead_key_size(alg)) return 0;
   switch (alg) {
     case RKTCRYPTO_AEAD_CHACHA20_POLY1305:
       return rktcrypto_chacha20poly1305_open(key, nonce, aad, aad_start, aad_end,

@@ -3691,5 +3691,124 @@ ed25519_lookup_x86:
         ret
         .size   ed25519_lookup_x86, .-ed25519_lookup_x86
 
+        .section .rodata
+        .p2align 5
+ed25519_lookup_idx8:
+        .long 0, 0, 0, 0, 0, 0, 0, 0
+        .long 1, 1, 1, 1, 1, 1, 1, 1
+        .long 2, 2, 2, 2, 2, 2, 2, 2
+        .long 3, 3, 3, 3, 3, 3, 3, 3
+        .long 4, 4, 4, 4, 4, 4, 4, 4
+        .long 5, 5, 5, 5, 5, 5, 5, 5
+        .long 6, 6, 6, 6, 6, 6, 6, 6
+        .long 7, 7, 7, 7, 7, 7, 7, 7
+        .long 8, 8, 8, 8, 8, 8, 8, 8
+        .long 9, 9, 9, 9, 9, 9, 9, 9
+        .long 10, 10, 10, 10, 10, 10, 10, 10
+        .long 11, 11, 11, 11, 11, 11, 11, 11
+        .long 12, 12, 12, 12, 12, 12, 12, 12
+        .long 13, 13, 13, 13, 13, 13, 13, 13
+        .long 14, 14, 14, 14, 14, 14, 14, 14
+        .long 15, 15, 15, 15, 15, 15, 15, 15
+        .text
+
+        .globl  ed25519_lookup_avx2_x86
+        .type   ed25519_lookup_avx2_x86, @function
+        .p2align 5
+ed25519_lookup_avx2_x86:
+        vmovd xmm5, edx
+        vpbroadcastd ymm5, xmm5
+        vpxor ymm4, ymm4, ymm4
+        vpxor ymm3, ymm3, ymm3
+        vpxor ymm2, ymm2, ymm2
+        vpxor ymm1, ymm1, ymm1
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 32], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 64], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 96], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 32]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 128], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 160], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 192], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 224], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 64]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 256], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 288], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 320], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 352], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 96]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 384], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 416], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 448], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 480], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 128]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 512], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 544], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 576], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 608], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 160]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 640], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 672], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 704], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 736], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 192]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 768], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 800], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 832], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 864], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 224]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 896], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 928], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 960], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 992], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 256]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1024], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1056], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1088], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1120], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 288]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1152], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1184], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1216], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1248], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 320]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1280], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1312], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1344], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1376], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 352]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1408], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1440], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1472], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1504], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 384]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1536], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1568], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1600], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1632], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 416]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1664], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1696], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1728], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1760], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 448]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1792], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1824], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1856], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 1888], ymm0
+        vpcmpeqd ymm0, ymm5, ymmword ptr [rip + ed25519_lookup_idx8 + 480]
+        vpblendvb ymm4, ymm4, ymmword ptr [rsi + 1920], ymm0
+        vpblendvb ymm3, ymm3, ymmword ptr [rsi + 1952], ymm0
+        vpblendvb ymm2, ymm2, ymmword ptr [rsi + 1984], ymm0
+        vpblendvb ymm1, ymm1, ymmword ptr [rsi + 2016], ymm0
+        vmovdqu ymmword ptr [rdi], ymm4
+        vmovdqu ymmword ptr [rdi + 32], ymm3
+        vmovdqu ymmword ptr [rdi + 64], ymm2
+        vmovdqu ymmword ptr [rdi + 96], ymm1
+        vzeroupper
+        ret
+        .size   ed25519_lookup_avx2_x86, .-ed25519_lookup_avx2_x86
+
         .section .note.GNU-stack,"",@progbits
 #endif /* defined(__x86_64__) && defined(__ELF__) */

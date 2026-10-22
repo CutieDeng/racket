@@ -117,6 +117,14 @@
                     SIZE (lambda () (crypto-aead-seal! 'xchacha20-poly1305 k32 n24 aad data out)))
   (bench-throughput "aes-256-gcm"
                     SIZE (lambda () (crypto-aead-seal! 'aes-256-gcm k32 n12 aad data out)))
+  ;; an expanded key carries the key schedule and the GHASH table: the per-call setup is gone
+  (let ([xk (aead-expand-key 'aes-256-gcm k32)] [data16k (make-bytes 16384 97)] [out16k (make-bytes (+ 16384 16))])
+    (bench-throughput "aes-256-gcm (expanded key)"
+                      SIZE (lambda () (crypto-aead-seal! 'aes-256-gcm xk n12 aad data out)))
+    (bench-throughput "aes-256-gcm 16 KB"
+                      16384 (lambda () (crypto-aead-seal! 'aes-256-gcm k32 n12 aad data16k out16k)))
+    (bench-throughput "aes-256-gcm 16 KB (expanded key)"
+                      16384 (lambda () (crypto-aead-seal! 'aes-256-gcm xk n12 aad data16k out16k))))
   ;; the one-shot API allocates and zero-fills its output: an API cost, not a cipher cost
   (bench-throughput "aes-256-gcm one-shot (allocates)"
                     SIZE (lambda () (aead-encrypt 'aes-256-gcm k32 n12 data))))
@@ -136,6 +144,8 @@
 (let* ([sk (ed25519-generate-private-key)] [pk (ed25519-public-key sk)]
        [sig (ed25519-sign sk small)])
   (bench-ops "ed25519 sign" (lambda () (ed25519-sign sk small)))
+  (let ([xk (ed25519-expand-private-key sk)])
+    (bench-ops "ed25519 sign (expanded key)" (lambda () (ed25519-sign xk small))))
   (bench-ops "ed25519 verify" (lambda () (ed25519-verify pk small sig))))
 (let* ([sk (p256-generate-private-key)] [pk (p256-public-key sk)]
        [sig (p256-ecdsa-sign sk small)] [B (p256-public-key (p256-generate-private-key))])

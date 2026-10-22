@@ -63,6 +63,8 @@
 
     (define-ftype intptr_t iptr)
     (define-ftype uintptr_t uptr)
+    (define-ftype uint32_t unsigned-32)   ; rktcrypto.rktl (pbkdf2/scrypt parameters)
+    (define-ftype uint64_t unsigned-64)
     (define-ftype rktio_int64_t integer-64)
     (define-ftype function-pointer uptr)
     (define _uintptr (if (> (fixnum-width) 32) _uint64 _uint32))

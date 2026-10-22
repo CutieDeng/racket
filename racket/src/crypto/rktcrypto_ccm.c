@@ -99,18 +99,16 @@ static void ccm_mac_header(const unsigned char *rk, int Nr, const unsigned char 
   if (bi) rktcrypto_aes_enc_block(rk, Nr, X, X);
 }
 
-static int ccm_seal_core(const unsigned char *key, intptr_t keylen, const unsigned char *nonce,
-                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
-                         unsigned char *out, intptr_t out_start) {
-  unsigned char rk[240], X[16], ctr[16], S[16], A0[16], S0[16], padded[16];
+static int ccm_seal_rk(const unsigned char rk[240], int Nr, const unsigned char *nonce,
+                       const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                       const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                       unsigned char *out, intptr_t out_start) {
+  unsigned char X[16], ctr[16], S[16], A0[16], S0[16], padded[16];
   const unsigned char *A = aad + aad_start, *P = pt + pt_start;
   unsigned char *O = out + out_start;
   intptr_t alen = aad_end - aad_start, mlen = pt_end - pt_start, nfull, tail, i;
-  int Nr;
   if (alen < 0 || mlen < 0) return 0;
   if ((uint64_t)mlen >> (8 * CCM_L)) return 0;            /* too long for L=3 */
-  Nr = rktcrypto_aes_expand_key(key, keylen, rk);
   ccm_mac_header(rk, Nr, nonce, alen, mlen, A, X);
   ccm_ctr_block(nonce, 1, ctr);                           /* payload counter A_1 */
   nfull = mlen / 16; tail = mlen % 16;
@@ -127,20 +125,26 @@ static int ccm_seal_core(const unsigned char *key, intptr_t keylen, const unsign
   for (i = 0; i < CCM_M; i++) O[mlen + i] = (unsigned char)(X[i] ^ S0[i]);
   return 1;
 }
-
-static int ccm_open_core(const unsigned char *key, intptr_t keylen, const unsigned char *nonce,
+static int ccm_seal_core(const unsigned char *key, intptr_t keylen, const unsigned char *nonce,
                          const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
-                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                         const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
                          unsigned char *out, intptr_t out_start) {
-  unsigned char rk[240], X[16], ctr[16], S[16], A0[16], S0[16], padded[16], T[16];
+  unsigned char rk[240]; int Nr = rktcrypto_aes_expand_key(key, keylen, rk);
+  return ccm_seal_rk(rk, Nr, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start);
+}
+
+static int ccm_open_rk(const unsigned char rk[240], int Nr, const unsigned char *nonce,
+                       const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                       const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                       unsigned char *out, intptr_t out_start) {
+  unsigned char X[16], ctr[16], S[16], A0[16], S0[16], padded[16], T[16];
   const unsigned char *A = aad + aad_start, *C = ct + ct_start, *tagp;
   unsigned char *O = out + out_start;
   intptr_t alen = aad_end - aad_start, clen = ct_end - ct_start, mlen, nfull, tail, i;
-  int Nr; unsigned char diff = 0;
+  unsigned char diff = 0;
   if (alen < 0 || clen < CCM_M) return 0;
   mlen = clen - CCM_M; tagp = C + mlen;
   if ((uint64_t)mlen >> (8 * CCM_L)) return 0;
-  Nr = rktcrypto_aes_expand_key(key, keylen, rk);
   ccm_mac_header(rk, Nr, nonce, alen, mlen, A, X);
   ccm_ctr_block(nonce, 1, ctr);
   nfull = mlen / 16; tail = mlen % 16;
@@ -159,6 +163,31 @@ static int ccm_open_core(const unsigned char *key, intptr_t keylen, const unsign
   if (diff) { memset(O, 0, (size_t)mlen); return 0; }     /* auth fail: release nothing */
   return 1;
 }
+static int ccm_open_core(const unsigned char *key, intptr_t keylen, const unsigned char *nonce,
+                         const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                         const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                         unsigned char *out, intptr_t out_start) {
+  unsigned char rk[240]; int Nr = rktcrypto_aes_expand_key(key, keylen, rk);
+  return ccm_open_rk(rk, Nr, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start);
+}
+
+/* ---- expanded keys: the schedule only ---- */
+int rktcrypto_aesccm_expand_key(const unsigned char *key, intptr_t keylen, struct rktcrypto_aead_xkey *k)
+{
+  k->nr = (uint32_t)rktcrypto_aes_expand_key(key, keylen, k->rk);
+  k->h[0] = k->h[1] = 0; k->htab_valid = 0;
+  return 1;
+}
+int rktcrypto_aesccm_seal_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                            unsigned char *out, intptr_t out_start)
+{ return ccm_seal_rk(k->rk, (int)k->nr, nonce, aad, aad_start, aad_end, pt, pt_start, pt_end, out, out_start); }
+int rktcrypto_aesccm_open_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                            unsigned char *out, intptr_t out_start)
+{ return ccm_open_rk(k->rk, (int)k->nr, nonce, aad, aad_start, aad_end, ct, ct_start, ct_end, out, out_start); }
 
 int rktcrypto_aes256ccm_seal(const unsigned char key[32], const unsigned char nonce[12],
                              const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,

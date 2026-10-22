@@ -20,6 +20,7 @@
          crypto-aead-tag-size
          crypto-aead-seal!
          crypto-aead-open!
+         crypto-aead-expand-key
          crypto-siphash-2-4
          crypto-siphash-1-3
          crypto-argon2id
@@ -208,10 +209,13 @@
 (define/who (crypto-aead-nonce-size alg) (rktcrypto_aead_nonce_size (aead-alg->id who alg)))
 (define/who (crypto-aead-tag-size alg)   (rktcrypto_aead_tag_size (aead-alg->id who alg)))
 
+;; a key is the raw key or an expanded key (crypto-aead-expand-key), told apart by length
 (define (check-aead-key/nonce who id key nonce)
   (check who bytes? key)
   (check who bytes? nonce)
-  (unless (eqv? (bytes-length key) (rktcrypto_aead_key_size id))
+  (unless (or (eqv? (bytes-length key) (rktcrypto_aead_key_size id))
+              (let ([x (rktcrypto_aead_expanded_key_size id)])
+                (and (positive? x) (eqv? (bytes-length key) x))))
     (raise-arguments-error who "wrong key size"
                            "given" (bytes-length key)
                            "required" (rktcrypto_aead_key_size id)))
@@ -238,6 +242,28 @@
                                        pt 0 (bytes-length pt) out 0))
     (fail-digest who))
   (void))
+
+;; Precomputes everything that depends on the key alone (the AES key
+;; schedule; for AES-GCM also the hash key and, where the fused x86
+;; kernel runs, its 1280-byte table), returning an expanded key that
+;; `crypto-aead-seal!` and `crypto-aead-open!` accept in place of the
+;; raw key. Algorithms with nothing to precompute return a copy of the
+;; key. The result holds secret key material like the key itself.
+(define/who (crypto-aead-expand-key alg key)
+  (define id (aead-alg->id who alg))
+  (check who bytes? key)
+  (unless (eqv? (bytes-length key) (rktcrypto_aead_key_size id))
+    (raise-arguments-error who "wrong key size"
+                           "given" (bytes-length key)
+                           "required" (rktcrypto_aead_key_size id)))
+  (define n (rktcrypto_aead_expanded_key_size id))
+  (cond
+    [(eqv? n 0) (bytes-copy key)]
+    [else
+     (define out (make-bytes n))
+     (unless (eqv? 1 (rktcrypto_aead_expand_key id key (bytes-length key) out n))
+       (fail-digest who))
+     out]))
 
 ;; Verifies and decrypts `ct` (ciphertext followed by tag), writing
 ;; plaintext to `out` starting at 0. Returns #t on success, #f if
@@ -324,21 +350,29 @@
 ;; ----------------------------------------
 ;; Ed25519 signatures (RFC 8032)
 
+;; A private key is the 32-byte seed or its 64-byte expanded form,
+;; seed || public key, which saves recomputing the public key per
+;; signature (crypto-ed25519-expand-private-key in racket/crypto/sign).
 (define/who (crypto-ed25519-public-key seed)
   (check who bytes? seed)
-  (unless (eqv? (bytes-length seed) 32)
-    (raise-arguments-error who "seed must be 32 bytes" "given" (bytes-length seed)))
-  (define pk (make-bytes 32))
-  (rktcrypto_ed25519_pubkey pk seed)
-  pk)
+  (unless (or (eqv? (bytes-length seed) 32) (eqv? (bytes-length seed) 64))
+    (raise-arguments-error who "private key must be 32 or 64 bytes" "given" (bytes-length seed)))
+  (cond
+    [(eqv? (bytes-length seed) 64) (subbytes seed 32 64)]
+    [else
+     (define pk (make-bytes 32))
+     (rktcrypto_ed25519_pubkey pk seed)
+     pk]))
 
 (define/who (crypto-ed25519-sign seed msg)
   (check who bytes? seed)
   (check who bytes? msg)
-  (unless (eqv? (bytes-length seed) 32)
-    (raise-arguments-error who "seed must be 32 bytes" "given" (bytes-length seed)))
+  (unless (or (eqv? (bytes-length seed) 32) (eqv? (bytes-length seed) 64))
+    (raise-arguments-error who "private key must be 32 or 64 bytes" "given" (bytes-length seed)))
   (define sig (make-bytes 64))
-  (rktcrypto_ed25519_sign sig msg (bytes-length msg) seed)
+  (if (eqv? (bytes-length seed) 64)
+      (rktcrypto_ed25519_sign_expanded sig msg (bytes-length msg) seed)
+      (rktcrypto_ed25519_sign sig msg (bytes-length msg) seed))
   sig)
 
 (define/who (crypto-ed25519-verify pk msg sig)

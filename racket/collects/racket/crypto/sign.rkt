@@ -22,9 +22,16 @@
 (define (ed25519-generate-private-key)
   (crypto-random-bytes 32))
 
-;; Derives the 32-byte public key for a private key.
+;; Derives the 32-byte public key for a private key (seed or expanded).
 (define (ed25519-public-key private-key)
   (crypto-ed25519-public-key private-key))
+
+;; The 64-byte expanded private key, seed || public key: signing with it
+;; skips the public-key derivation (half of the work of a signature).
+(define (ed25519-expand-private-key private-key)
+  (if (= (bytes-length private-key) 64)
+      (bytes-copy private-key)
+      (bytes-append private-key (crypto-ed25519-public-key private-key))))
 
 ;; Signs `message` with `private-key`, returning a 64-byte signature.
 (define (ed25519-sign private-key message)
@@ -65,6 +72,7 @@
          (contract-out
           [ed25519-generate-private-key (-> bytes?)]
           [ed25519-public-key (-> bytes? bytes?)]
+          [ed25519-expand-private-key (-> bytes? bytes?)]
           [ed25519-sign (-> bytes? bytes? bytes?)]
           [ed25519-verify (-> bytes? bytes? bytes? boolean?)]
           [p256-ecdsa-sign (-> bytes? bytes? bytes?)]

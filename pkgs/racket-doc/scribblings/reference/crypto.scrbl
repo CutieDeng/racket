@@ -267,17 +267,26 @@ peer point.}
 
 @defmodule[racket/crypto/sign]
 
-Ed25519 (RFC 8032) signatures. A private key is a 32-byte seed; public
+Ed25519 (RFC 8032) signatures. A private key is a 32-byte seed, or its
+64-byte expanded form from @racket[ed25519-expand-private-key]; public
 keys are 32 bytes and signatures are 64 bytes.
 
 @defproc[(ed25519-generate-private-key) bytes?]{
 Generates a fresh 32-byte Ed25519 private key.}
 
 @defproc[(ed25519-public-key [private-key bytes?]) bytes?]{
-Derives the 32-byte public key for @racket[private-key].}
+Derives the 32-byte public key for @racket[private-key] (a seed or an
+expanded private key).}
+
+@defproc[(ed25519-expand-private-key [private-key bytes?]) bytes?]{
+Returns the 64-byte expanded private key, the seed followed by its
+public key. Signing with the expanded form skips deriving the public key,
+about half of the work of a signature; the result is as secret as the
+seed. An expanded key is returned unchanged.}
 
 @defproc[(ed25519-sign [private-key bytes?] [message bytes?]) bytes?]{
-Signs @racket[message], returning a 64-byte signature.}
+Signs @racket[message] with the seed or expanded private key, returning
+a 64-byte signature.}
 
 @defproc[(ed25519-verify [public-key bytes?] [message bytes?] [signature bytes?]) boolean?]{
 Returns @racket[#t] if @racket[signature] is a valid Ed25519 signature
@@ -407,6 +416,18 @@ must match the algorithm's sizes.}
 
 Verifies and decrypts, returning the plaintext, or @racket[#f] if
 authentication fails.}
+
+@defproc[(aead-expand-key [alg aead-algorithm/c] [key bytes?]) bytes?]{
+
+Precomputes everything that depends on @racket[key] alone (the AES key
+schedule; for AES-GCM also the hash key and, where the fused x86-64
+kernel runs, its multiplication table) and returns an @deftech{expanded
+key}, which @racket[aead-encrypt], @racket[aead-decrypt] and the
+@racket[crypto-aead-seal!]/@racket[crypto-aead-open!] primitives accept
+wherever a key is. Reusing an expanded key skips that per-call work,
+which dominates for short messages and is still measurable at 16 KB.
+An expanded key is as secret as the key it came from. Algorithms with
+nothing to precompute return a copy of the key.}
 
 @deftogether[(
 @defproc[(aead-key-size [alg aead-algorithm/c]) exact-positive-integer?]

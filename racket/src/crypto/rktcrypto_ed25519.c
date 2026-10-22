@@ -611,6 +611,7 @@ static void fe64_pow22523(fe64 out,const fe64 z){
 static fe64 ed64_d, ed64_d2, ed64_sqrtm1;
 static gec64 ed64_comb[64][16] __attribute__((aligned(64)));
 static int ed64_inited=0;
+static void (*ed64_lookup)(uint64_t*,const uint64_t*,uint64_t)=0;   /* AVX-512 or AVX2 selection kernel */
 static void ed64_init(void){
   fe d,d2,s; int w,i;
   curve_d(d); curve_d2(d2); curve_sqrtm1(s);
@@ -667,7 +668,7 @@ static void ge64_scalarmult_base(ge64 *r,const unsigned char s[32]){
   ge64_identity(r);
   for(w=0;w<64;w++){
     uint64_t nib=(s[w>>1]>>((w&1)*4))&0xF;
-    ed25519_lookup_x86((uint64_t*)&sel,(const uint64_t*)ed64_comb[w],nib);
+    ed64_lookup((uint64_t*)&sel,(const uint64_t*)ed64_comb[w],nib);
     ed25519_madd_x86((uint64_t*)r,(const uint64_t*)r,(const uint64_t*)&sel);
   }
 }
@@ -684,8 +685,12 @@ static void ge64_scalarmult_win(ge64 *r,const unsigned char s[32],const ge64 *p)
     ed25519_add_x86((uint64_t*)r,(const uint64_t*)r,(const uint64_t*)&T[digit],ed64_d2);
   }
 }
+/* the fe64 path needs BMI2/ADX for the field kernels and AVX-512 or AVX2 for the comb lookup */
 static int ed25519_x86_ready(void){
-  if(!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)&&rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512))) return 0;
+  if(!rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) return 0;
+  if(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) ed64_lookup=ed25519_lookup_x86;
+  else if(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) ed64_lookup=ed25519_lookup_avx2_x86;
+  else return 0;
   if(!ed64_inited) ed64_init();
   return 1;
 }
@@ -697,16 +702,17 @@ static int ed25519_pubkey_x86(unsigned char pk[32],const unsigned char seed[32])
   ge64_tobytes(pk,&A);
   return 1;
 }
-static int ed25519_sign_x86(unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char seed[32]){
+/* pk_in: the public key when the caller holds it (an expanded key), else NULL */
+static int ed25519_sign_x86(unsigned char sig[64],const unsigned char *msg,intptr_t msglen,const unsigned char seed[32],const unsigned char *pk_in){
   unsigned char h[64],rr[64],k[64],pk[32],a[32]; ge64 R,A;
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
   memcpy(a,h,32);
-  ge64_scalarmult_base(&A,a);
   sha512_3(h+32,32,msg,msglen,0,0,rr);
   sc_reduce(rr);
   ge64_scalarmult_base(&R,rr);
-  ge64_tobytes2(pk,&A,sig,&R);                 /* one inversion for both encodings */
+  if(pk_in){ memcpy(pk,pk_in,32); ge64_tobytes(sig,&R); }
+  else { ge64_scalarmult_base(&A,a); ge64_tobytes2(pk,&A,sig,&R); }   /* one inversion for both encodings */
   sha512_3(sig,32,pk,32,msg,msglen,k);
   sc_reduce(k);
   sc_muladd(sig+32,k,a,rr);
@@ -741,18 +747,17 @@ int rktcrypto_ed25519_pubkey(unsigned char pk[32],const unsigned char seed[32]){
   return 1;
 }
 
-int rktcrypto_ed25519_sign(unsigned char sig[64],
-                           const unsigned char *msg,intptr_t msglen,
-                           const unsigned char seed[32]){
+static int ed25519_sign_core(unsigned char sig[64],const unsigned char *msg,intptr_t msglen,
+                             const unsigned char seed[32],const unsigned char *pk_in){
   unsigned char h[64],rr[64],k[64],pk[32],a[32]; ge R,A,B; fe d2;
 #if defined(__x86_64__) && defined(__ELF__)
-  if(ed25519_x86_ready()) return ed25519_sign_x86(sig,msg,msglen,seed);
+  if(ed25519_x86_ready()) return ed25519_sign_x86(sig,msg,msglen,seed,pk_in);
 #endif
   sha512_3(seed,32,0,0,0,0,h);
   h[0]&=248;h[31]&=127;h[31]|=64;
   memcpy(a,h,32);
   curve_d2(d2); (void)B;
-  ge_scalarmult_base(&A,a,d2); ge_tobytes(pk,&A);
+  if(pk_in) memcpy(pk,pk_in,32); else { ge_scalarmult_base(&A,a,d2); ge_tobytes(pk,&A); }
   sha512_3(h+32,32,msg,msglen,0,0,rr);
   sc_reduce(rr);
   ge_scalarmult_base(&R,rr,d2); ge_tobytes(sig,&R);
@@ -760,6 +765,23 @@ int rktcrypto_ed25519_sign(unsigned char sig[64],
   sc_reduce(k);
   sc_muladd(sig+32,k,a,rr);
   return 1;
+}
+
+int rktcrypto_ed25519_sign(unsigned char sig[64],
+                           const unsigned char *msg,intptr_t msglen,
+                           const unsigned char seed[32]){
+  return ed25519_sign_core(sig,msg,msglen,seed,0);
+}
+
+int rktcrypto_ed25519_expand(unsigned char sk[64],const unsigned char seed[32]){
+  memcpy(sk,seed,32);
+  return rktcrypto_ed25519_pubkey(sk+32,seed);
+}
+
+int rktcrypto_ed25519_sign_expanded(unsigned char sig[64],
+                                    const unsigned char *msg,intptr_t msglen,
+                                    const unsigned char sk[64]){
+  return ed25519_sign_core(sig,msg,msglen,sk,sk+32);
 }
 
 int rktcrypto_ed25519_verify(const unsigned char sig[64],

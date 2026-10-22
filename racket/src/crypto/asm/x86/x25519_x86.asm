@@ -453,3 +453,35 @@
   vmovdqu64 zmmword ptr [q.out + 64], zmm.a1
   ret
 .end
+
+;;   void ed25519_lookup_avx2_x86(uint64_t out[16], const uint64_t table[16 * 16], uint64_t nib)
+;; the same selection on AVX2 (CPUs with BMI2/ADX but no AVX-512): compare masks as vectors,
+;; vpblendvb with the entry's four 32-byte quarters as memory operands
+.rodata ed25519_lookup_idx8 align=32
+.for d, 0, 16
+  .long ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}, ${d}
+.endfor
+.end
+.function ed25519_lookup_avx2_x86 export (
+  in: q.out, q.tab, q.nib
+)
+  .simd avx2
+  vmovd xmm.want, d.nib
+  vpbroadcastd ymm.want, xmm.want
+  vpxor ymm.a0, ymm.a0, ymm.a0
+  vpxor ymm.a1, ymm.a1, ymm.a1
+  vpxor ymm.a2, ymm.a2, ymm.a2
+  vpxor ymm.a3, ymm.a3, ymm.a3
+.for d, 0, 16
+  vpcmpeqd ymm.m, ymm.want, ymmword ptr [rip + ed25519_lookup_idx8 + ${32 * d}]
+  vpblendvb ymm.a0, ymm.a0, ymmword ptr [q.tab + ${128 * d}], ymm.m
+  vpblendvb ymm.a1, ymm.a1, ymmword ptr [q.tab + ${128 * d + 32}], ymm.m
+  vpblendvb ymm.a2, ymm.a2, ymmword ptr [q.tab + ${128 * d + 64}], ymm.m
+  vpblendvb ymm.a3, ymm.a3, ymmword ptr [q.tab + ${128 * d + 96}], ymm.m
+.endfor
+  vmovdqu ymmword ptr [q.out], ymm.a0
+  vmovdqu ymmword ptr [q.out + 32], ymm.a1
+  vmovdqu ymmword ptr [q.out + 64], ymm.a2
+  vmovdqu ymmword ptr [q.out + 96], ymm.a3
+  ret
+.end
