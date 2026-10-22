@@ -271,7 +271,9 @@
 ;; A resumable session cached by the client (and re-offered as a PSK).
 ;; peer-certs carries the originally-authenticated chain so a resumed connection
 ;; still reports the peer identity (server-side sessions leave it '()).
-(struct tls-session (psk ticket suite alpn issued-ms age-add lifetime peer-certs) #:transparent)
+;; verified? records whether that chain was verified, so a resumed connection
+;; reports the same `ssl-peer-verified?` as the original.
+(struct tls-session (psk ticket suite alpn issued-ms age-add lifetime peer-certs verified?) #:transparent)
 (provide (struct-out tls-session))
 
 ;; resumption_master_secret = Derive-Secret(master, "res master", Hash(msgs..CF))
@@ -322,7 +324,9 @@
                   alpn peer-certs protocol
                   binding                ; binding: hash for channel binding, or #f
                   key-update             ; thunk to send a post-handshake KeyUpdate, or #f
-                  recv-nb) #:mutable)     ; A1: non-blocking recv (-> bytes | eof | evt), or #f
+                  recv-nb                ; A1: non-blocking recv (-> bytes | eof | evt), or #f
+                  verified)              ; this connection's peer-verification result (boolean)
+  #:mutable)
 
 ;; Post-handshake key-update state (RFC 8446 §4.6.3): key schedule + AEAD + the
 ;; current receive/send application traffic secrets (boxed, advanced per update).
@@ -333,7 +337,7 @@
 
 ;; Build the 1.3 tls-conn from an installed record layer. `kus` (a ku struct or
 ;; #f) enables post-handshake KeyUpdate processing on the read path.
-(define (tls13-make-conn r alpn peer-certs [binding #f] [kus #f] [resume #f])
+(define (tls13-make-conn r alpn peer-certs [binding #f] [kus #f] [resume #f] [verified? #f])
   ;; A2: on the client, capture a server NewSessionTicket into resume's
   ;; 'session-box so a later connect can offer it as a PSK.
   (define (capture-nst! payload)
@@ -352,7 +356,8 @@
                   (tls-session (psk-from-ticket alg rm nonce) ticket
                                (hash-ref resume 'suite) (hash-ref resume 'alpn)
                                (current-inexact-milliseconds) age-add lifetime
-                               (hash-ref resume 'peer-certs '()))))))
+                               (hash-ref resume 'peer-certs '())
+                               (hash-ref resume 'verified? #f))))))
   (define (do-key-update! payload)
     ;; peer updated its send key -> advance our receive key; if it requested an
     ;; update, reply with our own KeyUpdate and advance our send key.
@@ -424,7 +429,8 @@
       (define alg (ks-alg (ku-k kus)))
       (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
       (rl-set-write-key! r (ku-aead kus) sk siv)))
-  (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding request-key-update recv-nb))
+  (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding request-key-update recv-nb
+            (and verified? #t)))
 
 ;; Post-handshake KeyUpdate: advance our send key and ask the peer to update its
 ;; keys too (RFC 8446 §4.6.3). No-op on a connection without key-update support.
@@ -527,8 +533,34 @@
      u]
     [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
-(define (make-tls-conn recv send shut peer-ders protocol [binding #f])
-  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding #f #f))
+(define (make-tls-conn recv send shut peer-ders protocol [binding #f] [verified? #f])
+  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding #f #f (and verified? #t)))
+
+;; Peer verification outcome for a connection. Chain validation
+;; (`verify?`) and hostname matching (`verify-hostname?`) are independent
+;; switches, as in the libssl-based implementation: enabling one does not
+;; enable the other. The chain is validated whenever a certificate was
+;; presented, so that `ssl-peer-verified?` reports the outcome even on a
+;; connection that does not enforce it; a failure aborts the handshake
+;; only for the checks that are enforced. Returns #t when the chain
+;; validates against `anchors` and, with `verify-hostname?`, the leaf
+;; matches `host`.
+(define (peer-verification-result certs anchors host verify? verify-hostname?)
+  (when (and (null? certs) (or verify? verify-hostname?))
+    (raise (tls-alert 42 "peer sent no certificate")))          ; bad_certificate
+  (define chain-ok?
+    (and (pair? certs)
+         (with-handlers ([exn:fail? (lambda (e) (if verify? (raise e) #f))])
+           (verify-chain certs anchors)
+           #t)))
+  (define host-ok?
+    (and verify-hostname?
+         (begin
+           (unless host (raise (tls-error "hostname not provided for verification")))
+           (check-hostname (parse-certificate (car certs)) host)
+           #t)))
+  (and chain-ok? (or (not verify-hostname?) host-ok?) #t))
+(provide peer-verification-result)
 
 ;; TLS 1.3 exporter (RFC 8446 sec 7.5) for channel binding (RFC 9266).
 ;;   exporter_secret = Derive-Secret(exporter_master, label, "")
@@ -557,6 +589,9 @@
   (define host (hash-ref opts 'host #f))
   (define alpn (hash-ref opts 'alpn '()))
   (define verify? (hash-ref opts 'verify? #t))
+  (define verify-hostname? (hash-ref opts 'verify-hostname? #f))
+  (when (and verify-hostname? (not host))
+    (raise (tls-error "hostname not provided for verification")))
   (define anchors (hash-ref opts 'trust-anchors '()))
   (define want-ocsp? (hash-ref opts 'check-revocation #f))   ; OCSP stapling (A3)
   (define client-auth (let ([k (hash-ref opts 'client-key #f)]  ; A4: (cons cert-ders key) or #f
@@ -707,7 +742,7 @@
      (rl-write-record r 22 ch2)
      (define-values (sh2-type sh2) (hsr-next hs))
      (unless (= sh2-type 2) (raise (tls-error "expected ServerHello after HRR")))
-     (finish-client-handshake r hs tr sh2 want-group privs verify? host anchors alpn want-ocsp? client-auth resume-box)]
+     (finish-client-handshake r hs tr sh2 want-group privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth resume-box)]
     [else
      (define-values (suite exts) (parse-server-hello sh))
      (define sv-ext (assoc #x002b exts))
@@ -718,7 +753,7 @@
         (tr-add! tr sh)
         (define ks-ext (assoc #x0033 exts))
         (define grp (be->int (cdr ks-ext) 0 2))
-        (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? host anchors alpn want-ocsp? client-auth resume-box)]
+        (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth resume-box)]
        [else
         ;; Server negotiated TLS 1.2. Hand off to the 1.2 continuation with
         ;; the raw transcript (ClientHello || ServerHello) so far.
@@ -731,23 +766,24 @@
                       (equal? tail #"\x44\x4f\x57\x4e\x47\x52\x44\x00"))
               (raise (tls-error "TLS downgrade attack detected (RFC 8446 §4.1.3 downgrade sentinel)")))))
         (tls12-client-finish (rl-in r) (rl-out r) hs (bytes-append ch1 sh) sh client-random
-                             (hash 'host host 'verify? verify? 'trust-anchors anchors
+                             (hash 'host host 'verify? verify? 'verify-hostname? verify-hostname?
+                                   'trust-anchors anchors
                                    'keylog (hash-ref opts 'keylog #f)
                                    'client-key (hash-ref opts 'client-key #f)          ; A4 (1.2)
                                    'client-cert-ders (hash-ref opts 'client-cert-ders '())
                                    'ticket12-box ticket12-box))])])))                  ; A2 (1.2) SessionTicket
 
 ;; After a (possibly retried) ServerHello whose suite/exts we've parsed.
-(define (finish-client-handshake r hs tr sh want-group privs verify? host anchors alpn want-ocsp? client-auth [resume-box #f])
+(define (finish-client-handshake r hs tr sh want-group privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth [resume-box #f])
   (define-values (suite exts) (let ()
     (define sid-len (bytes-ref sh 38))
     (define pos (+ 39 sid-len))
     (values (be->int sh pos (+ pos 2))
             (parse-extensions (let ([el (be->int sh (+ pos 3) (+ pos 5))]) (subbytes sh (+ pos 5) (+ pos 5 el)))))))
   (tr-add! tr sh)   ; SH2 after HelloRetryRequest joins the transcript
-  (finish-client-handshake-with-suite r hs tr sh suite exts want-group privs verify? host anchors alpn want-ocsp? client-auth resume-box))
+  (finish-client-handshake-with-suite r hs tr sh suite exts want-group privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth resume-box))
 
-(define (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? host anchors alpn want-ocsp? client-auth [resume-box #f])
+(define (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth [resume-box #f])
   (define-values (alg aead klen ilen dname) (suite-params suite))
   (unless alg (raise (tls-error "server chose unsupported cipher suite")))
   (tr-set-alg! tr alg)
@@ -819,13 +855,16 @@
        (unless (ct-equal? expected got) (raise (tls-alert 51 "server Finished mismatch")))
        (tr-add! tr msg)]
       [else (unexpected-msg mt)]))
-  ;; verify certificate chain + hostname if requested (skipped on resumption:
-  ;; a PSK handshake sends no certificate — trust derives from the ticket)
-  (when (and verify? (not resuming?))
-    (verify-chain-and-host (unbox peer-certs) host anchors))
-  ;; on resumption restore the originally-authenticated peer chain so the
-  ;; connection still reports the peer identity (ssl-peer-verified? etc.)
-  (when resuming? (set-box! peer-certs (tls-session-peer-certs offered-psk)))
+  ;; chain validation / hostname check per the context's switches. Skipped on
+  ;; resumption: a PSK handshake sends no certificate — trust derives from the
+  ;; ticket, and the original chain and its verification result are restored
+  ;; so the connection still reports the peer identity (ssl-peer-verified? etc.)
+  (define verified?
+    (cond
+      [resuming?
+       (set-box! peer-certs (tls-session-peer-certs offered-psk))
+       (tls-session-verified? offered-psk)]
+      [else (peer-verification-result (unbox peer-certs) anchors host verify? verify-hostname?)]))
   ;; A3: if we asked for OCSP stapling and got a stapled response, verify it and
   ;; abort on a revoked status (soft-fail on a missing/unparseable staple).
   (when (and want-ocsp? (unbox peer-staple) (pair? (unbox peer-certs)))
@@ -875,7 +914,7 @@
   (define resume
     (and resume-box
          (hash 'alg alg 'suite suite 'alpn (unbox selected-alpn) 'session-box resume-box
-               'peer-certs (unbox peer-certs)
+               'peer-certs (unbox peer-certs) 'verified? verified?
                'res-master (res-master-secret alg (ks-master k) (tr-hash tr)))))
   ;; install application keys both directions
   (define-values (sapk sapiv) (traffic->keys k (ks-s-ap k)))
@@ -887,7 +926,8 @@
                          'server-cert-der (let ([pc (unbox peer-certs)])
                                             (and (pair? pc) (car pc))))
                    (ku k aead (box (ks-s-ap k)) (box (ks-c-ap k)))  ; recv=server, send=client
-                   resume))
+                   resume
+                   verified?))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -1175,7 +1215,7 @@
       (define lifetime 7200)
       (hash-set! store ticket
                  (tls-session psk ticket suite neg-alpn (current-inexact-milliseconds)
-                              (be->int age-add-bytes) lifetime '()))
+                              (be->int age-add-bytes) lifetime '() #f))
       (define body (bytes-append (u32 lifetime) age-add-bytes (vec 1 nonce)
                                  (vec 2 ticket) (vec 2 #"")))
       (rl-write-record r 22 (bytes-append (u8 4) (u24 (bytes-length body)) body))))

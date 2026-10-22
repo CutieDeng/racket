@@ -292,6 +292,8 @@
   (define context (or ctx (if (eq? mode 'connect)
                               (ssl-make-client-context encrypt)
                               (ssl-make-server-context encrypt))))
+  (when (and (eq? mode 'connect) (cx-ref context 'verify-hostname?) (not hostname))
+    (error/ssl "ports->ssl-ports: connect failed (hostname not provided for verification)"))
   (define conn
     (cond
       [(eq? mode 'connect)
@@ -421,9 +423,12 @@
   (define obj (port-obj p))
   (define certs (and obj (tls-conn-peer-certs (ssl-port-obj-conn obj))))
   (and (pair? certs) (parse-certificate (car certs))))
+;; The verification result belongs to the connection (recorded at the end of
+;; its handshake), not to the context: changing the context's switches after
+;; the fact does not change what was verified.
 (define (ssl-peer-verified? p)
   (define obj (port-obj p))
-  (and obj (cx-ref (ssl-port-obj-ctx obj) 'verify?) (pair? (tls-conn-peer-certs (ssl-port-obj-conn obj)))))
+  (and obj (tls-conn-verified (ssl-port-obj-conn obj))))
 (define (ssl-peer-certificate-hostnames p)
   (define leaf (peer-leaf p))
   (if leaf

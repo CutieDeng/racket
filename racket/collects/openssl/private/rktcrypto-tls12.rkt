@@ -139,6 +139,7 @@
 (define (tls12-client-finish rl-in rl-out hs raw-transcript sh client-random opts)
   (define host (hash-ref opts 'host #f))
   (define verify? (hash-ref opts 'verify? #t))
+  (define verify-hostname? (hash-ref opts 'verify-hostname? #f))
   (define anchors (hash-ref opts 'trust-anchors '()))
   ;; parse ServerHello
   (define server-random (subbytes sh 6 38))
@@ -187,10 +188,8 @@
   (define signed (bytes-append client-random server-random (ske-params (unbox ske))))
   (unless (verify-signature-over ske-sig-scheme (certificate-pub leaf) signed ske-sig)
     (raise (tls-alert 51 "ServerKeyExchange signature invalid")))
-  ;; verify chain + hostname
-  (when verify?
-    (verify-chain (unbox peer-ders) anchors)
-    (when host (check-hostname leaf host)))
+  ;; chain validation / hostname check per the context's switches (independent)
+  (define verified? (peer-verification-result (unbox peer-ders) anchors host verify? verify-hostname?))
 
   ;; our ECDHE key + premaster secret
   (define-values (our-priv our-pub) (gen-kx group))
@@ -274,7 +273,8 @@
        (when ticket12-box
          (let ([tlen (+ (* 256 (bytes-ref body 8)) (bytes-ref body 9))])
            (when (positive? tlen)
-             (set-box! ticket12-box (vector (subbytes body 10 (+ 10 tlen)) master suite (and exts-em? #t))))))
+             (set-box! ticket12-box (vector (subbytes body 10 (+ 10 tlen)) master suite (and exts-em? #t)
+                                            (unbox peer-ders) verified?)))))
        (loop)]
       [else (loop)]))
   (define-values (ftype fmsg) (r12-read-handshake r))
@@ -282,20 +282,24 @@
   (define expect-sfin (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-sfin (subbytes fmsg 4)) (raise (tls-alert 51 "server Finished mismatch")))
 
-  (make-conn-12 r (unbox peer-ders) cfin-vd)]))
+  (make-conn-12 r (unbox peer-ders) cfin-vd verified?)]))
 
 ;; A2 (1.2): abbreviated (resumption) client handshake. Keys come from the cached
 ;; master secret; read the server's [NewSessionTicket] + CCS + Finished, then send
 ;; our CCS + Finished. No Certificate/ServerKeyExchange in either direction.
+;; The ticket record #(ticket master suite ems? peer-ders verified?) also carries
+;; the originally authenticated server chain and its verification result.
 (define (tls12-client-resume rl-in rl-out raw-transcript sh client-random ticket12-box)
   (define server-random (subbytes sh 6 38))
   (define sid-len (bytes-ref sh 38))
   (define suite (let ([p (+ 39 sid-len)]) (+ (* 256 (bytes-ref sh p)) (bytes-ref sh (add1 p)))))
   (define-values (sig-type aead key-len prf-alg) (suite12 suite))
   (define chacha? (= aead AEAD-CHACHA20-POLY1305))
-  (define rec (unbox ticket12-box))            ; #(ticket master suite ems?)
+  (define rec (unbox ticket12-box))            ; #(ticket master suite ems? peer-ders verified?)
   (define master (vector-ref rec 1))
   (define ems? (vector-ref rec 3))
+  (define peer-ders (vector-ref rec 4))
+  (define verified? (vector-ref rec 5))
   (define tr (box raw-transcript))             ; CH1 || SH
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
   (define fixed-iv-len (if chacha? 12 4))
@@ -316,7 +320,8 @@
       [(and (= (bytes-ref hdr 0) 22) (>= (bytes-length body) 1) (= (bytes-ref body 0) 4)) ; NewSessionTicket
        (tr+ body)
        (let ([tlen (+ (* 256 (bytes-ref body 8)) (bytes-ref body 9))])
-         (when (positive? tlen) (set-box! ticket12-box (vector (subbytes body 10 (+ 10 tlen)) master suite ems?))))
+         (when (positive? tlen)
+           (set-box! ticket12-box (vector (subbytes body 10 (+ 10 tlen)) master suite ems? peer-ders verified?))))
        (loop)]
       [else (loop)]))
   (define-values (ft fmsg) (r12-read-handshake r))     ; encrypted server Finished
@@ -327,7 +332,7 @@
   (write-plaintext rl-out 20 (bytes 1))                ; client ChangeCipherSpec
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) cfin-vd))
-  (make-conn-12 r '() cfin-vd))
+  (make-conn-12 r peer-ders cfin-vd verified?))
 
 ;; =====================================================================
 ;; Server (1.2)
@@ -639,7 +644,7 @@
 
 ;; Build a tls-conn from the 1.2 record layer. tls-unique (RFC 5929 §3.1) is the
 ;; first Finished's verify_data = the client Finished for a full handshake.
-(define (make-conn-12 r peer-ders [tls-unique #f])
+(define (make-conn-12 r peer-ders [tls-unique #f] [verified? #f])
   (define (recv)
     (let loop ()
       (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
@@ -658,4 +663,4 @@
         (r12-write r 23 (subbytes bs off (+ off chunk)))
         (loop (+ off chunk)))))
   (define (shut) (with-handlers ([exn:fail? void]) (r12-write r 21 (bytes 1 0))))
-  (make-tls-conn recv send shut peer-ders 'tls1.2 (and tls-unique (hash 'tls-unique tls-unique))))
+  (make-tls-conn recv send shut peer-ders 'tls1.2 (and tls-unique (hash 'tls-unique tls-unique)) verified?))
