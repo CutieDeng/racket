@@ -2,7 +2,7 @@
 (require rackunit
          racket/tcp
          openssl
-         "common.rkt")
+         "local-server.rkt")
 
 ;; `ssl-peer-verified?` describes the connection: enabling verification
 ;; on the context after the connection was made without it must not make

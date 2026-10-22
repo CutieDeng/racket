@@ -2,7 +2,7 @@
 (require rackunit
          openssl)
 
-;; Focused form of the first case in "../basic.rkt": client and server
+;; Focused form of the first case in "basic.rkt": client and server
 ;; talk over in-memory pipes with a small capacity. After the handshake,
 ;; both sides write at the same time (the server's post-handshake
 ;; messages and the client's data); an implementation that blocks on a

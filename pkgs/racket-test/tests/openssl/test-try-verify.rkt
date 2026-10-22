@@ -1,7 +1,7 @@
 #lang racket/base
 (require rackunit
          openssl
-         "common.rkt")
+         "local-server.rkt")
 
 ;; A server using `ssl-try-verify!` asks for a client certificate, and
 ;; the connection proceeds when the client sends none, with

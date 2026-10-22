@@ -3,21 +3,23 @@
          racket/runtime-path
          openssl)
 
-;; Helpers for the tests in this directory: a local TLS server that
-;; reports, per accepted connection, what it observed about the client,
-;; and a client that connects with an explicit hostname.
+;; Helpers for the verification tests (test-verify-hostname, test-try-verify,
+;; test-verify-without-anchors, test-client-identity, test-peer-verified):
+;; a local TLS server that reports, per accepted connection, what it
+;; observed about the client, and a client that connects with an explicit
+;; hostname.
 
 (provide server-key server-crt server-crt2 client-key client-crt cacert self-signed-pem
          start-server
          server-result
          connect-and-read)
 
-(define-runtime-path server-key "../server_key.pem")
-(define-runtime-path server-crt "../server_crt.pem")     ; server.example.com, signed by cacert
-(define-runtime-path server-crt2 "../server_crt2.pem")   ; server2.example.com, signed by cacert
-(define-runtime-path client-key "../client_key.pem")
-(define-runtime-path client-crt "../client_crt.pem")     ; client.example.com, signed by cacert
-(define-runtime-path cacert "../cacert.pem")             ; test CA, not a default verify source
+(define-runtime-path server-key "server_key.pem")
+(define-runtime-path server-crt "server_crt.pem")     ; server.example.com, signed by cacert
+(define-runtime-path server-crt2 "server_crt2.pem")   ; server2.example.com, signed by cacert
+(define-runtime-path client-key "client_key.pem")
+(define-runtime-path client-crt "client_crt.pem")     ; client.example.com, signed by cacert
+(define-runtime-path cacert "cacert.pem")             ; test CA, not a default verify source
 ;; self-signed certificate and key (CN=lambda), not issued by the test CA
 (define self-signed-pem (collection-file-path "test.pem" "openssl"))
 

@@ -1,7 +1,7 @@
 #lang racket/base
 (require rackunit
          openssl
-         "common.rkt")
+         "local-server.rkt")
 
 ;; A server that requires client verification but has no trusted roots
 ;; loaded cannot verify any client certificate, so it must reject every

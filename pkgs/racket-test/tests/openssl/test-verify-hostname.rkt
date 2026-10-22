@@ -1,7 +1,7 @@
 #lang racket/base
 (require rackunit
          openssl
-         "common.rkt")
+         "local-server.rkt")
 
 ;; `ssl-set-verify!` and `ssl-set-verify-hostname!` are independent
 ;; (see the `ssl-set-verify-hostname!` documentation): certificate

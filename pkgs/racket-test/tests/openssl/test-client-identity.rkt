@@ -1,7 +1,7 @@
 #lang racket/base
 (require rackunit
          openssl
-         "common.rkt")
+         "local-server.rkt")
 
 ;; A server that verifies clients against the test CA sees the identity
 ;; of a client that presents a certificate issued by that CA.
