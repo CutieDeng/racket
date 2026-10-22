@@ -775,31 +775,50 @@
   (define peer-certs (box '()))
   (define peer-staple (box #f))
   (define cert-req-ctx (box #f))            ; A4: set to the request context if the server asks for a client cert
-  (let loop ()
+  ;; RFC 8446 §2, §4.4: EncryptedExtensions, then for a certificate-based
+  ;; handshake [CertificateRequest] Certificate CertificateVerify, then
+  ;; Finished. A PSK resumption goes from EncryptedExtensions straight to
+  ;; Finished. The order is enforced, because the server's Finished only
+  ;; proves knowledge of the (EC)DHE secret; CertificateVerify is the only
+  ;; proof that the server holds the certificate's private key.
+  (define (unexpected-msg mt)
+    (raise (tls-alert 10 (format "unexpected handshake msg ~a" mt))))
+  (let loop ([state 'encrypted-extensions])
     (define-values (mt msg) (hsr-next hs))
     (case mt
       [(8)   ; EncryptedExtensions
+       (unless (eq? state 'encrypted-extensions) (unexpected-msg mt))
        (define ee-exts (parse-extensions (subbytes msg 6 (+ 6 (be->int msg 4 6)))))
        (define ap (assoc #x0010 ee-exts))
        (when ap (set-box! selected-alpn (let ([b (cdr ap)]) (subbytes b 3 (+ 3 (bytes-ref b 2))))))
-       (tr-add! tr msg) (loop)]
+       (tr-add! tr msg)
+       (loop (if resuming? 'finished 'certificate-or-request))]
       [(13)  ; CertificateRequest (server wants a client cert) — echo its context
+       (unless (eq? state 'certificate-or-request) (unexpected-msg mt))
        (set-box! cert-req-ctx (subbytes msg 5 (+ 5 (bytes-ref msg 4))))
-       (tr-add! tr msg) (loop)]
+       (tr-add! tr msg)
+       (loop 'certificate)]
       [(11)  ; Certificate
+       (unless (memq state '(certificate-or-request certificate)) (unexpected-msg mt))
        (set-box! peer-certs (parse-certificate-msg msg))
+       (when (null? (unbox peer-certs))
+         (raise (tls-alert 50 "empty server Certificate")))
        (set-box! peer-staple (certificate-msg-staple msg))
-       (tr-add! tr msg) (loop)]
+       (tr-add! tr msg)
+       (loop 'certificate-verify)]
       [(15)  ; CertificateVerify
+       (unless (eq? state 'certificate-verify) (unexpected-msg mt))
        (define th (tr-hash tr))
        (verify-certificate-verify msg (unbox peer-certs) th)
-       (tr-add! tr msg) (loop)]
+       (tr-add! tr msg)
+       (loop 'finished)]
       [(20)  ; Finished (server)
+       (unless (eq? state 'finished) (unexpected-msg mt))
        (define expected (finished-verify-data alg (ks-s-hs k) (tr-hash tr)))
        (define got (subbytes msg 4))
        (unless (ct-equal? expected got) (raise (tls-alert 51 "server Finished mismatch")))
        (tr-add! tr msg)]
-      [else (raise (tls-error (format "unexpected handshake msg ~a" mt)))]))
+      [else (unexpected-msg mt)]))
   ;; verify certificate chain + hostname if requested (skipped on resumption:
   ;; a PSK handshake sends no certificate — trust derives from the ticket)
   (when (and verify? (not resuming?))

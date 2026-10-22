@@ -67,6 +67,9 @@
   (define c (new-context 'client protocol))
   (when cc (ssl-load-certificate-chain! c cc))
   (when pk (load-private-key-spec c pk))
+  ;; 'secure means a verifying context, as in the libssl-based
+  ;; implementation; callers such as `net/url` and `raco pkg` rely on it
+  (when (eq? protocol 'secure) (secure-client-context! c))
   c)
 
 (define (ssl-make-server-context [protocol 'auto]
@@ -77,12 +80,14 @@
   c)
 
 (define (ssl-secure-client-context)
-  (define c (ssl-make-client-context 'secure))
+  (ssl-make-client-context 'secure))
+
+(define (secure-client-context! c)
   (cx-set! c 'verify? #t)
   (cx-set! c 'verify-hostname? #t)
   (ssl-load-default-verify-sources! c)
-  (ssl-seal-context! c)
-  c)
+  ;; sealed so that later changes cannot weaken it
+  (ssl-seal-context! c))
 
 (define (ssl-seal-context! c) (hash-set! (ssl-context-mutable c) 'sealed? #t))
 
