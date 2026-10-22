@@ -268,6 +268,7 @@
     (define body (read-exact rl-in rlen))
     (cond
       [(= (bytes-ref hdr 0) 20) (void)]                                        ; ChangeCipherSpec
+      [(= (bytes-ref hdr 0) 21) (raise (peer-alert body))]                     ; plaintext alert (server pre-CCS)
       [(and (= (bytes-ref hdr 0) 22) (>= (bytes-length body) 1) (= (bytes-ref body 0) 4)) ; NewSessionTicket
        (tr+ body)
        (when ticket12-box
@@ -317,6 +318,7 @@
     (define body (read-exact rl-in rlen))
     (cond
       [(= (bytes-ref hdr 0) 20) (void)]                                        ; ChangeCipherSpec
+      [(= (bytes-ref hdr 0) 21) (raise (peer-alert body))]                     ; plaintext alert (server pre-CCS)
       [(and (= (bytes-ref hdr 0) 22) (>= (bytes-length body) 1) (= (bytes-ref body 0) 4)) ; NewSessionTicket
        (tr+ body)
        (let ([tlen (+ (* 256 (bytes-ref body 8)) (bytes-ref body 9))])
@@ -435,19 +437,27 @@
     (if ems?
         (prf prf-alg pms #"extended master secret" ems-session-hash 48)
         (prf prf-alg pms #"master secret" (bytes-append client-random server-random) 48)))
-  ;; A4: verify the client's certificate + CertificateVerify against policy.
-  (when request-client-cert?
+  ;; The client's identity (same policy as the 1.3 server): a presented
+  ;; certificate must carry a valid CertificateVerify and chain to a loaded
+  ;; anchor; a missing one is fatal only when the context requires it. The
+  ;; server's write side is still plaintext here (its ChangeCipherSpec comes
+  ;; later), so alerts go out unprotected.
+  (define (fatal-plain! code msg)
+    (with-handlers ([exn:fail? void]) (write-plaintext rl-out 21 (bytes 2 code)))
+    (raise (tls-alert code msg)))
+  (define client-verified?
     (cond
       [(pair? (unbox client-ders))
-       (unless (verify-signature-over (unbox cv-scheme) (certificate-pub (parse-certificate (car (unbox client-ders))))
-                                      (unbox cv-content) (unbox cv-sig))
-         (raise (tls-alert 51 "client CertificateVerify invalid")))
-       (let ([anchors (hash-ref opts 'client-ca-anchors '())])
-         (when (pair? anchors) (verify-chain (unbox client-ders) anchors)))]
+       (unless request-client-cert? (fatal-plain! 10 "unsolicited client Certificate"))   ; unexpected_message
+       (with-handlers ([exn:fail? (lambda (e) (fatal-plain! (verify-failure-alert e) (exn-message e)))])
+         (unless (verify-signature-over (unbox cv-scheme) (certificate-pub (parse-certificate (car (unbox client-ders))))
+                                        (unbox cv-content) (unbox cv-sig))
+           (raise (tls-alert 51 "client CertificateVerify invalid")))
+         (verify-chain (unbox client-ders) (hash-ref opts 'client-ca-anchors '())))
+       #t]
       [(hash-ref opts 'require-client-cert #f)
-       (with-handlers ([exn:fail? void]) (write-plaintext rl-out 21 (bytes 2 40))) ; handshake_failure alert
-       (raise (tls-alert 40 "client certificate required"))]
-      [else (void)]))
+       (fatal-plain! 40 "client certificate required")]           ; handshake_failure
+      [else #f]))
   (define fixed-iv-len (if chacha? 12 4))
   (define kb (prf prf-alg master #"key expansion" (bytes-append server-random client-random)
                   (+ (* 2 key-len) (* 2 fixed-iv-len))))
@@ -481,7 +491,7 @@
   (write-plaintext rl-out 20 (bytes 1))
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) sfin-vd))
-  (make-conn-12 r '() cfin-vd)]))
+  (make-conn-12 r (unbox client-ders) cfin-vd client-verified?)]))
 
 ;; A2 (1.2): abbreviated (resumption) server handshake — ServerHello + CCS +
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
@@ -542,7 +552,7 @@
     (cond
       [(= type 20) (loop)]
       [(= type 22) (values (bytes-ref pt 0) pt)]
-      [(= type 21) (raise (tls-alert (if (>= (bytes-length pt) 2) (bytes-ref pt 1) 0) "fatal"))]
+      [(= type 21) (raise (peer-alert pt))]
       [else (loop)])))
 
 (define (parse-certificate-msg-12 msg)
@@ -652,7 +662,7 @@
         (cond
           [(and (= type 23) (positive? (bytes-length pt))) pt]
           [(= type 23) (loop)]
-          [(= type 21) eof]
+          [(= type 21) (alert->eof pt)]
           [(= type 20) (loop)]
           [(= type 22) (loop)]
           [else (loop)]))))

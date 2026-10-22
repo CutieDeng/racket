@@ -41,7 +41,8 @@
   (hash-set! h 'protocol protocol)
   (hash-set! h 'cert-ders '())
   (hash-set! h 'private-key #f)
-  (hash-set! h 'verify? #f)
+  (hash-set! h 'verify? #f)          ; ssl-set-verify!: require + verify the peer certificate
+  (hash-set! h 'try-verify? #f)      ; ssl-try-verify!: request it, verify if presented
   (hash-set! h 'verify-hostname? #f)
   (hash-set! h 'trust-anchors '())
   (hash-set! h 'alpn '())
@@ -170,8 +171,24 @@
 (define (ssl-load-suggested-certificate-authorities! c/l path) (void))
 
 ;; ---- verify / options ----
-(define (ssl-set-verify! c/l on?) (cx-set! (->context c/l) 'verify? (and on? #t)))
-(define (ssl-try-verify! c/l on?) (cx-set! (->context c/l) 'verify? (and on? #t)))
+;; Verification mode, as with libssl's SSL_VERIFY_* flags: `ssl-set-verify!`
+;; = require the peer's certificate (SSL_VERIFY_PEER |
+;; SSL_VERIFY_FAIL_IF_NO_PEER_CERT), `ssl-try-verify!` = request it but
+;; proceed without one (SSL_VERIFY_PEER). Either mode rejects a presented
+;; certificate that does not verify. Turning one on turns the other off;
+;; on a client both mean "verify the server".
+(define (ssl-set-verify! c/l on?) (set-verify-mode! 'ssl-set-verify! c/l (if on? 'require 'none)))
+(define (ssl-try-verify! c/l on?) (set-verify-mode! 'ssl-try-verify! c/l (if on? 'try 'none)))
+(define (set-verify-mode! who c/l mode)
+  ;; libssl applied a change on an established connection by renegotiating
+  ;; (TLS 1.2); this engine has no renegotiation, and the ports share their
+  ;; context with the listener, so the request is refused rather than
+  ;; silently changing every later connection.
+  (when (or (input-port? c/l) (output-port? c/l))
+    (error who "failed (verification cannot be changed on an established connection; set it on the context before the handshake)"))
+  (define c (->context c/l))
+  (cx-set! c 'verify? (eq? mode 'require))
+  (cx-set! c 'try-verify? (eq? mode 'try)))
 (define (ssl-set-verify-hostname! c on?) (cx-set! c 'verify-hostname? (and on? #t)))
 ;; ssl-set-ciphers!: translate an OpenSSL cipher string into an ordered list of
 ;; the AEAD suite ids this backend supports (TLS 1.3 #x1301/1302/1303 and the
@@ -287,14 +304,33 @@
                           #:error/ssl [error/ssl error]
                           #:hostname [hostname #f]
                           #:alpn [alpn '()])
+  (wrap-ports 'ports->ssl-ports i o mode ctx encrypt close? shutdown? error/ssl hostname alpn))
+
+;; A handshake failure is reported as "<who>: connect failed (<reason>)" /
+;; "accept failed", the form the libssl-based implementation used and that
+;; callers match on. With the default `error/ssl`, a TLS error keeps its
+;; `exn:tls` class (a network error, so retry logic still applies).
+(define (handshake-failed who mode error/ssl e)
+  (define dir (if (eq? mode 'connect) "connect" "accept"))
+  (define msg (exn-message e))
+  (cond
+    [(eq? error/ssl error)
+     (define full (format "~a: ~a failed (~a)" who dir msg))
+     (raise (if (exn:tls? e)
+                (exn:tls full (exn-continuation-marks e) (exn:tls-alert e))
+                (exn:fail full (exn-continuation-marks e))))]
+    [else (error/ssl who "~a failed (~a)" dir msg)]))
+
+(define (wrap-ports who i o mode ctx encrypt close? shutdown? error/ssl hostname alpn)
   (unless ssl-available?
-    (error 'ports->ssl-ports "~a" ssl-load-fail-reason))
+    (error who "~a" ssl-load-fail-reason))
   (define context (or ctx (if (eq? mode 'connect)
                               (ssl-make-client-context encrypt)
                               (ssl-make-server-context encrypt))))
   (when (and (eq? mode 'connect) (cx-ref context 'verify-hostname?) (not hostname))
-    (error/ssl "ports->ssl-ports: connect failed (hostname not provided for verification)"))
+    (handshake-failed who mode error/ssl (exn:fail "hostname not provided for verification" (current-continuation-marks))))
   (define conn
+    (with-handlers ([exn:fail? (lambda (e) (handshake-failed who mode error/ssl e))])
     (cond
       [(eq? mode 'connect)
        (define anchors (cx-ref context 'trust-anchors))
@@ -304,7 +340,7 @@
        (tls13-connect i o
                       (hash 'host hostname
                             'alpn (if (pair? alpn) alpn (cx-ref context 'alpn))
-                            'verify? (cx-ref context 'verify?)
+                            'verify? (or (cx-ref context 'verify?) (cx-ref context 'try-verify?))
                             'verify-hostname? (cx-ref context 'verify-hostname?)
                             'trust-anchors anchors
                             'keylog (keylog-emitter (cx-ref context 'keylogger))
@@ -338,13 +374,14 @@
                            'keylog (keylog-emitter (cx-ref context 'keylogger))
                            'suite-policy (cx-ref context 'suite-policy)
                            'ocsp-staple (cx-ref context 'ocsp-staple)
-                           ;; A4: a server with ssl-set-verify! requests + requires a client cert
-                           'request-client-cert (cx-ref context 'verify?)
+                           ;; ssl-set-verify! requests + requires a client certificate;
+                           ;; ssl-try-verify! only requests one
+                           'request-client-cert (or (cx-ref context 'verify?) (cx-ref context 'try-verify?))
                            'require-client-cert (cx-ref context 'verify?)
                            'client-ca-anchors (cx-ref context 'trust-anchors)
                            'ticket-store (cx-ref context 'ticket-store)   ; A2: issue resumption tickets
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
-                                   (if (pair? sa) sa alpn))))]))
+                                   (if (pair? sa) sa alpn))))])))
   (define name (object-name i))
   ;; The two SSL ports share one transport: closing just the output port
   ;; must not FIN the underlying TCP stream while the input port is still
@@ -376,7 +413,7 @@
   (define ctx (if (ssl-context? ctx-or-proto) ctx-or-proto (ssl-make-client-context ctx-or-proto)))
   (define-values (i o) (connect host port))
   (with-handlers ([(lambda (e) #t) (lambda (e) (close-input-port i) (close-output-port o) (raise e))])
-    (ports->ssl-ports i o #:mode 'connect #:context ctx #:hostname host #:alpn alpn #:close-original? #t)))
+    (wrap-ports 'ssl-connect i o 'connect ctx 'auto #t #f error host alpn)))
 
 (struct ssl-listener (tcp ctx)
   #:property prop:evt (lambda (l) (wrap-evt (ssl-listener-tcp l) (lambda (_) l))))
@@ -392,7 +429,7 @@
 (define (do-accept who accept l)
   (define-values (i o) (accept (ssl-listener-tcp l)))
   (with-handlers ([(lambda (e) #t) (lambda (e) (close-input-port i) (close-output-port o) (raise e))])
-    (ports->ssl-ports i o #:mode 'accept #:context (ssl-listener-ctx l) #:close-original? #t)))
+    (wrap-ports who i o 'accept (ssl-listener-ctx l) 'auto #t #f error #f '())))
 (define (ssl-accept l) (do-accept 'ssl-accept tcp-accept l))
 (define (ssl-accept/enable-break l) (do-accept 'ssl-accept/enable-break tcp-accept/enable-break l))
 
@@ -440,12 +477,28 @@
 (define (ssl-peer-check-hostname p host)
   (define leaf (peer-leaf p))
   (and leaf (with-handlers ([exn:fail? (lambda (_) #f)]) (check-hostname leaf host) #t)))
+;; Names are rendered as `X509_NAME_oneline` did ("/C=US/O=.../CN=..."),
+;; the form the libssl-based implementation returned and callers compare
+;; against.
+(define (name->oneline name-alist)
+  (apply string-append
+         (for/list ([kv (in-list name-alist)])
+           (string-append "/" (oneline-attr (car kv)) "=" (bytes->string/latin-1 (cdr kv))))))
+(define (oneline-attr oid)
+  (case oid
+    [("2.5.4.3") "CN"] [("2.5.4.4") "SN"] [("2.5.4.5") "serialNumber"]
+    [("2.5.4.6") "C"] [("2.5.4.7") "L"] [("2.5.4.8") "ST"] [("2.5.4.9") "street"]
+    [("2.5.4.10") "O"] [("2.5.4.11") "OU"] [("2.5.4.12") "title"]
+    [("2.5.4.17") "postalCode"] [("2.5.4.42") "GN"] [("2.5.4.46") "dnQualifier"]
+    [("1.2.840.113549.1.9.1") "emailAddress"]
+    [("0.9.2342.19200300.100.1.25") "DC"] [("0.9.2342.19200300.100.1.1") "UID"]
+    [else oid]))
 (define (ssl-peer-subject-name p)
   (define leaf (peer-leaf p))
-  (and leaf (string->bytes/utf-8 (name->string (certificate-subject leaf)))))
+  (and leaf (string->bytes/utf-8 (name->oneline (certificate-subject leaf)))))
 (define (ssl-peer-issuer-name p)
   (define leaf (peer-leaf p))
-  (and leaf (string->bytes/utf-8 (name->string (certificate-issuer leaf)))))
+  (and leaf (string->bytes/utf-8 (name->oneline (certificate-issuer leaf)))))
 
 (define (ssl-channel-binding p kind)
   (define obj (port-obj p))

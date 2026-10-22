@@ -175,6 +175,37 @@
 (define (tls-alert code msg) (exn:tls (format "TLS alert: ~a (~a)" msg code) (current-continuation-marks) code))
 (provide (struct-out exn:tls) with-transport-errors)
 
+;; RFC 8446 §6 / RFC 5246 §7.2 AlertDescription names, for reporting what
+;; the peer sent (libssl reports the alert by name too).
+(define (alert-name code)
+  (case code
+    [(0) "close_notify"] [(10) "unexpected_message"] [(20) "bad_record_mac"]
+    [(21) "decryption_failed"] [(22) "record_overflow"] [(30) "decompression_failure"]
+    [(40) "handshake_failure"] [(41) "no_certificate"] [(42) "bad_certificate"]
+    [(43) "unsupported_certificate"] [(44) "certificate_revoked"] [(45) "certificate_expired"]
+    [(46) "certificate_unknown"] [(47) "illegal_parameter"] [(48) "unknown_ca"]
+    [(49) "access_denied"] [(50) "decode_error"] [(51) "decrypt_error"]
+    [(60) "export_restriction"] [(70) "protocol_version"] [(71) "insufficient_security"]
+    [(80) "internal_error"] [(86) "inappropriate_fallback"] [(90) "user_canceled"]
+    [(100) "no_renegotiation"] [(109) "missing_extension"] [(110) "unsupported_extension"]
+    [(111) "certificate_unobtainable"] [(112) "unrecognized_name"]
+    [(113) "bad_certificate_status_response"] [(114) "bad_certificate_hash_value"]
+    [(115) "unknown_psk_identity"] [(116) "certificate_required"]
+    [(120) "no_application_protocol"]
+    [else "unknown"]))
+;; An alert record's payload (level, description) received from the peer
+;; -> the exception to raise for it.
+(define (peer-alert payload)
+  (define code (if (>= (bytes-length payload) 2) (bytes-ref payload 1) 0))
+  (tls-alert code (format "received ~a" (alert-name code))))
+;; On the application-data read path: close_notify and warning-level alerts
+;; end the stream; any other fatal alert is an error, as with libssl.
+(define (alert->eof payload)
+  (if (and (>= (bytes-length payload) 2) (= 2 (bytes-ref payload 0)) (not (zero? (bytes-ref payload 1))))
+      (raise (peer-alert payload))
+      eof))
+(provide alert-name peer-alert alert->eof)
+
 ;; =====================================================================
 ;; Handshake message reader (reassembles across records)
 ;; =====================================================================
@@ -191,7 +222,7 @@
       [(= type 21)
        (if (and (>= (bytes-length payload) 2) (= 1 (bytes-ref payload 0)))
            (loop)                                ; warning alert (e.g. close_notify handled elsewhere)
-           (raise (tls-alert (if (>= (bytes-length payload) 2) (bytes-ref payload 1) 0) "fatal")))]
+           (raise (peer-alert payload)))]
       [(= type 22) (set-hsr-buf! r (bytes-append (hsr-buf r) payload))]
       [(= type 23) (set-hsr-app! r (bytes-append (hsr-app r) payload))
                    (loop)]                       ; stray early app data: stash
@@ -375,7 +406,7 @@
         (cond
           [(and (= type 23) (positive? (bytes-length payload))) payload]
           [(= type 23) (loop)]
-          [(= type 21) eof]                                  ; close_notify
+          [(= type 21) (alert->eof payload)]                 ; close_notify -> eof; fatal -> raise
           [(= type 22)                                       ; NewSessionTicket(4) / KeyUpdate(24)
            (cond
              [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0)))
@@ -409,7 +440,7 @@
               (cond
                 [(and (= type 23) (positive? (bytes-length payload))) payload]
                 [(= type 23) (loop)]
-                [(= type 21) eof]
+                [(= type 21) (alert->eof payload)]
                 [(= type 22)
                  (cond
                    [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0))) (do-key-update! payload)]
@@ -1060,6 +1091,7 @@
   ;; resume: seed the key schedule with the PSK, echo pre_shared_key in
   ;; ServerHello, and skip sending Certificate/CertificateVerify.
   (define resume-psk #f)
+  (define resume-sess #f)      ; the resumed session (carries the client's identity)
   (let ([store (hash-ref opts 'ticket-store #f)]
         [psk-body (let ([e (assoc #x0029 ch-exts)]) (and e (cdr e)))]
         [modes (assoc #x002d ch-exts)])
@@ -1080,6 +1112,7 @@
                                              (digest alg (subbytes ch 0 trunc))))
         (when (ct-equal? expected recv-binder)
           (set! resume-psk (tls-session-psk sess))
+          (set! resume-sess sess)
           (hash-remove! store ticket)))))       ; single-use ticket
 
   ;; our ephemeral share
@@ -1169,38 +1202,57 @@
   (klog! "CLIENT_TRAFFIC_SECRET_0" ch-random (ks-c-ap k))
   (klog! "SERVER_TRAFFIC_SECRET_0" ch-random (ks-s-ap k))
   (klog! "EXPORTER_SECRET" ch-random exporter-master)
+  ;; RFC 8446 §7.2: everything the server writes after its Finished -- an
+  ;; alert about the client's flight included -- is protected with the
+  ;; server application traffic key, which is what the client reads with.
+  (define-values (sapk sapiv) (traffic->keys k (ks-s-ap k)))
+  (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
+  (rl-set-write-key! r aead sapk sapiv)
 
   ;; read client authentication (if requested) + client Finished under client keys
   (rl-set-read-key! r aead ckey civ)
   (define client-certs (box '()))
   (define client-cv (box #f))
   (define client-cv-th (box #f))
-  (let loop ()
+  (let loop ([state (if request-client-cert? 'certificate 'finished)])
     (define-values (mt msg) (hsr-next hs))
     (case mt
       [(20)
+       (unless (eq? state 'finished) (fatal-alert! r 10 (format "unexpected handshake msg ~a from client" mt)))
        (define expected (finished-verify-data alg (ks-c-hs k) (tr-hash tr)))
-       (unless (ct-equal? expected (subbytes msg 4)) (raise (tls-alert 51 "client Finished mismatch")))
+       (unless (ct-equal? expected (subbytes msg 4)) (fatal-alert! r 51 "client Finished mismatch"))
        (tr-add! tr msg)]
-      [(11) (set-box! client-certs (parse-certificate-msg msg)) (tr-add! tr msg) (loop)]
-      [(15) (set-box! client-cv msg) (set-box! client-cv-th (tr-hash tr)) (tr-add! tr msg) (loop)]
-      [else (raise (tls-error (format "unexpected msg ~a from client" mt)))]))
-  ;; A4: verify the client's certificate + CertificateVerify against policy.
-  (when request-client-cert?
+      [(11)
+       (unless (eq? state 'certificate) (fatal-alert! r 10 (format "unexpected handshake msg ~a from client" mt)))
+       (set-box! client-certs (parse-certificate-msg msg)) (tr-add! tr msg)
+       (loop (if (pair? (unbox client-certs)) 'certificate-verify 'finished))]
+      [(15)
+       (unless (eq? state 'certificate-verify) (fatal-alert! r 10 (format "unexpected handshake msg ~a from client" mt)))
+       (set-box! client-cv msg) (set-box! client-cv-th (tr-hash tr)) (tr-add! tr msg)
+       (loop 'finished)]
+      [else (fatal-alert! r 10 (format "unexpected handshake msg ~a from client" mt))]))
+  ;; The client's identity. A presented certificate must carry a valid
+  ;; CertificateVerify and chain to a loaded anchor -- with no anchors
+  ;; loaded every certificate is rejected, as with libssl; there is no
+  ;; "accept anything" mode. A missing certificate is fatal only when the
+  ;; context requires one (ssl-set-verify!); with ssl-try-verify! the
+  ;; connection proceeds unauthenticated.
+  (define client-verified?
     (cond
       [(pair? (unbox client-certs))
-       (verify-certificate-verify (unbox client-cv) (unbox client-certs) (unbox client-cv-th) 'client)
-       (let ([anchors (hash-ref opts 'client-ca-anchors '())])
-         (when (pair? anchors) (verify-chain (unbox client-certs) anchors)))]
+       (with-handlers ([exn:fail? (lambda (e) (fatal-alert! r (verify-failure-alert e) (exn-message e)))])
+         (verify-certificate-verify (unbox client-cv) (unbox client-certs) (unbox client-cv-th) 'client)
+         (verify-chain (unbox client-certs) (hash-ref opts 'client-ca-anchors '())))
+       #t]
       [(hash-ref opts 'require-client-cert #f)
-       (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 2 116))) ; certificate_required
-       (raise (tls-alert 116 "client certificate required"))]
-      [else (void)]))                                          ; optional: proceed with no client cert
+       (fatal-alert! r 116 "client certificate required")]           ; certificate_required
+      [else #f]))
 
-  ;; install application keys
-  (define-values (sapk sapiv) (traffic->keys k (ks-s-ap k)))
-  (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
-  (rl-set-write-key! r aead sapk sapiv)
+  ;; on resumption the client's identity comes from the original session
+  (define peer-certs (if resume-sess (tls-session-peer-certs resume-sess) (unbox client-certs)))
+  (define peer-verified? (if resume-sess (tls-session-verified? resume-sess) client-verified?))
+
+  ;; install the client's application read key
   (rl-set-read-key! r aead capk capiv)
   ;; A2: issue a NewSessionTicket (RFC 8446 §4.6.1) when a ticket store is
   ;; provided, so the client can resume. resumption_master binds the transcript
@@ -1213,16 +1265,36 @@
       (define ticket (random-bytes 32))
       (define age-add-bytes (random-bytes 4))
       (define lifetime 7200)
+      ;; the session carries the client's identity so a resumed connection
+      ;; reports it again (a PSK handshake exchanges no certificates)
       (hash-set! store ticket
                  (tls-session psk ticket suite neg-alpn (current-inexact-milliseconds)
-                              (be->int age-add-bytes) lifetime '() #f))
+                              (be->int age-add-bytes) lifetime peer-certs peer-verified?))
       (define body (bytes-append (u32 lifetime) age-add-bytes (vec 1 nonce)
                                  (vec 2 ticket) (vec 2 #"")))
       (rl-write-record r 22 (bytes-append (u8 4) (u24 (bytes-length body)) body))))
-  (tls13-make-conn r neg-alpn '() (hash 'alg alg 'exporter-master exporter-master
-                                        'server-cert-der (and (pair? cert-ders)
-                                                              (car cert-ders)))
-                   (ku k aead (box (ks-c-ap k)) (box (ks-s-ap k)))))) ; recv=client, send=server
+  (tls13-make-conn r neg-alpn peer-certs
+                   (hash 'alg alg 'exporter-master exporter-master
+                         'server-cert-der (and (pair? cert-ders) (car cert-ders)))
+                   (ku k aead (box (ks-c-ap k)) (box (ks-s-ap k)))   ; recv=client, send=server
+                   #f
+                   peer-verified?)))
+
+;; Send a fatal alert (best effort) and raise it.
+(define (fatal-alert! r code msg)
+  (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 2 code)))
+  (raise (tls-alert code msg)))
+
+;; Alert to send when the peer's certificate fails verification.
+(define (verify-failure-alert e)
+  (define m (exn-message e))
+  (cond
+    [(and (exn:tls? e) (exn:tls-alert e)) => values]
+    [(regexp-match? #rx"anchor" m) 48]                           ; unknown_ca
+    [(regexp-match? #rx"expired|not yet valid" m) 45]            ; certificate_expired
+    [(regexp-match? #rx"CertificateVerify" m) 51]                ; decrypt_error
+    [else 42]))                                                  ; bad_certificate
+(provide fatal-alert! verify-failure-alert)
 
 ;; ---- server helpers ----
 (define (gen-server-share group)
