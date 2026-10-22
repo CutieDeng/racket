@@ -191,30 +191,78 @@
   (cx-set! c 'try-verify? (eq? mode 'try)))
 (define (ssl-set-verify-hostname! c on?) (cx-set! c 'verify-hostname? (and on? #t)))
 ;; ssl-set-ciphers!: translate an OpenSSL cipher string into an ordered list of
-;; the AEAD suite ids this backend supports (TLS 1.3 #x1301/1302/1303 and the
-;; TLS 1.2 ECDHE-AEAD suites). Stored as 'suite-policy and threaded to the
-;; handshake, which offers (client) / accepts (server) only these, in this order.
-;; This backend is AEAD-only by design, so non-AEAD tokens simply match nothing.
+;; the suite ids this backend supports (TLS 1.3 #x1301/1302/1303, and the
+;; TLS 1.2 ECDHE/DHE suites with AES-GCM, ChaCha20-Poly1305 or AES-CBC+HMAC).
+;; Stored as 'suite-policy and threaded to the handshake, which offers
+;; (client) / accepts (server) only these, in this order. Unknown tokens
+;; match nothing. Supported syntax: ":"-separated tokens, "!"/"-" removal,
+;; "+" within a token for intersection ("AES+EDH"), "@..." suffixes ignored.
 (define cipher-name-table
   ;; canonical / OpenSSL names -> suite id
   (hash "TLS_AES_128_GCM_SHA256" #x1301 "TLS_AES_256_GCM_SHA384" #x1302
         "TLS_CHACHA20_POLY1305_SHA256" #x1303
         "ECDHE-ECDSA-AES128-GCM-SHA256" #xC02B "ECDHE-RSA-AES128-GCM-SHA256" #xC02F
         "ECDHE-ECDSA-AES256-GCM-SHA384" #xC02C "ECDHE-RSA-AES256-GCM-SHA384" #xC030
-        "ECDHE-ECDSA-CHACHA20-POLY1305" #xCCA9 "ECDHE-RSA-CHACHA20-POLY1305" #xCCA8))
-(define ALL-SUITES '(#x1302 #x1303 #x1301 #xC030 #xC02C #xCCA8 #xCCA9 #xC02F #xC02B))
+        "ECDHE-ECDSA-CHACHA20-POLY1305" #xCCA9 "ECDHE-RSA-CHACHA20-POLY1305" #xCCA8
+        "DHE-RSA-AES128-GCM-SHA256" #x009E "DHE-RSA-AES256-GCM-SHA384" #x009F
+        "DHE-RSA-CHACHA20-POLY1305" #xCCAA
+        "ECDHE-RSA-AES128-SHA256" #xC027 "ECDHE-RSA-AES256-SHA384" #xC028
+        "ECDHE-ECDSA-AES128-SHA256" #xC023 "ECDHE-ECDSA-AES256-SHA384" #xC024
+        "ECDHE-RSA-AES128-SHA" #xC013 "ECDHE-RSA-AES256-SHA" #xC014
+        "ECDHE-ECDSA-AES128-SHA" #xC009 "ECDHE-ECDSA-AES256-SHA" #xC00A
+        "DHE-RSA-AES128-SHA256" #x0067 "DHE-RSA-AES256-SHA256" #x006B
+        "DHE-RSA-AES128-SHA" #x0033 "DHE-RSA-AES256-SHA" #x0039))
+;; Default preference: TLS 1.3, then ECDHE+AEAD, DHE+AEAD, ECDHE+CBC, DHE+CBC.
+(define ALL-SUITES '(#x1302 #x1303 #x1301
+                     #xC030 #xC02C #xCCA8 #xCCA9 #xC02F #xC02B
+                     #x009F #xCCAA #x009E
+                     #xC028 #xC024 #xC027 #xC023 #xC014 #xC00A #xC013 #xC009
+                     #x006B #x0067 #x0039 #x0033))
+;; properties of a suite, for the alias groups below
+(define (suite-props id)
+  (define name (for/first ([(n i) (in-hash cipher-name-table)] #:when (= i id)) n))
+  (define (has? rx) (regexp-match? rx name))
+  (define tls13? (has? #rx"^TLS_"))
+  (list (cond [tls13? 'tls13] [(has? #rx"^ECDHE") 'ecdhe] [else 'dhe])                 ; key exchange
+        (cond [tls13? 'any] [(has? #rx"ECDSA") 'ecdsa] [else 'rsa])                    ; authentication
+        (cond [(has? #rx"GCM") 'aesgcm] [(has? #rx"CHACHA") 'chacha20] [else 'aescbc]) ; cipher
+        (cond [(has? #rx"AES_?128") 'aes128] [(has? #rx"AES_?256") 'aes256] [else 'none])
+        (cond [(has? #rx"GCM|CHACHA") 'aead] [(has? #rx"SHA256$") 'sha256]
+              [(has? #rx"SHA384$") 'sha384] [else 'sha1])))                            ; MAC
+(define (suites-with . props)
+  (filter (lambda (id) (for/and ([p (in-list props)]) (memq p (suite-props id)))) ALL-SUITES))
 (define (cipher-alias->ids tok)
-  ;; expand an OpenSSL alias/group token to a set of suite ids (default order)
+  ;; expand an OpenSSL alias/group token to a list of suite ids (default order)
   (case (string-upcase tok)
-    [("ALL" "HIGH" "DEFAULT" "COMPLEMENTOFDEFAULT" "ECDHE" "EECDH" "KECDHE" "AEAD") ALL-SUITES]
-    [("AESGCM" "AES-GCM") '(#x1302 #x1301 #xC030 #xC02C #xC02F #xC02B)]
-    [("AES128" "AES128-GCM") '(#x1301 #xC02F #xC02B)]
-    [("AES256" "AES256-GCM") '(#x1302 #xC030 #xC02C)]
-    [("AES") '(#x1302 #x1301 #xC030 #xC02C #xC02F #xC02B)]
-    [("CHACHA20" "CHACHA20-POLY1305" "CHACHA") '(#x1303 #xCCA8 #xCCA9)]
+    [("ALL" "HIGH" "DEFAULT" "COMPLEMENTOFDEFAULT") ALL-SUITES]
+    [("ECDHE" "EECDH" "KECDHE" "KEECDH") (append (suites-with 'tls13) (suites-with 'ecdhe))]
+    [("DHE" "EDH" "KDHE" "KEDH" "DH") (suites-with 'dhe)]
+    [("AEAD") (suites-with 'aead)]
+    [("AESGCM" "AES-GCM") (suites-with 'aesgcm)]
+    [("AESCBC" "AES-CBC" "CBC") (suites-with 'aescbc)]
+    [("AES128" "AES128-GCM") (suites-with 'aes128)]
+    [("AES256" "AES256-GCM") (suites-with 'aes256)]
+    [("AES") (append (suites-with 'aes128) (suites-with 'aes256))]
+    [("CHACHA20" "CHACHA20-POLY1305" "CHACHA") (suites-with 'chacha20)]
+    [("SHA" "SHA1") (suites-with 'sha1)]
+    [("SHA256") (suites-with 'sha256)]
+    [("SHA384") (suites-with 'sha384)]
+    [("ARSA" "RSA") (append (suites-with 'tls13) (suites-with 'rsa))]
+    [("AECDSA" "ECDSA") (append (suites-with 'tls13) (suites-with 'ecdsa))]
+    [("TLSV1.3") (suites-with 'tls13)]
+    [("TLSV1.2") (filter (lambda (id) (not (memq 'tls13 (suite-props id)))) ALL-SUITES)]
     [else (let ([id (hash-ref cipher-name-table (string-upcase tok)
-                             (lambda () (hash-ref cipher-name-table tok #f)))])
+                              (lambda () (hash-ref cipher-name-table tok #f)))])
             (if id (list id) '()))]))
+;; "A+B+C": suites that match every part
+(define (cipher-token->ids tok)
+  (define parts (filter (lambda (t) (> (string-length t) 0)) (regexp-split #rx"[+]" tok)))
+  (cond
+    [(null? parts) '()]
+    [else
+     (for/fold ([ids (cipher-alias->ids (car parts))]) ([p (in-list (cdr parts))])
+       (define keep (cipher-alias->ids p))
+       (filter (lambda (id) (memv id keep)) ids))]))
 (define (parse-cipher-policy str)
   ;; -> ordered list of allowed suite ids, or #f for "no constraint" (default)
   (define s (string-trim str))
@@ -228,15 +276,14 @@
          [(null? toks) (reverse acc)]
          [else
           (define raw (car toks))
-          ;; strip @STRENGTH/@SECLEVEL and leading +
+          ;; strip @STRENGTH/@SECLEVEL
           (define t0 (regexp-replace #rx"@.*$" raw ""))
           (cond
             [(regexp-match? #rx"^[!-]" t0)
-             (define ids (cipher-alias->ids (substring t0 1)))
+             (define ids (cipher-token->ids (substring t0 1)))
              (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc))]
             [else
-             (define t1 (regexp-replace #rx"^[+]" t0 ""))
-             (define ids (cipher-alias->ids t1))
+             (define ids (cipher-token->ids t0))
              (loop (cdr toks) (append (reverse (filter (lambda (x) (not (memv x acc))) ids)) acc))])]))]))
 (define (ssl-set-ciphers! c str)
   (define pol (parse-cipher-policy str))

@@ -612,7 +612,27 @@ Specifies the cipher suites that can be used in connections created
 with @racket[context]. The meaning of @racket[cipher-spec] is the same
 as for the
 @hyperlink["https://docs.openssl.org/master/man1/openssl-ciphers/"]{@tt{openssl
-ciphers} command}.
+ciphers} command}, restricted to the suites that are implemented:
+
+@itemlist[
+
+ @item{TLS 1.3: @tt{TLS_AES_128_GCM_SHA256}, @tt{TLS_AES_256_GCM_SHA384},
+       @tt{TLS_CHACHA20_POLY1305_SHA256};}
+
+ @item{TLS 1.2 with ECDHE or DHE key exchange and RSA or ECDSA
+       authentication: AES-GCM, ChaCha20-Poly1305, and AES-CBC with
+       HMAC-SHA1/SHA256/SHA384 (for example @tt{ECDHE-RSA-AES128-GCM-SHA256},
+       @tt{DHE-RSA-AES256-SHA256}, @tt{ECDHE-ECDSA-AES128-SHA}).}
+
+]
+
+Suites without forward secrecy (plain RSA key exchange) and other ciphers
+are not available; a specification that matches none of the implemented
+suites causes connections to fail. Aliases such as @tt{ECDHE}, @tt{EDH},
+@tt{AESGCM}, @tt{SHA256}, the @tt{!} and @tt{-} prefixes, and @tt{+} for
+intersection (@tt{"AES+EDH"}) are supported. Finite-field DHE uses the
+RFC 7919 named groups (@tt{ffdhe2048} on the server side); a client
+rejects DHE parameters from a server that are not one of those groups.
 }
 
 @defproc[(ssl-seal-context! [context (or/c ssl-client-context? ssl-server-context?)])

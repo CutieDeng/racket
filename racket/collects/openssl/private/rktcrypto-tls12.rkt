@@ -2,9 +2,11 @@
 
 ;; TLS 1.2 (RFC 5246 + RFC 5288 GCM + RFC 7905 ChaCha20-Poly1305 + RFC 7627
 ;; extended master secret) client and server, sharing the record framing,
-;; transcript, and byte helpers with the 1.3 engine. ECDHE key exchange
-;; only (X25519 / P-256 / P-384); AEAD cipher suites only. The PRF is
-;; HMAC-based (SHA-256 or SHA-384 per suite). All crypto is in rktcrypto C.
+;; transcript, and byte helpers with the 1.3 engine. Key exchange: ECDHE
+;; (X25519 / P-256 / P-384) or finite-field DHE over the RFC 7919 named
+;; groups. Cipher suites: AEAD (AES-GCM, ChaCha20-Poly1305) and AES-CBC
+;; with HMAC (MAC-then-encrypt, RFC 5246 6.2.3.2). The PRF is HMAC-based
+;; (SHA-256 or SHA-384 per suite). All crypto is in rktcrypto C.
 
 (require "rktcrypto-ffi.rkt"
          "rktcrypto-x509.rkt"
@@ -13,22 +15,62 @@
 
 (provide tls12-client-finish
          tls12-accept
-         tls12-suites)
+         tls12-suites
+         tls12-dhe-suite?
+         tls12-server-can?)
 
-;; ---- cipher suites (IANA) -> (values kx sig aead key-len prf-alg) ----
-;; kx is always ecdhe; sig is 'rsa or 'ecdsa (server auth).
+;; ---- cipher suites (IANA) -> (values kx sig cipher mac key-len prf-alg) ----
+;;   kx     : 'ecdhe | 'dhe
+;;   sig    : 'rsa | 'ecdsa      (server authentication; also which key type the server needs)
+;;   cipher : an AEAD id, or 'aes-cbc
+;;   mac    : #f for AEAD, else the HMAC digest id (SHA-1 only for the legacy
+;;            *-SHA suites; the PRF of those suites is still SHA-256)
 (define (suite12 id)
   (case id
-    [(#xC02F) (values 'rsa   AEAD-AES128-GCM 16 SHA256)] ; ECDHE-RSA-AES128-GCM-SHA256
-    [(#xC02B) (values 'ecdsa AEAD-AES128-GCM 16 SHA256)] ; ECDHE-ECDSA-AES128-GCM-SHA256
-    [(#xC030) (values 'rsa   AEAD-AES256-GCM 32 SHA384)] ; ECDHE-RSA-AES256-GCM-SHA384
-    [(#xC02C) (values 'ecdsa AEAD-AES256-GCM 32 SHA384)] ; ECDHE-ECDSA-AES256-GCM-SHA384
-    [(#xCCA8) (values 'rsa   AEAD-CHACHA20-POLY1305 32 SHA256)] ; ECDHE-RSA-CHACHA20
-    [(#xCCA9) (values 'ecdsa AEAD-CHACHA20-POLY1305 32 SHA256)] ; ECDHE-ECDSA-CHACHA20
-    [else (values #f #f #f #f)]))
-;; Client offer order (server auth type is filtered by the cert at runtime).
-;; A function so it can be lazy-required from the 1.3 module without a cycle.
-(define (tls12-suites) (list #xC02B #xC02F #xC02C #xC030 #xCCA9 #xCCA8))
+    ;; ECDHE, AEAD
+    [(#xC02F) (values 'ecdhe 'rsa   AEAD-AES128-GCM #f 16 SHA256)]        ; ECDHE-RSA-AES128-GCM-SHA256
+    [(#xC02B) (values 'ecdhe 'ecdsa AEAD-AES128-GCM #f 16 SHA256)]        ; ECDHE-ECDSA-AES128-GCM-SHA256
+    [(#xC030) (values 'ecdhe 'rsa   AEAD-AES256-GCM #f 32 SHA384)]        ; ECDHE-RSA-AES256-GCM-SHA384
+    [(#xC02C) (values 'ecdhe 'ecdsa AEAD-AES256-GCM #f 32 SHA384)]        ; ECDHE-ECDSA-AES256-GCM-SHA384
+    [(#xCCA8) (values 'ecdhe 'rsa   AEAD-CHACHA20-POLY1305 #f 32 SHA256)] ; ECDHE-RSA-CHACHA20-POLY1305
+    [(#xCCA9) (values 'ecdhe 'ecdsa AEAD-CHACHA20-POLY1305 #f 32 SHA256)] ; ECDHE-ECDSA-CHACHA20-POLY1305
+    ;; DHE, AEAD
+    [(#x009E) (values 'dhe 'rsa AEAD-AES128-GCM #f 16 SHA256)]            ; DHE-RSA-AES128-GCM-SHA256
+    [(#x009F) (values 'dhe 'rsa AEAD-AES256-GCM #f 32 SHA384)]            ; DHE-RSA-AES256-GCM-SHA384
+    [(#xCCAA) (values 'dhe 'rsa AEAD-CHACHA20-POLY1305 #f 32 SHA256)]     ; DHE-RSA-CHACHA20-POLY1305
+    ;; ECDHE, AES-CBC + HMAC
+    [(#xC027) (values 'ecdhe 'rsa   'aes-cbc SHA256 16 SHA256)]           ; ECDHE-RSA-AES128-SHA256
+    [(#xC028) (values 'ecdhe 'rsa   'aes-cbc SHA384 32 SHA384)]           ; ECDHE-RSA-AES256-SHA384
+    [(#xC023) (values 'ecdhe 'ecdsa 'aes-cbc SHA256 16 SHA256)]           ; ECDHE-ECDSA-AES128-SHA256
+    [(#xC024) (values 'ecdhe 'ecdsa 'aes-cbc SHA384 32 SHA384)]           ; ECDHE-ECDSA-AES256-SHA384
+    [(#xC013) (values 'ecdhe 'rsa   'aes-cbc SHA1   16 SHA256)]           ; ECDHE-RSA-AES128-SHA
+    [(#xC014) (values 'ecdhe 'rsa   'aes-cbc SHA1   32 SHA256)]           ; ECDHE-RSA-AES256-SHA
+    [(#xC009) (values 'ecdhe 'ecdsa 'aes-cbc SHA1   16 SHA256)]           ; ECDHE-ECDSA-AES128-SHA
+    [(#xC00A) (values 'ecdhe 'ecdsa 'aes-cbc SHA1   32 SHA256)]           ; ECDHE-ECDSA-AES256-SHA
+    ;; DHE, AES-CBC + HMAC
+    [(#x0067) (values 'dhe 'rsa 'aes-cbc SHA256 16 SHA256)]               ; DHE-RSA-AES128-SHA256
+    [(#x006B) (values 'dhe 'rsa 'aes-cbc SHA256 32 SHA256)]               ; DHE-RSA-AES256-SHA256
+    [(#x0033) (values 'dhe 'rsa 'aes-cbc SHA1   16 SHA256)]               ; DHE-RSA-AES128-SHA
+    [(#x0039) (values 'dhe 'rsa 'aes-cbc SHA1   32 SHA256)]               ; DHE-RSA-AES256-SHA
+    [else (values #f #f #f #f #f #f)]))
+;; Client offer order: ECDHE before DHE, AEAD before CBC (the server auth
+;; type is filtered by the cert at runtime). A function so it can be
+;; lazy-required from the 1.3 module without a cycle.
+(define (tls12-suites)
+  (list #xC02B #xC02F #xC02C #xC030 #xCCA9 #xCCA8
+        #x009E #x009F #xCCAA
+        #xC023 #xC027 #xC024 #xC028 #xC009 #xC013 #xC00A #xC014
+        #x0067 #x006B #x0033 #x0039))
+;; Does suite `s` use finite-field DHE? (The client then advertises the
+;; RFC 7919 groups in supported_groups; without that a libssl server uses
+;; its own built-in parameters, which this client refuses.)
+(define (tls12-dhe-suite? s)
+  (define-values (kx sig cipher mac key-len prf) (suite12 s))
+  (eq? kx 'dhe))
+;; Can a server holding `key` ((cons 'rsa der) / (cons 'p256 scalar)) serve suite `s`?
+(define (tls12-server-can? s key)
+  (define-values (kx sig cipher mac key-len prf) (suite12 s))
+  (and kx (eq? (car key) (if (eq? sig 'ecdsa) 'p256 'rsa))))
 
 (define GROUP-X25519 #x001d)
 (define GROUP-P256   #x0017)
@@ -51,16 +93,33 @@
 ;; keys: client/server write key + fixed IV. GCM uses a 4-byte fixed IV +
 ;; 8-byte explicit nonce (sent on the wire); ChaCha20 uses a 12-byte fixed
 ;; IV XORed with the sequence number (RFC 7905), no explicit nonce.
-(struct r12 (in out aead
-             ckey cfixed skey sfixed
+;; cipher: AEAD id or 'aes-cbc; mac: HMAC digest id for CBC suites (else #f),
+;; with cmac/smac the client/server MAC keys.
+(struct r12 (in out cipher mac
+             ckey cfixed skey sfixed cmac smac
              chacha?
              [rseq #:mutable] [wseq #:mutable]
              we-are-client?
              lock                   ; held while a thread reads from `in`
              [pending #:mutable]    ; records read while draining during a write
              [inbuf #:mutable]))    ; partial record pulled in by a draining write
-(define (make-r12 in out aead ckey cfixed skey sfixed chacha? client?)
-  (r12 in out aead ckey cfixed skey sfixed chacha? 0 0 client? (make-semaphore 1) '() #""))
+
+;; Key block (RFC 5246 6.3): client/server MAC keys (CBC suites only), then
+;; write keys, then fixed IVs (AEAD only; CBC uses an explicit per-record IV).
+(define (make-r12/keys in out cipher mac key-len prf-alg master server-random client-random client?)
+  (define chacha? (eqv? cipher AEAD-CHACHA20-POLY1305))
+  (define mac-len (if mac (digest-size mac) 0))
+  (define fixed-iv-len (cond [(eq? cipher 'aes-cbc) 0] [chacha? 12] [else 4]))
+  (define kb (prf prf-alg master #"key expansion" (bytes-append server-random client-random)
+                  (+ (* 2 mac-len) (* 2 key-len) (* 2 fixed-iv-len))))
+  (define (slice start len) (subbytes kb start (+ start len)))
+  (define cmac (slice 0 mac-len))
+  (define smac (slice mac-len mac-len))
+  (define ckey (slice (* 2 mac-len) key-len))
+  (define skey (slice (+ (* 2 mac-len) key-len) key-len))
+  (define cfixed (slice (+ (* 2 mac-len) (* 2 key-len)) fixed-iv-len))
+  (define sfixed (slice (+ (* 2 mac-len) (* 2 key-len) fixed-iv-len) fixed-iv-len))
+  (r12 in out cipher mac ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #""))
 (define (r12-read-exact! r n)
   (buffered-read-exact! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b)) n))
 (define (r12-fill-nb! r)
@@ -87,17 +146,18 @@
 (define (r12-write r type frag)
   (define seq (r12-wseq r))
   (define key (if (r12-we-are-client? r) (r12-ckey r) (r12-skey r)))
-  (define fixed (if (r12-we-are-client? r) (r12-cfixed r) (r12-sfixed r)))
   (define a (aad seq type (bytes-length frag)))
   (define body
     (cond
+      [(eq? (r12-cipher r) 'aes-cbc)
+       (cbc-seal key (if (r12-we-are-client? r) (r12-cmac r) (r12-smac r)) (r12-mac r) a frag)]
       [(r12-chacha? r)
-       (define nonce (xor-iv fixed seq))
-       (aead-seal (r12-aead r) key nonce a frag)]
+       (define nonce (xor-iv (if (r12-we-are-client? r) (r12-cfixed r) (r12-sfixed r)) seq))
+       (aead-seal (r12-cipher r) key nonce a frag)]
       [else
        (define expl (subbytes (seq->bytes seq) 0 8))
-       (define nonce (bytes-append fixed expl))
-       (bytes-append expl (aead-seal (r12-aead r) key nonce a frag))]))
+       (define nonce (bytes-append (if (r12-we-are-client? r) (r12-cfixed r) (r12-sfixed r)) expl))
+       (bytes-append expl (aead-seal (r12-cipher r) key nonce a frag))]))
   (set-r12-wseq! r (add1 seq))
   (define rec (bytes-append (bytes type 3 3)
                             (bytes (arithmetic-shift (bytes-length body) -8) (bitwise-and (bytes-length body) 255))
@@ -145,18 +205,65 @@
     [else
      (define seq (r12-rseq r))
      (define key (if (r12-we-are-client? r) (r12-skey r) (r12-ckey r)))
-     (define fixed (if (r12-we-are-client? r) (r12-sfixed r) (r12-cfixed r)))
-     (define-values (nonce ct)
-       (if (r12-chacha? r)
-           (values (xor-iv fixed seq) body)
-           (values (bytes-append fixed (subbytes body 0 8)) (subbytes body 8))))
-     (define a (aad seq type (- (bytes-length ct) (aead-tag (r12-aead r)))))
-     (define pt (aead-open (r12-aead r) key nonce a ct))
+     (define pt
+       (cond
+         [(eq? (r12-cipher r) 'aes-cbc)
+          (cbc-open key (if (r12-we-are-client? r) (r12-smac r) (r12-cmac r)) (r12-mac r) seq type body)]
+         [else
+          (define fixed (if (r12-we-are-client? r) (r12-sfixed r) (r12-cfixed r)))
+          (define-values (nonce ct)
+            (if (r12-chacha? r)
+                (values (xor-iv fixed seq) body)
+                (values (bytes-append fixed (subbytes body 0 (min 8 (bytes-length body))))
+                        (subbytes body (min 8 (bytes-length body))))))
+          (define a (aad seq type (- (bytes-length ct) (aead-tag (r12-cipher r)))))
+          (aead-open (r12-cipher r) key nonce a ct)]))
      (unless pt (raise (tls-alert 20 "bad_record_mac")))
+     (when (> (bytes-length pt) 16384) (raise (tls-alert 22 "record_overflow")))
      (set-r12-rseq! r (add1 seq))
      (values type pt)]))
 
 (define (aead-tag aead) (rktcrypto_aead_tag_size aead))
+
+;; ---- AES-CBC with HMAC, MAC-then-encrypt (RFC 5246 6.2.3.2) ----
+;; GenericBlockCipher: IV(16) || CBC( fragment || MAC || padding || padding_length )
+;; MAC = HMAC(mac_key, seq(8) || type || 0303 || length(2) || fragment), which
+;; is exactly the AEAD additional data followed by the fragment.
+(define (cbc-seal key mac-key mac-alg a frag)
+  (define mac (hmac mac-alg mac-key (bytes-append a frag)))
+  (define iv (random-bytes 16))
+  (define unpadded (bytes-append frag mac))
+  (define padlen (- 15 (modulo (bytes-length unpadded) 16)))     ; 0..15 -> total multiple of 16
+  (define padded (bytes-append unpadded (make-bytes (add1 padlen) padlen)))
+  (define out (make-bytes (bytes-length padded)))
+  (rktcrypto_aes_cbc_encrypt key (bytes-length key) iv padded out (bytes-length padded))
+  (bytes-append iv out))
+
+;; -> fragment, or #f when padding or MAC is wrong. Padding and MAC are
+;; both checked on every record, and a MAC is always computed, so a bad
+;; padding and a bad MAC take about the same time (the usual mitigation
+;; shape for Lucky 13; this is not a constant-time implementation).
+(define (cbc-open key mac-key mac-alg seq type body)
+  (define mac-len (digest-size mac-alg))
+  (define n (bytes-length body))
+  (and (>= n (+ 16 16)) (zero? (modulo n 16))
+       (let ()
+         (define iv (subbytes body 0 16))
+         (define ct (subbytes body 16))
+         (define pt (make-bytes (bytes-length ct)))
+         (rktcrypto_aes_cbc_decrypt key (bytes-length key) iv ct pt (bytes-length ct))
+         (define ptlen (bytes-length pt))
+         (define padlen (bytes-ref pt (sub1 ptlen)))
+         (define len-ok? (<= (+ padlen 1 mac-len) ptlen))
+         (define pad-ok?
+           (for/fold ([ok len-ok?]) ([i (in-range (if len-ok? (- ptlen padlen 1) (sub1 ptlen)) ptlen)])
+             (and (= (bytes-ref pt i) padlen) ok)))
+         (define frag-len (if len-ok? (- ptlen padlen 1 mac-len) (max 0 (- ptlen mac-len))))
+         (define frag (subbytes pt 0 frag-len))
+         (define got-mac (subbytes pt frag-len (+ frag-len mac-len)))
+         (define exp-mac (hmac mac-alg mac-key (bytes-append (aad seq type frag-len) frag)))
+         (define mac-ok? (ct-equal? got-mac exp-mac))
+         (and pad-ok? mac-ok? frag))))
 
 ;; =====================================================================
 ;; Client: continue after ServerHello chose TLS 1.2
@@ -187,9 +294,8 @@
   (cond
    [resuming? (tls12-client-resume rl-in rl-out raw-transcript sh client-random ticket12-box)]
    [else
-  (define-values (sig-type aead key-len prf-alg) (suite12 suite))
-  (unless aead (raise (tls-error "server chose unsupported 1.2 suite")))
-  (define chacha? (= aead AEAD-CHACHA20-POLY1305))
+  (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
+  (unless kx (raise (tls-error "server chose unsupported 1.2 suite")))
   (define tr (box raw-transcript))
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
 
@@ -210,18 +316,19 @@
   (when (null? (unbox peer-ders)) (raise (tls-error "server sent no certificate")))
   (define leaf (parse-certificate (car (unbox peer-ders))))
 
-  ;; parse ServerKeyExchange: ECParams + pubkey + sig
-  (define-values (group server-pub ske-sig-scheme ske-sig) (parse-ske (unbox ske)))
-  ;; verify SKE signature over client_random||server_random||ECParams
-  (define signed (bytes-append client-random server-random (ske-params (unbox ske))))
+  ;; parse ServerKeyExchange: ECParams or ServerDHParams, then the signature
+  ;; over client_random || server_random || params
+  (unless (unbox ske) (raise (tls-alert 10 "missing ServerKeyExchange")))
+  (define-values (group server-pub params ske-sig-scheme ske-sig) (parse-ske kx (unbox ske)))
+  (define signed (bytes-append client-random server-random params))
   (unless (verify-signature-over ske-sig-scheme (certificate-pub leaf) signed ske-sig)
     (raise (tls-alert 51 "ServerKeyExchange signature invalid")))
   ;; chain validation / hostname check per the context's switches (independent)
   (define verified? (peer-verification-result (unbox peer-ders) anchors host verify? verify-hostname?))
 
-  ;; our ECDHE key + premaster secret
+  ;; our ephemeral key + premaster secret
   (define-values (our-priv our-pub) (gen-kx group))
-  (define pms (ecdhe group our-priv server-pub))
+  (define pms (kx-secret group our-priv server-pub))
 
   ;; A4: if the server asked for a client cert and we have one, send Certificate
   ;; before ClientKeyExchange (it precedes CKE in the flight and the transcript).
@@ -236,7 +343,7 @@
 
   ;; ClientKeyExchange (must be in the transcript before the extended-master-
   ;; secret session hash and the Finished hash are taken)
-  (define cke-body (vec 1 our-pub))
+  (define cke-body (if (eq? kx 'dhe) (vec 2 our-pub) (vec 1 our-pub)))   ; dh_Yc<2> / ECPoint<1>
   (define cke (bytes-append (u8 16) (u24 (bytes-length cke-body)) cke-body))
   (tr+ cke)
 
@@ -254,15 +361,6 @@
       (define (hx bs) (apply string-append (for/list ([b (in-bytes bs)])
                         (let ([s (number->string b 16)]) (if (= 1 (string-length s)) (string-append "0" s) s)))))
       (kl (string-append "CLIENT_RANDOM " (hx client-random) " " (hx master)))))
-  ;; key block
-  (define fixed-iv-len (if chacha? 12 4))
-  (define kb (prf prf-alg master #"key expansion"
-                  (bytes-append server-random client-random)
-                  (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define ckey (subbytes kb 0 key-len))
-  (define skey (subbytes kb key-len (* 2 key-len)))
-  (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
-  (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
 
   ;; A4: CertificateVerify signs the handshake so far (CH..Certificate..CKE).
   (define ccv
@@ -279,7 +377,7 @@
   (when ccv (write-plaintext rl-out 22 ccv))
   (write-plaintext rl-out 20 (bytes 1))         ; ChangeCipherSpec
 
-  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #t))
+  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #t))
 
   ;; client Finished: PRF(master,"client finished",Hash(handshake))[0:12]
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
@@ -322,8 +420,7 @@
   (define server-random (subbytes sh 6 38))
   (define sid-len (bytes-ref sh 38))
   (define suite (let ([p (+ 39 sid-len)]) (+ (* 256 (bytes-ref sh p)) (bytes-ref sh (add1 p)))))
-  (define-values (sig-type aead key-len prf-alg) (suite12 suite))
-  (define chacha? (= aead AEAD-CHACHA20-POLY1305))
+  (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define rec (unbox ticket12-box))            ; #(ticket master suite ems? peer-ders verified?)
   (define master (vector-ref rec 1))
   (define ems? (vector-ref rec 3))
@@ -331,14 +428,7 @@
   (define verified? (vector-ref rec 5))
   (define tr (box raw-transcript))             ; CH1 || SH
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
-  (define fixed-iv-len (if chacha? 12 4))
-  (define kb (prf prf-alg master #"key expansion" (bytes-append server-random client-random)
-                  (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define ckey (subbytes kb 0 key-len))
-  (define skey (subbytes kb key-len (* 2 key-len)))
-  (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
-  (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #t))
+  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #t))
   ;; server flight: optional NewSessionTicket (plaintext) then ChangeCipherSpec
   (let loop ()
     (define hdr (read-exact rl-in 5))
@@ -373,9 +463,8 @@
 (define (tls12-accept rl-in rl-out hs ch client-random suite opts)
   (define cert-ders (hash-ref opts 'cert-ders))
   (define key (hash-ref opts 'key))
-  (define-values (sig-type aead key-len prf-alg) (suite12 suite))
-  (unless aead (raise (tls-error "unsupported 1.2 suite (server)")))
-  (define chacha? (= aead AEAD-CHACHA20-POLY1305))
+  (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
+  (unless kx (raise (tls-error "unsupported 1.2 suite (server)")))
   (define ch-exts (client-hello-exts ch))
   (define ems? (assoc #x0017 ch-exts))          ; extended_master_secret ext type = 0x0017
   ;; A2 (1.2) SessionTicket (RFC 5077): a store maps ticket bytes -> a session
@@ -416,14 +505,19 @@
   (define cert-msg (let ([b (vec 3 cert-list)]) (bytes-append (u8 11) (u24 (bytes-length b)) b)))
   (tr+ cert-msg) (write-plaintext rl-out 22 cert-msg)
 
-  ;; ServerKeyExchange: choose group from client's supported_groups
-  (define group (choose-group ch-exts))
+  ;; ServerKeyExchange: ECDHE with a group from the client's supported_groups,
+  ;; or DHE over ffdhe2048 (RFC 7919; what libssl's automatic DH picks for a
+  ;; 2048-bit certificate key)
+  (define group (if (eq? kx 'dhe) FFDHE2048 (choose-group ch-exts)))
   (define-values (our-priv our-pub) (gen-kx group))
-  (define ec-params (bytes-append (u8 3) (u16 group) (vec 1 our-pub)))  ; named_curve
+  (define kx-params
+    (if (eq? kx 'dhe)
+        (bytes-append (vec 2 (ffdhe-prime group)) (vec 2 (bytes 2)) (vec 2 our-pub))   ; ServerDHParams
+        (bytes-append (u8 3) (u16 group) (vec 1 our-pub))))                           ; ECParams: named_curve
   (define scheme (if (eq? sig-type 'ecdsa) #x0403 #x0804))
-  (define signed (bytes-append client-random server-random ec-params))
+  (define signed (bytes-append client-random server-random kx-params))
   (define sig (sign-12 key scheme signed))
-  (define ske-body (bytes-append ec-params (u16 scheme) (vec 2 sig)))
+  (define ske-body (bytes-append kx-params (u16 scheme) (vec 2 sig)))
   (define ske (bytes-append (u8 12) (u24 (bytes-length ske-body)) ske-body))
   (tr+ ske) (write-plaintext rl-out 22 ske)
 
@@ -459,8 +553,11 @@
     (set-box! cv-scheme (be->int cvmsg 4 6))
     (set-box! cv-sig (subbytes cvmsg 8 (+ 8 (be->int cvmsg 6 8))))
     (tr+ cvmsg))
-  (define client-pub (subbytes (unbox cke) 5 (+ 5 (bytes-ref (unbox cke) 4))))
-  (define pms (ecdhe group our-priv client-pub))
+  (define client-pub
+    (if (eq? kx 'dhe)
+        (subbytes (unbox cke) 6 (+ 6 (be->int (unbox cke) 4 6)))          ; dh_Yc<2>
+        (subbytes (unbox cke) 5 (+ 5 (bytes-ref (unbox cke) 4)))))         ; ECPoint<1>
+  (define pms (kx-secret group our-priv client-pub))
   (define master
     (if ems?
         (prf prf-alg pms #"extended master secret" ems-session-hash 48)
@@ -486,14 +583,7 @@
       [(hash-ref opts 'require-client-cert #f)
        (fatal-plain! 40 "client certificate required")]           ; handshake_failure
       [else #f]))
-  (define fixed-iv-len (if chacha? 12 4))
-  (define kb (prf prf-alg master #"key expansion" (bytes-append server-random client-random)
-                  (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define ckey (subbytes kb 0 key-len))
-  (define skey (subbytes kb key-len (* 2 key-len)))
-  (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
-  (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #f))
+  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #f))
 
   ;; read client CCS + Finished
   (read-until-ccs rl-in)
@@ -525,8 +615,7 @@
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
 ;; recovered master secret and the new randoms (no Certificate/ServerKeyExchange).
 (define (tls12-server-resume rl-in rl-out hs ch client-random suite master)
-  (define-values (sig-type aead key-len prf-alg) (suite12 suite))
-  (define chacha? (= aead AEAD-CHACHA20-POLY1305))
+  (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define tr (box ch))
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
   (define server-random (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r))
@@ -535,14 +624,7 @@
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 sid) (u16 suite) (u8 0) (vec 2 sh-exts)))
   (define sh (bytes-append (u8 2) (u24 (bytes-length sh-body)) sh-body))
   (tr+ sh) (write-plaintext rl-out 22 sh)
-  (define fixed-iv-len (if chacha? 12 4))
-  (define kb (prf prf-alg master #"key expansion" (bytes-append server-random client-random)
-                  (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define ckey (subbytes kb 0 key-len))
-  (define skey (subbytes kb key-len (* 2 key-len)))
-  (define cfixed (subbytes kb (* 2 key-len) (+ (* 2 key-len) fixed-iv-len)))
-  (define sfixed (subbytes kb (+ (* 2 key-len) fixed-iv-len) (+ (* 2 key-len) (* 2 fixed-iv-len))))
-  (define r (make-r12 rl-in rl-out aead ckey cfixed skey sfixed chacha? #f))
+  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #f))
   (write-plaintext rl-out 20 (bytes 1))                       ; server ChangeCipherSpec
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (tr+ (bytes-append (u8 20) (u24 12) sfin-vd))               ; server Finished in the transcript
@@ -592,22 +674,33 @@
         (let ([clen (+ (* 65536 (bytes-ref msg pos)) (* 256 (bytes-ref msg (+ pos 1))) (bytes-ref msg (+ pos 2)))])
           (loop (+ pos 3 clen) (cons (subbytes msg (+ pos 3) (+ pos 3 clen)) acc))))))
 
-;; ServerKeyExchange body starts at msg[4]: ECParams(curve_type=3, named_curve,
-;; point vec1), then SignatureAndHashAlgorithm(2) + signature vec2.
-(define (ske-params msg)
-  ;; ECParams = curve_type(1) named_curve(2) public(vec1); msg[4]=3,
-  ;; [5..6]=curve, [7]=point len, [8..]=point.
-  (define pt-len (bytes-ref msg 7))
-  (subbytes msg 4 (+ 8 pt-len)))
-(define (parse-ske msg)
-  (define group (+ (* 256 (bytes-ref msg 5)) (bytes-ref msg 6)))
-  (define pt-len (bytes-ref msg 7))
-  (define pub (subbytes msg 8 (+ 8 pt-len)))
-  (define sig-pos (+ 8 pt-len))
-  (define scheme (+ (* 256 (bytes-ref msg sig-pos)) (bytes-ref msg (add1 sig-pos))))
-  (define sig-len (+ (* 256 (bytes-ref msg (+ sig-pos 2))) (bytes-ref msg (+ sig-pos 3))))
-  (define sig (subbytes msg (+ sig-pos 4) (+ sig-pos 4 sig-len)))
-  (values group pub scheme sig))
+;; ServerKeyExchange body starts at msg[4]: the key-exchange parameters --
+;; ECParams(curve_type=3, named_curve(2), point<1>) or ServerDHParams(p<2>,
+;; g<2>, Ys<2>) -- then SignatureAndHashAlgorithm(2) + signature<2>.
+;; -> (values group peer-public params-bytes scheme signature)
+(define (parse-ske kx msg)
+  (define-values (group pub end)
+    (case kx
+      [(dhe)
+       (define plen (be->int msg 4 6))
+       (define p (subbytes msg 6 (+ 6 plen)))
+       (define gpos (+ 6 plen))
+       (define glen (be->int msg gpos (+ gpos 2)))
+       (define g (subbytes msg (+ gpos 2) (+ gpos 2 glen)))
+       (define ypos (+ gpos 2 glen))
+       (define ylen (be->int msg ypos (+ ypos 2)))
+       (define ys (subbytes msg (+ ypos 2) (+ ypos 2 ylen)))
+       (values (or (ffdhe-group-of p g)
+                   (raise (tls-alert 71 "server DH parameters are not an RFC 7919 group")))  ; insufficient_security
+               ys (+ ypos 2 ylen))]
+      [else
+       (unless (= 3 (bytes-ref msg 4)) (raise (tls-alert 47 "ServerKeyExchange: not a named curve")))
+       (define pt-len (bytes-ref msg 7))
+       (values (be->int msg 5 7) (subbytes msg 8 (+ 8 pt-len)) (+ 8 pt-len))]))
+  (define scheme (be->int msg end (+ end 2)))
+  (define sig-len (be->int msg (+ end 2) (+ end 4)))
+  (define sig (subbytes msg (+ end 4) (+ end 4 sig-len)))
+  (values group pub (subbytes msg 4 end) scheme sig))
 
 (define (sh-has-ems? sh pos)
   ;; pos points at cipher_suite; after suite(2)+compression(1) come extensions
@@ -646,8 +739,56 @@
                       (if (memv g (list GROUP-X25519 GROUP-P256 GROUP-P384)) g (loop (+ p 2))))))))
       GROUP-X25519))
 
+;; ---- finite-field DHE over the RFC 7919 named groups ----
+;; Group ids are the prime sizes in bits (RKTCRYPTO_FFDHE*); the prime
+;; itself is what RFC 7919 appendix A defines, p = 2^b - 2^(b-64) +
+;; (floor(2^(b-130) e) + X) * 2^64 - 1, computed once from that formula
+;; (the C side holds the same constants and does the arithmetic). A server's
+;; parameters are accepted only when they are exactly one of these groups:
+;; custom or small primes are refused rather than checked.
+(define FFDHE2048 2048)
+(define (floor-2^n*e n)
+  ;; floor(2^n e), e = sum 1/k!, summed exactly until the tail is below 2^-80;
+  ;; the fractional part is then checked to be well away from an integer.
+  (let loop ([k 0] [term (expt 2 n)] [acc 0])
+    (define acc2 (+ acc term))
+    (define next (/ term (add1 k)))
+    (if (< next (expt 2 -80))
+        (let* ([f (floor acc2)] [frac (- acc2 f)])
+          (unless (< (expt 2 -70) frac (- 1 (expt 2 -70))) (error 'ffdhe "ambiguous floor"))
+          f)
+        (loop (add1 k) next acc2))))
+(define ffdhe-primes (make-hasheqv))
+(define (ffdhe-prime bits)
+  (hash-ref! ffdhe-primes bits
+             (lambda ()
+               (define X (case bits [(2048) 560316] [(3072) 2625351] [(4096) 5736041]))
+               (define p (+ (- (expt 2 bits) (expt 2 (- bits 64)))
+                            (* (+ (floor-2^n*e (- bits 130)) X) (expt 2 64))
+                            -1))
+               (define out (make-bytes (quotient bits 8)))
+               (let loop ([i (sub1 (bytes-length out))] [n p])
+                 (when (>= i 0) (bytes-set! out i (bitwise-and n 255)) (loop (sub1 i) (arithmetic-shift n -8))))
+               out)))
+(define (strip-leading-zeros bs)
+  (let loop ([i 0]) (if (and (< i (sub1 (bytes-length bs))) (zero? (bytes-ref bs i))) (loop (add1 i)) (subbytes bs i))))
+;; p, g as sent by the server -> group id, or #f
+(define (ffdhe-group-of p g)
+  (define p* (strip-leading-zeros p))
+  (define bits (* 8 (bytes-length p*)))
+  (and (memv bits '(2048 3072 4096))
+       (equal? (strip-leading-zeros g) (bytes 2))
+       (equal? p* (ffdhe-prime bits))
+       bits))
+
 (define (gen-kx group)
   (case group
+    [(2048 3072 4096)
+     (define priv (make-bytes 64))
+     (define pub (make-bytes (quotient group 8)))
+     (define-values (ok privlen) (rktcrypto_ffdhe_keygen group priv pub))
+     (unless (eqv? ok 1) (raise (tls-error "ffdhe keygen failed")))
+     (values (subbytes priv 0 privlen) pub)]
     [(#x001d) (let ([priv (random-bytes 32)] [pub (make-bytes 32)])
                 (rktcrypto_x25519 pub priv (bytes-append (bytes 9) (make-bytes 31 0)))
                 (values priv pub))]
@@ -656,8 +797,15 @@
     [(#x0018) (let ([priv (random-bytes 48)] [pub (make-bytes 97)])
                 (rktcrypto_p384_pubkey pub priv) (values priv pub))]))
 
-(define (ecdhe group priv peer)
+;; premaster secret from our private key and the peer's public value
+(define (kx-secret group priv peer)
   (case group
+    [(2048 3072 4096)
+     (define out (make-bytes (quotient group 8)))
+     (unless (eqv? 1 (rktcrypto_ffdhe_derive group priv (bytes-length priv) peer (bytes-length peer) out))
+       (raise (tls-alert 47 "invalid DH public value")))
+     ;; RFC 5246 8.1.2: leading zero bytes of Z are stripped
+     (strip-leading-zeros out)]
     [(#x001d) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519"))) o)]
     [(#x0017) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_p256_ecdh o priv peer)) (raise (tls-error "p256"))) o)]
     [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)]))

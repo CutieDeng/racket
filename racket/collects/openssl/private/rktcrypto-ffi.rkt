@@ -47,6 +47,7 @@
 (define SHA256 2)
 (define SHA384 3)
 (define SHA512 4)
+(define SHA1 14)     ; legacy; only the HMAC of the TLS 1.2 *-SHA cipher suites
 
 ;; ---- AEAD ids ----
 (define AEAD-CHACHA20-POLY1305 1)
@@ -114,6 +115,11 @@
 
 ;; ---- key exchange ----
 (define-rkt rktcrypto_x25519 (_fun _bytes _bytes _bytes -> _int))
+;; finite-field DH over the RFC 7919 groups (group id = prime bits)
+(define-rkt rktcrypto_ffdhe_keygen
+  (_fun _int _bytes (privlen : (_ptr o _intptr)) _bytes -> (r : _int) -> (values r privlen)))
+(define-rkt rktcrypto_ffdhe_derive
+  (_fun _int _bytes _intptr _bytes _intptr _bytes -> _int))
 (define-rkt rktcrypto_p256_pubkey (_fun _bytes _bytes -> _int))
 (define-rkt rktcrypto_p256_ecdh (_fun _bytes _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_pubkey (_fun _bytes _bytes -> _int))

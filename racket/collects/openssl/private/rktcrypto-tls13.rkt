@@ -21,7 +21,7 @@
 ;; TLS 1.2 lives in a sibling module that requires this one; break the cycle
 ;; with a lazy require so the 1.2 continuation loads on first use.
 (lazy-require
- ["rktcrypto-tls12.rkt" (tls12-client-finish tls12-accept tls12-suites)])
+ ["rktcrypto-tls12.rkt" (tls12-client-finish tls12-accept tls12-suites tls12-dhe-suite? tls12-server-can?)])
 
 (provide tls13-connect
          tls13-accept
@@ -73,6 +73,9 @@
 (define GROUP-X25519 #x001d)
 (define GROUP-P256   #x0017)
 (define GROUP-P384   #x0018)
+;; RFC 7919 finite-field groups, advertised for the TLS 1.2 DHE suites only
+;; (no TLS 1.3 key share is offered for them)
+(define FFDHE-GROUPS (list #x0100 #x0101 #x0102))   ; ffdhe2048 ffdhe3072 ffdhe4096
 
 ;; ---- signature scheme ids (for signature_algorithms) ----
 (define sig-schemes
@@ -792,7 +795,8 @@
                        [pub (make-bytes 97)])
                   (rktcrypto_p384_pubkey pub priv)
                   (hash-set! privs group priv)
-                  (bytes-append (u16 group) (vec 2 pub)))]))
+                  (bytes-append (u16 group) (vec 2 pub)))]
+      [else (raise (tls-alert 47 (format "server requested a key share for unsupported group ~a" group)))]))
 
   (define session-id (random-bytes 32))
 
@@ -818,6 +822,11 @@
         (cons (tls-session-suite psk-sess)
               (remove (tls-session-suite psk-sess) base-suites))
         base-suites))
+  ;; supported_groups: the ECDHE groups we hold key shares for, then (when a
+  ;; 1.2 DHE suite is offered) the RFC 7919 groups, listed last so a 1.3
+  ;; server keeps preferring a group with a key share
+  (define advertised-groups
+    (append groups (if (and offer-12? (ormap tls12-dhe-suite? eff-12)) FFDHE-GROUPS '())))
   (define (build-client-hello key-share-entries [cookie #f])
     (define psk? (and psk-sess (not cookie)))    ; only in the first flight
     (define exts
@@ -825,7 +834,7 @@
        (ext #x002b (vec 1 (cond [only-12? (u16 #x0303)]
                                 [offer-12? (bytes-append (u16 #x0304) (u16 #x0303))]
                                 [else (u16 #x0304)]))) ; supported_versions
-       (ext #x000a (vec 2 (apply bytes-append (map u16 groups))))  ; supported_groups
+       (ext #x000a (vec 2 (apply bytes-append (map u16 advertised-groups))))  ; supported_groups
        (ext #x000b (vec 1 (bytes 0)))                          ; ec_point_formats: uncompressed
        ;; status_request (OCSP stapling): status_type=1(ocsp), empty responder/exts
        (if want-ocsp? (ext #x0005 (bytes 1 0 0 0 0)) #"")
@@ -1186,7 +1195,7 @@
   (cond
     [(not suite13)
      (define s12 (for/or ([s (in-list ch-suites)]
-                          #:when (and (>= s #xC000) (pol-ok? s) (server-can-12? s key))) s))
+                          #:when (and (pol-ok? s) (tls12-server-can? s key))) s))
      (unless s12
        ;; RFC 8446 §4.1.1: send a fatal handshake_failure alert so the peer fails
        ;; cleanly instead of blocking on a silent drop.
@@ -1194,13 +1203,6 @@
        (raise (tls-error "no common cipher suite")))
      (tls12-accept in out hs ch ch-random s12 opts)]
     [else (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite13)]))
-
-(define (server-can-12? s key)
-  ;; ECDHE-RSA suites need an RSA key; ECDHE-ECDSA need a P-256 key.
-  (case s
-    [(#xC02F #xC030 #xCCA8) (eq? (car key) 'rsa)]
-    [(#xC02B #xC02C #xCCA9) (eq? (car key) 'p256)]
-    [else #f]))
 
 (define (tls13-accept/13 in out opts r hs ch ch-suites ch-exts ch-random suite)
   (parameterize ([keylog-proc (hash-ref opts 'keylog #f)] [keylog-cr ch-random])
