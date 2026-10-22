@@ -8,7 +8,9 @@
 ;; (and, with an endless stream, hsr-fill never returns -> hang).
 ;;
 ;; Finite, safe demonstration: feed N 16000-byte plaintext type-23 records, then
-;; one real handshake message, and measure how much `hsr-app` retained.
+;; one real handshake message, and measure how much was retained.
+;; Fixed (S2): the first application_data record before the handshake is
+;; complete is rejected with unexpected_message; expected output is "REJECTED".
 (require openssl/private/rktcrypto-tls13)
 
 (define N 2000)                      ; 2000 * ~16000 = ~32 MB buffered, no cap
@@ -30,8 +32,11 @@
    (close-output-port pout)))
 
 (define before (current-memory-use))
-(define-values (mt msg) (hsr-next hs))
-(printf "hsr-next returned handshake type=~a after buffering ~a bytes of attacker app-data in hsr-app\n"
-        mt (bytes-length (hsr-app hs)))
-(printf "approx memory growth during the wait: ~a MB (no cap enforced)\n"
-        (quotient (- (current-memory-use) before) (* 1024 1024)))
+(with-handlers ([exn:fail? (lambda (e)
+                             (printf "REJECTED at the first app-data record: ~a\n" (exn-message e))
+                             (printf "memory growth: ~a MB\n"
+                                     (quotient (- (current-memory-use) before) (* 1024 1024))))])
+  (define-values (mt msg) (hsr-next hs))
+  (printf "hsr-next returned handshake type=~a after buffering ~a records of attacker app-data\n" mt N)
+  (printf "approx memory growth during the wait: ~a MB (no cap enforced)\n"
+          (quotient (- (current-memory-use) before) (* 1024 1024))))

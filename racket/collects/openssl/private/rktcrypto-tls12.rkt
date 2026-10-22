@@ -139,9 +139,9 @@
   (define len (+ (* 256 (bytes-ref hdr 3)) (bytes-ref hdr 4)))
   (define body (r12-read-exact! r len))
   (cond
-    [(= type 20) (values 20 #f)]                 ; change_cipher_spec (plaintext)
-    [(and (= type 21) (not (r12-cseq-installed? r)))
-     (values 21 body)]
+    ;; this layer exists only once both ChangeCipherSpecs have passed, so
+    ;; every record is protected; an unprotected one is attacker-writable
+    [(= type 20) (raise (tls-alert 10 "unprotected ChangeCipherSpec after keys were installed"))]
     [else
      (define seq (r12-rseq r))
      (define key (if (r12-we-are-client? r) (r12-skey r) (r12-ckey r)))
@@ -157,8 +157,6 @@
      (values type pt)]))
 
 (define (aead-tag aead) (rktcrypto_aead_tag_size aead))
-;; reads are always encrypted once we build r12 post-CCS; CCS handled above
-(define (r12-cseq-installed? r) #t)
 
 ;; =====================================================================
 ;; Client: continue after ServerHello chose TLS 1.2

@@ -94,10 +94,16 @@
             [waead #:mutable] [wkey #:mutable] [wiv #:mutable] [wseq #:mutable]
             lock                  ; held while a thread reads from `in`
             [pending #:mutable]   ; records read while draining during a write: list of (type . payload)
-            [inbuf #:mutable]))   ; partial record accumulated by the non-blocking reader
+            [inbuf #:mutable]     ; partial record accumulated by the non-blocking reader
+            [handshake-done? #:mutable])) ; application keys installed: no plaintext CCS any more
 
 (define (make-rl in out)
-  (rl in out #f #f #f 0 #f #f #f 0 (make-semaphore 1) '() #""))
+  (rl in out #f #f #f 0 #f #f #f 0 (make-semaphore 1) '() #"" #f))
+
+;; Upper bound on records queued by a draining write before it stops
+;; draining (a peer that floods while never reading must not grow our
+;; memory without limit; ~16 MB at the maximum record size).
+(define MAX-PENDING-RECORDS 1024)
 
 ;; Writes all of `bs` to `out` without blocking indefinitely while the
 ;; peer has data for us. A plain blocking write deadlocks when both sides
@@ -229,12 +235,12 @@
 ;; Returns #f at transport EOF.
 (define (rl-drain-one! r)
   (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) #f)])
-    (case (rl-fill-nb! r)
+    (case (if (>= (length (rl-pending r)) MAX-PENDING-RECORDS) 'full (rl-fill-nb! r))
       [(record)
        (define-values (type payload) (rl-read-record/raw r))
        (set-rl-pending! r (append (rl-pending r) (list (cons type payload))))
        #t]
-      [(eof) #f]
+      [(eof full) #f]
       [else #t])))
 
 (define (rl-read-record/raw r)
@@ -243,11 +249,20 @@
   ;; RFC 8446 §5.2: TLSCiphertext.length MUST NOT exceed 2^14 + 256.
   (when (> len 16640) (raise (tls-alert 22 "record_overflow")))
   (define body (rl-read-exact! r len))
+  (define type (bytes-ref hdr 0))
   (cond
-    ;; Only application_data (23) records are AEAD-protected in TLS 1.3.
-    ;; ChangeCipherSpec (20) and any plaintext alert (21) pass through even
-    ;; after keys are installed (middlebox-compat CCS is sent unencrypted).
-    [(and (rl-rkey r) (= (bytes-ref hdr 0) 23))
+    ;; RFC 8446 §5: once a read key is installed, everything the peer sends
+    ;; is protected (outer type application_data, 23). The only plaintext
+    ;; record still allowed is the middlebox-compatibility ChangeCipherSpec,
+    ;; and only until the handshake completes. Anything else unprotected --
+    ;; an alert, a handshake message, a KeyUpdate -- is attacker-writable
+    ;; and is rejected (an injected plaintext close_notify would otherwise
+    ;; truncate the stream silently).
+    [(and (rl-rkey r) (not (= type 23)))
+     (cond
+       [(and (= type 20) (not (rl-handshake-done? r)) (equal? body #"\1")) (values 20 body)]
+       [else (raise (tls-alert 10 (format "unprotected record of type ~a after keys were installed" type)))])]
+    [(rl-rkey r)
      (define rec (bytes-append hdr body))
      (define inner (tls13-open (rl-raead r) (rl-rkey r) (rl-riv r) (rl-rseq r) rec))
      (unless inner (raise (tls-alert 20 "bad_record_mac")))
@@ -259,7 +274,9 @@
              ;; RFC 8446 §5.2: decrypted TLSInnerPlaintext.content is <= 2^14.
              [(> i 16384) (raise (tls-alert 22 "record_overflow"))]
              [else (values (bytes-ref inner i) (subbytes inner 0 i))]))]
-    [else (values (bytes-ref hdr 0) body)]))
+    [else (values type body)]))
+;; After the application read key is installed: plaintext CCS no longer allowed.
+(define (rl-finish-handshake! r) (set-rl-handshake-done?! r #t))
 
 ;; Writes a record of `type` with `payload`, encrypting when a write key is
 ;; installed. Splits >16KiB payloads.
@@ -333,8 +350,11 @@
 ;; =====================================================================
 ;; Buffers handshake bytes; hands back complete messages. Also transparently
 ;; skips ChangeCipherSpec records and surfaces alerts.
-(struct hsr (rl [buf #:mutable] [app #:mutable]))
-(define (make-hsr r) (hsr r #"" #""))
+(struct hsr (rl [buf #:mutable]))
+(define (make-hsr r) (hsr r #""))
+;; Largest handshake message accepted (the 24-bit length field allows 16 MB;
+;; libssl caps certificate chains at 100 KB). Bounds the reassembly buffer.
+(define MAX-HANDSHAKE-MESSAGE (* 128 1024))
 
 (define (hsr-fill r)
   (let loop ()
@@ -345,10 +365,15 @@
        (if (and (>= (bytes-length payload) 2) (= 1 (bytes-ref payload 0)))
            (loop)                                ; warning alert (e.g. close_notify handled elsewhere)
            (raise (peer-alert payload)))]
-      [(= type 22) (set-hsr-buf! r (bytes-append (hsr-buf r) payload))]
-      [(= type 23) (set-hsr-app! r (bytes-append (hsr-app r) payload))
-                   (loop)]                       ; stray early app data: stash
-      [else (raise (tls-error (format "unexpected record type ~a" type)))])))
+      [(= type 22)
+       (when (> (+ (bytes-length (hsr-buf r)) (bytes-length payload)) (+ MAX-HANDSHAKE-MESSAGE 4))
+         (raise (tls-alert 50 "handshake message too large")))   ; decode_error
+       (set-hsr-buf! r (bytes-append (hsr-buf r) payload))]
+      ;; application data before the handshake is complete: nothing of ours
+      ;; expects it (no early data is offered or accepted), and buffering it
+      ;; would let the peer grow our memory without limit
+      [(= type 23) (raise (tls-alert 10 "application data before the handshake completed"))]
+      [else (raise (tls-alert 10 (format "unexpected record type ~a" type)))])))
 
 ;; Returns (values msg-type full-message-bytes) where full-message includes
 ;; the 4-byte handshake header (needed verbatim for the transcript).
@@ -359,6 +384,7 @@
       [(< (bytes-length buf) 4) (hsr-fill r) (loop)]
       [else
        (define mlen (be->int buf 1 4))
+       (when (> mlen MAX-HANDSHAKE-MESSAGE) (raise (tls-alert 50 "handshake message too large")))
        (cond
          [(< (bytes-length buf) (+ 4 mlen)) (hsr-fill r) (loop)]
          [else
@@ -717,7 +743,7 @@
 (provide tls13-make-conn make-tls-conn
          (struct-out rl) make-rl rl-read-record rl-write-record
          rl-set-read-key! rl-set-write-key!
-         make-hsr hsr-next hsr-app
+         make-hsr hsr-next rl-finish-handshake!
          (struct-out transcript) make-transcript tr-add! tr-hash tr-set-alg!
          u8 u16 u24 u32 vec be->int ext parse-extensions
          tls-error tls-alert exn:tls-alert
@@ -1063,6 +1089,7 @@
   (define-values (sapk sapiv) (traffic->keys k (ks-s-ap k)))
   (define-values (capk capiv) (traffic->keys k (ks-c-ap k)))
   (rl-set-read-key! r aead sapk sapiv)
+  (rl-finish-handshake! r)
   (rl-set-write-key! r aead capk capiv)
   (tls13-make-conn r (unbox selected-alpn) (unbox peer-certs)
                    (hash 'alg alg 'exporter-master exporter-master
@@ -1366,6 +1393,7 @@
 
   ;; install the client's application read key
   (rl-set-read-key! r aead capk capiv)
+  (rl-finish-handshake! r)
   ;; A2: issue a NewSessionTicket (RFC 8446 §4.6.1) when a ticket store is
   ;; provided, so the client can resume. resumption_master binds the transcript
   ;; through the client Finished (added above); PSK is derived per-ticket.

@@ -6,6 +6,10 @@
 ;; handshake keys are in place, a peer must not emit plaintext records other
 ;; than the middlebox-compat CCS; alerts and handshake messages are protected.
 ;;
+;; Fixed (S1): after a read key is installed, any unprotected record other
+;; than a middlebox-compat ChangeCipherSpec during the handshake is rejected
+;; with unexpected_message; expected output is "record 2 REJECTED".
+;;
 ;; We drive the library's own exported record layer (rktcrypto-tls13.rkt). We
 ;; install a read key, then feed two records through a pipe:
 ;;   (a) a genuine encrypted application_data record  -> decrypts fine
