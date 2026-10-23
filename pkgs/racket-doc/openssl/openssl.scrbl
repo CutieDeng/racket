@@ -811,6 +811,22 @@ using the original server context.
 
 }
 
+@defproc[(ssl-load-pkcs12! [context-or-listener (or/c ssl-client-context? ssl-server-context?
+                                                      ssl-listener?)]
+                          [path-or-data (or/c path-string? (list/c 'data bytes?))]
+                          [#:password password (or/c string? bytes? #f) #f])
+         void?]{
+
+Loads an identity -- the private key and the certificate chain -- from a
+PKCS#12 bundle (a @filepath{.p12} or @filepath{.pfx} file, or its bytes
+as @racket[(list 'data bytes)]) into the given context or listener,
+decrypting it with @racket[password] when it is protected. This is a
+convenient form of @racket[ssl-load-private-key!] plus
+@racket[ssl-load-certificate-chain!], typically used for a client
+identity.
+
+@history[#:added "9.3.9"]}
+
 @defproc[(ssl-set-server-alpn! [context ssl-server-context?]
                                [alpn-protocols (listof bytes?)]
                                [allow-no-match? boolean? #t])
@@ -953,6 +969,28 @@ Hostname verification does not imply certificate verification. To
 verify the certificate itself, also call @racket[ssl-set-verify!].
 }
 
+@defproc[(ssl-set-revocation-check! [ctx ssl-client-context?] [on? any/c])
+         void?]{
+
+Asks servers for a stapled OCSP response (the @tt{status_request}
+extension) on connections made with @racket[ctx] when @racket[on?] is
+true, and rejects a connection whose stapled response says the
+server's certificate is revoked. A missing or unparsable response does
+not fail the connection; only a response that verifies and reports
+revocation does. No other revocation mechanism (CRL, live OCSP query)
+is used.
+
+@history[#:added "9.3.9"]}
+
+@defproc[(ssl-set-ocsp-staple! [ctx ssl-server-context?] [response bytes?])
+         void?]{
+
+Makes servers using @racket[ctx] send @racket[response], a DER-encoded
+OCSP response for the server's certificate, to clients that ask for
+one (see @racket[ssl-set-revocation-check!]).
+
+@history[#:added "9.3.9"]}
+
 @defproc[(ssl-peer-certificate-hostnames [p ssl-port?])
          (listof string?)]{
 
@@ -973,6 +1011,15 @@ Returns @racket[#t] if the peer certificate of @racket[p] is valid for
 @racket[hostname] according to
 @hyperlink["http://www.ietf.org/rfc/rfc2818.txt"]{RFC 2818}.
 }
+
+@defproc[(ssl-key-update! [p ssl-port?]) void?]{
+
+On a TLS 1.3 connection, rotates the traffic keys of the connection
+represented by @racket[p] in both directions: a @tt{KeyUpdate} with
+@tt{update_requested} is sent, so the peer updates its keys too. On a
+TLS 1.2 connection this has no effect.
+
+@history[#:added "9.3.9"]}
 
 @defproc[(ssl-peer-subject-name [p ssl-port?]) (or/c bytes? #f)]{
 
