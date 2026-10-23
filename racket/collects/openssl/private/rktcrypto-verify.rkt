@@ -37,10 +37,12 @@
     [(#x0804) (rsa-verify pub 1 SHA256 content sig)]
     [(#x0805) (rsa-verify pub 1 SHA384 content sig)]
     [(#x0806) (rsa-verify pub 1 SHA512 content sig)]
-    ;; ECDSA (message hashed internally by the C verifier)
-    [(#x0403) (ec-verify pub 'p256 content sig SHA256)]
-    [(#x0503) (ec-verify pub 'p384 content sig SHA384)]
-    [(#x0603) (ec-verify pub 'p521 content sig SHA512)]
+    ;; ECDSA: the scheme names the hash; the curve is the key's (in TLS 1.2
+    ;; any curve may be used with any hash; TLS 1.3 pins the pairing, which
+    ;; verify-certificate-verify enforces)
+    [(#x0403) (ec-verify pub content sig SHA256)]
+    [(#x0503) (ec-verify pub content sig SHA384)]
+    [(#x0603) (ec-verify pub content sig SHA512)]
     ;; EdDSA
     [(#x0807) (ed25519-verify* pub content sig)]
     [else (verify-error "unsupported signature scheme 0x~x" scheme)]))
@@ -100,16 +102,18 @@
                     (if (< (bytes-length v) fb) (bytes-append (make-bytes (- fb (bytes-length v)) 0) v) v)))
   (bytes-append (fix r) (fix s)))
 
-(define (ec-verify pub curve content sig alg)
+(define (ec-verify pub content sig alg)
   (unless (eq? (pubkey-type pub) 'ec) (verify-error "ECDSA scheme with non-EC key"))
   (define point (pubkey-ec-point pub))
-  (define fb (case curve [(p256) 32] [(p384) 48] [(p521) 66]))
+  (define curve (pubkey-ec-curve pub))
+  (define fb (case curve [(p256) 32] [(p384) 48] [(p521) 66]
+               [else (verify-error "ECDSA key on an unsupported curve")]))
   (define raw (ecdsa-der->raw sig fb))
-  ;; use the digest that matches the scheme, independent of key curve
+  (define h (digest alg content))
   (case curve
-    [(p256) (eqv? 1 (rktcrypto_p256_ecdsa_verify raw content (bytes-length content) point))]
-    [(p384) (eqv? 1 (rktcrypto_p384_ecdsa_verify raw content (bytes-length content) point))]
-    [(p521) (eqv? 1 (rktcrypto_p521_ecdsa_verify raw content (bytes-length content) point))]))
+    [(p256) (eqv? 1 (rktcrypto_p256_ecdsa_verify_h raw h (bytes-length h) point))]
+    [(p384) (eqv? 1 (rktcrypto_p384_ecdsa_verify_h raw h (bytes-length h) point))]
+    [(p521) (eqv? 1 (rktcrypto_p521_ecdsa_verify_h raw h (bytes-length h) point))]))
 
 (define (ed25519-verify* pub content sig)
   (unless (eq? (pubkey-type pub) 'ed25519) (verify-error "Ed25519 scheme with non-Ed key"))
@@ -136,6 +140,10 @@
                   (bytes 0)
                   transcript-hash))
   (define pub (certificate-pub (parse-certificate (car certs))))
+  ;; RFC 8446 4.2.3: ECDSA schemes are bound to a curve in TLS 1.3
+  (define required-curve (case scheme [(#x0403) 'p256] [(#x0503) 'p384] [(#x0603) 'p521] [else #f]))
+  (when (and required-curve (not (and (eq? (pubkey-type pub) 'ec) (eq? (pubkey-ec-curve pub) required-curve))))
+    (verify-error "CertificateVerify scheme does not match the certificate's curve"))
   (unless (verify-signature-over scheme pub context sig)
     (verify-error "CertificateVerify signature invalid"))
   #t)

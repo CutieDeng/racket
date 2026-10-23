@@ -131,6 +131,8 @@
 (define-rkt rktcrypto_p256_ecdh (_fun _bytes _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_pubkey (_fun _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_ecdh (_fun _bytes _bytes _bytes -> _int))
+(define-rkt rktcrypto_p521_pubkey (_fun _bytes _bytes -> _int))
+(define-rkt rktcrypto_p521_ecdh (_fun _bytes _bytes _bytes -> _int))
 
 ;; ---- signatures ----
 (define-rkt rktcrypto_p256_ecdsa_sign (_fun _bytes _bytes _intptr _bytes -> _int))

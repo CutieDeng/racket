@@ -98,7 +98,8 @@ make_server "server_ultimate_key.pem" "server_ultimate_crt.pem" \
             "DNS.1=theultimate" \
             "ca_key.pem" "cacert.pem"
 
-# A P-256 (ECDSA) server identity for the ECDHE-ECDSA cipher suites
+# A P-256 (ECDSA) server identity for the ECDHE-ECDSA cipher suites, and
+# P-384 / P-521 / Ed25519 identities for the key-type tests
 if [ ! -f "server_ec_key.pem" ] ; then
     openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "server_ec_key.pem"
 fi
@@ -106,6 +107,15 @@ make_server "server_ec_key.pem" "server_ec_crt.pem" \
             "$NAME_PREFIX2/CN=server.example.com/emailAddress=server@example.com" \
             "DNS.1=server.example.com" \
             "ca_key.pem" "cacert.pem"
+[ -f "server_p384_key.pem" ] || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 -out "server_p384_key.pem"
+[ -f "server_p521_key.pem" ] || openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-521 -out "server_p521_key.pem"
+[ -f "server_ed25519_key.pem" ] || openssl genpkey -algorithm ED25519 -out "server_ed25519_key.pem"
+for kt in p384 p521 ed25519 ; do
+    make_server "server_${kt}_key.pem" "server_${kt}_crt.pem" \
+                "$NAME_PREFIX2/CN=server.example.com/emailAddress=server@example.com" \
+                "DNS.1=server.example.com" \
+                "ca_key.pem" "cacert.pem"
+done
 
 CLIENT_ALT_NAMES="
 DNS.1=client.example.com

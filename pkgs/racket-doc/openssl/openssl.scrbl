@@ -684,6 +684,11 @@ the client or server. Like @racket[ssl-load-certificate-chain!], this
 procedure is usually used with server contexts or listeners, seldom
 with client contexts.
 
+Keys may be RSA, EC on P-256, P-384 or P-521, or Ed25519, in PKCS#1,
+SEC1 or PKCS#8 PEM form (PKCS#8 may be PBES2-encrypted, see
+@racket[#:password]); the certificate's key type decides the signature
+scheme offered to peers.
+
 If @racket[path-or-data] is a @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{
 path or string}, the private key is loaded from a file at the given
 path. Otherwise, @racket[path-or-data] must be a list of the form

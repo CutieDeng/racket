@@ -77,7 +77,14 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 | 链校验只查 CA 位/签名/有效期 | `verify-chain`:路径构建(乱序链、多余证书、链含根)、pathLenConstraint、签发者 keyCertSign、EKU(按 server/client 用途,全链)、叶子 keyUsage、nameConstraints(dNSName/rfc822/iPAddress/directoryName/URI)、未知 critical 扩展拒绝 | test-chain-policy 16 项(证书由 generate-policy-certs.sh 生成,OpenSSL `verify` 对同样链给出同样判定) |
 | 主机名不匹配 iPAddress SAN | IP 字面量匹配 iPAddress(上游 `X509_check_host` 不做,本实现超出上游) | test-chain-policy |
 
-仍未对标(设计如此):TLS 1.0/1.1、重协商、RSA 密钥交换、自有身份密钥仅 RSA/P-256(P-384/P-521/Ed25519 私钥不可作身份)。
+### 1.2.1 身份密钥类型扩展(第五轮)
+
+| 项 | 做法 | 验证 |
+|---|---|---|
+| 自有身份密钥 | `pem->private-key` 识别 SEC1/PKCS#8 的 P-256/P-384/P-521(曲线取自参数)与 Ed25519(RFC 8410);`server-sign` 统一签名(RSA PSS/PKCS#1 ×3 摘要、ECDSA 三曲线、Ed25519),TLS 1.2/1.3 服务端与客户端 CertificateVerify 均按对端 signature_algorithms 选方案 | test-key-types 40 项(5 种密钥 × 1.3/1.2 × 服务端身份/客户端身份) |
+| 附带修复 | TLS 1.2 的 ECDSA 方案 id 只定哈希、曲线取自密钥(此前按 1.3 的曲线配对解析,P-384 服务端用 ecdsa+SHA-256 签名时报 "INTEGER exceeds field size");1.3 仍强制配对;ECDSA DER 编码 SEQUENCE 长度超 127 时用长格式(P-521 签名此前为畸形 DER);客户端 supported_groups 增加 P-384/P-521(libssl 要求证书曲线在客户端列表内,否则 TLS 1.2 下 handshake_failure);P-521 ECDHE 密钥交换(C 原语 p521_pubkey/ecdh);1.2 CertificateRequest 的 sigalgs 列表补全 | test-openssl-client 23 项(s_client 对每种密钥 1.3/1.2 验证通过);我方客户端对 OpenSSL s_server 各密钥 1.3/1.2 全通过;LibreSSL s_server 不支持 Ed25519 证书(其自身限制) |
+
+仍未对标(设计如此):TLS 1.0/1.1、重协商、RSA 密钥交换。
 
 ### 1.3 仍存在的差异
 

@@ -17,6 +17,7 @@
 (define-runtime-path server-key "server_key.pem")
 (define-runtime-path server-crt "server_crt.pem")
 (define-runtime-path cacert "cacert.pem")
+(define-runtime-path dir ".")
 
 (define openssl
   (for/first ([p (in-list (list "/opt/homebrew/opt/openssl@3/bin/openssl" "/usr/local/opt/openssl@3/bin/openssl"
@@ -70,6 +71,15 @@
      ;; PSS-only client, TLS 1.2
      (let-values ([(report text) (run-s_client (server-ctx) "-tls1_2" "-sigalgs" "RSA-PSS+SHA384")])
        (check-equal? report (list 'ok "ping" 'tls12) "client offering only rsa_pss_rsae_sha384"))
+     ;; each identity key type as our server, with an OpenSSL client, TLS 1.3 and 1.2
+     (for* ([kt (in-list '("server_ec" "server_p384" "server_p521" "server_ed25519"))]
+            [version (in-list '("-tls1_3" "-tls1_2"))])
+       (define ctx (ssl-make-server-context 'auto))
+       (ssl-load-private-key! ctx (build-path dir (string-append kt "_key.pem")))
+       (ssl-load-certificate-chain! ctx (build-path dir (string-append kt "_crt.pem")))
+       (let-values ([(report text) (run-s_client ctx version "-CAfile" (path->string cacert) "-verify_return_error")])
+         (check-equal? (car report) 'ok (format "~a ~a" kt version))
+         (check-regexp-match #rx"Verify return code: 0" text (format "~a ~a verified by s_client" kt version))))
      ;; suggested CA names in the CertificateRequest, TLS 1.3 and 1.2
      (for ([version (in-list '("-tls1_3" "-tls1_2"))])
        (define ctx (server-ctx))

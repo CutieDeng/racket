@@ -303,10 +303,11 @@
 (provide name->string)
 
 ;; Loads a private key from PEM bytes. Returns (cons type der/scalar):
-;;   'rsa  -> PKCS#1 RSAPrivateKey DER (what rktcrypto_rsa_sign_msg wants)
-;;   'p256 -> 32-byte raw private scalar
-;; Handles "RSA PRIVATE KEY" (PKCS#1), "EC PRIVATE KEY" (SEC1), and
-;; "PRIVATE KEY" (PKCS#8 wrapping either).
+;;   'rsa     -> PKCS#1 RSAPrivateKey DER (what rktcrypto_rsa_sign_msg wants)
+;;   'p256 / 'p384 / 'p521 -> raw private scalar (32 / 48 / 66 bytes)
+;;   'ed25519 -> 32-byte seed
+;; Handles "RSA PRIVATE KEY" (PKCS#1), "EC PRIVATE KEY" (SEC1, curve from
+;; its parameters), and "PRIVATE KEY" (PKCS#8 wrapping any of them).
 (define (pem->private-key pem [password #f])
   (define s (if (bytes? pem) pem (string->bytes/utf-8 pem)))
   (define m (regexp-match #rx#"-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----(.*?)-----END" s))
@@ -318,17 +319,31 @@
      (unless password (error 'pem->private-key "encrypted private key requires a password"))
      (pkcs8->key (decrypt-pkcs8-pbes2 der password))]
     [(regexp-match? #rx#"RSA PRIVATE KEY" label) (cons 'rsa der)]
-    [(regexp-match? #rx#"EC PRIVATE KEY" label) (cons 'p256 (sec1-scalar der))]
+    [(regexp-match? #rx#"EC PRIVATE KEY" label) (sec1->key der #f)]
     [else (pkcs8->key der)]))
 
-;; SEC1 ECPrivateKey ::= SEQUENCE { version INTEGER, privateKey OCTET STRING, ... }
-(define (sec1-scalar der)
+;; SEC1 ECPrivateKey ::= SEQUENCE { version INTEGER, privateKey OCTET STRING,
+;;   parameters [0] EXPLICIT ECParameters OPTIONAL, publicKey [1] OPTIONAL }
+;; curve-hint: the curve from a PKCS#8 AlgorithmIdentifier, or #f (then the
+;; [0] parameters must name it). -> (cons curve scalar), scalar padded to
+;; the field size.
+(define (sec1->key der curve-hint)
   (define kids (der-children (der-read der)))
-  (define oct (cadr kids))
-  (define raw (der-content oct))
-  (if (< (bytes-length raw) 32)
-      (bytes-append (make-bytes (- 32 (bytes-length raw)) 0) raw)
-      raw))
+  (define raw (der-content (cadr kids)))
+  (define params (for/first ([k (in-list (cddr kids))]
+                             #:when (and (der-tag-context? k) (= 0 (der-tag-number k))))
+                   (car (der-children k))))
+  (define curve (or (and params (curve-oid->symbol params)) curve-hint
+                    (error 'pem->private-key "EC private key without a named curve")))
+  (define size (case curve [(p256) 32] [(p384) 48] [(p521) 66]))
+  (cons curve (if (< (bytes-length raw) size)
+                  (bytes-append (make-bytes (- size (bytes-length raw)) 0) raw)
+                  raw)))
+(define (curve-oid->symbol d)
+  (cond [(der-oid=? d oid-p256) 'p256]
+        [(der-oid=? d oid-p384) 'p384]
+        [(der-oid=? d oid-p521) 'p521]
+        [else (error 'pem->private-key "unsupported EC curve")]))
 
 ;; PKCS#8 PrivateKeyInfo ::= SEQUENCE { version, algId SEQ{OID..}, key OCTET STRING }
 (define (pkcs8->key der)
@@ -338,7 +353,11 @@
   (define inner (der-content (caddr kids)))
   (cond
     [(der-oid=? alg-oid oid-rsa-encryption) (cons 'rsa inner)]
-    [(der-oid=? alg-oid oid-ec-pubkey) (cons 'p256 (sec1-scalar inner))]
+    [(der-oid=? alg-oid oid-ec-pubkey)
+     (define params (let ([ks (der-children algid)]) (and (pair? (cdr ks)) (cadr ks))))
+     (sec1->key inner (and params (= #x06 (der-tag params)) (curve-oid->symbol params)))]
+    ;; RFC 8410: the key is an OCTET STRING holding CurvePrivateKey (the 32-byte seed)
+    [(der-oid=? alg-oid oid-ed25519) (cons 'ed25519 (der-content (der-read inner)))]
     [else (error 'pem->private-key "unsupported PKCS#8 key algorithm")]))
 
 ;; ---- Encrypted PKCS#8 (PBES2 = PBKDF2 + AES-CBC), RFC 8018 §6.2 ----

@@ -70,11 +70,14 @@
 ;; Can a server holding `key` ((cons 'rsa der) / (cons 'p256 scalar)) serve suite `s`?
 (define (tls12-server-can? s key)
   (define-values (kx sig cipher mac key-len prf) (suite12 s))
-  (and kx (eq? (car key) (if (eq? sig 'ecdsa) 'p256 'rsa))))
+  (and kx (if (eq? sig 'ecdsa)
+              (and (memq (car key) '(p256 p384 p521 ed25519)) #t)   ; RFC 8422: EdDSA under the ECDSA suites
+              (eq? (car key) 'rsa))))
 
 (define GROUP-X25519 #x001d)
 (define GROUP-P256   #x0017)
 (define GROUP-P384   #x0018)
+(define GROUP-P521   #x0019)
 
 ;; ---- HMAC-based PRF (RFC 5246 sec 5) ----
 (define (p-hash alg secret seed out-len)
@@ -607,7 +610,9 @@
   (define request-client-cert? (hash-ref opts 'request-client-cert #f))
   (when request-client-cert?
     (define creq-body (bytes-append (vec 1 (bytes 64 1))                     ; ecdsa_sign, rsa_sign
-                                    (vec 2 (bytes #x04 #x03 #x08 #x04 #x04 #x01 #x05 #x01 #x06 #x01 #x08 #x05 #x08 #x06)) ; sigalgs
+                                    (vec 2 (bytes #x04 #x03 #x05 #x03 #x06 #x03 #x08 #x07          ; ecdsa p256/p384/p521, ed25519
+                                                  #x08 #x04 #x08 #x05 #x08 #x06                        ; rsa_pss_rsae_*
+                                                  #x04 #x01 #x05 #x01 #x06 #x01))                      ; rsa_pkcs1_*
                                     (vec 2 (certificate-authorities-list (hash-ref opts 'client-ca-names '())))))
     (define creq (bytes-append (u8 13) (u24 (bytes-length creq-body)) creq-body))
     (tr+ creq) (write-plaintext rl-out 22 creq))
@@ -798,10 +803,6 @@
 (define (sh-alpn sh pos)
   (define b (sh-ext sh pos #x0010))
   (and b (>= (bytes-length b) 3) (subbytes b 3 (+ 3 (bytes-ref b 2)))))
-;; signature_algorithms body (vec2 of u16) -> list of scheme ids
-(define (parse-sigalg-list body)
-  (define n (be->int body 0 2))
-  (for/list ([i (in-range 2 (+ 2 n) 2)]) (be->int body i (+ i 2))))
 ;; CertificateRequest -> its supported_signature_algorithms
 (define (certificate-request-sigalgs msg)
   (define types-len (bytes-ref msg 4))
@@ -818,9 +819,10 @@
   (define prefs
     (case (car key)
       [(rsa) '(#x0804 #x0401 #x0805 #x0501 #x0806 #x0601)]   ; rsa_pss_rsae_*, rsa_pkcs1_*
-      [else '(#x0403)]))                                      ; ecdsa_secp256r1_sha256
+      [(p256) '(#x0403)] [(p384) '(#x0503)] [(p521) '(#x0603)] [(ed25519) '(#x0807)]
+      [else (raise (tls-error "unsupported private key type"))]))
   (or (and (list? offered) (for/first ([s (in-list prefs)] #:when (memv s offered)) s))
-      (and (not (list? offered)) (if (eq? (car key) 'rsa) #x0401 #x0403))
+      (and (not (list? offered)) (if (eq? (car key) 'rsa) #x0401 (car prefs)))
       (raise (tls-alert 40 "no common signature algorithm"))))
 
 (define (sh-has-ext? sh pos want)
@@ -857,7 +859,7 @@
              (let loop ([p 2])
                (and (< p (+ 2 len))
                     (let ([g (+ (* 256 (bytes-ref body p)) (bytes-ref body (add1 p)))])
-                      (if (memv g (list GROUP-X25519 GROUP-P256 GROUP-P384)) g (loop (+ p 2))))))))
+                      (if (memv g (list GROUP-X25519 GROUP-P256 GROUP-P384 GROUP-P521)) g (loop (+ p 2))))))))
       GROUP-X25519))
 
 ;; ---- finite-field DHE over the RFC 7919 named groups ----
@@ -944,7 +946,10 @@
        [(#x0017) (let loop () (let ([priv (random-bytes 32)] [pub (make-bytes 65)])
                                 (if (eqv? 1 (rktcrypto_p256_pubkey pub priv)) (values priv pub) (loop))))]
        [(#x0018) (let ([priv (random-bytes 48)] [pub (make-bytes 97)])
-                   (rktcrypto_p384_pubkey pub priv) (values priv pub))])]))
+                   (rktcrypto_p384_pubkey pub priv) (values priv pub))]
+       [(#x0019) (let loop () (let ([priv (random-bytes 66)] [pub (make-bytes 133)])
+                                (bytes-set! priv 0 (bitwise-and (bytes-ref priv 0) 1))
+                                (if (eqv? 1 (rktcrypto_p521_pubkey pub priv)) (values priv pub) (loop))))])]))
 
 ;; premaster secret from our private key and the peer's public value
 (define (kx-secret group priv peer)
@@ -960,30 +965,11 @@
      (case group
        [(#x001d) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519"))) o)]
        [(#x0017) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_p256_ecdh o priv peer)) (raise (tls-error "p256"))) o)]
-       [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)])]))
+       [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)]
+       [(#x0019) (let ([o (make-bytes 66)]) (unless (eqv? 1 (rktcrypto_p521_ecdh o priv peer)) (raise (tls-error "p521"))) o)])]))
 
-(define (sign-12 key scheme content)
-  (case (car key)
-    [(rsa) (define-values (pss alg)
-             (case scheme
-               [(#x0804) (values 1 SHA256)] [(#x0805) (values 1 SHA384)] [(#x0806) (values 1 SHA512)]
-               [(#x0401) (values 0 SHA256)] [(#x0501) (values 0 SHA384)] [(#x0601) (values 0 SHA512)]
-               [else (raise (tls-error (format "unsupported RSA signature scheme ~a" scheme)))]))
-           (let* ([kd (cdr key)] [sig (make-bytes 512)]
-                  [n (rktcrypto_rsa_sign_msg pss alg kd (bytes-length kd) content (bytes-length content) sig)])
-             (when (zero? n) (raise (tls-error "RSA sign failed"))) (subbytes sig 0 n))]
-    [(p256) (let ([sig (make-bytes 64)])
-              (unless (eqv? 1 (rktcrypto_p256_ecdsa_sign sig content (bytes-length content) (cdr key)))
-                (raise (tls-error "ECDSA sign failed")))
-              (raw->der sig 32))]))
-
-(define (raw->der raw fb)
-  (define (di b)
-    (define v (let s ([i 0]) (if (and (< i (sub1 (bytes-length b))) (zero? (bytes-ref b i))) (s (add1 i)) (subbytes b i))))
-    (define v2 (if (>= (bytes-ref v 0) #x80) (bytes-append (bytes 0) v) v))
-    (bytes-append (bytes 2 (bytes-length v2)) v2))
-  (define r (di (subbytes raw 0 fb))) (define s (di (subbytes raw fb (* 2 fb))))
-  (bytes-append (bytes #x30 (+ (bytes-length r) (bytes-length s))) r s))
+;; signatures: the same routine as TLS 1.3 (schemes are the same ids)
+(define (sign-12 key scheme content) (server-sign key scheme content))
 
 ;; Build a tls-conn from the 1.2 record layer. tls-unique (RFC 5929 §3.1) is the
 ;; first Finished's verify_data = the client Finished for a full handshake.

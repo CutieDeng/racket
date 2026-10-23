@@ -74,6 +74,7 @@
 (define GROUP-X25519 #x001d)
 (define GROUP-P256   #x0017)
 (define GROUP-P384   #x0018)
+(define GROUP-P521   #x0019)
 ;; RFC 7919 finite-field groups, advertised for the TLS 1.2 DHE suites only
 ;; (no TLS 1.3 key share is offered for them)
 (define FFDHE-GROUPS (list #x0100 #x0101 #x0102))   ; ffdhe2048 ffdhe3072 ffdhe4096
@@ -88,6 +89,7 @@
         #x0401   ; rsa_pkcs1_sha256
         #x0501   ; rsa_pkcs1_sha384
         #x0601   ; rsa_pkcs1_sha512
+        #x0603   ; ecdsa_secp521r1_sha512
         #x0807)) ; ed25519
 
 ;; =====================================================================
@@ -526,6 +528,17 @@
 (struct pha (role tr alg client-auth offered? ca-names [pending #:mutable] [request #:mutable]))
 ;; CertificateRequest extensions: signature_algorithms, and
 ;; certificate_authorities (RFC 8446 4.2.4) when CA names were configured
+;; the signature_algorithms of a TLS 1.3 CertificateRequest, or #f
+(define (certificate-request-sigalgs msg)
+  (define ctx-len (bytes-ref msg 4))
+  (define exts (parse-extensions (let ([p (+ 5 ctx-len)]) (subbytes msg (+ p 2) (+ p 2 (be->int msg p (+ p 2)))))))
+  (define e (assoc #x000d exts))
+  (and e (parse-sigalg-list (cdr e))))
+;; signature_algorithms body (vec2 of u16) -> list of scheme ids
+(define (parse-sigalg-list body)
+  (define n (be->int body 0 2))
+  (for/list ([i (in-range 2 (+ 2 n) 2)]) (be->int body i (+ i 2))))
+(provide parse-sigalg-list)
 (define (certificate-request-exts ca-names)
   (bytes-append (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes))))
                 (if (pair? ca-names)
@@ -539,8 +552,8 @@
   (define clist (apply bytes-append (for/list ([d (in-list ccerts)]) (bytes-append (vec 3 d) (vec 2 #"")))))
   (define cbody (bytes-append (vec 1 ctx) (vec 3 clist)))
   (bytes-append (u8 11) (u24 (bytes-length cbody)) cbody))
-(define (client-certificate-verify-msg ck th)
-  (define scheme (server-sig-scheme ck))
+(define (client-certificate-verify-msg ck th [offered #f])
+  (define scheme (server-sig-scheme ck offered))
   (define cvc (bytes-append (make-bytes 64 #x20) #"TLS 1.3, client CertificateVerify" (bytes 0) th))
   (define csig (server-sign ck scheme cvc))
   (define cvbody (bytes-append (u16 scheme) (vec 2 csig)))
@@ -610,7 +623,7 @@
     (define cmsg (client-certificate-msg ctx (if ca (car ca) '())))
     (tr-add! tr cmsg) (rl-write-record r 22 cmsg)
     (when ca
-      (define cvmsg (client-certificate-verify-msg (cdr ca) (tr-hash tr)))
+      (define cvmsg (client-certificate-verify-msg (cdr ca) (tr-hash tr) (certificate-request-sigalgs cr)))
       (tr-add! tr cvmsg) (rl-write-record r 22 cvmsg))
     (define fin (finished-verify-data alg (unbox (ku-send kus)) (tr-hash tr)))
     (rl-write-record r 22 (bytes-append (u8 20) (u24 (bytes-length fin)) fin)))
@@ -925,7 +938,7 @@
   (define client-auth (let ([k (hash-ref opts 'client-key #f)]  ; A4: (cons cert-ders key) or #f
                             [c (hash-ref opts 'client-cert-ders '())])
                         (and k (pair? c) (cons c k))))
-  (define groups (hash-ref opts 'groups (list GROUP-X25519 GROUP-P256)))
+  (define groups (hash-ref opts 'groups (list GROUP-X25519 GROUP-P256 GROUP-P384 GROUP-P521)))
   (define resume-box (hash-ref opts 'resume-session-box #f))   ; A2: box for NST capture / PSK offer
   (define ticket12-box (hash-ref opts 'ticket12-box #f))       ; A2 (1.2): box for a SessionTicket (RFC 5077)
   (define r (make-rl in out))
@@ -950,6 +963,11 @@
       [(#x0018) (let* ([priv (random-bytes 48)]
                        [pub (make-bytes 97)])
                   (rktcrypto_p384_pubkey pub priv)
+                  (hash-set! privs group priv)
+                  (bytes-append (u16 group) (vec 2 pub)))]
+      [(#x0019) (let* ([priv (p521-priv)]
+                       [pub (make-bytes 133)])
+                  (rktcrypto_p521_pubkey pub priv)
                   (hash-set! privs group priv)
                   (bytes-append (u16 group) (vec 2 pub)))]
       [else (raise (tls-alert 47 (format "server requested a key share for unsupported group ~a" group)))]))
@@ -1147,6 +1165,7 @@
   (define peer-certs (box '()))
   (define peer-staple (box #f))
   (define cert-req-ctx (box #f))            ; A4: set to the request context if the server asks for a client cert
+  (define cert-req-sigalgs (box #f))        ; its signature_algorithms
   ;; RFC 8446 §2, §4.4: EncryptedExtensions, then for a certificate-based
   ;; handshake [CertificateRequest] Certificate CertificateVerify, then
   ;; Finished. A PSK resumption goes from EncryptedExtensions straight to
@@ -1168,6 +1187,7 @@
       [(13)  ; CertificateRequest (server wants a client cert) — echo its context
        (unless (eq? state 'certificate-or-request) (unexpected-msg mt))
        (set-box! cert-req-ctx (subbytes msg 5 (+ 5 (bytes-ref msg 4))))
+       (set-box! cert-req-sigalgs (certificate-request-sigalgs msg))
        (tr-add! tr msg)
        (loop 'certificate)]
       [(11)  ; Certificate
@@ -1225,7 +1245,7 @@
     (define cmsg (client-certificate-msg ctx (if client-auth (car client-auth) '())))
     (tr-add! tr cmsg) (rl-write-record r 22 cmsg)
     (when client-auth
-      (define cvmsg (client-certificate-verify-msg (cdr client-auth) (tr-hash tr)))
+      (define cvmsg (client-certificate-verify-msg (cdr client-auth) (tr-hash tr) (unbox cert-req-sigalgs)))
       (tr-add! tr cvmsg) (rl-write-record r 22 cvmsg)))
   ;; middlebox-compat CCS (plaintext) is optional; skip.
   (define cfin (finished-verify-data alg (ks-c-hs k) (tr-hash tr)))
@@ -1256,6 +1276,12 @@
                    (pha 'client (transcript-data tr) alg client-auth #t '() #f #f)))
 
 ;; ---- helpers for client ----
+;; P-521 scalar in [1, n-1]: 66 bytes with the top 7 bits clear, rejection-sampled
+(define (p521-priv)
+  (let loop ()
+    (define k (random-bytes 66))
+    (bytes-set! k 0 (bitwise-and (bytes-ref k 0) 1))
+    (if (eqv? 1 (rktcrypto_p521_pubkey (make-bytes 133) k)) k (loop))))
 (define (p256-priv)
   ;; a scalar in [1, n-1]; rejection-sample via pubkey success
   (let loop ()
@@ -1272,6 +1298,9 @@
                 out)]
     [(#x0018) (let ([out (make-bytes 48)])
                 (unless (eqv? 1 (rktcrypto_p384_ecdh out priv peer-pub)) (raise (tls-error "p384 ecdh failed")))
+                out)]
+    [(#x0019) (let ([out (make-bytes 66)])
+                (unless (eqv? 1 (rktcrypto_p521_ecdh out priv peer-pub)) (raise (tls-error "p521 ecdh failed")))
                 out)]
     [else (raise (tls-error "unsupported group"))]))
 
@@ -1309,7 +1338,7 @@
               (let ([olen (be->int msg (+ d 1) (+ d 4))]) (subbytes msg (+ d 4) (+ d 4 olen)))
               (loop (+ d elen)))))))
 
-(provide GROUP-X25519 GROUP-P256 GROUP-P384)
+(provide GROUP-X25519 GROUP-P256 GROUP-P384 GROUP-P521)
 
 ;; =====================================================================
 ;; Server handshake
@@ -1358,7 +1387,7 @@
   (define tr (make-transcript alg))
   ;; key_share: find a group we both support
   (define offered (parse-key-share-list (cdr (assoc #x0033 ch-exts))))
-  (define chosen (or (for/or ([g (in-list (list GROUP-X25519 GROUP-P256 GROUP-P384))])
+  (define chosen (or (for/or ([g (in-list (list GROUP-X25519 GROUP-P256 GROUP-P384 GROUP-P521))])
                        (and (assoc g offered) g))
                      (raise (tls-error "no common key-share group"))))
   (define peer-pub (cdr (assoc chosen offered)))
@@ -1468,7 +1497,7 @@
     (tr-add! tr cert-msg)
     (rl-write-record r 22 cert-msg)
     ;; CertificateVerify
-    (define scheme (server-sig-scheme key))
+    (define scheme (server-sig-scheme key (let ([e (assoc #x000d ch-exts)]) (and e (parse-sigalg-list (cdr e))))))
     (define cv-content (bytes-append (make-bytes 64 #x20)
                                      #"TLS 1.3, server CertificateVerify" (bytes 0)
                                      (tr-hash tr)))
@@ -1598,25 +1627,52 @@
     [(#x0017) (let ([priv (p256-priv)] [pub (make-bytes 65)])
                 (rktcrypto_p256_pubkey pub priv) (values priv pub))]
     [(#x0018) (let ([priv (random-bytes 48)] [pub (make-bytes 97)])
-                (rktcrypto_p384_pubkey pub priv) (values priv pub))]))
+                (rktcrypto_p384_pubkey pub priv) (values priv pub))]
+    [(#x0019) (let ([priv (p521-priv)] [pub (make-bytes 133)])
+                (rktcrypto_p521_pubkey pub priv) (values priv pub))]))
 
-(define (server-sig-scheme key)
-  (case (car key) [(rsa) #x0804] [(p256) #x0403] [else (raise (tls-error "unsupported server key type"))]))
+;; The TLS 1.3 signature scheme for our key, chosen from what the peer
+;; listed in signature_algorithms (`offered`, or #f for no list). RSA keys
+;; sign with RSA-PSS (RFC 8446 4.2.3); EC keys with the curve's pairing;
+;; Ed25519 with ed25519.
+(define (key-sig-schemes key)
+  (case (car key)
+    [(rsa) '(#x0804 #x0805 #x0806)]
+    [(p256) '(#x0403)] [(p384) '(#x0503)] [(p521) '(#x0603)] [(ed25519) '(#x0807)]
+    [else (raise (tls-error "unsupported private key type"))]))
+(define (server-sig-scheme key [offered #f])
+  (define prefs (key-sig-schemes key))
+  (or (if offered (for/first ([s (in-list prefs)] #:when (memv s offered)) s) (car prefs))
+      (raise (tls-alert 40 "peer accepts no signature scheme for our key"))))
 
+;; A signature with our private key under `scheme`, for TLS 1.2 and 1.3.
 (define (server-sign key scheme content)
+  (define (ecdsa sign size)
+    (define sig (make-bytes (* 2 size)))
+    (unless (eqv? 1 (sign sig content (bytes-length content) (cdr key)))
+      (raise (tls-error "ECDSA signing failed")))
+    (raw->ecdsa-der sig size))                        ; raw r||s -> DER SEQUENCE
   (case (car key)
     [(rsa)
+     (define-values (pss alg)
+       (case scheme
+         [(#x0804) (values 1 SHA256)] [(#x0805) (values 1 SHA384)] [(#x0806) (values 1 SHA512)]
+         [(#x0401) (values 0 SHA256)] [(#x0501) (values 0 SHA384)] [(#x0601) (values 0 SHA512)]
+         [else (raise (tls-error (format "unsupported RSA signature scheme ~a" scheme)))]))
      (define kd (cdr key))
-     (define sig (make-bytes 512))
-     (define n (rktcrypto_rsa_sign_msg 1 SHA256 kd (bytes-length kd) content (bytes-length content) sig))
+     (define sig (make-bytes 1024))
+     (define n (rktcrypto_rsa_sign_msg pss alg kd (bytes-length kd) content (bytes-length content) sig))
      (when (zero? n) (raise (tls-error "RSA signing failed")))
      (subbytes sig 0 n)]
-    [(p256)
+    [(p256) (ecdsa rktcrypto_p256_ecdsa_sign 32)]
+    [(p384) (ecdsa rktcrypto_p384_ecdsa_sign 48)]
+    [(p521) (ecdsa rktcrypto_p521_ecdsa_sign 66)]
+    [(ed25519)
      (define sig (make-bytes 64))
-     (unless (eqv? 1 (rktcrypto_p256_ecdsa_sign sig content (bytes-length content) (cdr key)))
-       (raise (tls-error "ECDSA signing failed")))
-     ;; raw r||s -> DER SEQUENCE
-     (raw->ecdsa-der sig 32)]))
+     (rktcrypto_ed25519_sign sig content (bytes-length content) (cdr key))
+     sig]
+    [else (raise (tls-error "unsupported private key type"))]))
+(provide server-sig-scheme server-sign)
 
 (define (raw->ecdsa-der raw fb)
   (define (der-int b)
@@ -1625,7 +1681,8 @@
     (bytes-append (bytes #x02 (bytes-length v2)) v2))
   (define r (der-int (subbytes raw 0 fb)))
   (define s (der-int (subbytes raw fb (* 2 fb))))
-  (bytes-append (bytes #x30 (+ (bytes-length r) (bytes-length s))) r s))
+  (define n (+ (bytes-length r) (bytes-length s)))
+  (bytes-append (if (< n 128) (bytes #x30 n) (bytes #x30 #x81 n)) r s))   ; long form past 127 (P-521)
 
 ;; ---- ClientHello parsing (server side) ----
 (define (parse-client-hello ch)
