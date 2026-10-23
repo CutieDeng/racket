@@ -8,7 +8,8 @@
 
 (require "rktcrypto-ffi.rkt"
          "rktcrypto-x509.rkt"
-         racket/string)
+         racket/string
+         racket/list)
 
 (provide verify-certificate-verify
          verify-signature-over
@@ -199,51 +200,216 @@
   (when (< now nb) (verify-error "certificate not yet valid"))
   (when (> now na) (verify-error "certificate expired")))
 
-;; Builds and validates a path from the leaf to a trust anchor.
-;; peer-ders: list of DER byte strings (leaf first).
-;; anchors: list of DER byte strings (trusted roots).
-(define (verify-chain peer-ders anchors)
+;; ---- certificate policy checks (RFC 5280 section 6; the checks libssl's
+;; X509 verifier applies for the sslserver / sslclient purposes) ----
+
+(define oid-any-eku    "2.5.29.37.0")
+(define oid-server-auth "1.3.6.1.5.5.7.3.1")
+(define oid-client-auth "1.3.6.1.5.5.7.3.2")
+
+;; A certificate may not carry a critical extension we do not understand.
+(define (check-critical-extensions c)
+  (unless (null? (certificate-critical-unknown c))
+    (verify-error "unsupported critical extension ~a" (car (certificate-critical-unknown c)))))
+
+;; Extended key usage, when present, must allow the purpose (anyEKU does);
+;; applied to every certificate of the path, as libssl does.
+(define (check-eku c purpose)
+  (define eku (certificate-eku c))
+  (when (and eku purpose)
+    (define want (if (eq? purpose 'server) oid-server-auth oid-client-auth))
+    (unless (or (member want eku) (member oid-any-eku eku))
+      (verify-error "certificate not valid for ~a authentication (extendedKeyUsage)" purpose))))
+
+;; keyUsage of an end-entity certificate, when present: a server key must
+;; allow digitalSignature, keyEncipherment or keyAgreement; a client key
+;; digitalSignature.
+(define (check-leaf-key-usage c purpose)
+  (define ku (certificate-key-usage c))
+  (when (and ku purpose)
+    (unless (if (eq? purpose 'server)
+                (or (memq 'digital-signature ku) (memq 'key-encipherment ku) (memq 'key-agreement ku))
+                (memq 'digital-signature ku))
+      (verify-error "certificate key not usable for ~a authentication (keyUsage)" purpose))))
+
+;; An issuing certificate must be a CA and, if it has keyUsage, allow keyCertSign.
+(define (check-issuer c what)
+  (unless (certificate-is-ca c) (verify-error "~a is not a CA" what))
+  (define ku (certificate-key-usage c))
+  (when (and ku (not (memq 'key-cert-sign ku)))
+    (verify-error "~a may not sign certificates (keyUsage)" what)))
+
+;; pathLenConstraint: at most `below` further CA certificates below this one.
+(define (check-path-len c below what)
+  (define n (certificate-path-len c))
+  (when (and n (> below n))
+    (verify-error "~a: path length constraint ~a exceeded" what n)))
+
+;; ---- name constraints (RFC 5280 4.2.1.10) ----
+;; Applied to every certificate below the constraining CA: its SAN names,
+;; its subject (directoryName constraints; CN as a host name when there is
+;; no dNSName SAN), and its subject emailAddress.
+(define (host-under? name base)
+  ;; dNSName constraint: equal, or a subdomain (a base starting with "."
+  ;; matches subdomains only)
+  (define n (string-downcase name)) (define b (string-downcase base))
+  (cond [(string=? b "") #t]
+        [(char=? (string-ref b 0) #\.) (and (> (string-length n) (string-length b))
+                                            (string=? (substring n (- (string-length n) (string-length b))) b))]
+        [else (or (string=? n b)
+                  (and (> (string-length n) (add1 (string-length b)))
+                       (string=? (substring n (- (string-length n) (string-length b) 1)) (string-append "." b))))]))
+(define (email-under? addr base)
+  ;; rfc822Name constraint: a full address, a host (any mailbox there), or
+  ;; a ".domain" suffix
+  (define a (string-downcase addr)) (define b (string-downcase base))
+  (define host (let ([m (regexp-match #rx"@(.*)$" a)]) (and m (cadr m))))
+  (cond [(regexp-match? #rx"@" b) (string=? a b)]
+        [else (and host (host-under? host b))]))
+(define (ip-under? addr base)
+  ;; iPAddress constraint: address||mask of the same family
+  (define n (bytes-length addr))
+  (and (= (bytes-length base) (* 2 n))
+       (for/and ([i (in-range n)])
+         (= (bitwise-and (bytes-ref addr i) (bytes-ref base (+ n i)))
+            (bitwise-and (bytes-ref base i) (bytes-ref base (+ n i)))))))
+(define (dn-under? name base)
+  ;; directoryName constraint: the base is a prefix of the name's attribute sequence
+  (and (<= (length base) (length name))
+       (for/and ([a (in-list base)] [b (in-list name)]) (equal? a b))))
+(define (name-matches? type value constraint)
+  (and (eq? type (car constraint))
+       (case type
+         [(dns) (host-under? value (cdr constraint))]
+         [(email) (email-under? value (cdr constraint))]
+         [(ip) (ip-under? value (cdr constraint))]
+         [(dn) (dn-under? value (cdr constraint))]
+         [(uri) (host-under? (let ([m (regexp-match #rx"^[a-zA-Z][a-zA-Z0-9+.-]*://([^/:?#]*)" value)])
+                               (if m (cadr m) value))
+                             (cdr constraint))]
+         [else #f])))
+;; the names of a certificate subject to constraints: (type . value) list
+(define (constrained-names c)
+  (define dns (certificate-san-dns c))
+  (define cn (let ([a (assoc "2.5.4.3" (certificate-subject c))]) (and a (bytes->string/latin-1 (cdr a)))))
+  (define email-attr (let ([a (assoc "1.2.840.113549.1.9.1" (certificate-subject c))])
+                       (and a (bytes->string/latin-1 (cdr a)))))
+  (append (map (lambda (d) (cons 'dns d)) dns)
+          (if (and (null? dns) cn (regexp-match? #rx"^[A-Za-z0-9.*-]+$" cn)) (list (cons 'dns cn)) '())
+          (if email-attr (list (cons 'email email-attr)) '())
+          (list (cons 'dn (certificate-subject c)))
+          (certificate-san-other c)))
+(define (check-name-constraints ca below what)
+  (define nc (certificate-name-constraints ca))
+  (when nc
+    (define permitted (car nc)) (define excluded (cdr nc))
+    (for* ([c (in-list below)] [n (in-list (constrained-names c))])
+      (define type (car n)) (define value (cdr n))
+      (when (eq? type 'other)
+        ;; a name of a kind we cannot evaluate, under a constraining CA
+        (when (for/or ([p (in-list (append permitted excluded))]) (eq? (car p) 'other))
+          (verify-error "~a: name constraints on an unsupported name type" what)))
+      (define permitted-of-type (filter (lambda (p) (eq? (car p) type)) permitted))
+      (when (and (pair? permitted-of-type)
+                 (not (for/or ([p (in-list permitted-of-type)]) (name-matches? type value p))))
+        (verify-error "~a: ~a ~a is outside the permitted names" what type value))
+      (when (for/or ([x (in-list excluded)]) (name-matches? type value x))
+        (verify-error "~a: ~a ~a is an excluded name" what type value)))))
+
+;; Builds and validates a certification path from the leaf to a trust anchor.
+;; peer-ders: DER byte strings the peer presented (leaf first; the rest in any
+;; order, possibly with certificates that are not used). anchors: DER byte
+;; strings (trusted roots). purpose: 'server, 'client or #f (no EKU/keyUsage
+;; purpose checks). The path is built by issuer lookup: at each step a trust
+;; anchor is preferred to a presented certificate, so a chain that includes
+;; its root or a cross-signed version of one is still validated against the
+;; configured anchor.
+(define (verify-chain peer-ders anchors #:purpose [purpose #f])
   (when (null? peer-ders) (verify-error "empty certificate chain"))
-  (define chain (map parse-certificate peer-ders))
+  (define leaf (parse-certificate (car peer-ders)))
+  (define extras (for/list ([d (in-list (cdr peer-ders))])
+                   (with-handlers ([exn:fail? (lambda (_) #f)]) (parse-certificate d))))
   (define anchor-certs (map parse-certificate anchors))
-  ;; index anchors by subject DN string
   (define (dn c) (name->string (certificate-subject c)))
-  (define anchor-by-subject (make-hash))
-  (for ([a (in-list anchor-certs)]) (hash-set! anchor-by-subject (dn a) a))
-  ;; walk the presented chain, each signed by the next
-  (let loop ([certs chain])
-    (define c (car certs))
+  (define (issuers-of c pool)
+    (filter (lambda (i) (string=? (dn i) (name->string (certificate-issuer c)))) pool))
+  (define (signed-by? c i)
+    (with-handlers ([exn:fail? (lambda (_) #f)]) (verify-cert-signature c (certificate-pub i))))
+  ;; the path, leaf first, ending with the anchor
+  (define path
+    (let loop ([c leaf] [acc (list leaf)] [depth 0])
+      (when (> depth 8) (verify-error "certificate chain too long"))
+      (define anchor (for/first ([a (in-list (issuers-of c anchor-certs))] #:when (signed-by? c a)) a))
+      (cond
+        [anchor (reverse (cons anchor acc))]
+        [else
+         (define next (for/first ([i (in-list (issuers-of c (filter values extras)))]
+                                  #:when (and (not (memq i acc)) (signed-by? c i))) i))
+         (unless next
+           (if (null? (issuers-of c anchor-certs))
+               (verify-error "no trusted anchor for issuer ~a" (name->string (certificate-issuer c)))
+               (verify-error "top certificate not signed by trusted anchor")))
+         (loop next (cons next acc) (add1 depth))])))
+  ;; per-certificate checks
+  (define n (length path))
+  (for ([c (in-list path)] [i (in-naturals)])
+    (define what (cond [(= i 0) "certificate"] [(= i (sub1 n)) "trust anchor"] [else "intermediate certificate"]))
     (check-validity c)
-    (define issuer-dn (name->string (certificate-issuer c)))
+    (check-critical-extensions c)
+    (check-eku c purpose)
     (cond
-      [(pair? (cdr certs))
-       (define issuer (cadr certs))
-       (unless (string=? (name->string (certificate-subject issuer)) issuer-dn)
-         (verify-error "chain issuer/subject mismatch"))
-       (unless (certificate-is-ca issuer) (verify-error "intermediate is not a CA"))
-       (unless (verify-cert-signature c (certificate-pub issuer))
-         (verify-error "certificate signature invalid in chain"))
-       (loop (cdr certs))]
+      [(= i 0)
+       (check-leaf-key-usage c purpose)
+       (when (> n 1) (void))]
       [else
-       ;; top of presented chain: must be signed by a trust anchor
-       (define anchor (hash-ref anchor-by-subject issuer-dn #f))
-       (unless anchor (verify-error "no trusted anchor for issuer ~a" issuer-dn))
-       (check-validity anchor)
-       (unless (verify-cert-signature c (certificate-pub anchor))
-         (verify-error "top certificate not signed by trusted anchor"))]))
+       (check-issuer c what)
+       ;; CA certificates below this one in the path: those strictly between it and the leaf
+       (check-path-len c (- i 1) what)
+       (check-name-constraints c (take path i) what)]))
+  (when (= n 1)
+    ;; the leaf is itself a trust anchor (self-signed anchor used directly)
+    (void))
   #t)
 
 ;; RFC 6125 hostname check against the leaf's SAN dNSNames (falling back to
 ;; CN only when no SAN is present).
 (define (check-hostname cert host)
-  (define names
-    (let ([san (certificate-san-dns cert)])
-      (if (pair? san) san
-          (let ([cn (assoc "2.5.4.3" (certificate-subject cert))])
-            (if cn (list (bytes->string/latin-1 (cdr cn))) '())))))
-  (define h (string-downcase host))
-  (unless (for/or ([n (in-list names)]) (host-matches? (string-downcase n) h))
-    (verify-error "hostname ~a does not match certificate (~a)" host names)))
+  (define ip (parse-ip-literal host))
+  (cond
+    [ip
+     ;; an IP literal matches only an iPAddress subjectAltName
+     (define ips (for/list ([n (in-list (certificate-san-other cert))] #:when (eq? (car n) 'ip)) (cdr n)))
+     (unless (member ip ips)
+       (verify-error "address ~a does not match certificate" host))]
+    [else
+     (define names
+       (let ([san (certificate-san-dns cert)])
+         (if (pair? san) san
+             (let ([cn (assoc "2.5.4.3" (certificate-subject cert))])
+               (if cn (list (bytes->string/latin-1 (cdr cn))) '())))))
+     (define h (string-downcase host))
+     (unless (for/or ([n (in-list names)]) (host-matches? (string-downcase n) h))
+       (verify-error "hostname ~a does not match certificate (~a)" host names))]))
+
+;; "1.2.3.4" -> 4 bytes, an IPv6 literal -> 16 bytes, else #f
+(define (parse-ip-literal s)
+  (cond
+    [(regexp-match #rx"^([0-9]+)\\.([0-9]+)\\.([0-9]+)\\.([0-9]+)$" s)
+     => (lambda (m)
+          (define parts (map string->number (cdr m)))
+          (and (andmap (lambda (p) (<= 0 p 255)) parts) (apply bytes parts)))]
+    [(regexp-match? #rx"^[0-9A-Fa-f:]+$" s)
+     (define halves (regexp-split #rx"::" s))
+     (define (groups str) (if (string=? str "") '() (map (lambda (g) (string->number g 16)) (regexp-split #rx":" str))))
+     (define gs
+       (case (length halves)
+         [(1) (groups (car halves))]
+         [(2) (let* ([a (groups (car halves))] [b (groups (cadr halves))] [pad (- 8 (length a) (length b))])
+                (and (>= pad 0) (append a (make-list pad 0) b)))]
+         [else #f]))
+     (and gs (= (length gs) 8) (andmap (lambda (g) (and g (<= 0 g 65535))) gs)
+          (apply bytes-append (map (lambda (g) (bytes (arithmetic-shift g -8) (bitwise-and g 255))) gs)))]
+    [else #f]))
 
 (define (host-matches? pattern host)
   (cond

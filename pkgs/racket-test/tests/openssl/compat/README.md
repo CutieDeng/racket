@@ -62,7 +62,24 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 改前单调下降,约 40 ns/块;改后无趋势,离散 ±2%(与块数无关)。代价约 +900 ns/记录(增量 API 每次调用拷贝 2KB 上下文),
 只在未协商 EtM 的对端上发生。与 `rktcrypto_hmac` 的一致性:SHA-1/256/384 × 12 个边界长度 0 mismatch。
 
-### 1.2 仍存在的差异
+### 1.2 第三轮:对标检查后的补齐(2026-10-23)
+
+对标检查方法:导出面对比、我方测试目录在上游 9.2 构建上逐文件运行、源码定位。发现并补齐:
+
+| 项 | 做法 | 验证 |
+|---|---|---|
+| `ssl-protocol-version` 返回 `'tls1.3`(契约要求 `'tls13`) | 改为 `'tls13`/`'tls12` | test-alpn、test-openssl-client |
+| `ssl-set-server-alpn!` 的 `allow-no-match?` 被忽略;TLS 1.2 不协商 ALPN | `#f` 时发 no_application_protocol(120)拒绝;1.2 客户端/服务端(含恢复)协商 ALPN | test-alpn 25 项(auto/tls12 × 拒绝/无 ALPN) |
+| `'(directory p)` 验证源静默不加载 | 加载目录内所有可解析 PEM | 手工 |
+| `ssl-load-suggested-certificate-authorities!` 空操作 | CertificateRequest 携带 certificate_authorities(1.3 ext 47 / 1.2 DN 列表,含 PHA) | test-openssl-client:s_client 打印 "Acceptable client certificate CA names" |
+| `ssl-dh4096-param-bytes` 为 `#f` | `#""`(同上游) | 手工 |
+| TLS 1.2 签名方案不协商 | 服务端按客户端 signature_algorithms 选(PSS→PKCS#1 SHA-256/384/512),客户端 CertificateVerify 按 CertificateRequest 选 | test-openssl-client:`-sigalgs RSA+SHA256` 与 `RSA-PSS+SHA384` 均握手 |
+| 链校验只查 CA 位/签名/有效期 | `verify-chain`:路径构建(乱序链、多余证书、链含根)、pathLenConstraint、签发者 keyCertSign、EKU(按 server/client 用途,全链)、叶子 keyUsage、nameConstraints(dNSName/rfc822/iPAddress/directoryName/URI)、未知 critical 扩展拒绝 | test-chain-policy 16 项(证书由 generate-policy-certs.sh 生成,OpenSSL `verify` 对同样链给出同样判定) |
+| 主机名不匹配 iPAddress SAN | IP 字面量匹配 iPAddress(上游 `X509_check_host` 不做,本实现超出上游) | test-chain-policy |
+
+仍未对标(设计如此):TLS 1.0/1.1、重协商、RSA 密钥交换、自有身份密钥仅 RSA/P-256(P-384/P-521/Ed25519 私钥不可作身份)。
+
+### 1.3 仍存在的差异
 
 1. `peer-verif.rkt` 的三个 `#:later` 用例:强制 'tls12,需重协商;TLS 1.3 下同样的调用已可用(见上表)。
 2. `bn_modexp`(C)的固定窗口幂在窗口值为 0 时跳过乘法(`if(d) bn_montmul`),对私钥指数非严格常数时间;命名群路径

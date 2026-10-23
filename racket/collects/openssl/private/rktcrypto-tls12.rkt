@@ -348,6 +348,7 @@
   (define suite (+ (* 256 (bytes-ref sh pos)) (bytes-ref sh (add1 pos))))
   (define exts-em? (sh-has-ext? sh pos #x0017))
   (define etm? (sh-has-ext? sh pos #x0016))          ; encrypt_then_mac (RFC 7366)
+  (define alpn (sh-alpn sh pos))                     ; selected protocol, or #f
   ;; A2 (1.2): resumption is signalled by the server echoing our (non-empty)
   ;; session_id (RFC 5077 §3.4) when we offered a ticket.
   (define ticket12-box (hash-ref opts 'ticket12-box #f))
@@ -375,7 +376,7 @@
     (case mt
       [(11) (set-box! peer-ders (parse-certificate-msg-12 msg)) (loop)]
       [(12) (set-box! ske msg) (loop)]
-      [(13) (set-box! cert-requested? #t) (loop)]   ; CertificateRequest (A4)
+      [(13) (set-box! cert-requested? (certificate-request-sigalgs msg)) (loop)]   ; CertificateRequest: its signature_algorithms
       [(14) (void)]                              ; ServerHelloDone
       [else (raise (tls-error (format "unexpected 1.2 msg ~a" mt)))]))
 
@@ -431,7 +432,7 @@
   ;; A4: CertificateVerify signs the handshake so far (CH..Certificate..CKE).
   (define ccv
     (and send-client-cert?
-         (let* ([scheme (if (eq? (car client-key) 'p256) #x0403 #x0804)]
+         (let* ([scheme (choose-sig-scheme client-key (unbox cert-requested?))]
                 [sig (sign-12 client-key scheme (unbox tr))]
                 [body (bytes-append (u16 scheme) (vec 2 sig))])
            (bytes-append (u8 15) (u24 (bytes-length body)) body))))
@@ -475,7 +476,7 @@
   (define expect-sfin (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-sfin (subbytes fmsg 4)) (raise (tls-alert 51 "server Finished mismatch")))
 
-  (make-conn-12 r (unbox peer-ders) cfin-vd verified?)]))
+  (make-conn-12 r (unbox peer-ders) cfin-vd verified? alpn)]))
 
 ;; A2 (1.2): abbreviated (resumption) client handshake. Keys come from the cached
 ;; master secret; read the server's [NewSessionTicket] + CCS + Finished, then send
@@ -486,6 +487,7 @@
   (define server-random (subbytes sh 6 38))
   (define sid-len (bytes-ref sh 38))
   (define etm? (sh-has-ext? sh (+ 39 sid-len) #x0016))   ; RFC 7366: re-signalled on resumption
+  (define alpn (sh-alpn sh (+ 39 sid-len)))               ; RFC 7301: negotiated on every handshake
   (define suite (let ([p (+ 39 sid-len)]) (+ (* 256 (bytes-ref sh p)) (bytes-ref sh (add1 p)))))
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define rec (unbox ticket12-box))            ; #(ticket master suite ems? peer-ders verified?)
@@ -519,7 +521,7 @@
   (write-plaintext rl-out 20 (bytes 1))                ; client ChangeCipherSpec
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) cfin-vd))
-  (make-conn-12 r peer-ders cfin-vd verified?))
+  (make-conn-12 r peer-ders cfin-vd verified? alpn))
 
 ;; =====================================================================
 ;; Server (1.2)
@@ -535,6 +537,15 @@
   (define ch-exts (client-hello-exts ch))
   (define ems? (assoc #x0017 ch-exts))          ; extended_master_secret ext type = 0x0017
   (define etm? (and (eq? cipher 'aes-cbc) (assoc #x0016 ch-exts) #t))   ; encrypt_then_mac, CBC only
+  ;; ALPN (RFC 7301): the first of our protocols the client offered
+  (define client-alpn (let ([e (assoc #x0010 ch-exts)]) (and e (parse-alpn-list (cdr e)))))
+  (define neg-alpn (and client-alpn (for/or ([p (in-list (hash-ref opts 'alpn '()))]
+                                             #:when (member p client-alpn)) p)))
+  (when (and client-alpn (not neg-alpn) (not (hash-ref opts 'alpn-allow-no-match? #t)))
+    (with-handlers ([exn:fail? void]) (write-plaintext rl-out 21 (bytes 2 120)))   ; no_application_protocol
+    (raise (tls-alert 120 "no application protocol in common")))
+  ;; the signature scheme for ServerKeyExchange, from the client's signature_algorithms
+  (define client-sigalgs (let ([e (assoc #x000d ch-exts)]) (and e (parse-sigalg-list (cdr e)))))
   ;; A2 (1.2) SessionTicket (RFC 5077): a store maps ticket bytes -> a session
   ;; record #(master suite ems? issued-ms). If the client presents a live ticket
   ;; for this suite we do an abbreviated handshake; otherwise, if it signalled
@@ -554,7 +565,7 @@
   (cond
    [resume-entry
     ;; abbreviated handshake: recover the master secret, skip cert/kx
-    (tls12-server-resume rl-in rl-out hs ch client-random suite etm? (vector-ref resume-entry 0))]
+    (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn (vector-ref resume-entry 0))]
    [else
   (define server-random
     (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r)) ; downgrade sentinel
@@ -563,6 +574,7 @@
   (define sh-exts (bytes-append
                    (if ems? (ext #x0017 #"") #"")
                    (if etm? (ext #x0016 #"") #"")
+                   (if neg-alpn (ext #x0010 (vec 2 (vec 1 neg-alpn))) #"")
                    (if issue-ticket? (ext #x0023 #"") #"")  ; SessionTicket: negotiate (empty in SH)
                    (ext #xff01 (vec 1 #""))))    ; renegotiation_info (empty)
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 #"")
@@ -584,7 +596,7 @@
     (if (eq? kx 'dhe)
         (bytes-append (vec 2 group) (vec 2 (bytes 2)) (vec 2 our-pub))   ; ServerDHParams
         (bytes-append (u8 3) (u16 group) (vec 1 our-pub))))                           ; ECParams: named_curve
-  (define scheme (if (eq? sig-type 'ecdsa) #x0403 #x0804))
+  (define scheme (choose-sig-scheme key client-sigalgs))
   (define signed (bytes-append client-random server-random kx-params))
   (define sig (sign-12 key scheme signed))
   (define ske-body (bytes-append kx-params (u16 scheme) (vec 2 sig)))
@@ -595,8 +607,8 @@
   (define request-client-cert? (hash-ref opts 'request-client-cert #f))
   (when request-client-cert?
     (define creq-body (bytes-append (vec 1 (bytes 64 1))                     ; ecdsa_sign, rsa_sign
-                                    (vec 2 (bytes #x04 #x03 #x08 #x04 #x04 #x01)) ; sigalgs: ecdsa/rsapss/rsapkcs1-sha256
-                                    (vec 2 #"")))                            ; certificate_authorities: empty
+                                    (vec 2 (bytes #x04 #x03 #x08 #x04 #x04 #x01 #x05 #x01 #x06 #x01 #x08 #x05 #x08 #x06)) ; sigalgs
+                                    (vec 2 (certificate-authorities-list (hash-ref opts 'client-ca-names '())))))
     (define creq (bytes-append (u8 13) (u24 (bytes-length creq-body)) creq-body))
     (tr+ creq) (write-plaintext rl-out 22 creq))
 
@@ -648,7 +660,7 @@
          (unless (verify-signature-over (unbox cv-scheme) (certificate-pub (parse-certificate (car (unbox client-ders))))
                                         (unbox cv-content) (unbox cv-sig))
            (raise (tls-alert 51 "client CertificateVerify invalid")))
-         (verify-chain (unbox client-ders) (hash-ref opts 'client-ca-anchors '())))
+         (verify-chain (unbox client-ders) (hash-ref opts 'client-ca-anchors '()) #:purpose 'client))
        #t]
       [(hash-ref opts 'require-client-cert #f)
        (fatal-plain! 40 "client certificate required")]           ; handshake_failure
@@ -679,18 +691,20 @@
   (write-plaintext rl-out 20 (bytes 1))
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) sfin-vd))
-  (make-conn-12 r (unbox client-ders) cfin-vd client-verified?)]))
+  (make-conn-12 r (unbox client-ders) cfin-vd client-verified? neg-alpn)]))
 
 ;; A2 (1.2): abbreviated (resumption) server handshake — ServerHello + CCS +
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
 ;; recovered master secret and the new randoms (no Certificate/ServerKeyExchange).
-(define (tls12-server-resume rl-in rl-out hs ch client-random suite etm? master)
+(define (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn master)
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define tr (box ch))
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
   (define server-random (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r))
   (define sid (let ([sl (bytes-ref ch 38)]) (subbytes ch 39 (+ 39 sl)))) ; echo the client's session id
-  (define sh-exts (bytes-append (ext #x0023 #"") (if etm? (ext #x0016 #"") #"") (ext #xff01 (vec 1 #""))))
+  (define sh-exts (bytes-append (ext #x0023 #"") (if etm? (ext #x0016 #"") #"")
+                                (if neg-alpn (ext #x0010 (vec 2 (vec 1 neg-alpn))) #"")
+                                (ext #xff01 (vec 1 #""))))
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 sid) (u16 suite) (u8 0) (vec 2 sh-exts)))
   (define sh (bytes-append (u8 2) (u24 (bytes-length sh-body)) sh-body))
   (tr+ sh) (write-plaintext rl-out 22 sh)
@@ -704,7 +718,7 @@
   (unless (= cft 20) (raise (tls-error "expected client Finished (resume)")))
   (define expect-cfin (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-cfin (subbytes cfmsg 4)) (raise (tls-alert 51 "client Finished mismatch (resume)")))
-  (make-conn-12 r '() expect-cfin))
+  (make-conn-12 r '() expect-cfin #f neg-alpn))
 
 ;; =====================================================================
 ;; helpers
@@ -771,6 +785,43 @@
   (define sig-len (be->int msg (+ end 2) (+ end 4)))
   (define sig (subbytes msg (+ end 4) (+ end 4 sig-len)))
   (values group pub (subbytes msg 4 end) scheme sig))
+
+;; the body of ServerHello extension `want`, or #f
+(define (sh-ext sh pos want)
+  (define ep (+ pos 3))
+  (and (< ep (bytes-length sh))
+       (let ([elen (be->int sh ep (+ ep 2))])
+         (let loop ([p (+ ep 2)] [end (+ ep 2 elen)])
+           (and (< p end)
+                (let ([t (be->int sh p (+ p 2))] [l (be->int sh (+ p 2) (+ p 4))])
+                  (if (= t want) (subbytes sh (+ p 4) (+ p 4 l)) (loop (+ p 4 l) end))))))))
+(define (sh-alpn sh pos)
+  (define b (sh-ext sh pos #x0010))
+  (and b (>= (bytes-length b) 3) (subbytes b 3 (+ 3 (bytes-ref b 2)))))
+;; signature_algorithms body (vec2 of u16) -> list of scheme ids
+(define (parse-sigalg-list body)
+  (define n (be->int body 0 2))
+  (for/list ([i (in-range 2 (+ 2 n) 2)]) (be->int body i (+ i 2))))
+;; CertificateRequest -> its supported_signature_algorithms
+(define (certificate-request-sigalgs msg)
+  (define types-len (bytes-ref msg 4))
+  (define p (+ 5 types-len))
+  (parse-sigalg-list (subbytes msg p (+ p 2 (be->int msg p (+ p 2))))))
+;; certificate_authorities: DistinguishedName<1..2^16-1> entries, each the
+;; DER Name of a trusted CA (what ssl-load-suggested-certificate-authorities! loads)
+(define (certificate-authorities-list names)
+  (apply bytes-append (for/list ([n (in-list names)]) (vec 2 n))))
+;; The signature scheme to use with `key` given what the peer accepts
+;; (TLS 1.2 signature_algorithms; #f = none sent, so the RFC 5246 default of
+;; SHA-1 would apply, which is not offered: SHA-256 PKCS#1 is used instead).
+(define (choose-sig-scheme key offered)
+  (define prefs
+    (case (car key)
+      [(rsa) '(#x0804 #x0401 #x0805 #x0501 #x0806 #x0601)]   ; rsa_pss_rsae_*, rsa_pkcs1_*
+      [else '(#x0403)]))                                      ; ecdsa_secp256r1_sha256
+  (or (and (list? offered) (for/first ([s (in-list prefs)] #:when (memv s offered)) s))
+      (and (not (list? offered)) (if (eq? (car key) 'rsa) #x0401 #x0403))
+      (raise (tls-alert 40 "no common signature algorithm"))))
 
 (define (sh-has-ext? sh pos want)
   ;; pos points at cipher_suite; after suite(2)+compression(1) come extensions
@@ -913,8 +964,13 @@
 
 (define (sign-12 key scheme content)
   (case (car key)
-    [(rsa) (let* ([kd (cdr key)] [sig (make-bytes 512)]
-                  [n (rktcrypto_rsa_sign_msg 1 SHA256 kd (bytes-length kd) content (bytes-length content) sig)])
+    [(rsa) (define-values (pss alg)
+             (case scheme
+               [(#x0804) (values 1 SHA256)] [(#x0805) (values 1 SHA384)] [(#x0806) (values 1 SHA512)]
+               [(#x0401) (values 0 SHA256)] [(#x0501) (values 0 SHA384)] [(#x0601) (values 0 SHA512)]
+               [else (raise (tls-error (format "unsupported RSA signature scheme ~a" scheme)))]))
+           (let* ([kd (cdr key)] [sig (make-bytes 512)]
+                  [n (rktcrypto_rsa_sign_msg pss alg kd (bytes-length kd) content (bytes-length content) sig)])
              (when (zero? n) (raise (tls-error "RSA sign failed"))) (subbytes sig 0 n))]
     [(p256) (let ([sig (make-bytes 64)])
               (unless (eqv? 1 (rktcrypto_p256_ecdsa_sign sig content (bytes-length content) (cdr key)))
@@ -931,7 +987,7 @@
 
 ;; Build a tls-conn from the 1.2 record layer. tls-unique (RFC 5929 §3.1) is the
 ;; first Finished's verify_data = the client Finished for a full handshake.
-(define (make-conn-12 r peer-ders [tls-unique #f] [verified? #f])
+(define (make-conn-12 r peer-ders [tls-unique #f] [verified? #f] [alpn #f])
   (define (recv)
     (let loop ()
       (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
@@ -950,4 +1006,4 @@
         (r12-write r 23 (subbytes bs off (+ off chunk)))
         (loop (+ off chunk)))))
   (define (shut) (with-handlers ([exn:fail? void]) (r12-write r 21 (bytes 1 0))))
-  (make-tls-conn recv send shut peer-ders 'tls1.2 (and tls-unique (hash 'tls-unique tls-unique)) verified?))
+  (make-tls-conn recv send shut peer-ders 'tls12 (and tls-unique (hash 'tls-unique tls-unique)) verified? alpn))

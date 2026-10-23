@@ -32,7 +32,10 @@
    is-ca            ; boolean (basicConstraints CA)
    path-len         ; integer or #f
    key-usage        ; list of symbols or #f
-   eku)             ; list of oid-strings or #f
+   eku              ; list of oid-strings or #f
+   san-other        ; other subjectAltName entries: list of (type . value), type in 'email 'ip 'uri 'dn 'other
+   name-constraints ; #f or (cons permitted excluded), each a list of (type . value) general subtrees
+   critical-unknown) ; list of oid-strings of critical extensions this parser does not understand
   #:transparent)
 
 ;; Public key: type is 'rsa 'ec 'ed25519; for RSA (n . e) big-endian
@@ -58,6 +61,14 @@
 (define oid-ext-bc         #"\x55\x1d\x13")
 (define oid-ext-ku         #"\x55\x1d\x0f")
 (define oid-ext-eku        #"\x55\x1d\x25")
+(define oid-ext-nc         #"\x55\x1d\x1e")   ; nameConstraints
+;; extensions that are understood (or safely ignorable) when marked critical
+(define known-critical-exts
+  (list oid-ext-san oid-ext-bc oid-ext-ku oid-ext-eku oid-ext-nc
+        #"\x55\x1d\x20"     ; certificatePolicies (not evaluated: no policy processing is requested)
+        #"\x55\x1d\x23"     ; authorityKeyIdentifier
+        #"\x55\x1d\x0e"     ; subjectKeyIdentifier
+        #"\x55\x1d\x24"))   ; policyConstraints: ignored only if no policy processing
 
 (define (oid-symbol d)
   (cond
@@ -153,22 +164,51 @@
         (loop (add1 i))
         (subbytes bs i))))
 
+;; A GeneralName -> (type . value): dNSName/rfc822Name/URI as strings,
+;; iPAddress as bytes (address, or address||mask in a constraint),
+;; directoryName as a parsed name, anything else as 'other.
+(define (parse-general-name gn)
+  (case (and (der-tag-context? gn) (der-tag-number gn))
+    [(1) (cons 'email (bytes->string/latin-1 (der-content gn)))]
+    [(2) (cons 'dns (bytes->string/latin-1 (der-content gn)))]
+    [(6) (cons 'uri (bytes->string/latin-1 (der-content gn)))]
+    [(7) (cons 'ip (der-content gn))]
+    [(4) (cons 'dn (parse-name (car (der-children gn))))]     ; [4] EXPLICIT Name
+    [else (cons 'other #f)]))
+
 (define (parse-extensions ext-explicit)
   ;; ext-explicit is the [3] EXPLICIT wrapper; inside is SEQUENCE OF Extension
   (define seq (der-explicit ext-explicit))
-  (define san '()) (define is-ca #f) (define path-len #f)
-  (define ku #f) (define eku #f)
+  (define san '()) (define san-other '()) (define is-ca #f) (define path-len #f)
+  (define ku #f) (define eku #f) (define nc #f) (define critical-unknown '())
   (for ([ext (in-list (der-children seq))])
     (define kids (der-children ext))
     (define oid (car kids))
     ;; optional critical BOOLEAN then OCTET STRING
+    (define critical? (and (= #x01 (der-tag (cadr kids)))
+                           (not (zero? (bytes-ref (der-bytes (cadr kids)) (der-start (cadr kids)))))))
     (define val-oct (if (= #x01 (der-tag (cadr kids))) (caddr kids) (cadr kids)))
     (define val (der-read (subbytes (der-bytes val-oct) (der-start val-oct) (der-end val-oct))))
+    (when (and critical? (not (for/or ([k (in-list known-critical-exts)]) (der-oid=? oid k))))
+      (set! critical-unknown (cons (bytes->oid-string oid) critical-unknown)))
     (cond
       [(der-oid=? oid oid-ext-san)
-       (set! san (for/list ([gn (in-list (der-children val))]
-                            #:when (and (der-tag-context? gn) (= 2 (der-tag-number gn))))
-                   (bytes->string/latin-1 (der-content gn))))]
+       (define names (map parse-general-name (der-children val)))
+       (set! san (for/list ([n (in-list names)] #:when (eq? (car n) 'dns)) (cdr n)))
+       (set! san-other (for/list ([n (in-list names)] #:unless (eq? (car n) 'dns)) n))]
+      [(der-oid=? oid oid-ext-nc)
+       ;; NameConstraints ::= SEQUENCE { permitted [0] IMPLICIT GeneralSubtrees OPTIONAL,
+       ;;                                excluded  [1] IMPLICIT GeneralSubtrees OPTIONAL }
+       ;; GeneralSubtree ::= SEQUENCE { base GeneralName, minimum, maximum }
+       (define (subtrees d)
+         (for/list ([st (in-list (der-children d))])
+           (parse-general-name (car (der-children st)))))
+       (define permitted '()) (define excluded '())
+       (for ([k (in-list (der-children val))])
+         (case (and (der-tag-context? k) (der-tag-number k))
+           [(0) (set! permitted (subtrees k))]
+           [(1) (set! excluded (subtrees k))]))
+       (set! nc (cons permitted excluded))]
       [(der-oid=? oid oid-ext-bc)
        (define bkids (der-children val))
        (when (and (pair? bkids) (= #x01 (der-tag (car bkids))))
@@ -179,7 +219,7 @@
        (set! ku (parse-key-usage val))]
       [(der-oid=? oid oid-ext-eku)
        (set! eku (for/list ([o (in-list (der-children val))]) (bytes->oid-string o)))]))
-  (values san is-ca path-len ku eku))
+  (values san is-ca path-len ku eku san-other nc critical-unknown))
 
 (define ku-bits '(digital-signature non-repudiation key-encipherment
                   data-encipherment key-agreement key-cert-sign
@@ -219,10 +259,10 @@
   (define val-kids (der-children validity))
   (define-values (sig-alg sig-digest0) (oid-symbol (car (der-children sig-algid))))
   (define sig-digest (if (eq? sig-alg 'rsa-pss) (pss-digest sig-algid) sig-digest0))
-  (define-values (san is-ca path-len ku eku)
+  (define-values (san is-ca path-len ku eku san-other nc critical-unknown)
     (let ([ext (for/or ([r (in-list rest)]
                         #:when (and (der-tag-context? r) (= 3 (der-tag-number r)))) r)])
-      (if ext (parse-extensions ext) (values '() #f #f #f #f))))
+      (if ext (parse-extensions ext) (values '() #f #f #f #f '() #f '()))))
   (certificate
    der-bytes* (der-start cert) (der-end tbs)   ; full TBSCertificate TLV (tag..end)
    sig-alg sig-digest
@@ -230,7 +270,7 @@
    (parse-spki spki)
    (raw-time (car val-kids)) (raw-time (cadr val-kids))
    (parse-name subject) (parse-name issuer)
-   san is-ca path-len ku eku))
+   san is-ca path-len ku eku san-other nc critical-unknown))
 
 (define (raw-time d) (bytes->string/latin-1 (der-content d)))
 

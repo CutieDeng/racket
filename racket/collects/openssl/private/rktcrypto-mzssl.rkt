@@ -18,7 +18,8 @@
          "rktcrypto-verify.rkt"
          "rktcrypto-ffi.rkt"
          (only-in "rktcrypto-win32-store.rkt" win32-store-ders)
-         (only-in "rktcrypto-pkcs12.rkt" pkcs12-parse))
+         (only-in "rktcrypto-pkcs12.rkt" pkcs12-parse)
+         (only-in "rktcrypto-x509-build.rkt" cert-subject-name-tlv))
 
 (define protocol-symbol/c
   (or/c 'secure 'auto 'sslv2-or-v3 'sslv2 'sslv3 'tls 'tls11 'tls12 'tls13))
@@ -47,6 +48,8 @@
   (hash-set! h 'trust-anchors '())
   (hash-set! h 'alpn '())
   (hash-set! h 'server-alpn '())
+  (hash-set! h 'alpn-allow-no-match? #t)
+  (hash-set! h 'client-ca-names '())        ; DER Names sent in CertificateRequest
   (hash-set! h 'sni-callback #f)
   (hash-set! h 'sealed? #f)
   (hash-set! h 'keylogger #f)
@@ -134,6 +137,7 @@
   (with-handlers ([exn:fail? (lambda (e) (unless try? (raise e)))])
     (cond
       [(path-string? src) (ssl-load-verify-root-certificates! c src)]
+      [(and (pair? src) (eq? (car src) 'directory)) (load-directory-anchors c (cadr src))]
       [(and (pair? src) (eq? (car src) 'macosx-keychain)) (load-macosx-anchors c (cadr src))]
       [(and (pair? src) (eq? (car src) 'win32-store)) (load-win32-anchors c (cadr src))]
       [else (void)])))
@@ -147,6 +151,19 @@
                    '("/etc/ssl/certs/ca-certificates.crt"
                      "/etc/pki/tls/certs/ca-bundle.crt"
                      "/etc/ssl/cert.pem"))])))
+
+;; A directory of certificate files (what libssl calls a CApath): every
+;; regular file that holds PEM certificates is loaded; files that do not
+;; parse are skipped. libssl looked certificates up by hashed file names;
+;; loading everything serves the same purpose without the naming scheme.
+(define (load-directory-anchors c dir)
+  (define ders
+    (for*/list ([f (in-list (directory-list dir #:build? #t))]
+                #:when (file-exists? f)
+                [d (in-list (with-handlers ([exn:fail? (lambda (_) '())])
+                              (pem->der-list (read-file-bytes f))))])
+      d))
+  (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) ders)))
 
 (define (ssl-load-default-verify-sources! c)
   (for ([src (in-list (ssl-default-verify-sources))])
@@ -168,7 +185,14 @@
            (append (cx-ref c 'trust-anchors)
                    (win32-store-ders 'ssl-load-verify-source! storename))))
 
-(define (ssl-load-suggested-certificate-authorities! c/l path) (void))
+;; The CAs a server names in its CertificateRequest (certificate_authorities),
+;; which clients use to pick a certificate; loading does not make them
+;; trusted for verification (that is ssl-load-verify-root-certificates!).
+(define (ssl-load-suggested-certificate-authorities! c/l path)
+  (define c (->context c/l))
+  (cx-set! c 'client-ca-names
+           (append (cx-ref c 'client-ca-names)
+                   (map cert-subject-name-tlv (pem->der-list (read-file-bytes path))))))
 
 ;; ---- verify / options ----
 ;; Verification mode, as with libssl's SSL_VERIFY_* flags: `ssl-set-verify!`
@@ -297,7 +321,9 @@
   (define pol (parse-cipher-policy str))
   ;; A non-#f policy that resolves to nothing = "no cipher match" -> record 'none
   (cx-set! c 'suite-policy (if (and pol (null? pol)) 'none pol)))
-(define (ssl-set-server-alpn! c protos [prefer-server? #t]) (cx-set! c 'server-alpn protos))
+(define (ssl-set-server-alpn! c protos [allow-no-match? #t])
+  (cx-set! c 'server-alpn protos)
+  (cx-set! c 'alpn-allow-no-match? (and allow-no-match? #t)))
 (define (ssl-set-server-name-identification-callback! c proc) (cx-set! c 'sni-callback proc))
 (define (ssl-set-keylogger! c lg) (cx-set! c 'keylogger lg))
 (define (ssl-server-context-enable-dhe! c [p 'auto]) (void))
@@ -442,6 +468,8 @@
                            'request-client-cert (or (cx-ref context 'verify?) (cx-ref context 'try-verify?))
                            'require-client-cert (cx-ref context 'verify?)
                            'client-ca-anchors (cx-ref context 'trust-anchors)
+                           'client-ca-names (cx-ref context 'client-ca-names)
+                           'alpn-allow-no-match? (cx-ref context 'alpn-allow-no-match?)
                            'ticket-store (cx-ref context 'ticket-store)   ; A2: issue resumption tickets
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
                                    (if (pair? sa) sa alpn))))])))
@@ -517,7 +545,7 @@
 ;; ---- peer / info accessors ----
 (define (ssl-get-alpn-selected p)
   (define obj (port-obj p)) (and obj (tls-conn-alpn (ssl-port-obj-conn obj))))
-(define (ssl-protocol-version p)
+(define (ssl-protocol-version p)   ; 'tls13 / 'tls12, the ssl-protocol-symbol/c symbols
   (define obj (port-obj p)) (and obj (tls-conn-protocol (ssl-port-obj-conn obj))))
 (define (peer-leaf p)
   (define obj (port-obj p))
@@ -589,7 +617,7 @@
 (define (supported-server-protocols) the-supported-protocols)
 (define (ssl-max-client-protocol) 'tls13)
 (define (ssl-max-server-protocol) 'tls13)
-(define ssl-dh4096-param-bytes #f)
+(define ssl-dh4096-param-bytes #"")   ; as with libssl: deprecated, kept for callers that pass it along
 
 (provide
  ssl-dh4096-param-bytes

@@ -523,7 +523,14 @@
 ;;   offered?    : server: the client sent post_handshake_auth
 ;;   pending     : server: the request in flight (a pha-req), or #f
 ;;   request     : server: (require? anchors -> void), installed by the conn
-(struct pha (role tr alg client-auth offered? [pending #:mutable] [request #:mutable]))
+(struct pha (role tr alg client-auth offered? ca-names [pending #:mutable] [request #:mutable]))
+;; CertificateRequest extensions: signature_algorithms, and
+;; certificate_authorities (RFC 8446 4.2.4) when CA names were configured
+(define (certificate-request-exts ca-names)
+  (bytes-append (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes))))
+                (if (pair? ca-names)
+                    (ext #x002f (vec 2 (apply bytes-append (for/list ([n (in-list ca-names)]) (vec 2 n)))))
+                    #"")))
 (struct pha-req (require? anchors tr certs cv cv-th state done) #:mutable)
 
 ;; The client's Certificate / CertificateVerify messages, for the handshake
@@ -637,7 +644,7 @@
            [(pair? certs)
             (with-handlers ([exn:fail? (lambda (e) (fatal-alert! r (verify-failure-alert e) (exn-message e)))])
               (verify-certificate-verify (pha-req-cv req) certs (pha-req-cv-th req) 'client)
-              (verify-chain certs (pha-req-anchors req)))
+              (verify-chain certs (pha-req-anchors req) #:purpose 'client))
             #t]
            [(pha-req-require? req) (fatal-alert! r 116 "client certificate required")]
            [else #f]))
@@ -704,8 +711,7 @@
     (when (pha-pending pha)
       (raise (tls-error "a client authentication request is already in progress")))
     (define ctx (random-bytes 32))
-    (define cr-body (bytes-append (vec 1 ctx)
-                                  (vec 2 (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes)))))))
+    (define cr-body (bytes-append (vec 1 ctx) (vec 2 (certificate-request-exts (pha-ca-names pha)))))
     (define cr (bytes-append (u8 13) (u24 (bytes-length cr-body)) cr-body))
     (define tr (make-transcript (pha-alg pha)))
     (set-transcript-data! tr (bytes-append (pha-tr pha) cr))
@@ -731,7 +737,7 @@
            (loop))))
      (lambda () (set-pha-pending! pha #f))))
   (define conn
-    (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding request-key-update recv-nb
+    (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls13 binding request-key-update recv-nb
               (and verified? #t) pha))
   (when (and pha (eq? (pha-role pha) 'server))
     (set-pha-request! pha request-client-auth!))
@@ -743,7 +749,7 @@
 (define (tls-conn-request-client-auth! c require? anchors)
   (define p (tls-conn-pha c))
   (unless (and p (eq? (pha-role p) 'server) (pha-request p))
-    (raise (tls-error (if (eq? (tls-conn-protocol c) 'tls1.3)
+    (raise (tls-error (if (eq? (tls-conn-protocol c) 'tls13)
                           "post-handshake authentication is only available to the server side"
                           "verification cannot be changed on an established TLS 1.2 connection (renegotiation is not supported); set it on the context before the handshake"))))
   ((pha-request p) require? anchors))
@@ -855,8 +861,8 @@
      u]
     [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
-(define (make-tls-conn recv send shut peer-ders protocol [binding #f] [verified? #f])
-  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding #f #f (and verified? #t) #f))
+(define (make-tls-conn recv send shut peer-ders protocol [binding #f] [verified? #f] [alpn #f])
+  (tls-conn recv send shut #"" #f #f alpn peer-ders protocol binding #f #f (and verified? #t) #f))
 
 ;; Peer verification outcome for a connection. Chain validation
 ;; (`verify?`) and hostname matching (`verify-hostname?`) are independent
@@ -873,7 +879,7 @@
   (define chain-ok?
     (and (pair? certs)
          (with-handlers ([exn:fail? (lambda (e) (if verify? (raise e) #f))])
-           (verify-chain certs anchors)
+           (verify-chain certs anchors #:purpose 'server)
            #t)))
   (define host-ok?
     (and verify-hostname?
@@ -1247,7 +1253,7 @@
                    resume
                    verified?
                    ;; we offered post_handshake_auth: be ready to answer a CertificateRequest
-                   (pha 'client (transcript-data tr) alg client-auth #t #f #f)))
+                   (pha 'client (transcript-data tr) alg client-auth #t '() #f #f)))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -1366,6 +1372,8 @@
   (define client-alpn (let ([e (assoc #x0010 ch-exts)]) (and e (parse-alpn-list (cdr e)))))
   (define neg-alpn (and client-alpn (for/or ([p (in-list our-alpn)]
                                              #:when (member p client-alpn)) p)))
+  (when (and client-alpn (not neg-alpn) (not (hash-ref opts 'alpn-allow-no-match? #t)))
+    (fatal-alert! r 120 "no application protocol in common"))           ; no_application_protocol
   (tr-add! tr ch)
 
   ;; A2: session resumption. If the client offered a PSK (pre_shared_key +
@@ -1438,7 +1446,7 @@
   (define request-client-cert? (and (hash-ref opts 'request-client-cert #f) (not resume-psk)))
   (when request-client-cert?
     (define creq-body (bytes-append (vec 1 #"")   ; empty certificate_request_context
-                                    (vec 2 (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes)))))))
+                                    (vec 2 (certificate-request-exts (hash-ref opts 'client-ca-names '())))))
     (define creq (bytes-append (u8 13) (u24 (bytes-length creq-body)) creq-body))
     (tr-add! tr creq)
     (rl-write-record r 22 creq))
@@ -1524,7 +1532,7 @@
       [(pair? (unbox client-certs))
        (with-handlers ([exn:fail? (lambda (e) (fatal-alert! r (verify-failure-alert e) (exn-message e)))])
          (verify-certificate-verify (unbox client-cv) (unbox client-certs) (unbox client-cv-th) 'client)
-         (verify-chain (unbox client-certs) (hash-ref opts 'client-ca-anchors '())))
+         (verify-chain (unbox client-certs) (hash-ref opts 'client-ca-anchors '()) #:purpose 'client))
        #t]
       [(hash-ref opts 'require-client-cert #f)
        (fatal-alert! r 116 "client certificate required")]           ; certificate_required
@@ -1562,7 +1570,8 @@
                    (ku k aead (box (ks-c-ap k)) (box (ks-s-ap k)))   ; recv=client, send=server
                    #f
                    peer-verified?
-                   (pha 'server (transcript-data tr) alg #f (and (assoc #x0031 ch-exts) #t) #f #f))))
+                   (pha 'server (transcript-data tr) alg #f (and (assoc #x0031 ch-exts) #t)
+                        (hash-ref opts 'client-ca-names '()) #f #f))))
 
 ;; Send a fatal alert (best effort) and raise it.
 (define (fatal-alert! r code msg)

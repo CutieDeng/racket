@@ -893,6 +893,15 @@ context shared with the port's listener is left unchanged.
 
 A certificate that the peer presents must verify; with
 @racket[ssl-set-verify!] a peer that presents none is rejected as well.
+Verification builds a path from the peer's certificate to a loaded trust
+anchor (the presented certificates may be in any order and may include
+unused ones) and applies the RFC 5280 checks that libssl applied for TLS
+peers: validity period, issuer CA flag and @tt{keyCertSign} key usage,
+path length constraints, name constraints, @tt{extendedKeyUsage}
+(@tt{serverAuth} for a server, @tt{clientAuth} for a client, when the
+extension is present), the end entity's @tt{keyUsage}, and rejection of
+unknown critical extensions. Revocation is checked only through OCSP
+stapling (see @racket[ssl-set-revocation-check!]).
 
 Enabling verification also requires, at a minimum, designating trusted
 certificate authorities with @racket[ssl-load-verify-source!].
@@ -931,7 +940,8 @@ verification is enabled, the hostname associated with a connection
 against the hostnames listed in the peer's certificate. If the peer
 certificate does not contain an entry matching the hostname, or if the
 peer does not present a certificate, the connection is rejected and an
-exception is raised.
+exception is raised. A hostname that is an IP address literal is matched
+against the certificate's @tt{iPAddress} alternative names.
 
 Hostname verification does not imply certificate verification. To
 verify the certificate itself, also call @racket[ssl-set-verify!].
