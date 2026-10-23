@@ -29,23 +29,35 @@
 
 状态标注:**已验证** = 有实测输出;**推断** = 有代码证据但未实测;**未知** = 无法判定。
 
-## 1. 修复后仍存在的差异(需决策或后续工作)
+## 1. 第二轮(2026-10-23,提交 da9c4bd8e5)
 
-1. **已建立连接上的 `ssl-set-verify!` / `ssl-try-verify!`**:上游通过 TLS 1.2 重协商实现;本实现无重协商,
-   且端口与 listener 共享 context,原先静默改写 context 会影响之后所有连接。现改为报错
-   `ssl-set-verify!: failed (verification cannot be changed on an established connection; ...)`。
-   后果:`peer-verif.rkt` 的三个 `#:later` 用例失败(握手期三个用例通过)。可选方案:TLS 1.3
-   post-handshake authentication(RFC 8446 §4.6.2),但该测试强制 'tls12。
-2. **DHE 客户端策略**:只接受 RFC 7919 命名群(ffdhe2048/3072/4096,g = 2),否则发 insufficient_security(71)
-   中止(RFC 7919 §4 允许)。实测:OpenSSL 3.6.3 `s_server` 默认 auto-DH 即使客户端通告了 ffdhe 群,
-   仍发 RFC 3526 MODP-2048,被本客户端拒绝;`-dhparam ffdhe2048.pem` 时握手成功。LibreSSL 3.3.6 同样被拒绝。
-   由于客户端优先 ECDHE,仅"只开 DHE"的服务端受影响。若要接受 MODP 14/15/16,需 C 侧导出通用
-   modexp(当前 `rktcrypto_ffdhe_derive` 只支持命名群)并重建。
-3. **CBC 解密非常数时间**:填充与 MAC 都检查、MAC 总是计算(Lucky 13 的常见缓解形态),但不是常数时间实现。
-4. `ssl-try-verify!` 文档写"验证失败时连接继续",与上游实现(及现在的本实现)不一致:出示但验证失败的证书
-   会被拒绝。文档未改。
-5. 关闭写方向时若对端已先关闭(已收到其 close_notify 或传输层 EOF),不再发送 close_notify:对端已停止
-   在 TLS 层读取,发送只会阻塞或污染传输层;上游在该状态下实测也不发送(`basic.rkt` 依赖:关闭后复用原始管道)。
+用户决策:C 侧导出通用 modexp 并接受 MODP 群;实现 TLS 1.3 post-handshake authentication;分支保留不合入;
+"推断"项按源码正向分析。
+
+| 项 | 做法 | 验证 |
+|---|---|---|
+| DHE 客户端策略 | `rktcrypto_dh_keygen/derive`(任意素数);白名单 = RFC 7919 ffdhe2048/3072/4096 + RFC 3526 MODP 14/15/16(g=2),素数由公式计算并与 C 常量/OpenSSL 内置群逐字节核对;其余仍发 insufficient_security | OpenSSL 3.6.3 默认 auto-DH(MODP-2048)与 LibreSSL 3.3.6:9 组套件双向 18/18 通过 |
+| 端口上 `ssl-set-verify!`/`ssl-try-verify!` | TLS 1.3 post-handshake auth(RFC 8446 §4.6.2):客户端通告 post_handshake_auth,服务端发 CertificateRequest 并同步等待 Certificate/CertificateVerify/Finished,期间到达的应用数据排队;TLS 1.2 仍报错 | `test-post-handshake-auth.rkt` 14 项;`peer-verif.rkt` 强制 'tls12,其 `#:later` 3 用例仍失败 |
+| CBC 时序 | 双方协商 encrypt_then_mac(RFC 7366):MAC 覆盖公开长度的密文,先验 MAC 再看填充,无 Lucky 13 信号;会话票记录该框架,不一致则全握手。MtE 保留给无扩展的对端,填充检查改为 256 字节固定窗口掩码扫描 | `test-suites.rkt` 42 项(我方两端协商 EtM);OpenSSL/LibreSSL 对拍 |
+| ECDSA 套件自互通 | 新增 P-256 服务端证书 `server_ec_{key,crt}.pem`(`generate-certs.sh`) | `test-suites.rkt` 7 个 ECDHE-ECDSA 套件 × 管道 10/4096 |
+
+### 1.1 MtE 路径的正向分析(仍存在的泄漏,已验证于源码)
+
+`cbc-open`(`rktcrypto-tls12.rkt`)MtE 分支:解密后取末字节 padlen → `padding-ok?` 对最后 256 字节做掩码扫描
+(循环次数与 padlen 无关,无数据相关分支)→ `frag-len = ptlen - padlen - 1 - mac-len` → `hmac` 覆盖 `13 + frag-len` 字节。
+HMAC 的压缩块数 = ⌈(13 + frag-len + 9) / 64⌉(SHA-1/256)或 /128(SHA-384),随 padlen 变化,即 Lucky 13 可观测量;
+`ct-equal?` 为常数时间。消除需要按 libssl `ssl3_cbc_digest_record` 的方式在哈希内部状态上做固定块数的 HMAC,本轮未做。
+该路径只在对端不支持 encrypt_then_mac 时进入;OpenSSL ≥ 1.0.1、GnuTLS、mbedTLS 均支持;LibreSSL 不支持
+(对拍中 LibreSSL 走 MtE 路径,功能正确)。
+
+### 1.2 仍存在的差异
+
+1. `peer-verif.rkt` 的三个 `#:later` 用例:强制 'tls12,需重协商;TLS 1.3 下同样的调用已可用(见上表)。
+2. `bn_modexp`(C)的固定窗口幂在窗口值为 0 时跳过乘法(`if(d) bn_montmul`),对私钥指数非严格常数时间;命名群路径
+   原本即用此函数,本轮未改。
+3. `ssl-try-verify!` 文档已改为与实现一致(出示但验证失败的证书被拒绝)。
+4. 关闭写方向时若对端已先关闭,不发送 close_notify(与上游实测一致,`basic.rkt` 依赖)。
+5. S3/S4 未处理。
 
 ## 2. 不属于 rktcrypto 的失败
 
