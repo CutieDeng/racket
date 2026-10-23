@@ -237,12 +237,32 @@
 ;;     IV(16) || CBC(fragment || MAC || padding || padding_length), with
 ;;     MAC = HMAC(mac_key, seq(8) || type || 0303 || len(fragment) || fragment).
 ;;     The padding check scans a fixed window of 256 bytes with no
-;;     data-dependent branches, and a MAC is always computed; what remains is
-;;     the length of the HMAC input (hence its number of compression blocks),
-;;     which depends on the secret padding length -- the Lucky 13 signal. It
-;;     is not eliminated here (that needs a constant-block-count HMAC over the
-;;     hash's internal state); it is only present for peers that do not
-;;     negotiate encrypt-then-MAC.
+;;     data-dependent branches, a MAC is always computed, and the MAC's
+;;     number of hash compressions is equalized to the record's maximum
+;;     (`hmac/fixed-blocks`), so the padding length does not show in the
+;;     compression count (the Lucky 13 signal). Only reached with peers that
+;;     do not negotiate encrypt-then-MAC.
+;; HMAC(key, msg) whose number of hash compressions depends only on
+;; `max-len` (an upper bound on the message length), not on the actual
+;; length: the Lucky 13 countermeasure for the MAC-then-encrypt path, where
+;; the message length is the record length minus the secret padding length.
+;; HMAC = H(K xor opad || H(K xor ipad || msg)); the inner hash takes
+;; 1 + ceil((len + 1 + L) / B) compressions (B block, L length field), so
+;; after the real computation the shortfall to the maximum is burnt on a
+;; throwaway context. The outer hash is fixed-length. What still varies
+;; with the length is bookkeeping only (byte copies into the hash's
+;; partial-block buffer, no compressions).
+(define (hmac/fixed-blocks alg key msg max-len)
+  (define bs (rktcrypto_digest_block_size alg))
+  (define ll (if (= bs 128) 16 8))
+  (define k (if (> (bytes-length key) bs) (digest alg key) key))
+  (define kb (bytes-append k (make-bytes (- bs (bytes-length k)) 0)))
+  (define (xor-with c) (let ([o (bytes-copy kb)]) (for ([i (in-range bs)]) (bytes-set! o i (bitwise-xor (bytes-ref kb i) c))) o))
+  (define inner (digest-parts alg (list (xor-with #x36) msg)))
+  (define (blocks n) (quotient (+ n 1 ll bs -1) bs))
+  (digest-burn alg (max 0 (- (blocks max-len) (blocks (bytes-length msg)))))
+  (digest-parts alg (list (xor-with #x5c) inner)))
+
 (define (cbc-seal key mac-key mac-alg etm? seq type frag)
   (define iv (random-bytes 16))
   (define (pad bs)                                ; -> bs || padding, a multiple of 16
@@ -302,7 +322,11 @@
                  [frag-len (if len-ok? (- ptlen padlen 1 mac-len) (max 0 (- ptlen mac-len)))]
                  [frag (subbytes pt 0 frag-len)]
                  [got-mac (subbytes pt frag-len (+ frag-len mac-len))]
-                 [exp-mac (hmac mac-alg mac-key (bytes-append (aad seq type frag-len) frag))]
+                 ;; the MAC input is 13 + frag-len bytes; frag-len is at most
+                 ;; ptlen - mac-len (padding length byte and MAC removed), and
+                 ;; the compression count is equalized to that maximum
+                 [exp-mac (hmac/fixed-blocks mac-alg mac-key (bytes-append (aad seq type frag-len) frag)
+                                             (+ 13 (- ptlen mac-len)))]
                  [mac-ok? (ct-equal? got-mac exp-mac)])
             (and len-ok? mac-ok? frag)))]))
 

@@ -60,6 +60,12 @@
 
 (define-rkt rktcrypto_hmac
   (_fun _int _bytes _intptr _bytes _intptr _bytes -> _void))
+;; incremental digests (init / update / final over a caller-held context)
+(define-rkt rktcrypto_digest_ctx_size (_fun _int -> _intptr))
+(define-rkt rktcrypto_digest_block_size (_fun _int -> _intptr))
+(define-rkt rktcrypto_digest_init (_fun _int _bytes _intptr _intptr -> _int))
+(define-rkt rktcrypto_digest_update (_fun _int _bytes _intptr _bytes _intptr _intptr -> _int))
+(define-rkt rktcrypto_digest_final (_fun _int _bytes _intptr _bytes _intptr _intptr -> _int))
 
 (define-rkt rktcrypto_hkdf_extract
   (_fun _int _bytes _intptr _bytes _intptr _bytes -> _void))
@@ -165,6 +171,25 @@
   (define out (make-bytes (digest-size alg)))
   (rktcrypto_hmac alg key (bytes-length key) data (bytes-length data) out)
   out)
+
+;; Hash of the concatenation of `parts`, fed incrementally.
+(define (digest-parts alg parts)
+  (define ctx (make-bytes (rktcrypto_digest_ctx_size alg)))
+  (define out (make-bytes (digest-size alg)))
+  (rktcrypto_digest_init alg ctx (bytes-length ctx) (bytes-length out))
+  (for ([p (in-list parts)])
+    (rktcrypto_digest_update alg ctx (bytes-length ctx) p 0 (bytes-length p)))
+  (rktcrypto_digest_final alg ctx (bytes-length ctx) out 0 (bytes-length out))
+  out)
+;; Runs the compression function `n` times on a throwaway context (timing
+;; padding: makes a caller's total number of compressions independent of
+;; a secret length).
+(define (digest-burn alg n)
+  (define bs (rktcrypto_digest_block_size alg))
+  (define ctx (make-bytes (rktcrypto_digest_ctx_size alg)))
+  (define data (make-bytes (* n bs) 0))
+  (rktcrypto_digest_init alg ctx (bytes-length ctx) (digest-size alg))
+  (rktcrypto_digest_update alg ctx (bytes-length ctx) data 0 (bytes-length data)))
 
 (define (random-bytes n)
   (define out (make-bytes n))

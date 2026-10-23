@@ -38,17 +38,29 @@
 |---|---|---|
 | DHE 客户端策略 | `rktcrypto_dh_keygen/derive`(任意素数);白名单 = RFC 7919 ffdhe2048/3072/4096 + RFC 3526 MODP 14/15/16(g=2),素数由公式计算并与 C 常量/OpenSSL 内置群逐字节核对;其余仍发 insufficient_security | OpenSSL 3.6.3 默认 auto-DH(MODP-2048)与 LibreSSL 3.3.6:9 组套件双向 18/18 通过 |
 | 端口上 `ssl-set-verify!`/`ssl-try-verify!` | TLS 1.3 post-handshake auth(RFC 8446 §4.6.2):客户端通告 post_handshake_auth,服务端发 CertificateRequest 并同步等待 Certificate/CertificateVerify/Finished,期间到达的应用数据排队;TLS 1.2 仍报错 | `test-post-handshake-auth.rkt` 14 项;`peer-verif.rkt` 强制 'tls12,其 `#:later` 3 用例仍失败 |
-| CBC 时序 | 双方协商 encrypt_then_mac(RFC 7366):MAC 覆盖公开长度的密文,先验 MAC 再看填充,无 Lucky 13 信号;会话票记录该框架,不一致则全握手。MtE 保留给无扩展的对端,填充检查改为 256 字节固定窗口掩码扫描 | `test-suites.rkt` 42 项(我方两端协商 EtM);OpenSSL/LibreSSL 对拍 |
+| CBC 时序 | 双方协商 encrypt_then_mac(RFC 7366):MAC 覆盖公开长度的密文,先验 MAC 再看填充,无 Lucky 13 信号;会话票记录该框架,不一致则全握手。MtE 保留给无扩展的对端,填充检查改为 256 字节固定窗口掩码扫描,HMAC 压缩块数定值(§1.1) | `test-suites.rkt` 42 项(我方两端协商 EtM);OpenSSL/LibreSSL 对拍 |
 | ECDSA 套件自互通 | 新增 P-256 服务端证书 `server_ec_{key,crt}.pem`(`generate-certs.sh`) | `test-suites.rkt` 7 个 ECDHE-ECDSA 套件 × 管道 10/4096 |
 
-### 1.1 MtE 路径的正向分析(仍存在的泄漏,已验证于源码)
+### 1.1 MtE 路径的正向分析与消除(第三轮)
 
 `cbc-open`(`rktcrypto-tls12.rkt`)MtE 分支:解密后取末字节 padlen → `padding-ok?` 对最后 256 字节做掩码扫描
-(循环次数与 padlen 无关,无数据相关分支)→ `frag-len = ptlen - padlen - 1 - mac-len` → `hmac` 覆盖 `13 + frag-len` 字节。
-HMAC 的压缩块数 = ⌈(13 + frag-len + 9) / 64⌉(SHA-1/256)或 /128(SHA-384),随 padlen 变化,即 Lucky 13 可观测量;
-`ct-equal?` 为常数时间。消除需要按 libssl `ssl3_cbc_digest_record` 的方式在哈希内部状态上做固定块数的 HMAC,本轮未做。
-该路径只在对端不支持 encrypt_then_mac 时进入;OpenSSL ≥ 1.0.1、GnuTLS、mbedTLS 均支持;LibreSSL 不支持
-(对拍中 LibreSSL 走 MtE 路径,功能正确)。
+(循环次数与 padlen 无关)→ `frag-len = ptlen − padlen − 1 − mac-len` → HMAC 覆盖 `13 + frag-len` 字节。
+HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L = 8/16),随 padlen 变化 —— Lucky 13 可观测量。
+
+**消除**:`hmac/fixed-blocks` 用增量摘要 API 手算 HMAC,内层哈希完成后在一次性上下文上补足压缩次数到该记录的最大值
+(frag-len = ptlen − mac-len 时的块数),外层哈希定长。`ct-equal?` 常数时间。仍随长度变化的只有簿记(字节拷入部分块缓冲、
+`final` 的逐字节填充循环),无压缩调用。
+
+**实测**(`cbc-open` MtE,AES-128,HMAC-SHA256,密文 512 字节,padlen 0..255,每点 7 轮取中位,ns/次):
+
+| padlen | 0 | 15 | 63 | 127 | 191 | 255 |
+|---|---|---|---|---|---|---|
+| 内层块数 | 9 | 9 | 8 | 7 | 6 | 5 |
+| 改前 | 1564 | 1548 | 1518 | 1490 | 1418 | 1404 |
+| 改后 | 2525 | 2489 | 2484 | 2455 | 2471 | 2458 |
+
+改前单调下降,约 40 ns/块;改后无趋势,离散 ±2%(与块数无关)。代价约 +900 ns/记录(增量 API 每次调用拷贝 2KB 上下文),
+只在未协商 EtM 的对端上发生。与 `rktcrypto_hmac` 的一致性:SHA-1/256/384 × 12 个边界长度 0 mismatch。
 
 ### 1.2 仍存在的差异
 
