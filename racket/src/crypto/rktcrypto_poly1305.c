@@ -148,6 +148,15 @@ void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72])
 }
 #endif
 
+/* rows 0..4: r^2 limbs in both lanes; 5..8: 5 * r^2 limbs 1..4; rows 9..17 per lane (r^2, r) */
+void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[36])
+{
+  uint32_t r2[5]; int i;
+  poly26_mul(r2, r, r);
+  for (i = 0; i < 5; i++) { tab[2*i] = tab[2*i+1] = r2[i]; tab[18 + 2*i] = r2[i]; tab[18 + 2*i + 1] = r[i]; }
+  for (i = 1; i < 5; i++) { tab[2*(4+i)] = tab[2*(4+i)+1] = (uint64_t)r2[i] * 5; tab[18 + 2*(4+i)] = (uint64_t)r2[i] * 5; tab[18 + 2*(4+i) + 1] = (uint64_t)r[i] * 5; }
+}
+
 static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *m,
                             intptr_t bytes, uint32_t hibit)
 {
@@ -173,6 +182,24 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
     h0 += (uint32_t)c * 5; c = h0 >> 26; h0 &= 0x3ffffff; h1 += (uint32_t)c;
     ctx->h[0] = h0; ctx->h[1] = h1; ctx->h[2] = h2; ctx->h[3] = h3; ctx->h[4] = h4;
     m += groups * 64; bytes -= groups * 64;
+  }
+  /* the SSE2 tier (no AVX2, no BMI2): two-way radix 2^26 on whole groups of two blocks */
+  if (bytes >= 128 && hibit && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSE2) &&
+      !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2) && !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
+    uint64_t tab[36] __attribute__((aligned(16))), hv[5];
+    intptr_t groups = bytes / 32;
+    uint64_t c;
+    rktcrypto_poly1305_sse2_table(ctx->r, tab);
+    hv[0] = h0; hv[1] = h1; hv[2] = h2; hv[3] = h3; hv[4] = h4;
+    rktcrypto_poly1305_blocks_sse2(hv, tab, m, groups);
+    c = hv[0] >> 26; h0 = (uint32_t)hv[0] & 0x3ffffff;
+    hv[1] += c; c = hv[1] >> 26; h1 = (uint32_t)hv[1] & 0x3ffffff;
+    hv[2] += c; c = hv[2] >> 26; h2 = (uint32_t)hv[2] & 0x3ffffff;
+    hv[3] += c; c = hv[3] >> 26; h3 = (uint32_t)hv[3] & 0x3ffffff;
+    hv[4] += c; c = hv[4] >> 26; h4 = (uint32_t)hv[4] & 0x3ffffff;
+    h0 += (uint32_t)c * 5; c = h0 >> 26; h0 &= 0x3ffffff; h1 += (uint32_t)c;
+    ctx->h[0] = h0; ctx->h[1] = h1; ctx->h[2] = h2; ctx->h[3] = h3; ctx->h[4] = h4;
+    m += groups * 32; bytes -= groups * 32;
   }
   /* rktasm/x86 kernel in radix 2^64: convert the accumulator and r, run the whole-block
      prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */

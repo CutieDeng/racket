@@ -148,6 +148,12 @@ static void sha256_transform(rktcrypto_sha256_ctx_t *ctx, const unsigned char *p
     while (nblocks-- > 0) { rktcrypto_sha256_block_shani(ctx->h, p); p += 64; }
 #endif
   } else {
+#if defined(__x86_64__) && defined(__ELF__)
+    if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
+      rktcrypto_sha256_blocks_avx2(ctx->h, p, nblocks);   /* rktasm/x86 kernel for CPUs without SHA-NI */
+      return;
+    }
+#endif
     while (nblocks-- > 0) { sha256_transform_portable(ctx, p); p += 64; }
   }
 #else

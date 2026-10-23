@@ -18,6 +18,7 @@ CC=${CC:-cc}
 # because the dispatchers in rktcrypto_x86.c reference all of them)
 TABLE='
 sha256|rktcrypto_sha256_x86.S|asm/tests/test_sha256_x86.c|rktcrypto_x86.c rktcrypto_cpu.c
+sha256_avx2|rktcrypto_sha256_avx2.S|asm/tests/test_sha256_x86.c|rktcrypto_x86.c rktcrypto_cpu.c
 aes_ctr_vaes|rktcrypto_aes_ctr_vaes.S|asm/tests/test_aes_ctr_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c
 ghash_vpclmul|rktcrypto_ghash_vpclmul.S|asm/tests/test_ghash_vpclmul.c|rktcrypto_x86.c rktcrypto_cpu.c
 gcm_vaes|rktcrypto_gcm_vaes.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
@@ -35,6 +36,7 @@ sha512_x86|rktcrypto_sha512_x86.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c
 sha512_avx512|rktcrypto_sha512_avx512.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
 ed25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_ed25519_x86.c|rktcrypto_ed25519.c rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c|asm/x86/x25519_x86.asm
 x25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_x25519_x86.c|rktcrypto_x25519.c rktcrypto_cpu.c rktcrypto_x86.c
+poly1305_sse2|rktcrypto_poly1305_sse2.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 poly1305_avx2|rktcrypto_poly1305_avx2.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 poly1305_ifma|rktcrypto_poly1305_ifma.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 '

@@ -20,6 +20,7 @@ enum {
   RKTCRYPTO_CPU_X86_BMI2ADX = 1u << 7,   /* MULX + ADCX/ADOX */
   RKTCRYPTO_CPU_X86_IFMA   = 1u << 8,   /* AVX512_IFMA (with the AVX-512 state) */
   RKTCRYPTO_CPU_X86_SSSE3  = 1u << 14,  /* pshufb and friends (the SSE tier of the kernels) */
+  RKTCRYPTO_CPU_X86_SSE2   = 1u << 15,  /* always set on x86-64; a bit so the harnesses can switch the SSE2 kernels off */
   RKTCRYPTO_CPU_ARM_AES    = 1u << 8,
   RKTCRYPTO_CPU_ARM_PMULL  = 1u << 9,
   RKTCRYPTO_CPU_ARM_SHA2   = 1u << 10,

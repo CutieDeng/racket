@@ -21,6 +21,8 @@ void rktcrypto_sha256_block_shani(uint32_t state[8], const unsigned char *data);
 void rktcrypto_sha1_blocks_shani(uint32_t state[5], const unsigned char *data, intptr_t nblk);
 /* rktasm/x86 kernel (rktcrypto_sha256_x86.S, from asm/x86/sha256.asm); x86-64 ELF only */
 void rktcrypto_sha256_blocks_x86(uint32_t state[8], const unsigned char *data, intptr_t nblk);
+/* rktasm/x86 kernel (rktcrypto_sha256_avx2.S): the tier without SHA-NI (BMI2 rorx rounds, AVX schedule) */
+void rktcrypto_sha256_blocks_avx2(uint32_t state[8], const unsigned char *data, intptr_t nblk);
 
 /* AES-NI key schedules and block/mode kernels for all key sizes (Nr = 10/12/14).
    rk/dk are the 16*(Nr+1)-byte FIPS-197 schedules in encryption order; dk is
@@ -91,6 +93,9 @@ void rktcrypto_poly1305_blocks_ifma(uint64_t h44[3], const uint64_t tab[80], con
    lane sums (below 2^29); tab = the 18 x 4 qword table from rktcrypto_poly1305_avx2_table; groups x 64 bytes */
 void rktcrypto_poly1305_blocks_avx2(uint64_t h[5], const uint64_t tab[72], const unsigned char *m, intptr_t groups);
 void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72]);
+/* rktasm/x86 kernel (rktcrypto_poly1305_sse2.S): two blocks per vector in radix 2^26; tab = 18 x 2 qwords, 16-aligned */
+void rktcrypto_poly1305_blocks_sse2(uint64_t h[5], const uint64_t tab[36], const unsigned char *m, intptr_t groups);
+void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[36]);
 void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
 /* rktasm/x86 kernel (rktcrypto_chacha20poly1305_x86.S): `units` x 1024 bytes of ChaCha20 XOR while Poly1305
    absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */

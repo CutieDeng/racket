@@ -19,6 +19,7 @@ static unsigned rktcrypto_cpu_detect(void)
     if (c & (1u << 25)) f |= RKTCRYPTO_CPU_X86_AESNI;   /* AES-NI      */
     if (c & (1u << 1))  f |= RKTCRYPTO_CPU_X86_PCLMUL;  /* PCLMULQDQ   */
     if (c & (1u << 9))  f |= RKTCRYPTO_CPU_X86_SSSE3;   /* SSSE3       */
+    f |= RKTCRYPTO_CPU_X86_SSE2;                        /* x86-64 baseline */
   }
   if (__get_cpuid_count(7, 0, &a, &b, &c, &d)) {
     if (b & (1u << 29)) f |= RKTCRYPTO_CPU_X86_SHA;     /* SHA-NI      */

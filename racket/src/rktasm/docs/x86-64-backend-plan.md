@@ -446,6 +446,12 @@ GCM 融合分派三层（3=VAES、2=VEX AES-NI、1=SSE）。gensrc 表的发射�
 此前 SSE 层为 0.45 / 0.60。门禁：poly1305_avx2 0/10200、gcm_aesni_sse 0/15000、chacha20_ssse3 0/11000，全部 20 行
 全过，AES 差分 0/65121，make base、integration 77/77。
 
+**X3-5c 已落地（2026-10-23）——SSE2 Poly1305 与无 SHA-NI 的 SHA-256**：`poly1305_sse2.asm`（两路 radix 2^26，两操作数
+遗留编码，表 16 字节对齐；只在无 AVX2 且无 BMI2 时分派：4150 MB/s 对 radix-26 C 3876，MULX 6.4 GB/s 仍优先）；
+`sha256_avx2.asm`（rorx 标量轮 + xmm 四字调度，与 sha512_avx512 同布局，AVX 无 dword 旋转故 σ 用移位对、半组放位用
+vpsrldq/vpslldq；SHA-NI 缺席且 AVX2+BMI2 时分派）：937 MB/s，OpenSSL 屏蔽 SHA 位后 960（AVX2 路径）→ 0.98×。
+新 `RKTCRYPTO_CPU_X86_SSE2` 位只为让 harness 关掉 SSE2 内核。门禁 poly1305_sse2 0/13200、sha256_avx2 0/6001。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。
