@@ -99,7 +99,10 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 | API | C3 `'tls12` 服务端 context 只协商 1.2(且不写 DOWNGRD 哨兵);C5 cipher 串:`!` 永久、`-` 可恢复、COMPLEMENTOFDEFAULT 为空、无匹配在 `ssl-set-ciphers!` 报错;C10 DER 私钥(`asn1? #t`、`'der`);C11 `'(macosx-keychain #f)`;C12 端口可传给 `ssl-load-verify-root-certificates!`;C13 `#:shutdown-on-close?` 为假时关闭输出端口不发 close_notify(同文档) | test-api-compat 11 |
 | 协议 | C14 客户端检查 session_id 回显(仅 1.3)、HRR 群/套件一致、PSK selected_identity 与哈希;1.2 恢复套件/EMS 一致;C2 1.2 服务端恢复回显 extended_master_secret、保留客户端身份、不再在恢复 SH 里带 SessionTicket 扩展(RFC 5077 §3.3 否则须发 NST) | OpenSSL `s_client -tls1_2 -reconnect`:5 次恢复均成功、无错误 |
 
-未修(低):写路径无锁(读路径发出的 KeyUpdate 应答/PHA 应答与并发应用写理论上可字节交错,实跑未触发);PHA 请求与并发应用读线程可能乱序;`ssl-secure-client-context` 每次 spawn `security`(~15ms);ECDH 点校验在 C 侧仍缺(Racket 侧已补)。
+低优先级项亦已修(第七轮,提交见 git log):记录层写锁(KeyUpdate 应答与写密钥切换原子);PHA 请求改为非阻塞等待完成信号量,
+各读路径对接收缓冲只追加不覆盖;默认验证源按源缓存 10 分钟(`ssl-secure-client-context` 19ms→1ms);C 侧
+`rktcrypto_p256_ecdh` 与通用 `ecc_ecdh` 加曲线上点校验(y² = x³ − 3x + b,Montgomery 域),三曲线对篡改一位的点均返回 0
+(需 make cs 重链,已在 tmux racket-tls13 完成)。
 
 ### 1.3 仍存在的差异
 

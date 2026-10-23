@@ -472,6 +472,16 @@ static int ecc_ecdh(const curve *cv,unsigned char *out,const unsigned char *scal
   if(bn_iszero(d,cv->nl)||bn_cmp(d,cv->n,cv->nl)>=0) return 0;
   bytes_to_limbs(x,point+1,cv->nbytes,cv->nl); bytes_to_limbs(y,point+1+cv->nbytes,cv->nbytes,cv->nl);
   if(bn_cmp(x,cv->p,cv->nl)>=0||bn_cmp(y,cv->p,cv->nl)>=0) return 0;
+  /* the point must lie on the curve (y^2 = x^3 - 3x + b): a point off the
+     curve would let a peer run the scalar multiplication on a weaker
+     twist and learn bits of the scalar (invalid-curve attack) */
+  { u64 X[MAXL],Y[MAXL],l[MAXL],r[MAXL],t[MAXL];
+    fp_to_mont(X,x,cv); fp_to_mont(Y,y,cv);
+    fp_mul(l,Y,Y,cv);
+    fp_mul(t,X,X,cv); fp_mul(r,t,X,cv);
+    fp_add(t,X,X,cv); fp_add(t,t,X,cv); fp_sub(r,r,t,cv);
+    fp_add(r,r,cv->bmont,cv);
+    if(bn_cmp(l,r,cv->nl)!=0) return 0; }
   if(cv->fast==521){ u64 rx[MAXL],ry[MAXL]; if(!p521rr_var_affine(rx,ry,d,x,y)) return 0;
     limbs_to_bytes(out,rx,cv->nbytes); return 1; }
   bn_zero(one); one[0]=1;
