@@ -39,6 +39,11 @@ rktcrypto_tls13_record_nonce
 rktcrypto_tls13_record_seal
 rktcrypto_tls13_record_open
 rktcrypto_tls13_selftest
+rktcrypto_ffdhe_size
+rktcrypto_ffdhe_keygen
+rktcrypto_ffdhe_derive
+rktcrypto_dh_keygen
+rktcrypto_dh_derive
 rktcrypto_x25519
 rktcrypto_x448
 rktcrypto_x448_pubkey
@@ -120,8 +125,3 @@ rktcrypto_pem_to_der
 rktcrypto_x509_verify_selfsigned
 rktcrypto_cms_verify
 rktcrypto_selftest_core
-rktcrypto_ffdhe_size
-rktcrypto_ffdhe_keygen
-rktcrypto_ffdhe_derive
-rktcrypto_dh_keygen
-rktcrypto_dh_derive

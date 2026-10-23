@@ -39,6 +39,11 @@ Sforeign_symbol("rktcrypto_tls13_record_nonce", (void *)rktcrypto_tls13_record_n
 Sforeign_symbol("rktcrypto_tls13_record_seal", (void *)rktcrypto_tls13_record_seal);
 Sforeign_symbol("rktcrypto_tls13_record_open", (void *)rktcrypto_tls13_record_open);
 Sforeign_symbol("rktcrypto_tls13_selftest", (void *)rktcrypto_tls13_selftest);
+Sforeign_symbol("rktcrypto_ffdhe_size", (void *)rktcrypto_ffdhe_size);
+Sforeign_symbol("rktcrypto_ffdhe_keygen", (void *)rktcrypto_ffdhe_keygen);
+Sforeign_symbol("rktcrypto_ffdhe_derive", (void *)rktcrypto_ffdhe_derive);
+Sforeign_symbol("rktcrypto_dh_keygen", (void *)rktcrypto_dh_keygen);
+Sforeign_symbol("rktcrypto_dh_derive", (void *)rktcrypto_dh_derive);
 Sforeign_symbol("rktcrypto_x25519", (void *)rktcrypto_x25519);
 Sforeign_symbol("rktcrypto_x448", (void *)rktcrypto_x448);
 Sforeign_symbol("rktcrypto_x448_pubkey", (void *)rktcrypto_x448_pubkey);

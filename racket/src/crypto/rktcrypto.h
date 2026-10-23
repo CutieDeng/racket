@@ -311,6 +311,28 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_selftest(void);
    pass, else a nonzero step index. */
 
 /*************************************************/
+/* Finite-field Diffie-Hellman (RFC 7919 named groups and explicit (p, g)),
+   used by the TLS engine in collects/openssl through the in-process FFI.
+   Declared here as well as in rktcrypto_ffc.h so that the generated keep
+   table (rktcrypto.inc) links them into the executable and the export
+   list (rktcrypto.def) carries them: a static-library member nothing
+   references is dropped by the linker. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_ffdhe_size(int group);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ffdhe_keygen(int group, unsigned char *priv_out, intptr_t *privlen,
+                                                  unsigned char *pub_out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ffdhe_derive(int group, const unsigned char *priv, intptr_t privlen,
+                                                  const unsigned char *peer, intptr_t peerlen,
+                                                  unsigned char *out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_dh_keygen(const unsigned char *p, intptr_t plen,
+                                               const unsigned char *g, intptr_t glen, int privbits,
+                                               unsigned char *priv_out, intptr_t *privlen,
+                                               unsigned char *pub_out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_dh_derive(const unsigned char *p, intptr_t plen,
+                                               const unsigned char *priv, intptr_t privlen,
+                                               const unsigned char *peer, intptr_t peerlen,
+                                               unsigned char *out);
+
 /* X25519 key exchange (RFC 7748)                */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
