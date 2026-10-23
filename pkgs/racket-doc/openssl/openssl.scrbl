@@ -612,7 +612,30 @@ Specifies the cipher suites that can be used in connections created
 with @racket[context]. The meaning of @racket[cipher-spec] is the same
 as for the
 @hyperlink["https://docs.openssl.org/master/man1/openssl-ciphers/"]{@tt{openssl
-ciphers} command}.
+ciphers} command}, restricted to the suites that are implemented:
+
+@itemlist[
+
+ @item{TLS 1.3: @tt{TLS_AES_128_GCM_SHA256}, @tt{TLS_AES_256_GCM_SHA384},
+       @tt{TLS_CHACHA20_POLY1305_SHA256};}
+
+ @item{TLS 1.2 with ECDHE or DHE key exchange and RSA or ECDSA
+       authentication: AES-GCM, ChaCha20-Poly1305, and AES-CBC with
+       HMAC-SHA1/SHA256/SHA384 (for example @tt{ECDHE-RSA-AES128-GCM-SHA256},
+       @tt{DHE-RSA-AES256-SHA256}, @tt{ECDHE-ECDSA-AES128-SHA}).}
+
+]
+
+Suites without forward secrecy (plain RSA key exchange) and other ciphers
+are not available; a specification that matches none of the implemented
+suites is an error. Aliases such as @tt{ECDHE}, @tt{EDH},
+@tt{AESGCM}, @tt{SHA256}, the @tt{!} and @tt{-} prefixes, and @tt{+} for
+intersection (@tt{"AES+EDH"}) are supported. Finite-field DHE uses
+well-known safe primes only: a server sends the RFC 7919 group
+@tt{ffdhe2048}, and a client accepts the RFC 7919 groups ffdhe2048/3072/4096
+and the RFC 3526 MODP groups 14/15/16 (2048/3072/4096 bits) with
+generator 2, rejecting any other parameters. CBC suites use
+encrypt-then-MAC (RFC 7366) when the peer supports it.
 }
 
 @defproc[(ssl-seal-context! [context (or/c ssl-client-context? ssl-server-context?)])
@@ -660,6 +683,12 @@ context or listener. The key goes with the certificate that identifies
 the client or server. Like @racket[ssl-load-certificate-chain!], this
 procedure is usually used with server contexts or listeners, seldom
 with client contexts.
+
+Keys may be RSA, EC on P-256, P-384 or P-521, or Ed25519, in PKCS#1,
+SEC1 or PKCS#8 form, PEM by default or DER when @racket[asn1?] is true
+(PKCS#8 may be PBES2-encrypted, see @racket[#:password]); the
+certificate's key type decides the signature scheme offered to peers.
+The @racket[rsa?] argument is accepted for compatibility and ignored.
 
 If @racket[path-or-data] is a @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{
 path or string}, the private key is loaded from a file at the given
@@ -782,6 +811,22 @@ using the original server context.
 
 }
 
+@defproc[(ssl-load-pkcs12! [context-or-listener (or/c ssl-client-context? ssl-server-context?
+                                                      ssl-listener?)]
+                          [path-or-data (or/c path-string? (list/c 'data bytes?))]
+                          [#:password password (or/c string? bytes? #f) #f])
+         void?]{
+
+Loads an identity -- the private key and the certificate chain -- from a
+PKCS#12 bundle (a @filepath{.p12} or @filepath{.pfx} file, or its bytes
+as @racket[(list 'data bytes)]) into the given context or listener,
+decrypting it with @racket[password] when it is protected. This is a
+convenient form of @racket[ssl-load-private-key!] plus
+@racket[ssl-load-certificate-chain!], typically used for a client
+identity.
+
+@history[#:added "9.3.9"]}
+
 @defproc[(ssl-set-server-alpn! [context ssl-server-context?]
                                [alpn-protocols (listof bytes?)]
                                [allow-no-match? boolean? #t])
@@ -856,10 +901,29 @@ access to @filepath{keylogfile.txt} is able to decrypt connections made via
 
 Requires certificate verification on the peer SSL connection when
 @racket[on?] is @racket[#t]. If @racket[clp] is an SSL port, then the
-connection is immediately renegotiated, and an exception is raised
-immediately if certificate verification fails. If @racket[clp] is a
+peer is asked for its certificate immediately, and an exception is
+raised immediately if certificate verification fails. If @racket[clp] is a
 context or listener, certification verification happens on each
 subsequent connection using the context or listener.
+
+Asking an established connection for a certificate is possible only on
+the server side of a TLS 1.3 connection (post-handshake authentication,
+RFC 8446 section 4.6.2; the client must have been made by this library
+or another one that offers it). On a TLS 1.2 connection, where this used
+to be done by renegotiation, an exception is raised instead, and the
+context shared with the port's listener is left unchanged.
+
+A certificate that the peer presents must verify; with
+@racket[ssl-set-verify!] a peer that presents none is rejected as well.
+Verification builds a path from the peer's certificate to a loaded trust
+anchor (the presented certificates may be in any order and may include
+unused ones) and applies the RFC 5280 checks that libssl applied for TLS
+peers: validity period, issuer CA flag and @tt{keyCertSign} key usage,
+path length constraints, name constraints, @tt{extendedKeyUsage}
+(@tt{serverAuth} for a server, @tt{clientAuth} for a client, when the
+extension is present), the end entity's @tt{keyUsage}, and rejection of
+unknown critical extensions. Revocation is checked only through OCSP
+stapling (see @racket[ssl-set-revocation-check!]).
 
 Enabling verification also requires, at a minimum, designating trusted
 certificate authorities with @racket[ssl-load-verify-source!].
@@ -876,8 +940,9 @@ attacks}.  See also @racket[ssl-set-verify-hostname!].
                           [on? any/c])
          void?]{
 
-Like @racket[ssl-set-verify!], but when peer certificate verification fails,
-then connection continues to work. Use @racket[ssl-peer-verified?] to determine
+Like @racket[ssl-set-verify!], but a peer that presents no certificate
+is accepted, and the connection continues unverified; a certificate that
+is presented must still verify. Use @racket[ssl-peer-verified?] to determine
 whether verification succeeded.}
 
 
@@ -897,11 +962,34 @@ verification is enabled, the hostname associated with a connection
 against the hostnames listed in the peer's certificate. If the peer
 certificate does not contain an entry matching the hostname, or if the
 peer does not present a certificate, the connection is rejected and an
-exception is raised.
+exception is raised. A hostname that is an IP address literal is matched
+against the certificate's @tt{iPAddress} alternative names.
 
 Hostname verification does not imply certificate verification. To
 verify the certificate itself, also call @racket[ssl-set-verify!].
 }
+
+@defproc[(ssl-set-revocation-check! [ctx ssl-client-context?] [on? any/c])
+         void?]{
+
+Asks servers for a stapled OCSP response (the @tt{status_request}
+extension) on connections made with @racket[ctx] when @racket[on?] is
+true, and rejects a connection whose stapled response says the
+server's certificate is revoked. A missing or unparsable response does
+not fail the connection; only a response that verifies and reports
+revocation does. No other revocation mechanism (CRL, live OCSP query)
+is used.
+
+@history[#:added "9.3.9"]}
+
+@defproc[(ssl-set-ocsp-staple! [ctx ssl-server-context?] [response bytes?])
+         void?]{
+
+Makes servers using @racket[ctx] send @racket[response], a DER-encoded
+OCSP response for the server's certificate, to clients that ask for
+one (see @racket[ssl-set-revocation-check!]).
+
+@history[#:added "9.3.9"]}
 
 @defproc[(ssl-peer-certificate-hostnames [p ssl-port?])
          (listof string?)]{
@@ -923,6 +1011,15 @@ Returns @racket[#t] if the peer certificate of @racket[p] is valid for
 @racket[hostname] according to
 @hyperlink["http://www.ietf.org/rfc/rfc2818.txt"]{RFC 2818}.
 }
+
+@defproc[(ssl-key-update! [p ssl-port?]) void?]{
+
+On a TLS 1.3 connection, rotates the traffic keys of the connection
+represented by @racket[p] in both directions: a @tt{KeyUpdate} with
+@tt{update_requested} is sent, so the peer updates its keys too. On a
+TLS 1.2 connection this has no effect.
+
+@history[#:added "9.3.9"]}
 
 @defproc[(ssl-peer-subject-name [p ssl-port?]) (or/c bytes? #f)]{
 

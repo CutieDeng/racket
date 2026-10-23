@@ -18,7 +18,8 @@
          "rktcrypto-verify.rkt"
          "rktcrypto-ffi.rkt"
          (only-in "rktcrypto-win32-store.rkt" win32-store-ders)
-         (only-in "rktcrypto-pkcs12.rkt" pkcs12-parse))
+         (only-in "rktcrypto-pkcs12.rkt" pkcs12-parse)
+         (only-in "rktcrypto-x509-build.rkt" cert-subject-name-tlv))
 
 (define protocol-symbol/c
   (or/c 'secure 'auto 'sslv2-or-v3 'sslv2 'sslv3 'tls 'tls11 'tls12 'tls13))
@@ -27,7 +28,7 @@
   (or/c path-string?
         (list/c 'directory path-string?)
         (list/c 'win32-store string?)
-        (list/c 'macosx-keychain path-string?)))
+        (list/c 'macosx-keychain (or/c #f path-string?))))
 
 ;; ---- context ----
 (struct ssl-context (mutable) #:mutable)   ; base
@@ -41,11 +42,14 @@
   (hash-set! h 'protocol protocol)
   (hash-set! h 'cert-ders '())
   (hash-set! h 'private-key #f)
-  (hash-set! h 'verify? #f)
+  (hash-set! h 'verify? #f)          ; ssl-set-verify!: require + verify the peer certificate
+  (hash-set! h 'try-verify? #f)      ; ssl-try-verify!: request it, verify if presented
   (hash-set! h 'verify-hostname? #f)
   (hash-set! h 'trust-anchors '())
   (hash-set! h 'alpn '())
   (hash-set! h 'server-alpn '())
+  (hash-set! h 'alpn-allow-no-match? #t)
+  (hash-set! h 'client-ca-names '())        ; DER Names sent in CertificateRequest
   (hash-set! h 'sni-callback #f)
   (hash-set! h 'sealed? #f)
   (hash-set! h 'keylogger #f)
@@ -67,6 +71,9 @@
   (define c (new-context 'client protocol))
   (when cc (ssl-load-certificate-chain! c cc))
   (when pk (load-private-key-spec c pk))
+  ;; 'secure means a verifying context, as in the libssl-based
+  ;; implementation; callers such as `net/url` and `raco pkg` rely on it
+  (when (eq? protocol 'secure) (secure-client-context! c))
   c)
 
 (define (ssl-make-server-context [protocol 'auto]
@@ -77,12 +84,14 @@
   c)
 
 (define (ssl-secure-client-context)
-  (define c (ssl-make-client-context 'secure))
+  (ssl-make-client-context 'secure))
+
+(define (secure-client-context! c)
   (cx-set! c 'verify? #t)
   (cx-set! c 'verify-hostname? #t)
   (ssl-load-default-verify-sources! c)
-  (ssl-seal-context! c)
-  c)
+  ;; sealed so that later changes cannot weaken it
+  (ssl-seal-context! c))
 
 (define (ssl-seal-context! c) (hash-set! (ssl-context-mutable c) 'sealed? #t))
 
@@ -97,16 +106,18 @@
   (cond
     [(and (list? spec) (eq? (car spec) 'pem)) (ssl-load-private-key! c (cadr spec))]
     [(and (list? spec) (eq? (car spec) 'pem-data)) (cx-set! c 'private-key (pem->private-key (cadr spec)))]
-    [(and (list? spec) (eq? (car spec) 'der)) (ssl-load-private-key! c (cadr spec))]
+    [(and (list? spec) (eq? (car spec) 'der)) (ssl-load-private-key! c (cadr spec) #t #t)]
     [else (void)]))
 
 ;; #:password decrypts an encrypted PKCS#8 (PBES2) key file.
+;; asn1? selects DER input (PKCS#8, PKCS#1 RSA or SEC1 EC); rsa? is kept for
+;; the historical signature and ignored, the key's own type decides.
 (define (ssl-load-private-key! c/l path-or-data [rsa? #t] [asn1? #f] #:password [password #f])
   (define c (->context c/l))
   (define bs (if (and (list? path-or-data) (eq? (car path-or-data) 'data))
                  (cadr path-or-data)
                  (read-file-bytes path-or-data)))
-  (cx-set! c 'private-key (pem->private-key bs password)))
+  (cx-set! c 'private-key (if asn1? (der->private-key bs) (pem->private-key bs password))))
 
 ;; Load a PKCS#12 (.p12/.pfx) identity bundle — both the private key and the
 ;; certificate chain — into a context (handy for a client-auth identity).
@@ -128,7 +139,9 @@
   (with-handlers ([exn:fail? (lambda (e) (unless try? (raise e)))])
     (cond
       [(path-string? src) (ssl-load-verify-root-certificates! c src)]
-      [(and (pair? src) (eq? (car src) 'macosx-keychain)) (load-macosx-anchors c (cadr src))]
+      [(and (pair? src) (eq? (car src) 'directory)) (load-directory-anchors c (cadr src))]
+      [(and (pair? src) (eq? (car src) 'macosx-keychain))
+       (load-macosx-anchors c (or (cadr src) "/System/Library/Keychains/SystemRootCertificates.keychain"))]
       [(and (pair? src) (eq? (car src) 'win32-store)) (load-win32-anchors c (cadr src))]
       [else (void)])))
 
@@ -142,9 +155,36 @@
                      "/etc/pki/tls/certs/ca-bundle.crt"
                      "/etc/ssl/cert.pem"))])))
 
+;; A directory of certificate files (what libssl calls a CApath): every
+;; regular file that holds PEM certificates is loaded; files that do not
+;; parse are skipped. libssl looked certificates up by hashed file names;
+;; loading everything serves the same purpose without the naming scheme.
+(define (load-directory-anchors c dir)
+  (define ders
+    (for*/list ([f (in-list (directory-list dir #:build? #t))]
+                #:when (file-exists? f)
+                [d (in-list (with-handlers ([exn:fail? (lambda (_) '())])
+                              (pem->der-list (read-file-bytes f))))])
+      d))
+  (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) ders)))
+
+;; The default sources are loaded once and reused: exporting the macOS
+;; keychain spawns a process and a file is read and parsed; a 'secure
+;; context is made per connection by net/url and raco pkg. Entries expire
+;; after ten minutes so an updated root store is picked up.
+(define default-anchor-cache (make-hash))     ; source -> (cons loaded-at-ms ders)
 (define (ssl-load-default-verify-sources! c)
   (for ([src (in-list (ssl-default-verify-sources))])
-    (ssl-load-verify-source! c src #:try? #t)))
+    (define now (current-inexact-milliseconds))
+    (define hit (hash-ref default-anchor-cache src #f))
+    (cond
+      [(and hit (< (- now (car hit)) 600000))
+       (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) (cdr hit)))]
+      [else
+       (define before (cx-ref c 'trust-anchors))
+       (ssl-load-verify-source! c src #:try? #t)
+       (define loaded (list-tail (cx-ref c 'trust-anchors) (length before)))
+       (hash-set! default-anchor-cache src (cons now loaded))])))
 
 ;; macOS: export the system roots as PEM via /usr/bin/security, then parse.
 (define (load-macosx-anchors c keychain)
@@ -162,37 +202,117 @@
            (append (cx-ref c 'trust-anchors)
                    (win32-store-ders 'ssl-load-verify-source! storename))))
 
-(define (ssl-load-suggested-certificate-authorities! c/l path) (void))
+;; The CAs a server names in its CertificateRequest (certificate_authorities),
+;; which clients use to pick a certificate; loading does not make them
+;; trusted for verification (that is ssl-load-verify-root-certificates!).
+(define (ssl-load-suggested-certificate-authorities! c/l path)
+  (define c (->context c/l))
+  (cx-set! c 'client-ca-names
+           (append (cx-ref c 'client-ca-names)
+                   (map cert-subject-name-tlv (pem->der-list (read-file-bytes path))))))
 
 ;; ---- verify / options ----
-(define (ssl-set-verify! c/l on?) (cx-set! (->context c/l) 'verify? (and on? #t)))
-(define (ssl-try-verify! c/l on?) (cx-set! (->context c/l) 'verify? (and on? #t)))
+;; Verification mode, as with libssl's SSL_VERIFY_* flags: `ssl-set-verify!`
+;; = require the peer's certificate (SSL_VERIFY_PEER |
+;; SSL_VERIFY_FAIL_IF_NO_PEER_CERT), `ssl-try-verify!` = request it but
+;; proceed without one (SSL_VERIFY_PEER). Either mode rejects a presented
+;; certificate that does not verify. Turning one on turns the other off;
+;; on a client both mean "verify the server".
+(define (ssl-set-verify! c/l on?) (set-verify-mode! 'ssl-set-verify! c/l (if on? 'require 'none)))
+(define (ssl-try-verify! c/l on?) (set-verify-mode! 'ssl-try-verify! c/l (if on? 'try 'none)))
+(define (set-verify-mode! who c/l mode)
+  (cond
+    [(or (input-port? c/l) (output-port? c/l))
+     ;; On an established connection, libssl renegotiated (TLS 1.2). Here a
+     ;; TLS 1.3 server asks the client to authenticate now (post-handshake
+     ;; authentication, RFC 8446 4.6.2) and waits for the answer, so
+     ;; `ssl-peer-verified?` reflects it on return; a TLS 1.2 connection
+     ;; cannot do it. The ports' context is left alone: it is shared with
+     ;; the listener, so changing it would affect every later connection.
+     (unless (eq? mode 'none)
+       (define obj (port-obj c/l))
+       (with-handlers ([exn:fail? (lambda (e) (error who "failed (~a)" (exn-message e)))])
+         (tls-conn-request-client-auth! (ssl-port-obj-conn obj) (eq? mode 'require)
+                                        (cx-ref (ssl-port-obj-ctx obj) 'trust-anchors))))]
+    [else
+     (define c (->context c/l))
+     (cx-set! c 'verify? (eq? mode 'require))
+     (cx-set! c 'try-verify? (eq? mode 'try))]))
 (define (ssl-set-verify-hostname! c on?) (cx-set! c 'verify-hostname? (and on? #t)))
 ;; ssl-set-ciphers!: translate an OpenSSL cipher string into an ordered list of
-;; the AEAD suite ids this backend supports (TLS 1.3 #x1301/1302/1303 and the
-;; TLS 1.2 ECDHE-AEAD suites). Stored as 'suite-policy and threaded to the
-;; handshake, which offers (client) / accepts (server) only these, in this order.
-;; This backend is AEAD-only by design, so non-AEAD tokens simply match nothing.
+;; the suite ids this backend supports (TLS 1.3 #x1301/1302/1303, and the
+;; TLS 1.2 ECDHE/DHE suites with AES-GCM, ChaCha20-Poly1305 or AES-CBC+HMAC).
+;; Stored as 'suite-policy and threaded to the handshake, which offers
+;; (client) / accepts (server) only these, in this order. Unknown tokens
+;; match nothing. Supported syntax: ":"-separated tokens, "!"/"-" removal,
+;; "+" within a token for intersection ("AES+EDH"), "@..." suffixes ignored.
 (define cipher-name-table
   ;; canonical / OpenSSL names -> suite id
   (hash "TLS_AES_128_GCM_SHA256" #x1301 "TLS_AES_256_GCM_SHA384" #x1302
         "TLS_CHACHA20_POLY1305_SHA256" #x1303
         "ECDHE-ECDSA-AES128-GCM-SHA256" #xC02B "ECDHE-RSA-AES128-GCM-SHA256" #xC02F
         "ECDHE-ECDSA-AES256-GCM-SHA384" #xC02C "ECDHE-RSA-AES256-GCM-SHA384" #xC030
-        "ECDHE-ECDSA-CHACHA20-POLY1305" #xCCA9 "ECDHE-RSA-CHACHA20-POLY1305" #xCCA8))
-(define ALL-SUITES '(#x1302 #x1303 #x1301 #xC030 #xC02C #xCCA8 #xCCA9 #xC02F #xC02B))
+        "ECDHE-ECDSA-CHACHA20-POLY1305" #xCCA9 "ECDHE-RSA-CHACHA20-POLY1305" #xCCA8
+        "DHE-RSA-AES128-GCM-SHA256" #x009E "DHE-RSA-AES256-GCM-SHA384" #x009F
+        "DHE-RSA-CHACHA20-POLY1305" #xCCAA
+        "ECDHE-RSA-AES128-SHA256" #xC027 "ECDHE-RSA-AES256-SHA384" #xC028
+        "ECDHE-ECDSA-AES128-SHA256" #xC023 "ECDHE-ECDSA-AES256-SHA384" #xC024
+        "ECDHE-RSA-AES128-SHA" #xC013 "ECDHE-RSA-AES256-SHA" #xC014
+        "ECDHE-ECDSA-AES128-SHA" #xC009 "ECDHE-ECDSA-AES256-SHA" #xC00A
+        "DHE-RSA-AES128-SHA256" #x0067 "DHE-RSA-AES256-SHA256" #x006B
+        "DHE-RSA-AES128-SHA" #x0033 "DHE-RSA-AES256-SHA" #x0039))
+;; Default preference: TLS 1.3, then ECDHE+AEAD, DHE+AEAD, ECDHE+CBC, DHE+CBC.
+(define ALL-SUITES '(#x1302 #x1303 #x1301
+                     #xC030 #xC02C #xCCA8 #xCCA9 #xC02F #xC02B
+                     #x009F #xCCAA #x009E
+                     #xC028 #xC024 #xC027 #xC023 #xC014 #xC00A #xC013 #xC009
+                     #x006B #x0067 #x0039 #x0033))
+;; properties of a suite, for the alias groups below
+(define (suite-props id)
+  (define name (for/first ([(n i) (in-hash cipher-name-table)] #:when (= i id)) n))
+  (define (has? rx) (regexp-match? rx name))
+  (define tls13? (has? #rx"^TLS_"))
+  (list (cond [tls13? 'tls13] [(has? #rx"^ECDHE") 'ecdhe] [else 'dhe])                 ; key exchange
+        (cond [tls13? 'any] [(has? #rx"ECDSA") 'ecdsa] [else 'rsa])                    ; authentication
+        (cond [(has? #rx"GCM") 'aesgcm] [(has? #rx"CHACHA") 'chacha20] [else 'aescbc]) ; cipher
+        (cond [(has? #rx"AES_?128") 'aes128] [(has? #rx"AES_?256") 'aes256] [else 'none])
+        (cond [(has? #rx"GCM|CHACHA") 'aead] [(has? #rx"SHA256$") 'sha256]
+              [(has? #rx"SHA384$") 'sha384] [else 'sha1])))                            ; MAC
+(define (suites-with . props)
+  (filter (lambda (id) (for/and ([p (in-list props)]) (memq p (suite-props id)))) ALL-SUITES))
 (define (cipher-alias->ids tok)
-  ;; expand an OpenSSL alias/group token to a set of suite ids (default order)
+  ;; expand an OpenSSL alias/group token to a list of suite ids (default order)
   (case (string-upcase tok)
-    [("ALL" "HIGH" "DEFAULT" "COMPLEMENTOFDEFAULT" "ECDHE" "EECDH" "KECDHE" "AEAD") ALL-SUITES]
-    [("AESGCM" "AES-GCM") '(#x1302 #x1301 #xC030 #xC02C #xC02F #xC02B)]
-    [("AES128" "AES128-GCM") '(#x1301 #xC02F #xC02B)]
-    [("AES256" "AES256-GCM") '(#x1302 #xC030 #xC02C)]
-    [("AES") '(#x1302 #x1301 #xC030 #xC02C #xC02F #xC02B)]
-    [("CHACHA20" "CHACHA20-POLY1305" "CHACHA") '(#x1303 #xCCA8 #xCCA9)]
+    [("ALL" "HIGH" "DEFAULT") ALL-SUITES]
+    [("COMPLEMENTOFDEFAULT") '()]            ; everything here is in DEFAULT
+    [("ECDHE" "EECDH" "KECDHE" "KEECDH") (append (suites-with 'tls13) (suites-with 'ecdhe))]
+    [("DHE" "EDH" "KDHE" "KEDH" "DH") (suites-with 'dhe)]
+    [("AEAD") (suites-with 'aead)]
+    [("AESGCM" "AES-GCM") (suites-with 'aesgcm)]
+    [("AESCBC" "AES-CBC" "CBC") (suites-with 'aescbc)]
+    [("AES128" "AES128-GCM") (suites-with 'aes128)]
+    [("AES256" "AES256-GCM") (suites-with 'aes256)]
+    [("AES") (append (suites-with 'aes128) (suites-with 'aes256))]
+    [("CHACHA20" "CHACHA20-POLY1305" "CHACHA") (suites-with 'chacha20)]
+    [("SHA" "SHA1") (suites-with 'sha1)]
+    [("SHA256") (suites-with 'sha256)]
+    [("SHA384") (suites-with 'sha384)]
+    [("ARSA" "RSA") (append (suites-with 'tls13) (suites-with 'rsa))]
+    [("AECDSA" "ECDSA") (append (suites-with 'tls13) (suites-with 'ecdsa))]
+    [("TLSV1.3") (suites-with 'tls13)]
+    [("TLSV1.2") (filter (lambda (id) (not (memq 'tls13 (suite-props id)))) ALL-SUITES)]
     [else (let ([id (hash-ref cipher-name-table (string-upcase tok)
-                             (lambda () (hash-ref cipher-name-table tok #f)))])
+                              (lambda () (hash-ref cipher-name-table tok #f)))])
             (if id (list id) '()))]))
+;; "A+B+C": suites that match every part
+(define (cipher-token->ids tok)
+  (define parts (filter (lambda (t) (> (string-length t) 0)) (regexp-split #rx"[+]" tok)))
+  (cond
+    [(null? parts) '()]
+    [else
+     (for/fold ([ids (cipher-alias->ids (car parts))]) ([p (in-list (cdr parts))])
+       (define keep (cipher-alias->ids p))
+       (filter (lambda (id) (memv id keep)) ids))]))
 (define (parse-cipher-policy str)
   ;; -> ordered list of allowed suite ids, or #f for "no constraint" (default)
   (define s (string-trim str))
@@ -201,26 +321,35 @@
     [else
      (define toks (filter (lambda (t) (> (string-length t) 0))
                           (regexp-split #rx"[:, ]+" s)))
-     (let loop ([toks toks] [acc '()])
+     ;; "!" removes permanently (later tokens cannot add the suite back), "-"
+     ;; removes until re-added, as in the openssl ciphers syntax
+     (let loop ([toks toks] [acc '()] [killed '()])
        (cond
          [(null? toks) (reverse acc)]
          [else
           (define raw (car toks))
-          ;; strip @STRENGTH/@SECLEVEL and leading +
+          ;; strip @STRENGTH/@SECLEVEL
           (define t0 (regexp-replace #rx"@.*$" raw ""))
           (cond
-            [(regexp-match? #rx"^[!-]" t0)
-             (define ids (cipher-alias->ids (substring t0 1)))
-             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc))]
+            [(regexp-match? #rx"^!" t0)
+             (define ids (cipher-token->ids (substring t0 1)))
+             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc) (append ids killed))]
+            [(regexp-match? #rx"^-" t0)
+             (define ids (cipher-token->ids (substring t0 1)))
+             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc) killed)]
             [else
-             (define t1 (regexp-replace #rx"^[+]" t0 ""))
-             (define ids (cipher-alias->ids t1))
-             (loop (cdr toks) (append (reverse (filter (lambda (x) (not (memv x acc))) ids)) acc))])]))]))
+             (define ids (filter (lambda (x) (not (memv x killed))) (cipher-token->ids t0)))
+             (loop (cdr toks) (append (reverse (filter (lambda (x) (not (memv x acc))) ids)) acc) killed)])]))]))
 (define (ssl-set-ciphers! c str)
   (define pol (parse-cipher-policy str))
-  ;; A non-#f policy that resolves to nothing = "no cipher match" -> record 'none
-  (cx-set! c 'suite-policy (if (and pol (null? pol)) 'none pol)))
-(define (ssl-set-server-alpn! c protos [prefer-server? #t]) (cx-set! c 'server-alpn protos))
+  ;; a specification that matches no implemented suite is an error here, as
+  ;; it was with libssl ("no cipher match"), rather than at connect time
+  (when (and pol (null? pol))
+    (error 'ssl-set-ciphers! "no cipher match: ~e" str))
+  (cx-set! c 'suite-policy pol))
+(define (ssl-set-server-alpn! c protos [allow-no-match? #t])
+  (cx-set! c 'server-alpn protos)
+  (cx-set! c 'alpn-allow-no-match? (and allow-no-match? #t)))
 (define (ssl-set-server-name-identification-callback! c proc) (cx-set! c 'sni-callback proc))
 (define (ssl-set-keylogger! c lg) (cx-set! c 'keylogger lg))
 (define (ssl-server-context-enable-dhe! c [p 'auto]) (void))
@@ -240,6 +369,7 @@
   (cond [(ssl-context? c/l) c/l]
         [(ssl-listener? c/l) (ssl-listener-ctx c/l)]
         [(ssl-port-obj? c/l) (ssl-port-obj-ctx c/l)]
+        [(port-obj c/l) => ssl-port-obj-ctx]
         [else (error 'ssl "not a context/listener/port: ~e" c/l)]))
 
 ;; =====================================================================
@@ -266,12 +396,22 @@
   ;; write-direction action, and it belongs to the output port's close.
   (make-input-port name read-in #f on-close))
 
-(define (make-ssl-output conn name on-close)
+(define (make-ssl-output conn name on-close shutdown?)
+  ;; Every write goes out as a TLS record at once, so the buffer mode is
+  ;; nominal; it is kept so `file-stream-buffer-mode` works on SSL ports as
+  ;; it did with the libssl-based implementation.
+  (define buffer-mode 'block)
   (make-output-port name always-evt
                     (lambda (bstr start end non-block? breakable?)
                       (if (= start end) 0
                           (tls-conn-write-bytes conn (subbytes bstr start end))))
-                    (lambda () (tls-conn-close-notify conn) (on-close))))
+                    ;; close_notify only when shutdown-on-close? was given (the
+                    ;; libssl-based behavior); otherwise the write side just ends
+                    (lambda () (if shutdown? (tls-conn-close-notify conn) (tls-conn-abandon-write! conn)) (on-close))
+                    #f #f #f #f void 1
+                    (case-lambda
+                      [() buffer-mode]
+                      [(mode) (set! buffer-mode mode)])))
 
 (define (ports->ssl-ports i o
                           #:mode [mode 'connect]
@@ -282,12 +422,33 @@
                           #:error/ssl [error/ssl error]
                           #:hostname [hostname #f]
                           #:alpn [alpn '()])
+  (wrap-ports 'ports->ssl-ports i o mode ctx encrypt close? shutdown? error/ssl hostname alpn))
+
+;; A handshake failure is reported as "<who>: connect failed (<reason>)" /
+;; "accept failed", the form the libssl-based implementation used and that
+;; callers match on. With the default `error/ssl`, a TLS error keeps its
+;; `exn:tls` class (a network error, so retry logic still applies).
+(define (handshake-failed who mode error/ssl e)
+  (define dir (if (eq? mode 'connect) "connect" "accept"))
+  (define msg (exn-message e))
+  (cond
+    [(eq? error/ssl error)
+     (define full (format "~a: ~a failed (~a)" who dir msg))
+     (raise (if (exn:tls? e)
+                (exn:tls full (exn-continuation-marks e) (exn:tls-alert e))
+                (exn:fail full (exn-continuation-marks e))))]
+    [else (error/ssl who "~a failed (~a)" dir msg)]))
+
+(define (wrap-ports who i o mode ctx encrypt close? shutdown? error/ssl hostname alpn)
   (unless ssl-available?
-    (error 'ports->ssl-ports "~a" ssl-load-fail-reason))
+    (error who "~a" ssl-load-fail-reason))
   (define context (or ctx (if (eq? mode 'connect)
                               (ssl-make-client-context encrypt)
                               (ssl-make-server-context encrypt))))
+  (when (and (eq? mode 'connect) (cx-ref context 'verify-hostname?) (not hostname))
+    (handshake-failed who mode error/ssl (exn:fail "hostname not provided for verification" (current-continuation-marks))))
   (define conn
+    (with-handlers ([exn:fail? (lambda (e) (handshake-failed who mode error/ssl e))])
     (cond
       [(eq? mode 'connect)
        (define anchors (cx-ref context 'trust-anchors))
@@ -297,7 +458,7 @@
        (tls13-connect i o
                       (hash 'host hostname
                             'alpn (if (pair? alpn) alpn (cx-ref context 'alpn))
-                            'verify? (cx-ref context 'verify?)
+                            'verify? (or (cx-ref context 'verify?) (cx-ref context 'try-verify?))
                             'verify-hostname? (cx-ref context 'verify-hostname?)
                             'trust-anchors anchors
                             'keylog (keylog-emitter (cx-ref context 'keylogger))
@@ -331,13 +492,17 @@
                            'keylog (keylog-emitter (cx-ref context 'keylogger))
                            'suite-policy (cx-ref context 'suite-policy)
                            'ocsp-staple (cx-ref context 'ocsp-staple)
-                           ;; A4: a server with ssl-set-verify! requests + requires a client cert
-                           'request-client-cert (cx-ref context 'verify?)
+                           ;; ssl-set-verify! requests + requires a client certificate;
+                           ;; ssl-try-verify! only requests one
+                           'request-client-cert (or (cx-ref context 'verify?) (cx-ref context 'try-verify?))
                            'require-client-cert (cx-ref context 'verify?)
                            'client-ca-anchors (cx-ref context 'trust-anchors)
+                           'client-ca-names (cx-ref context 'client-ca-names)
+                           'tls12-only? (and (memq (cx-ref context 'protocol) '(tls12 tls11 tls)) #t)
+                           'alpn-allow-no-match? (cx-ref context 'alpn-allow-no-match?)
                            'ticket-store (cx-ref context 'ticket-store)   ; A2: issue resumption tickets
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
-                                   (if (pair? sa) sa alpn))))]))
+                                   (if (pair? sa) sa alpn))))])))
   (define name (object-name i))
   ;; The two SSL ports share one transport: closing just the output port
   ;; must not FIN the underlying TCP stream while the input port is still
@@ -354,7 +519,7 @@
          (close-input-port i)
          (close-output-port o)))))
   (define in (make-ssl-input conn name one-side-closed!))
-  (define out (make-ssl-output conn name one-side-closed!))
+  (define out (make-ssl-output conn name one-side-closed! shutdown?))
   (define obj (ssl-port-obj conn context i o close? in out))
   (register-port! in obj) (register-port! out obj)
   (values in out))
@@ -369,7 +534,7 @@
   (define ctx (if (ssl-context? ctx-or-proto) ctx-or-proto (ssl-make-client-context ctx-or-proto)))
   (define-values (i o) (connect host port))
   (with-handlers ([(lambda (e) #t) (lambda (e) (close-input-port i) (close-output-port o) (raise e))])
-    (ports->ssl-ports i o #:mode 'connect #:context ctx #:hostname host #:alpn alpn #:close-original? #t)))
+    (wrap-ports 'ssl-connect i o 'connect ctx 'auto #t #f error host alpn)))
 
 (struct ssl-listener (tcp ctx)
   #:property prop:evt (lambda (l) (wrap-evt (ssl-listener-tcp l) (lambda (_) l))))
@@ -385,7 +550,7 @@
 (define (do-accept who accept l)
   (define-values (i o) (accept (ssl-listener-tcp l)))
   (with-handlers ([(lambda (e) #t) (lambda (e) (close-input-port i) (close-output-port o) (raise e))])
-    (ports->ssl-ports i o #:mode 'accept #:context (ssl-listener-ctx l) #:close-original? #t)))
+    (wrap-ports who i o 'accept (ssl-listener-ctx l) 'auto #t #f error #f '())))
 (define (ssl-accept l) (do-accept 'ssl-accept tcp-accept l))
 (define (ssl-accept/enable-break l) (do-accept 'ssl-accept/enable-break tcp-accept/enable-break l))
 
@@ -410,15 +575,18 @@
 ;; ---- peer / info accessors ----
 (define (ssl-get-alpn-selected p)
   (define obj (port-obj p)) (and obj (tls-conn-alpn (ssl-port-obj-conn obj))))
-(define (ssl-protocol-version p)
+(define (ssl-protocol-version p)   ; 'tls13 / 'tls12, the ssl-protocol-symbol/c symbols
   (define obj (port-obj p)) (and obj (tls-conn-protocol (ssl-port-obj-conn obj))))
 (define (peer-leaf p)
   (define obj (port-obj p))
   (define certs (and obj (tls-conn-peer-certs (ssl-port-obj-conn obj))))
   (and (pair? certs) (parse-certificate (car certs))))
+;; The verification result belongs to the connection (recorded at the end of
+;; its handshake), not to the context: changing the context's switches after
+;; the fact does not change what was verified.
 (define (ssl-peer-verified? p)
   (define obj (port-obj p))
-  (and obj (cx-ref (ssl-port-obj-ctx obj) 'verify?) (pair? (tls-conn-peer-certs (ssl-port-obj-conn obj)))))
+  (and obj (tls-conn-verified (ssl-port-obj-conn obj))))
 (define (ssl-peer-certificate-hostnames p)
   (define leaf (peer-leaf p))
   (if leaf
@@ -430,12 +598,28 @@
 (define (ssl-peer-check-hostname p host)
   (define leaf (peer-leaf p))
   (and leaf (with-handlers ([exn:fail? (lambda (_) #f)]) (check-hostname leaf host) #t)))
+;; Names are rendered as `X509_NAME_oneline` did ("/C=US/O=.../CN=..."),
+;; the form the libssl-based implementation returned and callers compare
+;; against.
+(define (name->oneline name-alist)
+  (apply string-append
+         (for/list ([kv (in-list name-alist)])
+           (string-append "/" (oneline-attr (car kv)) "=" (bytes->string/latin-1 (cdr kv))))))
+(define (oneline-attr oid)
+  (case oid
+    [("2.5.4.3") "CN"] [("2.5.4.4") "SN"] [("2.5.4.5") "serialNumber"]
+    [("2.5.4.6") "C"] [("2.5.4.7") "L"] [("2.5.4.8") "ST"] [("2.5.4.9") "street"]
+    [("2.5.4.10") "O"] [("2.5.4.11") "OU"] [("2.5.4.12") "title"]
+    [("2.5.4.17") "postalCode"] [("2.5.4.42") "GN"] [("2.5.4.46") "dnQualifier"]
+    [("1.2.840.113549.1.9.1") "emailAddress"]
+    [("0.9.2342.19200300.100.1.25") "DC"] [("0.9.2342.19200300.100.1.1") "UID"]
+    [else oid]))
 (define (ssl-peer-subject-name p)
   (define leaf (peer-leaf p))
-  (and leaf (string->bytes/utf-8 (name->string (certificate-subject leaf)))))
+  (and leaf (string->bytes/utf-8 (name->oneline (certificate-subject leaf)))))
 (define (ssl-peer-issuer-name p)
   (define leaf (peer-leaf p))
-  (and leaf (string->bytes/utf-8 (name->string (certificate-issuer leaf)))))
+  (and leaf (string->bytes/utf-8 (name->oneline (certificate-issuer leaf)))))
 
 (define (ssl-channel-binding p kind)
   (define obj (port-obj p))
@@ -463,7 +647,7 @@
 (define (supported-server-protocols) the-supported-protocols)
 (define (ssl-max-client-protocol) 'tls13)
 (define (ssl-max-server-protocol) 'tls13)
-(define ssl-dh4096-param-bytes #f)
+(define ssl-dh4096-param-bytes #"")   ; as with libssl: deprecated, kept for callers that pass it along
 
 (provide
  ssl-dh4096-param-bytes

@@ -61,4 +61,28 @@ int rktcrypto_ffdhe_derive(int group, const unsigned char *priv, intptr_t privle
                            const unsigned char *peer, intptr_t peerlen,
                            unsigned char *out);
 
+/* ---- Finite-field Diffie-Hellman over a caller-supplied group ---- */
+/* For groups a peer dictates in TLS 1.2 (e.g. the RFC 3526 MODP groups
+   that libssl's automatic DH sends): the prime p and generator g as
+   big-endian byte strings, up to 4096 bits. The caller decides which
+   primes to trust; these routines only do the arithmetic and the
+   RFC 7919 section 5 checks on peer values. The private exponent has
+   privbits bits (non-zero). Same exponentiation as the named groups. */
+
+/* priv_out needs (privbits+7)/8 bytes; its length is written to *privlen.
+   pub_out needs plen bytes (full width, leading zeros kept).
+   Returns 1 on success, 0 for bad parameters. */
+int rktcrypto_dh_keygen(const unsigned char *p, intptr_t plen,
+                        const unsigned char *g, intptr_t glen, int privbits,
+                        unsigned char *priv_out, intptr_t *privlen,
+                        unsigned char *pub_out);
+
+/* Shared secret of plen bytes (leading zeros kept) into out. Returns 1 on
+   success, 0 when the peer value is outside [2, p-2] or the secret is
+   degenerate (0, 1, p-1). */
+int rktcrypto_dh_derive(const unsigned char *p, intptr_t plen,
+                        const unsigned char *priv, intptr_t privlen,
+                        const unsigned char *peer, intptr_t peerlen,
+                        unsigned char *out);
+
 #endif

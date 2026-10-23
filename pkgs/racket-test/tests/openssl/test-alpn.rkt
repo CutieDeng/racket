@@ -113,4 +113,52 @@
   (check-equal? (ssl-get-alpn-selected in) #f)
   (check-equal? (channel-get server2-chan) #f))
 
+(let ()
+  ;; TLS 1.2 negotiates ALPN too.
+  (define ctx (ssl-make-client-context 'tls12))
+  (define-values (in out)
+    (ssl-connect "localhost" listener-port ctx #:alpn '(#"other" #"rkt-proto")))
+  (check-equal? (ssl-protocol-version in) 'tls12)
+  (check-equal? (ssl-get-alpn-selected in) #"rkt-proto")
+  (check-equal? (channel-get server2-chan) #"rkt-proto"))
+
 (custodian-shutdown-all server2-cust)
+
+;; ----------------------------------------
+;; allow-no-match? = #f: a client that uses ALPN but shares no protocol is
+;; rejected (no_application_protocol); a client without ALPN still connects.
+
+(define sctx3 (ssl-make-server-context))
+(ssl-load-private-key! sctx3 server-key)
+(ssl-load-certificate-chain! sctx3 server-crt)
+(ssl-set-server-alpn! sctx3 '(#"rkt-proto") #f)
+(define listener3 (ssl-listen 0 5 #f #f sctx3))
+(define-values (l3-addr l3-port l3-ignore-addr l3-ignore-port) (ssl-addresses listener3 #t))
+(define server3-cust (make-custodian))
+(define server3-chan (make-channel))
+(define (server3)
+  (channel-put server3-chan
+               (with-handlers ([exn:fail? (lambda (e) (list 'exn (exn-message e)))])
+                 (define-values (in out) (ssl-accept listener3))
+                 (begin0 (ssl-get-alpn-selected in)
+                   (close-input-port in)
+                   (close-output-port out))))
+  (server3))
+(parameterize ((current-custodian server3-cust))
+  (void (thread server3)))
+(sleep 0.2)
+
+(for ([protocol (in-list '(auto tls12))])
+  (let ()
+    (define ctx (ssl-make-client-context protocol))
+    (check-exn #rx"no_application_protocol"
+               (lambda () (ssl-connect "localhost" l3-port ctx #:alpn '(#"stuff"))))
+    (check-regexp-match #rx"no application protocol" (cadr (channel-get server3-chan))))
+  (let ()
+    (define ctx (ssl-make-client-context protocol))
+    (define-values (in out) (ssl-connect "localhost" l3-port ctx))
+    (check-equal? (ssl-get-alpn-selected in) #f)
+    (check-equal? (channel-get server3-chan) #f)
+    (close-input-port in) (close-output-port out)))
+
+(custodian-shutdown-all server3-cust)

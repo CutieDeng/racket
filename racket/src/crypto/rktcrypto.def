@@ -67,3 +67,8 @@ rktcrypto_rsa_verify_msg
 rktcrypto_rsa_sign_msg
 rktcrypto_base64_decode
 rktcrypto_pem_to_der
+rktcrypto_ffdhe_size
+rktcrypto_ffdhe_keygen
+rktcrypto_ffdhe_derive
+rktcrypto_dh_keygen
+rktcrypto_dh_derive

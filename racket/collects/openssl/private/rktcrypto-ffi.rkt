@@ -47,6 +47,7 @@
 (define SHA256 2)
 (define SHA384 3)
 (define SHA512 4)
+(define SHA1 14)     ; legacy; only the HMAC of the TLS 1.2 *-SHA cipher suites
 
 ;; ---- AEAD ids ----
 (define AEAD-CHACHA20-POLY1305 1)
@@ -59,6 +60,12 @@
 
 (define-rkt rktcrypto_hmac
   (_fun _int _bytes _intptr _bytes _intptr _bytes -> _void))
+;; incremental digests (init / update / final over a caller-held context)
+(define-rkt rktcrypto_digest_ctx_size (_fun _int -> _intptr))
+(define-rkt rktcrypto_digest_block_size (_fun _int -> _intptr))
+(define-rkt rktcrypto_digest_init (_fun _int _bytes _intptr _intptr -> _int))
+(define-rkt rktcrypto_digest_update (_fun _int _bytes _intptr _bytes _intptr _intptr -> _int))
+(define-rkt rktcrypto_digest_final (_fun _int _bytes _intptr _bytes _intptr _intptr -> _int))
 
 (define-rkt rktcrypto_hkdf_extract
   (_fun _int _bytes _intptr _bytes _intptr _bytes -> _void))
@@ -114,10 +121,18 @@
 
 ;; ---- key exchange ----
 (define-rkt rktcrypto_x25519 (_fun _bytes _bytes _bytes -> _int))
+;; finite-field DH over a caller-supplied prime (TLS 1.2 DHE)
+(define-rkt rktcrypto_dh_keygen
+  (_fun _bytes _intptr _bytes _intptr _int _bytes (privlen : (_ptr o _intptr)) _bytes
+        -> (r : _int) -> (values r privlen)))
+(define-rkt rktcrypto_dh_derive
+  (_fun _bytes _intptr _bytes _intptr _bytes _intptr _bytes -> _int))
 (define-rkt rktcrypto_p256_pubkey (_fun _bytes _bytes -> _int))
 (define-rkt rktcrypto_p256_ecdh (_fun _bytes _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_pubkey (_fun _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_ecdh (_fun _bytes _bytes _bytes -> _int))
+(define-rkt rktcrypto_p521_pubkey (_fun _bytes _bytes -> _int))
+(define-rkt rktcrypto_p521_ecdh (_fun _bytes _bytes _bytes -> _int))
 
 ;; ---- signatures ----
 (define-rkt rktcrypto_p256_ecdsa_sign (_fun _bytes _bytes _intptr _bytes -> _int))
@@ -158,6 +173,25 @@
   (define out (make-bytes (digest-size alg)))
   (rktcrypto_hmac alg key (bytes-length key) data (bytes-length data) out)
   out)
+
+;; Hash of the concatenation of `parts`, fed incrementally.
+(define (digest-parts alg parts)
+  (define ctx (make-bytes (rktcrypto_digest_ctx_size alg)))
+  (define out (make-bytes (digest-size alg)))
+  (rktcrypto_digest_init alg ctx (bytes-length ctx) (bytes-length out))
+  (for ([p (in-list parts)])
+    (rktcrypto_digest_update alg ctx (bytes-length ctx) p 0 (bytes-length p)))
+  (rktcrypto_digest_final alg ctx (bytes-length ctx) out 0 (bytes-length out))
+  out)
+;; Runs the compression function `n` times on a throwaway context (timing
+;; padding: makes a caller's total number of compressions independent of
+;; a secret length).
+(define (digest-burn alg n)
+  (define bs (rktcrypto_digest_block_size alg))
+  (define ctx (make-bytes (rktcrypto_digest_ctx_size alg)))
+  (define data (make-bytes (* n bs) 0))
+  (rktcrypto_digest_init alg ctx (bytes-length ctx) (digest-size alg))
+  (rktcrypto_digest_update alg ctx (bytes-length ctx) data 0 (bytes-length data)))
 
 (define (random-bytes n)
   (define out (make-bytes n))
