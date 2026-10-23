@@ -21,1808 +21,819 @@ chacha20_ssse3_idx:
         .long 0, 1, 2, 3
         .text
 
+        .section .rodata
+        .p2align 4
+chacha20_ssse3_idx4:
+        .long 4, 5, 6, 7
+        .text
+
         .globl  rktcrypto_chacha20_blocks_ssse3
         .type   rktcrypto_chacha20_blocks_ssse3, @function
         .p2align 5
 rktcrypto_chacha20_blocks_ssse3:
-        sub     rsp, 328
+        sub     rsp, 904
         test rcx, rcx
         jz .Lrktcrypto_chacha20_blocks_ssse3_done
+        movd xmm0, dword ptr [rdi]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 384], xmm0
+        movd xmm0, dword ptr [rdi + 4]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 400], xmm0
+        movd xmm0, dword ptr [rdi + 8]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 416], xmm0
+        movd xmm0, dword ptr [rdi + 12]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 432], xmm0
+        movd xmm0, dword ptr [rdi + 16]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 448], xmm0
+        movd xmm0, dword ptr [rdi + 20]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 464], xmm0
+        movd xmm0, dword ptr [rdi + 24]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 480], xmm0
+        movd xmm0, dword ptr [rdi + 28]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 496], xmm0
+        movd xmm0, dword ptr [rdi + 32]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 512], xmm0
+        movd xmm0, dword ptr [rdi + 36]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 528], xmm0
+        movd xmm0, dword ptr [rdi + 40]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 544], xmm0
+        movd xmm0, dword ptr [rdi + 44]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 560], xmm0
+        movd xmm0, dword ptr [rdi + 52]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 592], xmm0
+        movd xmm0, dword ptr [rdi + 56]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 608], xmm0
+        movd xmm0, dword ptr [rdi + 60]
+        pshufd xmm0, xmm0, 0x0
+        movdqu xmmword ptr [rsp + 624], xmm0
 .Lrktcrypto_chacha20_blocks_ssse3_unit:
-        movd xmm13, dword ptr [rdi]
-        pshufd xmm13, xmm13, 0x0
-        movd xmm12, dword ptr [rdi + 4]
-        pshufd xmm12, xmm12, 0x0
-        movd xmm11, dword ptr [rdi + 8]
-        pshufd xmm11, xmm11, 0x0
-        movd xmm10, dword ptr [rdi + 12]
-        pshufd xmm10, xmm10, 0x0
-        movd xmm9, dword ptr [rdi + 16]
-        pshufd xmm9, xmm9, 0x0
-        movd xmm8, dword ptr [rdi + 20]
-        pshufd xmm8, xmm8, 0x0
-        movd xmm7, dword ptr [rdi + 24]
-        pshufd xmm7, xmm7, 0x0
-        movd xmm6, dword ptr [rdi + 28]
-        pshufd xmm6, xmm6, 0x0
-        movd xmm5, dword ptr [rdi + 32]
-        pshufd xmm5, xmm5, 0x0
-        movd xmm4, dword ptr [rdi + 36]
-        pshufd xmm4, xmm4, 0x0
-        movd xmm3, dword ptr [rdi + 40]
-        pshufd xmm3, xmm3, 0x0
-        movd xmm2, dword ptr [rdi + 44]
-        pshufd xmm2, xmm2, 0x0
+        movdqu xmm0, xmmword ptr [rsp + 384]
+        movdqu xmmword ptr [rsp], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 400]
+        movdqu xmmword ptr [rsp + 16], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 416]
+        movdqu xmmword ptr [rsp + 32], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 432]
+        movdqu xmmword ptr [rsp + 48], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 512]
+        movdqu xmmword ptr [rsp + 64], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 528]
+        movdqu xmmword ptr [rsp + 80], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 544]
+        movdqu xmmword ptr [rsp + 96], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 560]
+        movdqu xmmword ptr [rsp + 112], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 592]
+        movdqu xmmword ptr [rsp + 144], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 608]
+        movdqu xmmword ptr [rsp + 160], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 624]
+        movdqu xmmword ptr [rsp + 176], xmm0
+        movdqu xmm9, xmmword ptr [rsp + 448]
+        movdqu xmm8, xmmword ptr [rsp + 464]
+        movdqu xmm7, xmmword ptr [rsp + 480]
+        movdqu xmm6, xmmword ptr [rsp + 496]
         movd xmm0, dword ptr [rdi + 48]
         pshufd xmm0, xmm0, 0x0
         paddd xmm0, xmmword ptr [rip + chacha20_ssse3_idx]
-        movdqu xmmword ptr [rsp], xmm0
-        movd xmm0, dword ptr [rdi + 52]
+        movdqu xmmword ptr [rsp + 128], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 384]
+        movdqu xmmword ptr [rsp + 192], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 400]
+        movdqu xmmword ptr [rsp + 208], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 416]
+        movdqu xmmword ptr [rsp + 224], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 432]
+        movdqu xmmword ptr [rsp + 240], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 512]
+        movdqu xmmword ptr [rsp + 256], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 528]
+        movdqu xmmword ptr [rsp + 272], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 544]
+        movdqu xmmword ptr [rsp + 288], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 560]
+        movdqu xmmword ptr [rsp + 304], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 592]
+        movdqu xmmword ptr [rsp + 336], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 608]
+        movdqu xmmword ptr [rsp + 352], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 624]
+        movdqu xmmword ptr [rsp + 368], xmm0
+        movdqu xmm5, xmmword ptr [rsp + 448]
+        movdqu xmm4, xmmword ptr [rsp + 464]
+        movdqu xmm3, xmmword ptr [rsp + 480]
+        movdqu xmm2, xmmword ptr [rsp + 496]
+        movd xmm0, dword ptr [rdi + 48]
         pshufd xmm0, xmm0, 0x0
-        movdqu xmmword ptr [rsp + 16], xmm0
-        movd xmm0, dword ptr [rdi + 56]
-        pshufd xmm0, xmm0, 0x0
-        movdqu xmmword ptr [rsp + 32], xmm0
-        movd xmm0, dword ptr [rdi + 60]
-        pshufd xmm0, xmm0, 0x0
-        movdqu xmmword ptr [rsp + 48], xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        movdqu xmm15, xmmword ptr [rsp]
-        movdqu xmm14, xmmword ptr [rsp + 16]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm9, 0x14
-        psrld xmm8, 0x14
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm13, xmm9
-        paddd xmm12, xmm8
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp], xmm15
-        movdqu xmmword ptr [rsp + 16], xmm14
-        pxor xmm9, xmm5
-        pxor xmm8, xmm4
-        movdqa xmm1, xmm9
-        movdqa xmm0, xmm8
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm9, 0x19
-        psrld xmm8, 0x19
-        por xmm9, xmm1
-        por xmm8, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        movdqu xmm15, xmmword ptr [rsp + 32]
-        movdqu xmm14, xmmword ptr [rsp + 48]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm7, 0x14
-        psrld xmm6, 0x14
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm11, xmm7
-        paddd xmm10, xmm6
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 32], xmm15
-        movdqu xmmword ptr [rsp + 48], xmm14
-        pxor xmm7, xmm3
-        pxor xmm6, xmm2
-        movdqa xmm1, xmm7
-        movdqa xmm0, xmm6
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm7, 0x19
-        psrld xmm6, 0x19
-        por xmm7, xmm1
-        por xmm6, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        movdqu xmm15, xmmword ptr [rsp + 48]
-        movdqu xmm14, xmmword ptr [rsp]
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm8, 0x14
-        psrld xmm7, 0x14
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm13, xmm8
-        paddd xmm12, xmm7
-        pxor xmm15, xmm13
-        pxor xmm14, xmm12
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm3, xmm15
-        paddd xmm2, xmm14
-        movdqu xmmword ptr [rsp + 48], xmm15
-        movdqu xmmword ptr [rsp], xmm14
-        pxor xmm8, xmm3
-        pxor xmm7, xmm2
-        movdqa xmm1, xmm8
-        movdqa xmm0, xmm7
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm8, 0x19
-        psrld xmm7, 0x19
-        por xmm8, xmm1
-        por xmm7, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        movdqu xmm15, xmmword ptr [rsp + 16]
-        movdqu xmm14, xmmword ptr [rsp + 32]
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol16]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol16]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0xc
-        pslld xmm0, 0xc
-        psrld xmm6, 0x14
-        psrld xmm9, 0x14
-        por xmm6, xmm1
-        por xmm9, xmm0
-        paddd xmm11, xmm6
-        paddd xmm10, xmm9
-        pxor xmm15, xmm11
-        pxor xmm14, xmm10
-        pshufb xmm15, xmmword ptr [rip + chacha20_ssse3_rol8]
-        pshufb xmm14, xmmword ptr [rip + chacha20_ssse3_rol8]
-        paddd xmm5, xmm15
-        paddd xmm4, xmm14
-        movdqu xmmword ptr [rsp + 16], xmm15
-        movdqu xmmword ptr [rsp + 32], xmm14
-        pxor xmm6, xmm5
-        pxor xmm9, xmm4
-        movdqa xmm1, xmm6
-        movdqa xmm0, xmm9
-        pslld xmm1, 0x7
-        pslld xmm0, 0x7
-        psrld xmm6, 0x19
-        psrld xmm9, 0x19
-        por xmm6, xmm1
-        por xmm9, xmm0
-        movd xmm0, dword ptr [rdi]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm13, xmm0
-        movdqu xmmword ptr [rsp + 64], xmm13
-        movd xmm0, dword ptr [rdi + 4]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm12, xmm0
-        movdqu xmmword ptr [rsp + 80], xmm12
-        movd xmm0, dword ptr [rdi + 8]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm11, xmm0
-        movdqu xmmword ptr [rsp + 96], xmm11
-        movd xmm0, dword ptr [rdi + 12]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm10, xmm0
-        movdqu xmmword ptr [rsp + 112], xmm10
-        movd xmm0, dword ptr [rdi + 16]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm9, xmm0
-        movdqu xmmword ptr [rsp + 128], xmm9
-        movd xmm0, dword ptr [rdi + 20]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm8, xmm0
-        movdqu xmmword ptr [rsp + 144], xmm8
-        movd xmm0, dword ptr [rdi + 24]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm7, xmm0
-        movdqu xmmword ptr [rsp + 160], xmm7
-        movd xmm0, dword ptr [rdi + 28]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm6, xmm0
-        movdqu xmmword ptr [rsp + 176], xmm6
-        movd xmm0, dword ptr [rdi + 32]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm5, xmm0
-        movdqu xmmword ptr [rsp + 192], xmm5
-        movd xmm0, dword ptr [rdi + 36]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm4, xmm0
-        movdqu xmmword ptr [rsp + 208], xmm4
-        movd xmm0, dword ptr [rdi + 40]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm3, xmm0
-        movdqu xmmword ptr [rsp + 224], xmm3
-        movd xmm0, dword ptr [rdi + 44]
-        pshufd xmm0, xmm0, 0x0
-        paddd xmm2, xmm0
-        movdqu xmmword ptr [rsp + 240], xmm2
-        movd xmm1, dword ptr [rdi + 48]
-        pshufd xmm1, xmm1, 0x0
-        paddd xmm1, xmmword ptr [rip + chacha20_ssse3_idx]
+        paddd xmm0, xmmword ptr [rip + chacha20_ssse3_idx4]
+        movdqu xmmword ptr [rsp + 320], xmm0
+        mov rax, 0xa
+.Lrktcrypto_chacha20_blocks_ssse3_round:
         movdqu xmm0, xmmword ptr [rsp]
-        paddd xmm1, xmm0
-        movdqu xmmword ptr [rsp + 256], xmm1
-        movd xmm1, dword ptr [rdi + 52]
-        pshufd xmm1, xmm1, 0x0
+        paddd xmm0, xmm9
+        movdqu xmm1, xmmword ptr [rsp + 128]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 64]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 128], xmm1
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rsp + 64], xmm0
+        movdqa xmm0, xmm9
+        pslld xmm9, 0xc
+        psrld xmm0, 0x14
+        por xmm9, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 192]
+        paddd xmm0, xmm5
+        movdqu xmm1, xmmword ptr [rsp + 320]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 192], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 256]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 320], xmm1
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rsp + 256], xmm0
+        movdqa xmm0, xmm5
+        pslld xmm5, 0xc
+        psrld xmm0, 0x14
+        por xmm5, xmm0
         movdqu xmm0, xmmword ptr [rsp + 16]
-        paddd xmm1, xmm0
-        movdqu xmmword ptr [rsp + 272], xmm1
-        movd xmm1, dword ptr [rdi + 56]
-        pshufd xmm1, xmm1, 0x0
-        movdqu xmm0, xmmword ptr [rsp + 32]
-        paddd xmm1, xmm0
-        movdqu xmmword ptr [rsp + 288], xmm1
-        movd xmm1, dword ptr [rdi + 60]
-        pshufd xmm1, xmm1, 0x0
-        movdqu xmm0, xmmword ptr [rsp + 48]
-        paddd xmm1, xmm0
-        movdqu xmmword ptr [rsp + 304], xmm1
-        movdqu xmm5, xmmword ptr [rsp + 64]
+        paddd xmm0, xmm8
+        movdqu xmm1, xmmword ptr [rsp + 144]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 16], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
         movdqu xmm0, xmmword ptr [rsp + 80]
-        movdqu xmm4, xmmword ptr [rsp + 96]
-        movdqu xmm1, xmmword ptr [rsp + 112]
-        movdqa xmm3, xmm5
-        punpckldq xmm3, xmm0
-        punpckhdq xmm5, xmm0
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 144], xmm1
+        pxor xmm8, xmm0
+        movdqu xmmword ptr [rsp + 80], xmm0
+        movdqa xmm0, xmm8
+        pslld xmm8, 0xc
+        psrld xmm0, 0x14
+        por xmm8, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 208]
+        paddd xmm0, xmm4
+        movdqu xmm1, xmmword ptr [rsp + 336]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 208], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 272]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 336], xmm1
+        pxor xmm4, xmm0
+        movdqu xmmword ptr [rsp + 272], xmm0
         movdqa xmm0, xmm4
-        punpckldq xmm0, xmm1
-        punpckhdq xmm4, xmm1
-        movdqa xmm2, xmm3
-        punpcklqdq xmm2, xmm0
-        punpckhqdq xmm3, xmm0
-        movdqa xmm1, xmm5
-        punpcklqdq xmm1, xmm4
-        punpckhqdq xmm5, xmm4
-        movdqu xmm0, xmmword ptr [rsi]
-        pxor xmm2, xmm0
-        movdqu xmmword ptr [rdx], xmm2
-        movdqu xmm0, xmmword ptr [rsi + 64]
+        pslld xmm4, 0xc
+        psrld xmm0, 0x14
+        por xmm4, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 32]
+        paddd xmm0, xmm7
+        movdqu xmm1, xmmword ptr [rsp + 160]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 32], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 96]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 160], xmm1
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rsp + 96], xmm0
+        movdqa xmm0, xmm7
+        pslld xmm7, 0xc
+        psrld xmm0, 0x14
+        por xmm7, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 224]
+        paddd xmm0, xmm3
+        movdqu xmm1, xmmword ptr [rsp + 352]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 224], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 288]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 352], xmm1
         pxor xmm3, xmm0
-        movdqu xmmword ptr [rdx + 64], xmm3
+        movdqu xmmword ptr [rsp + 288], xmm0
+        movdqa xmm0, xmm3
+        pslld xmm3, 0xc
+        psrld xmm0, 0x14
+        por xmm3, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 48]
+        paddd xmm0, xmm6
+        movdqu xmm1, xmmword ptr [rsp + 176]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 48], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 112]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 176], xmm1
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rsp + 112], xmm0
+        movdqa xmm0, xmm6
+        pslld xmm6, 0xc
+        psrld xmm0, 0x14
+        por xmm6, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 240]
+        paddd xmm0, xmm2
+        movdqu xmm1, xmmword ptr [rsp + 368]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 240], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 304]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 368], xmm1
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rsp + 304], xmm0
+        movdqa xmm0, xmm2
+        pslld xmm2, 0xc
+        psrld xmm0, 0x14
+        por xmm2, xmm0
+        movdqu xmm0, xmmword ptr [rsp]
+        paddd xmm0, xmm9
+        movdqu xmm1, xmmword ptr [rsp + 128]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 64]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 128], xmm1
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rsp + 64], xmm0
+        movdqa xmm0, xmm9
+        pslld xmm9, 0x7
+        psrld xmm0, 0x19
+        por xmm9, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 192]
+        paddd xmm0, xmm5
+        movdqu xmm1, xmmword ptr [rsp + 320]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 192], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 256]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 320], xmm1
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rsp + 256], xmm0
+        movdqa xmm0, xmm5
+        pslld xmm5, 0x7
+        psrld xmm0, 0x19
+        por xmm5, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 16]
+        paddd xmm0, xmm8
+        movdqu xmm1, xmmword ptr [rsp + 144]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 16], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 80]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 144], xmm1
+        pxor xmm8, xmm0
+        movdqu xmmword ptr [rsp + 80], xmm0
+        movdqa xmm0, xmm8
+        pslld xmm8, 0x7
+        psrld xmm0, 0x19
+        por xmm8, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 208]
+        paddd xmm0, xmm4
+        movdqu xmm1, xmmword ptr [rsp + 336]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 208], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 272]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 336], xmm1
+        pxor xmm4, xmm0
+        movdqu xmmword ptr [rsp + 272], xmm0
+        movdqa xmm0, xmm4
+        pslld xmm4, 0x7
+        psrld xmm0, 0x19
+        por xmm4, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 32]
+        paddd xmm0, xmm7
+        movdqu xmm1, xmmword ptr [rsp + 160]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 32], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 96]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 160], xmm1
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rsp + 96], xmm0
+        movdqa xmm0, xmm7
+        pslld xmm7, 0x7
+        psrld xmm0, 0x19
+        por xmm7, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 224]
+        paddd xmm0, xmm3
+        movdqu xmm1, xmmword ptr [rsp + 352]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 224], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 288]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 352], xmm1
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rsp + 288], xmm0
+        movdqa xmm0, xmm3
+        pslld xmm3, 0x7
+        psrld xmm0, 0x19
+        por xmm3, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 48]
+        paddd xmm0, xmm6
+        movdqu xmm1, xmmword ptr [rsp + 176]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 48], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 112]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 176], xmm1
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rsp + 112], xmm0
+        movdqa xmm0, xmm6
+        pslld xmm6, 0x7
+        psrld xmm0, 0x19
+        por xmm6, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 240]
+        paddd xmm0, xmm2
+        movdqu xmm1, xmmword ptr [rsp + 368]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 240], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 304]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 368], xmm1
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rsp + 304], xmm0
+        movdqa xmm0, xmm2
+        pslld xmm2, 0x7
+        psrld xmm0, 0x19
+        por xmm2, xmm0
+        movdqu xmm0, xmmword ptr [rsp]
+        paddd xmm0, xmm8
+        movdqu xmm1, xmmword ptr [rsp + 176]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 96]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 176], xmm1
+        pxor xmm8, xmm0
+        movdqu xmmword ptr [rsp + 96], xmm0
+        movdqa xmm0, xmm8
+        pslld xmm8, 0xc
+        psrld xmm0, 0x14
+        por xmm8, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 192]
+        paddd xmm0, xmm4
+        movdqu xmm1, xmmword ptr [rsp + 368]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 192], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 288]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 368], xmm1
+        pxor xmm4, xmm0
+        movdqu xmmword ptr [rsp + 288], xmm0
+        movdqa xmm0, xmm4
+        pslld xmm4, 0xc
+        psrld xmm0, 0x14
+        por xmm4, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 16]
+        paddd xmm0, xmm7
+        movdqu xmm1, xmmword ptr [rsp + 128]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 16], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 112]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 128], xmm1
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rsp + 112], xmm0
+        movdqa xmm0, xmm7
+        pslld xmm7, 0xc
+        psrld xmm0, 0x14
+        por xmm7, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 208]
+        paddd xmm0, xmm3
+        movdqu xmm1, xmmword ptr [rsp + 320]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 208], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 304]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 320], xmm1
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rsp + 304], xmm0
+        movdqa xmm0, xmm3
+        pslld xmm3, 0xc
+        psrld xmm0, 0x14
+        por xmm3, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 32]
+        paddd xmm0, xmm6
+        movdqu xmm1, xmmword ptr [rsp + 144]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 32], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 64]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 144], xmm1
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rsp + 64], xmm0
+        movdqa xmm0, xmm6
+        pslld xmm6, 0xc
+        psrld xmm0, 0x14
+        por xmm6, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 224]
+        paddd xmm0, xmm2
+        movdqu xmm1, xmmword ptr [rsp + 336]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 224], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 256]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 336], xmm1
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rsp + 256], xmm0
+        movdqa xmm0, xmm2
+        pslld xmm2, 0xc
+        psrld xmm0, 0x14
+        por xmm2, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 48]
+        paddd xmm0, xmm9
+        movdqu xmm1, xmmword ptr [rsp + 160]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 48], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 80]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 160], xmm1
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rsp + 80], xmm0
+        movdqa xmm0, xmm9
+        pslld xmm9, 0xc
+        psrld xmm0, 0x14
+        por xmm9, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 240]
+        paddd xmm0, xmm5
+        movdqu xmm1, xmmword ptr [rsp + 352]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 240], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol16]
+        movdqu xmm0, xmmword ptr [rsp + 272]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 352], xmm1
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rsp + 272], xmm0
+        movdqa xmm0, xmm5
+        pslld xmm5, 0xc
+        psrld xmm0, 0x14
+        por xmm5, xmm0
+        movdqu xmm0, xmmword ptr [rsp]
+        paddd xmm0, xmm8
+        movdqu xmm1, xmmword ptr [rsp + 176]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 96]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 176], xmm1
+        pxor xmm8, xmm0
+        movdqu xmmword ptr [rsp + 96], xmm0
+        movdqa xmm0, xmm8
+        pslld xmm8, 0x7
+        psrld xmm0, 0x19
+        por xmm8, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 192]
+        paddd xmm0, xmm4
+        movdqu xmm1, xmmword ptr [rsp + 368]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 192], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 288]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 368], xmm1
+        pxor xmm4, xmm0
+        movdqu xmmword ptr [rsp + 288], xmm0
+        movdqa xmm0, xmm4
+        pslld xmm4, 0x7
+        psrld xmm0, 0x19
+        por xmm4, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 16]
+        paddd xmm0, xmm7
+        movdqu xmm1, xmmword ptr [rsp + 128]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 16], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 112]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 128], xmm1
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rsp + 112], xmm0
+        movdqa xmm0, xmm7
+        pslld xmm7, 0x7
+        psrld xmm0, 0x19
+        por xmm7, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 208]
+        paddd xmm0, xmm3
+        movdqu xmm1, xmmword ptr [rsp + 320]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 208], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 304]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 320], xmm1
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rsp + 304], xmm0
+        movdqa xmm0, xmm3
+        pslld xmm3, 0x7
+        psrld xmm0, 0x19
+        por xmm3, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 32]
+        paddd xmm0, xmm6
+        movdqu xmm1, xmmword ptr [rsp + 144]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 32], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 64]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 144], xmm1
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rsp + 64], xmm0
+        movdqa xmm0, xmm6
+        pslld xmm6, 0x7
+        psrld xmm0, 0x19
+        por xmm6, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 224]
+        paddd xmm0, xmm2
+        movdqu xmm1, xmmword ptr [rsp + 336]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 224], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 256]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 336], xmm1
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rsp + 256], xmm0
+        movdqa xmm0, xmm2
+        pslld xmm2, 0x7
+        psrld xmm0, 0x19
+        por xmm2, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 48]
+        paddd xmm0, xmm9
+        movdqu xmm1, xmmword ptr [rsp + 160]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 48], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 80]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 160], xmm1
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rsp + 80], xmm0
+        movdqa xmm0, xmm9
+        pslld xmm9, 0x7
+        psrld xmm0, 0x19
+        por xmm9, xmm0
+        movdqu xmm0, xmmword ptr [rsp + 240]
+        paddd xmm0, xmm5
+        movdqu xmm1, xmmword ptr [rsp + 352]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rsp + 240], xmm0
+        pshufb xmm1, xmmword ptr [rip + chacha20_ssse3_rol8]
+        movdqu xmm0, xmmword ptr [rsp + 272]
+        paddd xmm0, xmm1
+        movdqu xmmword ptr [rsp + 352], xmm1
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rsp + 272], xmm0
+        movdqa xmm0, xmm5
+        pslld xmm5, 0x7
+        psrld xmm0, 0x19
+        por xmm5, xmm0
+        sub rax, 0x1
+        jnz .Lrktcrypto_chacha20_blocks_ssse3_round
+        movdqu xmm0, xmmword ptr [rsp]
+        paddd xmm0, xmmword ptr [rsp + 384]
+        movdqu xmmword ptr [rsp + 640], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 16]
+        paddd xmm0, xmmword ptr [rsp + 400]
+        movdqu xmmword ptr [rsp + 656], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 32]
+        paddd xmm0, xmmword ptr [rsp + 416]
+        movdqu xmmword ptr [rsp + 672], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 48]
+        paddd xmm0, xmmword ptr [rsp + 432]
+        movdqu xmmword ptr [rsp + 688], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 64]
+        paddd xmm0, xmmword ptr [rsp + 512]
+        movdqu xmmword ptr [rsp + 768], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 80]
+        paddd xmm0, xmmword ptr [rsp + 528]
+        movdqu xmmword ptr [rsp + 784], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 96]
+        paddd xmm0, xmmword ptr [rsp + 544]
+        movdqu xmmword ptr [rsp + 800], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 112]
+        paddd xmm0, xmmword ptr [rsp + 560]
+        movdqu xmmword ptr [rsp + 816], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 144]
+        paddd xmm0, xmmword ptr [rsp + 592]
+        movdqu xmmword ptr [rsp + 848], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 160]
+        paddd xmm0, xmmword ptr [rsp + 608]
+        movdqu xmmword ptr [rsp + 864], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 176]
+        paddd xmm0, xmmword ptr [rsp + 624]
+        movdqu xmmword ptr [rsp + 880], xmm0
+        movdqu xmm1, xmmword ptr [rsp + 128]
+        movd xmm0, dword ptr [rdi + 48]
+        pshufd xmm0, xmm0, 0x0
+        paddd xmm1, xmm0
+        paddd xmm1, xmmword ptr [rip + chacha20_ssse3_idx]
+        movdqu xmmword ptr [rsp + 832], xmm1
+        paddd xmm9, xmmword ptr [rsp + 448]
+        movdqu xmmword ptr [rsp + 704], xmm9
+        paddd xmm8, xmmword ptr [rsp + 464]
+        movdqu xmmword ptr [rsp + 720], xmm8
+        paddd xmm7, xmmword ptr [rsp + 480]
+        movdqu xmmword ptr [rsp + 736], xmm7
+        paddd xmm6, xmmword ptr [rsp + 496]
+        movdqu xmmword ptr [rsp + 752], xmm6
+        movdqu xmm9, xmmword ptr [rsp + 640]
+        movdqu xmm0, xmmword ptr [rsp + 656]
+        movdqu xmm8, xmmword ptr [rsp + 672]
+        movdqu xmm1, xmmword ptr [rsp + 688]
+        movdqa xmm7, xmm9
+        punpckldq xmm7, xmm0
+        punpckhdq xmm9, xmm0
+        movdqa xmm0, xmm8
+        punpckldq xmm0, xmm1
+        punpckhdq xmm8, xmm1
+        movdqa xmm6, xmm7
+        punpcklqdq xmm6, xmm0
+        punpckhqdq xmm7, xmm0
+        movdqa xmm1, xmm9
+        punpcklqdq xmm1, xmm8
+        punpckhqdq xmm9, xmm8
+        movdqu xmm0, xmmword ptr [rsi]
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rdx], xmm6
+        movdqu xmm0, xmmword ptr [rsi + 64]
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rdx + 64], xmm7
         movdqu xmm0, xmmword ptr [rsi + 128]
         pxor xmm1, xmm0
         movdqu xmmword ptr [rdx + 128], xmm1
         movdqu xmm0, xmmword ptr [rsi + 192]
-        pxor xmm5, xmm0
-        movdqu xmmword ptr [rdx + 192], xmm5
-        movdqu xmm5, xmmword ptr [rsp + 128]
-        movdqu xmm0, xmmword ptr [rsp + 144]
-        movdqu xmm4, xmmword ptr [rsp + 160]
-        movdqu xmm1, xmmword ptr [rsp + 176]
-        movdqa xmm3, xmm5
-        punpckldq xmm3, xmm0
-        punpckhdq xmm5, xmm0
-        movdqa xmm0, xmm4
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rdx + 192], xmm9
+        movdqu xmm9, xmmword ptr [rsp + 704]
+        movdqu xmm0, xmmword ptr [rsp + 720]
+        movdqu xmm8, xmmword ptr [rsp + 736]
+        movdqu xmm1, xmmword ptr [rsp + 752]
+        movdqa xmm7, xmm9
+        punpckldq xmm7, xmm0
+        punpckhdq xmm9, xmm0
+        movdqa xmm0, xmm8
         punpckldq xmm0, xmm1
-        punpckhdq xmm4, xmm1
-        movdqa xmm2, xmm3
-        punpcklqdq xmm2, xmm0
-        punpckhqdq xmm3, xmm0
-        movdqa xmm1, xmm5
-        punpcklqdq xmm1, xmm4
-        punpckhqdq xmm5, xmm4
+        punpckhdq xmm8, xmm1
+        movdqa xmm6, xmm7
+        punpcklqdq xmm6, xmm0
+        punpckhqdq xmm7, xmm0
+        movdqa xmm1, xmm9
+        punpcklqdq xmm1, xmm8
+        punpckhqdq xmm9, xmm8
         movdqu xmm0, xmmword ptr [rsi + 16]
-        pxor xmm2, xmm0
-        movdqu xmmword ptr [rdx + 16], xmm2
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rdx + 16], xmm6
         movdqu xmm0, xmmword ptr [rsi + 80]
-        pxor xmm3, xmm0
-        movdqu xmmword ptr [rdx + 80], xmm3
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rdx + 80], xmm7
         movdqu xmm0, xmmword ptr [rsi + 144]
         pxor xmm1, xmm0
         movdqu xmmword ptr [rdx + 144], xmm1
         movdqu xmm0, xmmword ptr [rsi + 208]
-        pxor xmm5, xmm0
-        movdqu xmmword ptr [rdx + 208], xmm5
-        movdqu xmm5, xmmword ptr [rsp + 192]
-        movdqu xmm0, xmmword ptr [rsp + 208]
-        movdqu xmm4, xmmword ptr [rsp + 224]
-        movdqu xmm1, xmmword ptr [rsp + 240]
-        movdqa xmm3, xmm5
-        punpckldq xmm3, xmm0
-        punpckhdq xmm5, xmm0
-        movdqa xmm0, xmm4
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rdx + 208], xmm9
+        movdqu xmm9, xmmword ptr [rsp + 768]
+        movdqu xmm0, xmmword ptr [rsp + 784]
+        movdqu xmm8, xmmword ptr [rsp + 800]
+        movdqu xmm1, xmmword ptr [rsp + 816]
+        movdqa xmm7, xmm9
+        punpckldq xmm7, xmm0
+        punpckhdq xmm9, xmm0
+        movdqa xmm0, xmm8
         punpckldq xmm0, xmm1
-        punpckhdq xmm4, xmm1
-        movdqa xmm2, xmm3
-        punpcklqdq xmm2, xmm0
-        punpckhqdq xmm3, xmm0
-        movdqa xmm1, xmm5
-        punpcklqdq xmm1, xmm4
-        punpckhqdq xmm5, xmm4
+        punpckhdq xmm8, xmm1
+        movdqa xmm6, xmm7
+        punpcklqdq xmm6, xmm0
+        punpckhqdq xmm7, xmm0
+        movdqa xmm1, xmm9
+        punpcklqdq xmm1, xmm8
+        punpckhqdq xmm9, xmm8
         movdqu xmm0, xmmword ptr [rsi + 32]
-        pxor xmm2, xmm0
-        movdqu xmmword ptr [rdx + 32], xmm2
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rdx + 32], xmm6
         movdqu xmm0, xmmword ptr [rsi + 96]
-        pxor xmm3, xmm0
-        movdqu xmmword ptr [rdx + 96], xmm3
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rdx + 96], xmm7
         movdqu xmm0, xmmword ptr [rsi + 160]
         pxor xmm1, xmm0
         movdqu xmmword ptr [rdx + 160], xmm1
         movdqu xmm0, xmmword ptr [rsi + 224]
-        pxor xmm5, xmm0
-        movdqu xmmword ptr [rdx + 224], xmm5
-        movdqu xmm5, xmmword ptr [rsp + 256]
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rdx + 224], xmm9
+        movdqu xmm9, xmmword ptr [rsp + 832]
+        movdqu xmm0, xmmword ptr [rsp + 848]
+        movdqu xmm8, xmmword ptr [rsp + 864]
+        movdqu xmm1, xmmword ptr [rsp + 880]
+        movdqa xmm7, xmm9
+        punpckldq xmm7, xmm0
+        punpckhdq xmm9, xmm0
+        movdqa xmm0, xmm8
+        punpckldq xmm0, xmm1
+        punpckhdq xmm8, xmm1
+        movdqa xmm6, xmm7
+        punpcklqdq xmm6, xmm0
+        punpckhqdq xmm7, xmm0
+        movdqa xmm1, xmm9
+        punpcklqdq xmm1, xmm8
+        punpckhqdq xmm9, xmm8
+        movdqu xmm0, xmmword ptr [rsi + 48]
+        pxor xmm6, xmm0
+        movdqu xmmword ptr [rdx + 48], xmm6
+        movdqu xmm0, xmmword ptr [rsi + 112]
+        pxor xmm7, xmm0
+        movdqu xmmword ptr [rdx + 112], xmm7
+        movdqu xmm0, xmmword ptr [rsi + 176]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rdx + 176], xmm1
+        movdqu xmm0, xmmword ptr [rsi + 240]
+        pxor xmm9, xmm0
+        movdqu xmmword ptr [rdx + 240], xmm9
+        movdqu xmm0, xmmword ptr [rsp + 192]
+        paddd xmm0, xmmword ptr [rsp + 384]
+        movdqu xmmword ptr [rsp + 640], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 208]
+        paddd xmm0, xmmword ptr [rsp + 400]
+        movdqu xmmword ptr [rsp + 656], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 224]
+        paddd xmm0, xmmword ptr [rsp + 416]
+        movdqu xmmword ptr [rsp + 672], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 240]
+        paddd xmm0, xmmword ptr [rsp + 432]
+        movdqu xmmword ptr [rsp + 688], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 256]
+        paddd xmm0, xmmword ptr [rsp + 512]
+        movdqu xmmword ptr [rsp + 768], xmm0
         movdqu xmm0, xmmword ptr [rsp + 272]
-        movdqu xmm4, xmmword ptr [rsp + 288]
-        movdqu xmm1, xmmword ptr [rsp + 304]
+        paddd xmm0, xmmword ptr [rsp + 528]
+        movdqu xmmword ptr [rsp + 784], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 288]
+        paddd xmm0, xmmword ptr [rsp + 544]
+        movdqu xmmword ptr [rsp + 800], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 304]
+        paddd xmm0, xmmword ptr [rsp + 560]
+        movdqu xmmword ptr [rsp + 816], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 336]
+        paddd xmm0, xmmword ptr [rsp + 592]
+        movdqu xmmword ptr [rsp + 848], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 352]
+        paddd xmm0, xmmword ptr [rsp + 608]
+        movdqu xmmword ptr [rsp + 864], xmm0
+        movdqu xmm0, xmmword ptr [rsp + 368]
+        paddd xmm0, xmmword ptr [rsp + 624]
+        movdqu xmmword ptr [rsp + 880], xmm0
+        movdqu xmm1, xmmword ptr [rsp + 320]
+        movd xmm0, dword ptr [rdi + 48]
+        pshufd xmm0, xmm0, 0x0
+        paddd xmm1, xmm0
+        paddd xmm1, xmmword ptr [rip + chacha20_ssse3_idx4]
+        movdqu xmmword ptr [rsp + 832], xmm1
+        paddd xmm5, xmmword ptr [rsp + 448]
+        movdqu xmmword ptr [rsp + 704], xmm5
+        paddd xmm4, xmmword ptr [rsp + 464]
+        movdqu xmmword ptr [rsp + 720], xmm4
+        paddd xmm3, xmmword ptr [rsp + 480]
+        movdqu xmmword ptr [rsp + 736], xmm3
+        paddd xmm2, xmmword ptr [rsp + 496]
+        movdqu xmmword ptr [rsp + 752], xmm2
+        movdqu xmm5, xmmword ptr [rsp + 640]
+        movdqu xmm0, xmmword ptr [rsp + 656]
+        movdqu xmm4, xmmword ptr [rsp + 672]
+        movdqu xmm1, xmmword ptr [rsp + 688]
         movdqa xmm3, xmm5
         punpckldq xmm3, xmm0
         punpckhdq xmm5, xmm0
@@ -1835,25 +846,109 @@ rktcrypto_chacha20_blocks_ssse3:
         movdqa xmm1, xmm5
         punpcklqdq xmm1, xmm4
         punpckhqdq xmm5, xmm4
-        movdqu xmm0, xmmword ptr [rsi + 48]
+        movdqu xmm0, xmmword ptr [rsi + 256]
         pxor xmm2, xmm0
-        movdqu xmmword ptr [rdx + 48], xmm2
-        movdqu xmm0, xmmword ptr [rsi + 112]
+        movdqu xmmword ptr [rdx + 256], xmm2
+        movdqu xmm0, xmmword ptr [rsi + 320]
         pxor xmm3, xmm0
-        movdqu xmmword ptr [rdx + 112], xmm3
-        movdqu xmm0, xmmword ptr [rsi + 176]
+        movdqu xmmword ptr [rdx + 320], xmm3
+        movdqu xmm0, xmmword ptr [rsi + 384]
         pxor xmm1, xmm0
-        movdqu xmmword ptr [rdx + 176], xmm1
-        movdqu xmm0, xmmword ptr [rsi + 240]
+        movdqu xmmword ptr [rdx + 384], xmm1
+        movdqu xmm0, xmmword ptr [rsi + 448]
         pxor xmm5, xmm0
-        movdqu xmmword ptr [rdx + 240], xmm5
-        add dword ptr [rdi + 48], 0x4
-        add rsi, 0x100
-        add rdx, 0x100
+        movdqu xmmword ptr [rdx + 448], xmm5
+        movdqu xmm5, xmmword ptr [rsp + 704]
+        movdqu xmm0, xmmword ptr [rsp + 720]
+        movdqu xmm4, xmmword ptr [rsp + 736]
+        movdqu xmm1, xmmword ptr [rsp + 752]
+        movdqa xmm3, xmm5
+        punpckldq xmm3, xmm0
+        punpckhdq xmm5, xmm0
+        movdqa xmm0, xmm4
+        punpckldq xmm0, xmm1
+        punpckhdq xmm4, xmm1
+        movdqa xmm2, xmm3
+        punpcklqdq xmm2, xmm0
+        punpckhqdq xmm3, xmm0
+        movdqa xmm1, xmm5
+        punpcklqdq xmm1, xmm4
+        punpckhqdq xmm5, xmm4
+        movdqu xmm0, xmmword ptr [rsi + 272]
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rdx + 272], xmm2
+        movdqu xmm0, xmmword ptr [rsi + 336]
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rdx + 336], xmm3
+        movdqu xmm0, xmmword ptr [rsi + 400]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rdx + 400], xmm1
+        movdqu xmm0, xmmword ptr [rsi + 464]
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rdx + 464], xmm5
+        movdqu xmm5, xmmword ptr [rsp + 768]
+        movdqu xmm0, xmmword ptr [rsp + 784]
+        movdqu xmm4, xmmword ptr [rsp + 800]
+        movdqu xmm1, xmmword ptr [rsp + 816]
+        movdqa xmm3, xmm5
+        punpckldq xmm3, xmm0
+        punpckhdq xmm5, xmm0
+        movdqa xmm0, xmm4
+        punpckldq xmm0, xmm1
+        punpckhdq xmm4, xmm1
+        movdqa xmm2, xmm3
+        punpcklqdq xmm2, xmm0
+        punpckhqdq xmm3, xmm0
+        movdqa xmm1, xmm5
+        punpcklqdq xmm1, xmm4
+        punpckhqdq xmm5, xmm4
+        movdqu xmm0, xmmword ptr [rsi + 288]
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rdx + 288], xmm2
+        movdqu xmm0, xmmword ptr [rsi + 352]
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rdx + 352], xmm3
+        movdqu xmm0, xmmword ptr [rsi + 416]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rdx + 416], xmm1
+        movdqu xmm0, xmmword ptr [rsi + 480]
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rdx + 480], xmm5
+        movdqu xmm5, xmmword ptr [rsp + 832]
+        movdqu xmm0, xmmword ptr [rsp + 848]
+        movdqu xmm4, xmmword ptr [rsp + 864]
+        movdqu xmm1, xmmword ptr [rsp + 880]
+        movdqa xmm3, xmm5
+        punpckldq xmm3, xmm0
+        punpckhdq xmm5, xmm0
+        movdqa xmm0, xmm4
+        punpckldq xmm0, xmm1
+        punpckhdq xmm4, xmm1
+        movdqa xmm2, xmm3
+        punpcklqdq xmm2, xmm0
+        punpckhqdq xmm3, xmm0
+        movdqa xmm1, xmm5
+        punpcklqdq xmm1, xmm4
+        punpckhqdq xmm5, xmm4
+        movdqu xmm0, xmmword ptr [rsi + 304]
+        pxor xmm2, xmm0
+        movdqu xmmword ptr [rdx + 304], xmm2
+        movdqu xmm0, xmmword ptr [rsi + 368]
+        pxor xmm3, xmm0
+        movdqu xmmword ptr [rdx + 368], xmm3
+        movdqu xmm0, xmmword ptr [rsi + 432]
+        pxor xmm1, xmm0
+        movdqu xmmword ptr [rdx + 432], xmm1
+        movdqu xmm0, xmmword ptr [rsi + 496]
+        pxor xmm5, xmm0
+        movdqu xmmword ptr [rdx + 496], xmm5
+        add dword ptr [rdi + 48], 0x8
+        add rsi, 0x200
+        add rdx, 0x200
         sub rcx, 0x1
         jnz .Lrktcrypto_chacha20_blocks_ssse3_unit
 .Lrktcrypto_chacha20_blocks_ssse3_done:
-        add     rsp, 328
+        add     rsp, 904
         ret
         .size   rktcrypto_chacha20_blocks_ssse3, .-rktcrypto_chacha20_blocks_ssse3
 

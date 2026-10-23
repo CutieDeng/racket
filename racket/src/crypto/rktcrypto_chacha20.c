@@ -314,7 +314,7 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
   /* the fused kernels pair the vector ChaCha20 of one tier with the scalar MULX Poly1305 */
   if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) { tier = 3; usz = 1024; }
   else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) { tier = 2; usz = 512; }
-  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) { tier = 1; usz = 256; }
+  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) { tier = 1; usz = 512; }   /* two four-block groups per unit */
   else return 0;
   units = len / usz;
   if (units < 2) return 0;
@@ -381,10 +381,14 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
     rktcrypto_chacha20_blocks_avx2(state, in, out, units);   /* the AVX2 tier (or the AVX-512 path's 512-byte remainder) */
     in += units * 512; out += units * 512; len -= units * 512;
   }
+  if (len >= 512 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3) && !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) {
+    intptr_t units = len / 512;
+    rktcrypto_chacha20_blocks_ssse3(state, in, out, units);  /* the SSSE3 tier: two four-block groups per unit */
+    in += units * 512; out += units * 512; len -= units * 512;
+  }
   if (len >= 256 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) {
-    intptr_t units = len / 256;
-    rktcrypto_chacha20_blocks_ssse3(state, in, out, units);  /* the SSSE3 tier (or the tiers above's 256-byte remainder) */
-    in += units * 256; out += units * 256; len -= units * 256;
+    rktcrypto_chacha20_blocks_ssse3_4(state, in, out, 1);    /* the 256-byte remainder of every tier */
+    in += 256; out += 256; len -= 256;
   }
 #endif
 #if defined(__aarch64__)

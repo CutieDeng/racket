@@ -86,6 +86,7 @@ void rktcrypto_chacha20_blocks2_avx512(uint32_t state[16], const unsigned char *
 void rktcrypto_chacha20_blocks_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_chacha20_ssse3.S): the SSSE3 tier, `units` x 256 bytes, four blocks per unit */
 void rktcrypto_chacha20_blocks_ssse3(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
+void rktcrypto_chacha20_blocks_ssse3_4(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);   /* one four-block group per 256-byte unit */
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);

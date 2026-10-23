@@ -27,1444 +27,1458 @@ chacha20_avx2_idx:
         .type   rktcrypto_chacha20_blocks_avx2, @function
         .p2align 5
 rktcrypto_chacha20_blocks_avx2:
-        sub     rsp, 648
+        sub     rsp, 1160
         test rcx, rcx
         jz .Lrktcrypto_chacha20_blocks_avx2_done
-.Lrktcrypto_chacha20_blocks_avx2_unit:
-        vpbroadcastd ymm13, dword ptr [rdi]
-        vpbroadcastd ymm12, dword ptr [rdi + 4]
-        vpbroadcastd ymm11, dword ptr [rdi + 8]
-        vpbroadcastd ymm10, dword ptr [rdi + 12]
-        vpbroadcastd ymm9, dword ptr [rdi + 16]
-        vpbroadcastd ymm8, dword ptr [rdi + 20]
-        vpbroadcastd ymm7, dword ptr [rdi + 24]
-        vpbroadcastd ymm6, dword ptr [rdi + 28]
-        vpbroadcastd ymm5, dword ptr [rdi + 32]
-        vpbroadcastd ymm4, dword ptr [rdi + 36]
-        vpbroadcastd ymm3, dword ptr [rdi + 40]
-        vpbroadcastd ymm2, dword ptr [rdi + 44]
-        vpbroadcastd ymm0, dword ptr [rdi + 48]
-        vpaddd ymm0, ymm0, ymmword ptr [rip + chacha20_avx2_idx]
-        vmovdqu ymmword ptr [rsp], ymm0
-        vpbroadcastd ymm0, dword ptr [rdi + 52]
-        vmovdqu ymmword ptr [rsp + 32], ymm0
-        vpbroadcastd ymm0, dword ptr [rdi + 56]
-        vmovdqu ymmword ptr [rsp + 64], ymm0
-        vpbroadcastd ymm0, dword ptr [rdi + 60]
-        vmovdqu ymmword ptr [rsp + 96], ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm13, ymmword ptr [rsp]
-        vpxor ymm14, ymm12, ymmword ptr [rsp + 32]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0xc
-        vpslld ymm0, ymm8, 0xc
-        vpsrld ymm9, ymm9, 0x14
-        vpsrld ymm8, ymm8, 0x14
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm13, ymm13, ymm9
-        vpaddd ymm12, ymm12, ymm8
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp], ymm15
-        vmovdqu ymmword ptr [rsp + 32], ymm14
-        vpxor ymm9, ymm9, ymm5
-        vpxor ymm8, ymm8, ymm4
-        vpslld ymm1, ymm9, 0x7
-        vpslld ymm0, ymm8, 0x7
-        vpsrld ymm9, ymm9, 0x19
-        vpsrld ymm8, ymm8, 0x19
-        vpor ymm9, ymm9, ymm1
-        vpor ymm8, ymm8, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 64]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 96]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0xc
-        vpslld ymm0, ymm6, 0xc
-        vpsrld ymm7, ymm7, 0x14
-        vpsrld ymm6, ymm6, 0x14
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm11, ymm11, ymm7
-        vpaddd ymm10, ymm10, ymm6
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 64], ymm15
-        vmovdqu ymmword ptr [rsp + 96], ymm14
-        vpxor ymm7, ymm7, ymm3
-        vpxor ymm6, ymm6, ymm2
-        vpslld ymm1, ymm7, 0x7
-        vpslld ymm0, ymm6, 0x7
-        vpsrld ymm7, ymm7, 0x19
-        vpsrld ymm6, ymm6, 0x19
-        vpor ymm7, ymm7, ymm1
-        vpor ymm6, ymm6, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm13, ymmword ptr [rsp + 96]
-        vpxor ymm14, ymm12, ymmword ptr [rsp]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0xc
-        vpslld ymm0, ymm7, 0xc
-        vpsrld ymm8, ymm8, 0x14
-        vpsrld ymm7, ymm7, 0x14
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm13, ymm13, ymm8
-        vpaddd ymm12, ymm12, ymm7
-        vpxor ymm15, ymm15, ymm13
-        vpxor ymm14, ymm14, ymm12
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm3, ymm3, ymm15
-        vpaddd ymm2, ymm2, ymm14
-        vmovdqu ymmword ptr [rsp + 96], ymm15
-        vmovdqu ymmword ptr [rsp], ymm14
-        vpxor ymm8, ymm8, ymm3
-        vpxor ymm7, ymm7, ymm2
-        vpslld ymm1, ymm8, 0x7
-        vpslld ymm0, ymm7, 0x7
-        vpsrld ymm8, ymm8, 0x19
-        vpsrld ymm7, ymm7, 0x19
-        vpor ymm8, ymm8, ymm1
-        vpor ymm7, ymm7, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm11, ymmword ptr [rsp + 32]
-        vpxor ymm14, ymm10, ymmword ptr [rsp + 64]
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol16]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0xc
-        vpslld ymm0, ymm9, 0xc
-        vpsrld ymm6, ymm6, 0x14
-        vpsrld ymm9, ymm9, 0x14
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
-        vpaddd ymm11, ymm11, ymm6
-        vpaddd ymm10, ymm10, ymm9
-        vpxor ymm15, ymm15, ymm11
-        vpxor ymm14, ymm14, ymm10
-        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpshufb ymm14, ymm14, ymmword ptr [rip + chacha20_avx2_rol8]
-        vpaddd ymm5, ymm5, ymm15
-        vpaddd ymm4, ymm4, ymm14
-        vmovdqu ymmword ptr [rsp + 32], ymm15
-        vmovdqu ymmword ptr [rsp + 64], ymm14
-        vpxor ymm6, ymm6, ymm5
-        vpxor ymm9, ymm9, ymm4
-        vpslld ymm1, ymm6, 0x7
-        vpslld ymm0, ymm9, 0x7
-        vpsrld ymm6, ymm6, 0x19
-        vpsrld ymm9, ymm9, 0x19
-        vpor ymm6, ymm6, ymm1
-        vpor ymm9, ymm9, ymm0
         vpbroadcastd ymm0, dword ptr [rdi]
-        vpaddd ymm13, ymm13, ymm0
-        vmovdqu ymmword ptr [rsp + 128], ymm13
+        vmovdqu ymmword ptr [rsp + 128], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 4]
-        vpaddd ymm12, ymm12, ymm0
-        vmovdqu ymmword ptr [rsp + 160], ymm12
+        vmovdqu ymmword ptr [rsp + 160], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 8]
-        vpaddd ymm11, ymm11, ymm0
-        vmovdqu ymmword ptr [rsp + 192], ymm11
+        vmovdqu ymmword ptr [rsp + 192], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 12]
-        vpaddd ymm10, ymm10, ymm0
-        vmovdqu ymmword ptr [rsp + 224], ymm10
+        vmovdqu ymmword ptr [rsp + 224], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 16]
-        vpaddd ymm9, ymm9, ymm0
-        vmovdqu ymmword ptr [rsp + 256], ymm9
+        vmovdqu ymmword ptr [rsp + 256], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 20]
-        vpaddd ymm8, ymm8, ymm0
-        vmovdqu ymmword ptr [rsp + 288], ymm8
+        vmovdqu ymmword ptr [rsp + 288], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 24]
-        vpaddd ymm7, ymm7, ymm0
-        vmovdqu ymmword ptr [rsp + 320], ymm7
+        vmovdqu ymmword ptr [rsp + 320], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 28]
-        vpaddd ymm6, ymm6, ymm0
-        vmovdqu ymmword ptr [rsp + 352], ymm6
+        vmovdqu ymmword ptr [rsp + 352], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 32]
-        vpaddd ymm5, ymm5, ymm0
-        vmovdqu ymmword ptr [rsp + 384], ymm5
+        vmovdqu ymmword ptr [rsp + 384], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 36]
-        vpaddd ymm4, ymm4, ymm0
-        vmovdqu ymmword ptr [rsp + 416], ymm4
+        vmovdqu ymmword ptr [rsp + 416], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 40]
-        vpaddd ymm3, ymm3, ymm0
-        vmovdqu ymmword ptr [rsp + 448], ymm3
+        vmovdqu ymmword ptr [rsp + 448], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 44]
-        vpaddd ymm2, ymm2, ymm0
-        vmovdqu ymmword ptr [rsp + 480], ymm2
-        vpbroadcastd ymm0, dword ptr [rdi + 48]
-        vpaddd ymm0, ymm0, ymmword ptr [rip + chacha20_avx2_idx]
-        vpaddd ymm0, ymm0, ymmword ptr [rsp]
-        vmovdqu ymmword ptr [rsp + 512], ymm0
+        vmovdqu ymmword ptr [rsp + 480], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 52]
-        vpaddd ymm0, ymm0, ymmword ptr [rsp + 32]
         vmovdqu ymmword ptr [rsp + 544], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 56]
-        vpaddd ymm0, ymm0, ymmword ptr [rsp + 64]
         vmovdqu ymmword ptr [rsp + 576], ymm0
         vpbroadcastd ymm0, dword ptr [rdi + 60]
-        vpaddd ymm0, ymm0, ymmword ptr [rsp + 96]
         vmovdqu ymmword ptr [rsp + 608], ymm0
-        vmovdqu ymm2, ymmword ptr [rsp + 128]
-        vmovdqu ymm1, ymmword ptr [rsp + 160]
-        vmovdqu ymm4, ymmword ptr [rsp + 192]
-        vmovdqu ymm0, ymmword ptr [rsp + 224]
+.Lrktcrypto_chacha20_blocks_avx2_unit:
+        vpbroadcastd ymm15, dword ptr [rdi + 48]
+        vpaddd ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_idx]
+        vmovdqu ymmword ptr [rsp + 512], ymm15
+        vmovdqu ymm14, ymmword ptr [rsp + 128]
+        vmovdqu ymm13, ymmword ptr [rsp + 160]
+        vmovdqu ymm12, ymmword ptr [rsp + 192]
+        vmovdqu ymm11, ymmword ptr [rsp + 224]
+        vmovdqu ymm10, ymmword ptr [rsp + 256]
+        vmovdqu ymm9, ymmword ptr [rsp + 288]
+        vmovdqu ymm8, ymmword ptr [rsp + 320]
+        vmovdqu ymm7, ymmword ptr [rsp + 352]
+        vmovdqu ymm6, ymmword ptr [rsp + 544]
+        vmovdqu ymm5, ymmword ptr [rsp + 576]
+        vmovdqu ymm4, ymmword ptr [rsp + 608]
+        vmovdqu ymm3, ymmword ptr [rsp + 384]
+        vmovdqu ymm2, ymmword ptr [rsp + 416]
+        vmovdqu ymm0, ymmword ptr [rsp + 448]
+        vmovdqu ymmword ptr [rsp + 64], ymm0
+        vmovdqu ymm0, ymmword ptr [rsp + 480]
+        vmovdqu ymmword ptr [rsp + 96], ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0xc
+        vpslld ymm0, ymm9, 0xc
+        vpsrld ymm10, ymm10, 0x14
+        vpsrld ymm9, ymm9, 0x14
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vpaddd ymm14, ymm14, ymm10
+        vpaddd ymm13, ymm13, ymm9
+        vpxor ymm15, ymm15, ymm14
+        vpxor ymm6, ymm6, ymm13
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm15
+        vpaddd ymm2, ymm2, ymm6
+        vpxor ymm10, ymm10, ymm3
+        vpxor ymm9, ymm9, ymm2
+        vpslld ymm1, ymm10, 0x7
+        vpslld ymm0, ymm9, 0x7
+        vpsrld ymm10, ymm10, 0x19
+        vpsrld ymm9, ymm9, 0x19
+        vpor ymm10, ymm10, ymm1
+        vpor ymm9, ymm9, ymm0
+        vmovdqu ymmword ptr [rsp], ymm3
+        vmovdqu ymmword ptr [rsp + 32], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp + 64]
+        vmovdqu ymm2, ymmword ptr [rsp + 96]
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0xc
+        vpslld ymm0, ymm7, 0xc
+        vpsrld ymm8, ymm8, 0x14
+        vpsrld ymm7, ymm7, 0x14
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm12, ymm12, ymm8
+        vpaddd ymm11, ymm11, ymm7
+        vpxor ymm5, ymm5, ymm12
+        vpxor ymm4, ymm4, ymm11
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm5
+        vpaddd ymm2, ymm2, ymm4
+        vpxor ymm8, ymm8, ymm3
+        vpxor ymm7, ymm7, ymm2
+        vpslld ymm1, ymm8, 0x7
+        vpslld ymm0, ymm7, 0x7
+        vpsrld ymm8, ymm8, 0x19
+        vpsrld ymm7, ymm7, 0x19
+        vpor ymm8, ymm8, ymm1
+        vpor ymm7, ymm7, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0xc
+        vpslld ymm0, ymm8, 0xc
+        vpsrld ymm9, ymm9, 0x14
+        vpsrld ymm8, ymm8, 0x14
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vpaddd ymm14, ymm14, ymm9
+        vpaddd ymm13, ymm13, ymm8
+        vpxor ymm4, ymm4, ymm14
+        vpxor ymm15, ymm15, ymm13
+        vpshufb ymm4, ymm4, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm15, ymm15, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm4
+        vpaddd ymm2, ymm2, ymm15
+        vpxor ymm9, ymm9, ymm3
+        vpxor ymm8, ymm8, ymm2
+        vpslld ymm1, ymm9, 0x7
+        vpslld ymm0, ymm8, 0x7
+        vpsrld ymm9, ymm9, 0x19
+        vpsrld ymm8, ymm8, 0x19
+        vpor ymm9, ymm9, ymm1
+        vpor ymm8, ymm8, ymm0
+        vmovdqu ymmword ptr [rsp + 64], ymm3
+        vmovdqu ymmword ptr [rsp + 96], ymm2
+        vmovdqu ymm3, ymmword ptr [rsp]
+        vmovdqu ymm2, ymmword ptr [rsp + 32]
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol16]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0xc
+        vpslld ymm0, ymm10, 0xc
+        vpsrld ymm7, ymm7, 0x14
+        vpsrld ymm10, ymm10, 0x14
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm12, ymm12, ymm7
+        vpaddd ymm11, ymm11, ymm10
+        vpxor ymm6, ymm6, ymm12
+        vpxor ymm5, ymm5, ymm11
+        vpshufb ymm6, ymm6, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpshufb ymm5, ymm5, ymmword ptr [rip + chacha20_avx2_rol8]
+        vpaddd ymm3, ymm3, ymm6
+        vpaddd ymm2, ymm2, ymm5
+        vpxor ymm7, ymm7, ymm3
+        vpxor ymm10, ymm10, ymm2
+        vpslld ymm1, ymm7, 0x7
+        vpslld ymm0, ymm10, 0x7
+        vpsrld ymm7, ymm7, 0x19
+        vpsrld ymm10, ymm10, 0x19
+        vpor ymm7, ymm7, ymm1
+        vpor ymm10, ymm10, ymm0
+        vpaddd ymm14, ymm14, ymmword ptr [rsp + 128]
+        vmovdqu ymmword ptr [rsp + 640], ymm14
+        vpaddd ymm13, ymm13, ymmword ptr [rsp + 160]
+        vmovdqu ymmword ptr [rsp + 672], ymm13
+        vpaddd ymm12, ymm12, ymmword ptr [rsp + 192]
+        vmovdqu ymmword ptr [rsp + 704], ymm12
+        vpaddd ymm11, ymm11, ymmword ptr [rsp + 224]
+        vmovdqu ymmword ptr [rsp + 736], ymm11
+        vpaddd ymm10, ymm10, ymmword ptr [rsp + 256]
+        vmovdqu ymmword ptr [rsp + 768], ymm10
+        vpaddd ymm9, ymm9, ymmword ptr [rsp + 288]
+        vmovdqu ymmword ptr [rsp + 800], ymm9
+        vpaddd ymm8, ymm8, ymmword ptr [rsp + 320]
+        vmovdqu ymmword ptr [rsp + 832], ymm8
+        vpaddd ymm7, ymm7, ymmword ptr [rsp + 352]
+        vmovdqu ymmword ptr [rsp + 864], ymm7
+        vpaddd ymm15, ymm15, ymmword ptr [rsp + 512]
+        vmovdqu ymmword ptr [rsp + 1024], ymm15
+        vpaddd ymm6, ymm6, ymmword ptr [rsp + 544]
+        vmovdqu ymmword ptr [rsp + 1056], ymm6
+        vpaddd ymm5, ymm5, ymmword ptr [rsp + 576]
+        vmovdqu ymmword ptr [rsp + 1088], ymm5
+        vpaddd ymm4, ymm4, ymmword ptr [rsp + 608]
+        vmovdqu ymmword ptr [rsp + 1120], ymm4
+        vpaddd ymm3, ymm3, ymmword ptr [rsp + 384]
+        vmovdqu ymmword ptr [rsp + 896], ymm3
+        vpaddd ymm2, ymm2, ymmword ptr [rsp + 416]
+        vmovdqu ymmword ptr [rsp + 928], ymm2
+        vmovdqu ymm0, ymmword ptr [rsp + 64]
+        vpaddd ymm0, ymm0, ymmword ptr [rsp + 448]
+        vmovdqu ymmword ptr [rsp + 960], ymm0
+        vmovdqu ymm0, ymmword ptr [rsp + 96]
+        vpaddd ymm0, ymm0, ymmword ptr [rsp + 480]
+        vmovdqu ymmword ptr [rsp + 992], ymm0
+        vmovdqu ymm2, ymmword ptr [rsp + 640]
+        vmovdqu ymm1, ymmword ptr [rsp + 672]
+        vmovdqu ymm4, ymmword ptr [rsp + 704]
+        vmovdqu ymm0, ymmword ptr [rsp + 736]
         vpunpckldq ymm3, ymm2, ymm1
         vpunpckhdq ymm2, ymm2, ymm1
         vpunpckldq ymm1, ymm4, ymm0
@@ -1473,10 +1487,10 @@ rktcrypto_chacha20_blocks_avx2:
         vpunpckhqdq ymm8, ymm3, ymm1
         vpunpcklqdq ymm7, ymm2, ymm0
         vpunpckhqdq ymm6, ymm2, ymm0
-        vmovdqu ymm4, ymmword ptr [rsp + 256]
-        vmovdqu ymm1, ymmword ptr [rsp + 288]
-        vmovdqu ymm3, ymmword ptr [rsp + 320]
-        vmovdqu ymm0, ymmword ptr [rsp + 352]
+        vmovdqu ymm4, ymmword ptr [rsp + 768]
+        vmovdqu ymm1, ymmword ptr [rsp + 800]
+        vmovdqu ymm3, ymmword ptr [rsp + 832]
+        vmovdqu ymm0, ymmword ptr [rsp + 864]
         vpunpckldq ymm2, ymm4, ymm1
         vpunpckhdq ymm5, ymm4, ymm1
         vpunpckldq ymm1, ymm3, ymm0
@@ -1509,10 +1523,10 @@ rktcrypto_chacha20_blocks_avx2:
         vperm2i128 ymm0, ymm6, ymm1, 0x31
         vpxor ymm0, ymm0, ymmword ptr [rsi + 448]
         vmovdqu ymmword ptr [rdx + 448], ymm0
-        vmovdqu ymm2, ymmword ptr [rsp + 384]
-        vmovdqu ymm1, ymmword ptr [rsp + 416]
-        vmovdqu ymm4, ymmword ptr [rsp + 448]
-        vmovdqu ymm0, ymmword ptr [rsp + 480]
+        vmovdqu ymm2, ymmword ptr [rsp + 896]
+        vmovdqu ymm1, ymmword ptr [rsp + 928]
+        vmovdqu ymm4, ymmword ptr [rsp + 960]
+        vmovdqu ymm0, ymmword ptr [rsp + 992]
         vpunpckldq ymm3, ymm2, ymm1
         vpunpckhdq ymm2, ymm2, ymm1
         vpunpckldq ymm1, ymm4, ymm0
@@ -1521,10 +1535,10 @@ rktcrypto_chacha20_blocks_avx2:
         vpunpckhqdq ymm8, ymm3, ymm1
         vpunpcklqdq ymm7, ymm2, ymm0
         vpunpckhqdq ymm6, ymm2, ymm0
-        vmovdqu ymm4, ymmword ptr [rsp + 512]
-        vmovdqu ymm1, ymmword ptr [rsp + 544]
-        vmovdqu ymm3, ymmword ptr [rsp + 576]
-        vmovdqu ymm0, ymmword ptr [rsp + 608]
+        vmovdqu ymm4, ymmword ptr [rsp + 1024]
+        vmovdqu ymm1, ymmword ptr [rsp + 1056]
+        vmovdqu ymm3, ymmword ptr [rsp + 1088]
+        vmovdqu ymm0, ymmword ptr [rsp + 1120]
         vpunpckldq ymm2, ymm4, ymm1
         vpunpckhdq ymm5, ymm4, ymm1
         vpunpckldq ymm1, ymm3, ymm0
@@ -1564,7 +1578,7 @@ rktcrypto_chacha20_blocks_avx2:
         jnz .Lrktcrypto_chacha20_blocks_avx2_unit
 .Lrktcrypto_chacha20_blocks_avx2_done:
         vzeroupper
-        add     rsp, 648
+        add     rsp, 1160
         ret
         .size   rktcrypto_chacha20_blocks_avx2, .-rktcrypto_chacha20_blocks_avx2
 

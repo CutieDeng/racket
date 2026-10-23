@@ -115,6 +115,7 @@
       "rktcrypto_chacha20_avx512.S"
       "rktcrypto_chacha20_avx2.S"
       "rktcrypto_chacha20_ssse3.S"
+      "rktcrypto_chacha20_ssse3_4.S"
       "rktcrypto_poly1305_x86.S"
       "rktcrypto_chacha20poly1305_x86.S"
       "rktcrypto_chacha20poly1305_avx2.S"

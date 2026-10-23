@@ -5,22 +5,38 @@
 
         .section .rodata
         .p2align 6
-sha256_avx2_k:
+sha256_avx2_k2:
+        .long 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5
         .long 0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5
         .long 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5
+        .long 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5
+        .long 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3
         .long 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3
         .long 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+        .long 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174
+        .long 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc
         .long 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc
         .long 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da
+        .long 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da
+        .long 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7
         .long 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7
         .long 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967
+        .long 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967
+        .long 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13
         .long 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13
         .long 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85
+        .long 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85
+        .long 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3
         .long 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3
         .long 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070
+        .long 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070
+        .long 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5
         .long 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5
         .long 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3
+        .long 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3
         .long 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208
+        .long 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208
+        .long 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
         .long 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
         .text
 
@@ -35,14 +51,15 @@ sha256_avx2_bswap:
         .p2align 5
 rktcrypto_sha256_blocks_avx2:
         push    rbx
+        push    rbp
         push    r12
         push    r13
         push    r14
         push    r15
-        sub     rsp, 256
+        sub     rsp, 520
         test rdx, rdx
         jz .Lrktcrypto_sha256_blocks_avx2_done
-        vmovdqa xmm3, xmmword ptr [rip + sha256_avx2_bswap]
+        vbroadcasti128 ymm3, xmmword ptr [rip + sha256_avx2_bswap]
         mov r15d, dword ptr [rdi]
         mov r14d, dword ptr [rdi + 4]
         mov r13d, dword ptr [rdi + 8]
@@ -51,33 +68,44 @@ rktcrypto_sha256_blocks_avx2:
         mov r11d, dword ptr [rdi + 20]
         mov r10d, dword ptr [rdi + 24]
         mov r9d, dword ptr [rdi + 28]
-.Lrktcrypto_sha256_blocks_avx2_blk:
+.Lrktcrypto_sha256_blocks_avx2_pair:
+        mov rax, rsi
+        cmp rdx, 0x1
+        je .Lrktcrypto_sha256_blocks_avx2_one
+        add rax, 0x40
+.Lrktcrypto_sha256_blocks_avx2_one:
         vmovdqu xmm5, xmmword ptr [rsi]
-        vpshufb xmm5, xmm5, xmm3
-        vpaddd xmm0, xmm5, xmmword ptr [rip + sha256_avx2_k]
-        vmovdqu xmmword ptr [rsp], xmm0
+        vinserti128 ymm5, ymm5, xmmword ptr [rax], 0x1
+        vpshufb ymm5, ymm5, ymm3
+        vpaddd ymm0, ymm5, ymmword ptr [rip + sha256_avx2_k2]
+        vmovdqu ymmword ptr [rsp], ymm0
         vmovdqu xmm7, xmmword ptr [rsi + 16]
-        vpshufb xmm7, xmm7, xmm3
-        vpaddd xmm0, xmm7, xmmword ptr [rip + sha256_avx2_k + 16]
-        vmovdqu xmmword ptr [rsp + 16], xmm0
+        vinserti128 ymm7, ymm7, xmmword ptr [rax + 16], 0x1
+        vpshufb ymm7, ymm7, ymm3
+        vpaddd ymm0, ymm7, ymmword ptr [rip + sha256_avx2_k2 + 32]
+        vmovdqu ymmword ptr [rsp + 32], ymm0
         vmovdqu xmm8, xmmword ptr [rsi + 32]
-        vpshufb xmm8, xmm8, xmm3
-        vpaddd xmm0, xmm8, xmmword ptr [rip + sha256_avx2_k + 32]
-        vmovdqu xmmword ptr [rsp + 32], xmm0
+        vinserti128 ymm8, ymm8, xmmword ptr [rax + 32], 0x1
+        vpshufb ymm8, ymm8, ymm3
+        vpaddd ymm0, ymm8, ymmword ptr [rip + sha256_avx2_k2 + 64]
+        vmovdqu ymmword ptr [rsp + 64], ymm0
         vmovdqu xmm6, xmmword ptr [rsi + 48]
-        vpshufb xmm6, xmm6, xmm3
-        vpaddd xmm0, xmm6, xmmword ptr [rip + sha256_avx2_k + 48]
-        vmovdqu xmmword ptr [rsp + 48], xmm0
-        vpalignr xmm2, xmm7, xmm5, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
+        vinserti128 ymm6, ymm6, xmmword ptr [rax + 48], 0x1
+        vpshufb ymm6, ymm6, ymm3
+        vpaddd ymm0, ymm6, ymmword ptr [rip + sha256_avx2_k2 + 96]
+        vmovdqu ymmword ptr [rsp + 96], ymm0
+        mov ebp, r14d
+        xor ebp, r13d
+        vpalignr ymm2, ymm7, ymm5, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
         add r9d, dword ptr [rsp]
         mov eax, r11d
         xor eax, r10d
@@ -91,31 +119,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r9d, ecx
         add r12d, r9d
-        rorx r8d, r15d, 0x2
+        rorx ecx, r15d, 0x2
         rorx eax, r15d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm6, xmm8, 0x4
-        vpaddd xmm4, xmm4, xmm5
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm6, 0x11
-        vpslld xmm0, xmm6, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm6, 0x13
-        vpslld xmm0, xmm6, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm6, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm6, ymm8, 0x4
+        vpaddd ymm4, ymm4, ymm5
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm6, 0x11
+        vpslld ymm0, ymm6, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm6, 0x13
+        vpslld ymm0, ymm6, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm6, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r10d, dword ptr [rsp + 4]
         mov eax, ebx
         xor eax, r11d
@@ -129,30 +155,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r10d, ecx
         add r13d, r10d
-        rorx r8d, r9d, 0x2
+        rorx ecx, r9d, 0x2
         rorx eax, r9d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r11d, dword ptr [rsp + 8]
         mov eax, r12d
         xor eax, ebx
@@ -166,23 +190,21 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r11d, ecx
         add r14d, r11d
-        rorx r8d, r10d, 0x2
+        rorx ecx, r10d, 0x2
         rorx eax, r10d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm5, xmm4, xmm2
-        vpaddd xmm0, xmm5, xmmword ptr [rip + sha256_avx2_k + 64]
-        vmovdqu xmmword ptr [rsp + 64], xmm0
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm5, ymm4, ymm2
+        vpaddd ymm0, ymm5, ymmword ptr [rip + sha256_avx2_k2 + 128]
+        vmovdqu ymmword ptr [rsp + 128], ymm0
         add ebx, dword ptr [rsp + 12]
         mov eax, r13d
         xor eax, r12d
@@ -196,312 +218,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add ebx, ecx
         add r15d, ebx
-        rorx r8d, r11d, 0x2
+        rorx ecx, r11d, 0x2
         rorx eax, r11d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm8, xmm7, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r12d, dword ptr [rsp + 16]
-        mov eax, r14d
-        xor eax, r13d
-        and eax, r15d
-        xor eax, r13d
-        add r12d, eax
-        rorx ecx, r15d, 0x6
-        rorx eax, r15d, 0xb
         xor ecx, eax
-        rorx eax, r15d, 0x19
-        xor ecx, eax
-        add r12d, ecx
-        add r9d, r12d
-        rorx r8d, ebx, 0x2
-        rorx eax, ebx, 0xd
-        xor r8d, eax
-        rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm5, xmm6, 0x4
-        vpaddd xmm4, xmm4, xmm7
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm5, 0x11
-        vpslld xmm0, xmm5, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm5, 0x13
-        vpslld xmm0, xmm5, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm5, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 20]
-        mov eax, r15d
-        xor eax, r14d
-        and eax, r9d
-        xor eax, r14d
-        add r13d, eax
-        rorx ecx, r9d, 0x6
-        rorx eax, r9d, 0xb
-        xor ecx, eax
-        rorx eax, r9d, 0x19
-        xor ecx, eax
-        add r13d, ecx
-        add r10d, r13d
-        rorx r8d, r12d, 0x2
-        rorx eax, r12d, 0xd
-        xor r8d, eax
-        rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 24]
-        mov eax, r9d
-        xor eax, r15d
-        and eax, r10d
-        xor eax, r15d
-        add r14d, eax
-        rorx ecx, r10d, 0x6
-        rorx eax, r10d, 0xb
-        xor ecx, eax
-        rorx eax, r10d, 0x19
-        xor ecx, eax
-        add r14d, ecx
-        add r11d, r14d
-        rorx r8d, r13d, 0x2
-        rorx eax, r13d, 0xd
-        xor r8d, eax
-        rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm7, xmm4, xmm2
-        vpaddd xmm0, xmm7, xmmword ptr [rip + sha256_avx2_k + 80]
-        vmovdqu xmmword ptr [rsp + 80], xmm0
-        add r15d, dword ptr [rsp + 28]
-        mov eax, r10d
-        xor eax, r9d
-        and eax, r11d
-        xor eax, r9d
-        add r15d, eax
-        rorx ecx, r11d, 0x6
-        rorx eax, r11d, 0xb
-        xor ecx, eax
-        rorx eax, r11d, 0x19
-        xor ecx, eax
-        add r15d, ecx
-        add ebx, r15d
-        rorx r8d, r14d, 0x2
-        rorx eax, r14d, 0xd
-        xor r8d, eax
-        rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        vpalignr xmm2, xmm6, xmm8, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r9d, dword ptr [rsp + 32]
-        mov eax, r11d
-        xor eax, r10d
-        and eax, ebx
-        xor eax, r10d
-        add r9d, eax
-        rorx ecx, ebx, 0x6
-        rorx eax, ebx, 0xb
-        xor ecx, eax
-        rorx eax, ebx, 0x19
-        xor ecx, eax
-        add r9d, ecx
-        add r12d, r9d
-        rorx r8d, r15d, 0x2
-        rorx eax, r15d, 0xd
-        xor r8d, eax
-        rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm7, xmm5, 0x4
-        vpaddd xmm4, xmm4, xmm8
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm7, 0x11
-        vpslld xmm0, xmm7, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm7, 0x13
-        vpslld xmm0, xmm7, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm7, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r10d, dword ptr [rsp + 36]
-        mov eax, ebx
-        xor eax, r11d
-        and eax, r12d
-        xor eax, r11d
-        add r10d, eax
-        rorx ecx, r12d, 0x6
-        rorx eax, r12d, 0xb
-        xor ecx, eax
-        rorx eax, r12d, 0x19
-        xor ecx, eax
-        add r10d, ecx
-        add r13d, r10d
-        rorx r8d, r9d, 0x2
-        rorx eax, r9d, 0xd
-        xor r8d, eax
-        rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r11d, dword ptr [rsp + 40]
-        mov eax, r12d
-        xor eax, ebx
-        and eax, r13d
-        xor eax, ebx
-        add r11d, eax
-        rorx ecx, r13d, 0x6
-        rorx eax, r13d, 0xb
-        xor ecx, eax
-        rorx eax, r13d, 0x19
-        xor ecx, eax
-        add r11d, ecx
-        add r14d, r11d
-        rorx r8d, r10d, 0x2
-        rorx eax, r10d, 0xd
-        xor r8d, eax
-        rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm8, xmm4, xmm2
-        vpaddd xmm0, xmm8, xmmword ptr [rip + sha256_avx2_k + 96]
-        vmovdqu xmmword ptr [rsp + 96], xmm0
-        add ebx, dword ptr [rsp + 44]
-        mov eax, r13d
-        xor eax, r12d
-        and eax, r14d
-        xor eax, r12d
-        add ebx, eax
-        rorx ecx, r14d, 0x6
-        rorx eax, r14d, 0xb
-        xor ecx, eax
-        rorx eax, r14d, 0x19
-        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
         add ebx, ecx
-        add r15d, ebx
-        rorx r8d, r11d, 0x2
-        rorx eax, r11d, 0xd
-        xor r8d, eax
-        rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm5, xmm6, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r12d, dword ptr [rsp + 48]
+        vpalignr ymm2, ymm8, ymm7, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r12d, dword ptr [rsp + 32]
         mov eax, r14d
         xor eax, r13d
         and eax, r15d
@@ -514,32 +252,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r12d, ecx
         add r9d, r12d
-        rorx r8d, ebx, 0x2
+        rorx ecx, ebx, 0x2
         rorx eax, ebx, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm8, xmm7, 0x4
-        vpaddd xmm4, xmm4, xmm6
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm8, 0x11
-        vpslld xmm0, xmm8, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm8, 0x13
-        vpslld xmm0, xmm8, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm8, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 52]
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm5, ymm6, 0x4
+        vpaddd ymm4, ymm4, ymm7
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm5, 0x11
+        vpslld ymm0, ymm5, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm5, 0x13
+        vpslld ymm0, ymm5, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm5, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 36]
         mov eax, r15d
         xor eax, r14d
         and eax, r9d
@@ -552,31 +288,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r13d, ecx
         add r10d, r13d
-        rorx r8d, r12d, 0x2
+        rorx ecx, r12d, 0x2
         rorx eax, r12d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 56]
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 40]
         mov eax, r9d
         xor eax, r15d
         and eax, r10d
@@ -589,24 +323,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r14d, ecx
         add r11d, r14d
-        rorx r8d, r13d, 0x2
+        rorx ecx, r13d, 0x2
         rorx eax, r13d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm6, xmm4, xmm2
-        vpaddd xmm0, xmm6, xmmword ptr [rip + sha256_avx2_k + 112]
-        vmovdqu xmmword ptr [rsp + 112], xmm0
-        add r15d, dword ptr [rsp + 60]
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm7, ymm4, ymm2
+        vpaddd ymm0, ymm7, ymmword ptr [rip + sha256_avx2_k2 + 160]
+        vmovdqu ymmword ptr [rsp + 160], ymm0
+        add r15d, dword ptr [rsp + 44]
         mov eax, r10d
         xor eax, r9d
         and eax, r11d
@@ -619,29 +351,27 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r15d, ecx
         add ebx, r15d
-        rorx r8d, r14d, 0x2
+        rorx ecx, r14d, 0x2
         rorx eax, r14d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        vpalignr xmm2, xmm7, xmm5, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        vpalignr ymm2, ymm6, ymm8, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
         add r9d, dword ptr [rsp + 64]
         mov eax, r11d
         xor eax, r10d
@@ -655,31 +385,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r9d, ecx
         add r12d, r9d
-        rorx r8d, r15d, 0x2
+        rorx ecx, r15d, 0x2
         rorx eax, r15d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm6, xmm8, 0x4
-        vpaddd xmm4, xmm4, xmm5
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm6, 0x11
-        vpslld xmm0, xmm6, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm6, 0x13
-        vpslld xmm0, xmm6, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm6, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm7, ymm5, 0x4
+        vpaddd ymm4, ymm4, ymm8
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm7, 0x11
+        vpslld ymm0, ymm7, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm7, 0x13
+        vpslld ymm0, ymm7, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm7, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r10d, dword ptr [rsp + 68]
         mov eax, ebx
         xor eax, r11d
@@ -693,30 +421,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r10d, ecx
         add r13d, r10d
-        rorx r8d, r9d, 0x2
+        rorx ecx, r9d, 0x2
         rorx eax, r9d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r11d, dword ptr [rsp + 72]
         mov eax, r12d
         xor eax, ebx
@@ -730,23 +456,21 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r11d, ecx
         add r14d, r11d
-        rorx r8d, r10d, 0x2
+        rorx ecx, r10d, 0x2
         rorx eax, r10d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm5, xmm4, xmm2
-        vpaddd xmm0, xmm5, xmmword ptr [rip + sha256_avx2_k + 128]
-        vmovdqu xmmword ptr [rsp + 128], xmm0
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm8, ymm4, ymm2
+        vpaddd ymm0, ymm8, ymmword ptr [rip + sha256_avx2_k2 + 192]
+        vmovdqu ymmword ptr [rsp + 192], ymm0
         add ebx, dword ptr [rsp + 76]
         mov eax, r13d
         xor eax, r12d
@@ -760,312 +484,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add ebx, ecx
         add r15d, ebx
-        rorx r8d, r11d, 0x2
+        rorx ecx, r11d, 0x2
         rorx eax, r11d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm8, xmm7, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r12d, dword ptr [rsp + 80]
-        mov eax, r14d
-        xor eax, r13d
-        and eax, r15d
-        xor eax, r13d
-        add r12d, eax
-        rorx ecx, r15d, 0x6
-        rorx eax, r15d, 0xb
         xor ecx, eax
-        rorx eax, r15d, 0x19
-        xor ecx, eax
-        add r12d, ecx
-        add r9d, r12d
-        rorx r8d, ebx, 0x2
-        rorx eax, ebx, 0xd
-        xor r8d, eax
-        rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm5, xmm6, 0x4
-        vpaddd xmm4, xmm4, xmm7
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm5, 0x11
-        vpslld xmm0, xmm5, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm5, 0x13
-        vpslld xmm0, xmm5, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm5, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 84]
-        mov eax, r15d
-        xor eax, r14d
-        and eax, r9d
-        xor eax, r14d
-        add r13d, eax
-        rorx ecx, r9d, 0x6
-        rorx eax, r9d, 0xb
-        xor ecx, eax
-        rorx eax, r9d, 0x19
-        xor ecx, eax
-        add r13d, ecx
-        add r10d, r13d
-        rorx r8d, r12d, 0x2
-        rorx eax, r12d, 0xd
-        xor r8d, eax
-        rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 88]
-        mov eax, r9d
-        xor eax, r15d
-        and eax, r10d
-        xor eax, r15d
-        add r14d, eax
-        rorx ecx, r10d, 0x6
-        rorx eax, r10d, 0xb
-        xor ecx, eax
-        rorx eax, r10d, 0x19
-        xor ecx, eax
-        add r14d, ecx
-        add r11d, r14d
-        rorx r8d, r13d, 0x2
-        rorx eax, r13d, 0xd
-        xor r8d, eax
-        rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm7, xmm4, xmm2
-        vpaddd xmm0, xmm7, xmmword ptr [rip + sha256_avx2_k + 144]
-        vmovdqu xmmword ptr [rsp + 144], xmm0
-        add r15d, dword ptr [rsp + 92]
-        mov eax, r10d
-        xor eax, r9d
-        and eax, r11d
-        xor eax, r9d
-        add r15d, eax
-        rorx ecx, r11d, 0x6
-        rorx eax, r11d, 0xb
-        xor ecx, eax
-        rorx eax, r11d, 0x19
-        xor ecx, eax
-        add r15d, ecx
-        add ebx, r15d
-        rorx r8d, r14d, 0x2
-        rorx eax, r14d, 0xd
-        xor r8d, eax
-        rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        vpalignr xmm2, xmm6, xmm8, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r9d, dword ptr [rsp + 96]
-        mov eax, r11d
-        xor eax, r10d
-        and eax, ebx
-        xor eax, r10d
-        add r9d, eax
-        rorx ecx, ebx, 0x6
-        rorx eax, ebx, 0xb
-        xor ecx, eax
-        rorx eax, ebx, 0x19
-        xor ecx, eax
-        add r9d, ecx
-        add r12d, r9d
-        rorx r8d, r15d, 0x2
-        rorx eax, r15d, 0xd
-        xor r8d, eax
-        rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm7, xmm5, 0x4
-        vpaddd xmm4, xmm4, xmm8
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm7, 0x11
-        vpslld xmm0, xmm7, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm7, 0x13
-        vpslld xmm0, xmm7, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm7, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r10d, dword ptr [rsp + 100]
-        mov eax, ebx
-        xor eax, r11d
-        and eax, r12d
-        xor eax, r11d
-        add r10d, eax
-        rorx ecx, r12d, 0x6
-        rorx eax, r12d, 0xb
-        xor ecx, eax
-        rorx eax, r12d, 0x19
-        xor ecx, eax
-        add r10d, ecx
-        add r13d, r10d
-        rorx r8d, r9d, 0x2
-        rorx eax, r9d, 0xd
-        xor r8d, eax
-        rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r11d, dword ptr [rsp + 104]
-        mov eax, r12d
-        xor eax, ebx
-        and eax, r13d
-        xor eax, ebx
-        add r11d, eax
-        rorx ecx, r13d, 0x6
-        rorx eax, r13d, 0xb
-        xor ecx, eax
-        rorx eax, r13d, 0x19
-        xor ecx, eax
-        add r11d, ecx
-        add r14d, r11d
-        rorx r8d, r10d, 0x2
-        rorx eax, r10d, 0xd
-        xor r8d, eax
-        rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm8, xmm4, xmm2
-        vpaddd xmm0, xmm8, xmmword ptr [rip + sha256_avx2_k + 160]
-        vmovdqu xmmword ptr [rsp + 160], xmm0
-        add ebx, dword ptr [rsp + 108]
-        mov eax, r13d
-        xor eax, r12d
-        and eax, r14d
-        xor eax, r12d
-        add ebx, eax
-        rorx ecx, r14d, 0x6
-        rorx eax, r14d, 0xb
-        xor ecx, eax
-        rorx eax, r14d, 0x19
-        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
         add ebx, ecx
-        add r15d, ebx
-        rorx r8d, r11d, 0x2
-        rorx eax, r11d, 0xd
-        xor r8d, eax
-        rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm5, xmm6, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r12d, dword ptr [rsp + 112]
+        vpalignr ymm2, ymm5, ymm6, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r12d, dword ptr [rsp + 96]
         mov eax, r14d
         xor eax, r13d
         and eax, r15d
@@ -1078,32 +518,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r12d, ecx
         add r9d, r12d
-        rorx r8d, ebx, 0x2
+        rorx ecx, ebx, 0x2
         rorx eax, ebx, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm8, xmm7, 0x4
-        vpaddd xmm4, xmm4, xmm6
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm8, 0x11
-        vpslld xmm0, xmm8, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm8, 0x13
-        vpslld xmm0, xmm8, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm8, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 116]
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm8, ymm7, 0x4
+        vpaddd ymm4, ymm4, ymm6
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm8, 0x11
+        vpslld ymm0, ymm8, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm8, 0x13
+        vpslld ymm0, ymm8, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm8, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 100]
         mov eax, r15d
         xor eax, r14d
         and eax, r9d
@@ -1116,31 +554,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r13d, ecx
         add r10d, r13d
-        rorx r8d, r12d, 0x2
+        rorx ecx, r12d, 0x2
         rorx eax, r12d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 120]
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 104]
         mov eax, r9d
         xor eax, r15d
         and eax, r10d
@@ -1153,24 +589,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r14d, ecx
         add r11d, r14d
-        rorx r8d, r13d, 0x2
+        rorx ecx, r13d, 0x2
         rorx eax, r13d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm6, xmm4, xmm2
-        vpaddd xmm0, xmm6, xmmword ptr [rip + sha256_avx2_k + 176]
-        vmovdqu xmmword ptr [rsp + 176], xmm0
-        add r15d, dword ptr [rsp + 124]
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm6, ymm4, ymm2
+        vpaddd ymm0, ymm6, ymmword ptr [rip + sha256_avx2_k2 + 224]
+        vmovdqu ymmword ptr [rsp + 224], ymm0
+        add r15d, dword ptr [rsp + 108]
         mov eax, r10d
         xor eax, r9d
         and eax, r11d
@@ -1183,29 +617,27 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r15d, ecx
         add ebx, r15d
-        rorx r8d, r14d, 0x2
+        rorx ecx, r14d, 0x2
         rorx eax, r14d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        vpalignr xmm2, xmm7, xmm5, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        vpalignr ymm2, ymm7, ymm5, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
         add r9d, dword ptr [rsp + 128]
         mov eax, r11d
         xor eax, r10d
@@ -1219,31 +651,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r9d, ecx
         add r12d, r9d
-        rorx r8d, r15d, 0x2
+        rorx ecx, r15d, 0x2
         rorx eax, r15d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm6, xmm8, 0x4
-        vpaddd xmm4, xmm4, xmm5
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm6, 0x11
-        vpslld xmm0, xmm6, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm6, 0x13
-        vpslld xmm0, xmm6, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm6, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm6, ymm8, 0x4
+        vpaddd ymm4, ymm4, ymm5
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm6, 0x11
+        vpslld ymm0, ymm6, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm6, 0x13
+        vpslld ymm0, ymm6, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm6, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r10d, dword ptr [rsp + 132]
         mov eax, ebx
         xor eax, r11d
@@ -1257,30 +687,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r10d, ecx
         add r13d, r10d
-        rorx r8d, r9d, 0x2
+        rorx ecx, r9d, 0x2
         rorx eax, r9d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r11d, dword ptr [rsp + 136]
         mov eax, r12d
         xor eax, ebx
@@ -1294,23 +722,21 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r11d, ecx
         add r14d, r11d
-        rorx r8d, r10d, 0x2
+        rorx ecx, r10d, 0x2
         rorx eax, r10d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpaddd xmm0, xmm4, xmmword ptr [rip + sha256_avx2_k + 192]
-        vmovdqu xmmword ptr [rsp + 192], xmm0
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm5, ymm4, ymm2
+        vpaddd ymm0, ymm5, ymmword ptr [rip + sha256_avx2_k2 + 256]
+        vmovdqu ymmword ptr [rsp + 256], ymm0
         add ebx, dword ptr [rsp + 140]
         mov eax, r13d
         xor eax, r12d
@@ -1324,312 +750,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add ebx, ecx
         add r15d, ebx
-        rorx r8d, r11d, 0x2
+        rorx ecx, r11d, 0x2
         rorx eax, r11d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm8, xmm7, 0x4
-        vpsrld xmm5, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm5, xmm5, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm5, xmm5, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm5, xmm5, xmm0
-        add r12d, dword ptr [rsp + 144]
-        mov eax, r14d
-        xor eax, r13d
-        and eax, r15d
-        xor eax, r13d
-        add r12d, eax
-        rorx ecx, r15d, 0x6
-        rorx eax, r15d, 0xb
         xor ecx, eax
-        rorx eax, r15d, 0x19
-        xor ecx, eax
-        add r12d, ecx
-        add r9d, r12d
-        rorx r8d, ebx, 0x2
-        rorx eax, ebx, 0xd
-        xor r8d, eax
-        rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm4, xmm6, 0x4
-        vpaddd xmm5, xmm5, xmm7
-        vpaddd xmm5, xmm5, xmm0
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 148]
-        mov eax, r15d
-        xor eax, r14d
-        and eax, r9d
-        xor eax, r14d
-        add r13d, eax
-        rorx ecx, r9d, 0x6
-        rorx eax, r9d, 0xb
-        xor ecx, eax
-        rorx eax, r9d, 0x19
-        xor ecx, eax
-        add r13d, ecx
-        add r10d, r13d
-        rorx r8d, r12d, 0x2
-        rorx eax, r12d, 0xd
-        xor r8d, eax
-        rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm5, xmm5, xmm2
-        vpsrld xmm2, xmm5, 0x11
-        vpslld xmm0, xmm5, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm5, 0x13
-        vpslld xmm0, xmm5, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm5, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 152]
-        mov eax, r9d
-        xor eax, r15d
-        and eax, r10d
-        xor eax, r15d
-        add r14d, eax
-        rorx ecx, r10d, 0x6
-        rorx eax, r10d, 0xb
-        xor ecx, eax
-        rorx eax, r10d, 0x19
-        xor ecx, eax
-        add r14d, ecx
-        add r11d, r14d
-        rorx r8d, r13d, 0x2
-        rorx eax, r13d, 0xd
-        xor r8d, eax
-        rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm7, xmm5, xmm2
-        vpaddd xmm0, xmm7, xmmword ptr [rip + sha256_avx2_k + 208]
-        vmovdqu xmmword ptr [rsp + 208], xmm0
-        add r15d, dword ptr [rsp + 156]
-        mov eax, r10d
-        xor eax, r9d
-        and eax, r11d
-        xor eax, r9d
-        add r15d, eax
-        rorx ecx, r11d, 0x6
-        rorx eax, r11d, 0xb
-        xor ecx, eax
-        rorx eax, r11d, 0x19
-        xor ecx, eax
-        add r15d, ecx
-        add ebx, r15d
-        rorx r8d, r14d, 0x2
-        rorx eax, r14d, 0xd
-        xor r8d, eax
-        rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        vpalignr xmm2, xmm6, xmm8, 0x4
-        vpsrld xmm5, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm5, xmm5, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm5, xmm5, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm5, xmm5, xmm0
-        add r9d, dword ptr [rsp + 160]
-        mov eax, r11d
-        xor eax, r10d
-        and eax, ebx
-        xor eax, r10d
-        add r9d, eax
-        rorx ecx, ebx, 0x6
-        rorx eax, ebx, 0xb
-        xor ecx, eax
-        rorx eax, ebx, 0x19
-        xor ecx, eax
-        add r9d, ecx
-        add r12d, r9d
-        rorx r8d, r15d, 0x2
-        rorx eax, r15d, 0xd
-        xor r8d, eax
-        rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        vpalignr xmm0, xmm7, xmm4, 0x4
-        vpaddd xmm5, xmm5, xmm8
-        vpaddd xmm5, xmm5, xmm0
-        vpsrld xmm2, xmm7, 0x11
-        vpslld xmm0, xmm7, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm7, 0x13
-        vpslld xmm0, xmm7, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm7, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r10d, dword ptr [rsp + 164]
-        mov eax, ebx
-        xor eax, r11d
-        and eax, r12d
-        xor eax, r11d
-        add r10d, eax
-        rorx ecx, r12d, 0x6
-        rorx eax, r12d, 0xb
-        xor ecx, eax
-        rorx eax, r12d, 0x19
-        xor ecx, eax
-        add r10d, ecx
-        add r13d, r10d
-        rorx r8d, r9d, 0x2
-        rorx eax, r9d, 0xd
-        xor r8d, eax
-        rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm5, xmm5, xmm2
-        vpsrld xmm2, xmm5, 0x11
-        vpslld xmm0, xmm5, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm5, 0x13
-        vpslld xmm0, xmm5, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm5, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r11d, dword ptr [rsp + 168]
-        mov eax, r12d
-        xor eax, ebx
-        and eax, r13d
-        xor eax, ebx
-        add r11d, eax
-        rorx ecx, r13d, 0x6
-        rorx eax, r13d, 0xb
-        xor ecx, eax
-        rorx eax, r13d, 0x19
-        xor ecx, eax
-        add r11d, ecx
-        add r14d, r11d
-        rorx r8d, r10d, 0x2
-        rorx eax, r10d, 0xd
-        xor r8d, eax
-        rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm5, xmm5, xmm2
-        vpaddd xmm0, xmm5, xmmword ptr [rip + sha256_avx2_k + 224]
-        vmovdqu xmmword ptr [rsp + 224], xmm0
-        add ebx, dword ptr [rsp + 172]
-        mov eax, r13d
-        xor eax, r12d
-        and eax, r14d
-        xor eax, r12d
-        add ebx, eax
-        rorx ecx, r14d, 0x6
-        rorx eax, r14d, 0xb
-        xor ecx, eax
-        rorx eax, r14d, 0x19
-        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
         add ebx, ecx
-        add r15d, ebx
-        rorx r8d, r11d, 0x2
-        rorx eax, r11d, 0xd
-        xor r8d, eax
-        rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        vpalignr xmm2, xmm4, xmm6, 0x4
-        vpsrld xmm4, xmm2, 0x7
-        vpslld xmm0, xmm2, 0x19
-        vpor xmm4, xmm4, xmm0
-        vpsrld xmm1, xmm2, 0x12
-        vpslld xmm0, xmm2, 0xe
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm4, xmm4, xmm1
-        vpsrld xmm0, xmm2, 0x3
-        vpxor xmm4, xmm4, xmm0
-        add r12d, dword ptr [rsp + 176]
+        vpalignr ymm2, ymm8, ymm7, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r12d, dword ptr [rsp + 160]
         mov eax, r14d
         xor eax, r13d
         and eax, r15d
@@ -1642,32 +784,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r12d, ecx
         add r9d, r12d
-        rorx r8d, ebx, 0x2
+        rorx ecx, ebx, 0x2
         rorx eax, ebx, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        vpalignr xmm0, xmm5, xmm7, 0x4
-        vpaddd xmm4, xmm4, xmm6
-        vpaddd xmm4, xmm4, xmm0
-        vpsrld xmm2, xmm5, 0x11
-        vpslld xmm0, xmm5, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm5, 0x13
-        vpslld xmm0, xmm5, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm5, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r13d, dword ptr [rsp + 180]
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm5, ymm6, 0x4
+        vpaddd ymm4, ymm4, ymm7
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm5, 0x11
+        vpslld ymm0, ymm5, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm5, 0x13
+        vpslld ymm0, ymm5, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm5, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 164]
         mov eax, r15d
         xor eax, r14d
         and eax, r9d
@@ -1680,31 +820,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r13d, ecx
         add r10d, r13d
-        rorx r8d, r12d, 0x2
+        rorx ecx, r12d, 0x2
         rorx eax, r12d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        vpsrldq xmm2, xmm2, 0x8
-        vpaddd xmm4, xmm4, xmm2
-        vpsrld xmm2, xmm4, 0x11
-        vpslld xmm0, xmm4, 0xf
-        vpor xmm2, xmm2, xmm0
-        vpsrld xmm1, xmm4, 0x13
-        vpslld xmm0, xmm4, 0xd
-        vpor xmm1, xmm1, xmm0
-        vpxor xmm2, xmm2, xmm1
-        vpsrld xmm0, xmm4, 0xa
-        vpxor xmm2, xmm2, xmm0
-        add r14d, dword ptr [rsp + 184]
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 168]
         mov eax, r9d
         xor eax, r15d
         and eax, r10d
@@ -1717,24 +855,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r14d, ecx
         add r11d, r14d
-        rorx r8d, r13d, 0x2
+        rorx ecx, r13d, 0x2
         rorx eax, r13d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        vpslldq xmm2, xmm2, 0x8
-        vpaddd xmm0, xmm4, xmm2
-        vpaddd xmm0, xmm0, xmmword ptr [rip + sha256_avx2_k + 240]
-        vmovdqu xmmword ptr [rsp + 240], xmm0
-        add r15d, dword ptr [rsp + 188]
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm7, ymm4, ymm2
+        vpaddd ymm0, ymm7, ymmword ptr [rip + sha256_avx2_k2 + 288]
+        vmovdqu ymmword ptr [rsp + 288], ymm0
+        add r15d, dword ptr [rsp + 172]
         mov eax, r10d
         xor eax, r9d
         and eax, r11d
@@ -1747,19 +883,27 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r15d, ecx
         add ebx, r15d
-        rorx r8d, r14d, 0x2
+        rorx ecx, r14d, 0x2
         rorx eax, r14d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        vpalignr ymm2, ymm6, ymm8, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
         add r9d, dword ptr [rsp + 192]
         mov eax, r11d
         xor eax, r10d
@@ -1773,19 +917,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r9d, ecx
         add r12d, r9d
-        rorx r8d, r15d, 0x2
+        rorx ecx, r15d, 0x2
         rorx eax, r15d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm7, ymm5, 0x4
+        vpaddd ymm4, ymm4, ymm8
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm7, 0x11
+        vpslld ymm0, ymm7, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm7, 0x13
+        vpslld ymm0, ymm7, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm7, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r10d, dword ptr [rsp + 196]
         mov eax, ebx
         xor eax, r11d
@@ -1799,19 +953,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r10d, ecx
         add r13d, r10d
-        rorx r8d, r9d, 0x2
+        rorx ecx, r9d, 0x2
         rorx eax, r9d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
         add r11d, dword ptr [rsp + 200]
         mov eax, r12d
         xor eax, ebx
@@ -1825,19 +988,21 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r11d, ecx
         add r14d, r11d
-        rorx r8d, r10d, 0x2
+        rorx ecx, r10d, 0x2
         rorx eax, r10d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm8, ymm4, ymm2
+        vpaddd ymm0, ymm8, ymmword ptr [rip + sha256_avx2_k2 + 320]
+        vmovdqu ymmword ptr [rsp + 320], ymm0
         add ebx, dword ptr [rsp + 204]
         mov eax, r13d
         xor eax, r12d
@@ -1851,20 +1016,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add ebx, ecx
         add r15d, ebx
-        rorx r8d, r11d, 0x2
+        rorx ecx, r11d, 0x2
         rorx eax, r11d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        add r12d, dword ptr [rsp + 208]
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        vpalignr ymm2, ymm5, ymm6, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r12d, dword ptr [rsp + 224]
         mov eax, r14d
         xor eax, r13d
         and eax, r15d
@@ -1877,20 +1050,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r12d, ecx
         add r9d, r12d
-        rorx r8d, ebx, 0x2
+        rorx ecx, ebx, 0x2
         rorx eax, ebx, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        add r13d, dword ptr [rsp + 212]
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm8, ymm7, 0x4
+        vpaddd ymm4, ymm4, ymm6
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm8, 0x11
+        vpslld ymm0, ymm8, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm8, 0x13
+        vpslld ymm0, ymm8, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm8, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 228]
         mov eax, r15d
         xor eax, r14d
         and eax, r9d
@@ -1903,20 +1086,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r13d, ecx
         add r10d, r13d
-        rorx r8d, r12d, 0x2
+        rorx ecx, r12d, 0x2
         rorx eax, r12d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        add r14d, dword ptr [rsp + 216]
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 232]
         mov eax, r9d
         xor eax, r15d
         and eax, r10d
@@ -1929,20 +1121,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r14d, ecx
         add r11d, r14d
-        rorx r8d, r13d, 0x2
+        rorx ecx, r13d, 0x2
         rorx eax, r13d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        add r15d, dword ptr [rsp + 220]
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm6, ymm4, ymm2
+        vpaddd ymm0, ymm6, ymmword ptr [rip + sha256_avx2_k2 + 352]
+        vmovdqu ymmword ptr [rsp + 352], ymm0
+        add r15d, dword ptr [rsp + 236]
         mov eax, r10d
         xor eax, r9d
         and eax, r11d
@@ -1955,20 +1149,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r15d, ecx
         add ebx, r15d
-        rorx r8d, r14d, 0x2
+        rorx ecx, r14d, 0x2
         rorx eax, r14d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
-        and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
-        add r9d, dword ptr [rsp + 224]
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        vpalignr ymm2, ymm7, ymm5, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r9d, dword ptr [rsp + 256]
         mov eax, r11d
         xor eax, r10d
         and eax, ebx
@@ -1981,20 +1183,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r9d, ecx
         add r12d, r9d
-        rorx r8d, r15d, 0x2
+        rorx ecx, r15d, 0x2
         rorx eax, r15d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r15d, 0x16
-        xor r8d, eax
-        mov ecx, r15d
-        and ecx, r14d
-        mov eax, r15d
-        or eax, r14d
-        and eax, r13d
-        or eax, ecx
-        add r8d, eax
-        add r9d, r8d
-        add r10d, dword ptr [rsp + 228]
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm6, ymm8, 0x4
+        vpaddd ymm4, ymm4, ymm5
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm6, 0x11
+        vpslld ymm0, ymm6, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm6, 0x13
+        vpslld ymm0, ymm6, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm6, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r10d, dword ptr [rsp + 260]
         mov eax, ebx
         xor eax, r11d
         and eax, r12d
@@ -2007,20 +1219,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r10d, ecx
         add r13d, r10d
-        rorx r8d, r9d, 0x2
+        rorx ecx, r9d, 0x2
         rorx eax, r9d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r9d, 0x16
-        xor r8d, eax
-        mov ecx, r9d
-        and ecx, r15d
-        mov eax, r9d
-        or eax, r15d
-        and eax, r14d
-        or eax, ecx
-        add r8d, eax
-        add r10d, r8d
-        add r11d, dword ptr [rsp + 232]
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r11d, dword ptr [rsp + 264]
         mov eax, r12d
         xor eax, ebx
         and eax, r13d
@@ -2033,20 +1254,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r11d, ecx
         add r14d, r11d
-        rorx r8d, r10d, 0x2
+        rorx ecx, r10d, 0x2
         rorx eax, r10d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r10d, 0x16
-        xor r8d, eax
-        mov ecx, r10d
-        and ecx, r9d
-        mov eax, r10d
-        or eax, r9d
-        and eax, r15d
-        or eax, ecx
-        add r8d, eax
-        add r11d, r8d
-        add ebx, dword ptr [rsp + 236]
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpaddd ymm0, ymm4, ymmword ptr [rip + sha256_avx2_k2 + 384]
+        vmovdqu ymmword ptr [rsp + 384], ymm0
+        add ebx, dword ptr [rsp + 268]
         mov eax, r13d
         xor eax, r12d
         and eax, r14d
@@ -2059,20 +1282,28 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add ebx, ecx
         add r15d, ebx
-        rorx r8d, r11d, 0x2
+        rorx ecx, r11d, 0x2
         rorx eax, r11d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r11d, 0x16
-        xor r8d, eax
-        mov ecx, r11d
-        and ecx, r10d
-        mov eax, r11d
-        or eax, r10d
-        and eax, r9d
-        or eax, ecx
-        add r8d, eax
-        add ebx, r8d
-        add r12d, dword ptr [rsp + 240]
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        vpalignr ymm2, ymm8, ymm7, 0x4
+        vpsrld ymm5, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm5, ymm5, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm5, ymm5, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm5, ymm5, ymm0
+        add r12d, dword ptr [rsp + 288]
         mov eax, r14d
         xor eax, r13d
         and eax, r15d
@@ -2085,20 +1316,30 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r12d, ecx
         add r9d, r12d
-        rorx r8d, ebx, 0x2
+        rorx ecx, ebx, 0x2
         rorx eax, ebx, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, ebx, 0x16
-        xor r8d, eax
-        mov ecx, ebx
-        and ecx, r11d
-        mov eax, ebx
-        or eax, r11d
-        and eax, r10d
-        or eax, ecx
-        add r8d, eax
-        add r12d, r8d
-        add r13d, dword ptr [rsp + 244]
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm4, ymm6, 0x4
+        vpaddd ymm5, ymm5, ymm7
+        vpaddd ymm5, ymm5, ymm0
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 292]
         mov eax, r15d
         xor eax, r14d
         and eax, r9d
@@ -2111,20 +1352,29 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r13d, ecx
         add r10d, r13d
-        rorx r8d, r12d, 0x2
+        rorx ecx, r12d, 0x2
         rorx eax, r12d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r12d, 0x16
-        xor r8d, eax
-        mov ecx, r12d
-        and ecx, ebx
-        mov eax, r12d
-        or eax, ebx
-        and eax, r11d
-        or eax, ecx
-        add r8d, eax
-        add r13d, r8d
-        add r14d, dword ptr [rsp + 248]
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm5, ymm5, ymm2
+        vpsrld ymm2, ymm5, 0x11
+        vpslld ymm0, ymm5, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm5, 0x13
+        vpslld ymm0, ymm5, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm5, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 296]
         mov eax, r9d
         xor eax, r15d
         and eax, r10d
@@ -2137,20 +1387,22 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r14d, ecx
         add r11d, r14d
-        rorx r8d, r13d, 0x2
+        rorx ecx, r13d, 0x2
         rorx eax, r13d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r13d, 0x16
-        xor r8d, eax
-        mov ecx, r13d
-        and ecx, r12d
-        mov eax, r13d
-        or eax, r12d
-        and eax, ebx
-        or eax, ecx
-        add r8d, eax
-        add r14d, r8d
-        add r15d, dword ptr [rsp + 252]
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm7, ymm5, ymm2
+        vpaddd ymm0, ymm7, ymmword ptr [rip + sha256_avx2_k2 + 416]
+        vmovdqu ymmword ptr [rsp + 416], ymm0
+        add r15d, dword ptr [rsp + 300]
         mov eax, r10d
         xor eax, r9d
         and eax, r11d
@@ -2163,19 +1415,667 @@ rktcrypto_sha256_blocks_avx2:
         xor ecx, eax
         add r15d, ecx
         add ebx, r15d
-        rorx r8d, r14d, 0x2
+        rorx ecx, r14d, 0x2
         rorx eax, r14d, 0xd
-        xor r8d, eax
+        xor ecx, eax
         rorx eax, r14d, 0x16
-        xor r8d, eax
-        mov ecx, r14d
-        and ecx, r13d
-        mov eax, r14d
-        or eax, r13d
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        vpalignr ymm2, ymm6, ymm8, 0x4
+        vpsrld ymm5, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm5, ymm5, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm5, ymm5, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm5, ymm5, ymm0
+        add r9d, dword ptr [rsp + 320]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        vpalignr ymm0, ymm7, ymm4, 0x4
+        vpaddd ymm5, ymm5, ymm8
+        vpaddd ymm5, ymm5, ymm0
+        vpsrld ymm2, ymm7, 0x11
+        vpslld ymm0, ymm7, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm7, 0x13
+        vpslld ymm0, ymm7, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm7, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r10d, dword ptr [rsp + 324]
+        mov eax, ebx
+        xor eax, r11d
         and eax, r12d
-        or eax, ecx
-        add r8d, eax
-        add r15d, r8d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm5, ymm5, ymm2
+        vpsrld ymm2, ymm5, 0x11
+        vpslld ymm0, ymm5, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm5, 0x13
+        vpslld ymm0, ymm5, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm5, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r11d, dword ptr [rsp + 328]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm5, ymm5, ymm2
+        vpaddd ymm0, ymm5, ymmword ptr [rip + sha256_avx2_k2 + 448]
+        vmovdqu ymmword ptr [rsp + 448], ymm0
+        add ebx, dword ptr [rsp + 332]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        vpalignr ymm2, ymm4, ymm6, 0x4
+        vpsrld ymm4, ymm2, 0x7
+        vpslld ymm0, ymm2, 0x19
+        vpor ymm4, ymm4, ymm0
+        vpsrld ymm1, ymm2, 0x12
+        vpslld ymm0, ymm2, 0xe
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm4, ymm4, ymm1
+        vpsrld ymm0, ymm2, 0x3
+        vpxor ymm4, ymm4, ymm0
+        add r12d, dword ptr [rsp + 352]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        vpalignr ymm0, ymm5, ymm7, 0x4
+        vpaddd ymm4, ymm4, ymm6
+        vpaddd ymm4, ymm4, ymm0
+        vpsrld ymm2, ymm5, 0x11
+        vpslld ymm0, ymm5, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm5, 0x13
+        vpslld ymm0, ymm5, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm5, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r13d, dword ptr [rsp + 356]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        vpsrldq ymm2, ymm2, 0x8
+        vpaddd ymm4, ymm4, ymm2
+        vpsrld ymm2, ymm4, 0x11
+        vpslld ymm0, ymm4, 0xf
+        vpor ymm2, ymm2, ymm0
+        vpsrld ymm1, ymm4, 0x13
+        vpslld ymm0, ymm4, 0xd
+        vpor ymm1, ymm1, ymm0
+        vpxor ymm2, ymm2, ymm1
+        vpsrld ymm0, ymm4, 0xa
+        vpxor ymm2, ymm2, ymm0
+        add r14d, dword ptr [rsp + 360]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        vpslldq ymm2, ymm2, 0x8
+        vpaddd ymm0, ymm4, ymm2
+        vpaddd ymm0, ymm0, ymmword ptr [rip + sha256_avx2_k2 + 480]
+        vmovdqu ymmword ptr [rsp + 480], ymm0
+        add r15d, dword ptr [rsp + 364]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 384]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 388]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 392]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 396]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 416]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 420]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 424]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 428]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 448]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 452]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 456]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 460]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 480]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 484]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 488]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 492]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov eax, r14d
+        xor eax, r13d
+        and r8d, eax
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
         add r15d, dword ptr [rdi]
         mov dword ptr [rdi], r15d
         add r14d, dword ptr [rdi + 4]
@@ -2192,15 +2092,1573 @@ rktcrypto_sha256_blocks_avx2:
         mov dword ptr [rdi + 24], r10d
         add r9d, dword ptr [rdi + 28]
         mov dword ptr [rdi + 28], r9d
-        add rsi, 0x40
         sub rdx, 0x1
-        jnz .Lrktcrypto_sha256_blocks_avx2_blk
+        jz .Lrktcrypto_sha256_blocks_avx2_done
+        mov ebp, r14d
+        xor ebp, r13d
+        add r9d, dword ptr [rsp + 16]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 20]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 24]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 28]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 48]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 52]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 56]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 60]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 80]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 84]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 88]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 92]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 112]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 116]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 120]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 124]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 144]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 148]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 152]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 156]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 176]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 180]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 184]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 188]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 208]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 212]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 216]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 220]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 240]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 244]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 248]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 252]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 272]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 276]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 280]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 284]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 304]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 308]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 312]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 316]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 336]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 340]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 344]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 348]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 368]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 372]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 376]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 380]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 400]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 404]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 408]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 412]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 432]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 436]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 440]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 444]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov ebp, r14d
+        xor ebp, r13d
+        and r8d, ebp
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r9d, dword ptr [rsp + 464]
+        mov eax, r11d
+        xor eax, r10d
+        and eax, ebx
+        xor eax, r10d
+        add r9d, eax
+        rorx ecx, ebx, 0x6
+        rorx eax, ebx, 0xb
+        xor ecx, eax
+        rorx eax, ebx, 0x19
+        xor ecx, eax
+        add r9d, ecx
+        add r12d, r9d
+        rorx ecx, r15d, 0x2
+        rorx eax, r15d, 0xd
+        xor ecx, eax
+        rorx eax, r15d, 0x16
+        xor ecx, eax
+        mov r8d, r15d
+        xor r8d, r14d
+        and ebp, r8d
+        xor ebp, r14d
+        add ecx, ebp
+        add r9d, ecx
+        add r10d, dword ptr [rsp + 468]
+        mov eax, ebx
+        xor eax, r11d
+        and eax, r12d
+        xor eax, r11d
+        add r10d, eax
+        rorx ecx, r12d, 0x6
+        rorx eax, r12d, 0xb
+        xor ecx, eax
+        rorx eax, r12d, 0x19
+        xor ecx, eax
+        add r10d, ecx
+        add r13d, r10d
+        rorx ecx, r9d, 0x2
+        rorx eax, r9d, 0xd
+        xor ecx, eax
+        rorx eax, r9d, 0x16
+        xor ecx, eax
+        mov ebp, r9d
+        xor ebp, r15d
+        and r8d, ebp
+        xor r8d, r15d
+        add ecx, r8d
+        add r10d, ecx
+        add r11d, dword ptr [rsp + 472]
+        mov eax, r12d
+        xor eax, ebx
+        and eax, r13d
+        xor eax, ebx
+        add r11d, eax
+        rorx ecx, r13d, 0x6
+        rorx eax, r13d, 0xb
+        xor ecx, eax
+        rorx eax, r13d, 0x19
+        xor ecx, eax
+        add r11d, ecx
+        add r14d, r11d
+        rorx ecx, r10d, 0x2
+        rorx eax, r10d, 0xd
+        xor ecx, eax
+        rorx eax, r10d, 0x16
+        xor ecx, eax
+        mov r8d, r10d
+        xor r8d, r9d
+        and ebp, r8d
+        xor ebp, r9d
+        add ecx, ebp
+        add r11d, ecx
+        add ebx, dword ptr [rsp + 476]
+        mov eax, r13d
+        xor eax, r12d
+        and eax, r14d
+        xor eax, r12d
+        add ebx, eax
+        rorx ecx, r14d, 0x6
+        rorx eax, r14d, 0xb
+        xor ecx, eax
+        rorx eax, r14d, 0x19
+        xor ecx, eax
+        add ebx, ecx
+        add r15d, ebx
+        rorx ecx, r11d, 0x2
+        rorx eax, r11d, 0xd
+        xor ecx, eax
+        rorx eax, r11d, 0x16
+        xor ecx, eax
+        mov ebp, r11d
+        xor ebp, r10d
+        and r8d, ebp
+        xor r8d, r10d
+        add ecx, r8d
+        add ebx, ecx
+        add r12d, dword ptr [rsp + 496]
+        mov eax, r14d
+        xor eax, r13d
+        and eax, r15d
+        xor eax, r13d
+        add r12d, eax
+        rorx ecx, r15d, 0x6
+        rorx eax, r15d, 0xb
+        xor ecx, eax
+        rorx eax, r15d, 0x19
+        xor ecx, eax
+        add r12d, ecx
+        add r9d, r12d
+        rorx ecx, ebx, 0x2
+        rorx eax, ebx, 0xd
+        xor ecx, eax
+        rorx eax, ebx, 0x16
+        xor ecx, eax
+        mov r8d, ebx
+        xor r8d, r11d
+        and ebp, r8d
+        xor ebp, r11d
+        add ecx, ebp
+        add r12d, ecx
+        add r13d, dword ptr [rsp + 500]
+        mov eax, r15d
+        xor eax, r14d
+        and eax, r9d
+        xor eax, r14d
+        add r13d, eax
+        rorx ecx, r9d, 0x6
+        rorx eax, r9d, 0xb
+        xor ecx, eax
+        rorx eax, r9d, 0x19
+        xor ecx, eax
+        add r13d, ecx
+        add r10d, r13d
+        rorx ecx, r12d, 0x2
+        rorx eax, r12d, 0xd
+        xor ecx, eax
+        rorx eax, r12d, 0x16
+        xor ecx, eax
+        mov ebp, r12d
+        xor ebp, ebx
+        and r8d, ebp
+        xor r8d, ebx
+        add ecx, r8d
+        add r13d, ecx
+        add r14d, dword ptr [rsp + 504]
+        mov eax, r9d
+        xor eax, r15d
+        and eax, r10d
+        xor eax, r15d
+        add r14d, eax
+        rorx ecx, r10d, 0x6
+        rorx eax, r10d, 0xb
+        xor ecx, eax
+        rorx eax, r10d, 0x19
+        xor ecx, eax
+        add r14d, ecx
+        add r11d, r14d
+        rorx ecx, r13d, 0x2
+        rorx eax, r13d, 0xd
+        xor ecx, eax
+        rorx eax, r13d, 0x16
+        xor ecx, eax
+        mov r8d, r13d
+        xor r8d, r12d
+        and ebp, r8d
+        xor ebp, r12d
+        add ecx, ebp
+        add r14d, ecx
+        add r15d, dword ptr [rsp + 508]
+        mov eax, r10d
+        xor eax, r9d
+        and eax, r11d
+        xor eax, r9d
+        add r15d, eax
+        rorx ecx, r11d, 0x6
+        rorx eax, r11d, 0xb
+        xor ecx, eax
+        rorx eax, r11d, 0x19
+        xor ecx, eax
+        add r15d, ecx
+        add ebx, r15d
+        rorx ecx, r14d, 0x2
+        rorx eax, r14d, 0xd
+        xor ecx, eax
+        rorx eax, r14d, 0x16
+        xor ecx, eax
+        mov eax, r14d
+        xor eax, r13d
+        and r8d, eax
+        xor r8d, r13d
+        add ecx, r8d
+        add r15d, ecx
+        add r15d, dword ptr [rdi]
+        mov dword ptr [rdi], r15d
+        add r14d, dword ptr [rdi + 4]
+        mov dword ptr [rdi + 4], r14d
+        add r13d, dword ptr [rdi + 8]
+        mov dword ptr [rdi + 8], r13d
+        add r12d, dword ptr [rdi + 12]
+        mov dword ptr [rdi + 12], r12d
+        add ebx, dword ptr [rdi + 16]
+        mov dword ptr [rdi + 16], ebx
+        add r11d, dword ptr [rdi + 20]
+        mov dword ptr [rdi + 20], r11d
+        add r10d, dword ptr [rdi + 24]
+        mov dword ptr [rdi + 24], r10d
+        add r9d, dword ptr [rdi + 28]
+        mov dword ptr [rdi + 28], r9d
+        add rsi, 0x80
+        sub rdx, 0x1
+        jnz .Lrktcrypto_sha256_blocks_avx2_pair
 .Lrktcrypto_sha256_blocks_avx2_done:
-        add     rsp, 256
+        vzeroupper
+        add     rsp, 520
         pop     r15
         pop     r14
         pop     r13
         pop     r12
+        pop     rbp
         pop     rbx
         ret
         .size   rktcrypto_sha256_blocks_avx2, .-rktcrypto_sha256_blocks_avx2

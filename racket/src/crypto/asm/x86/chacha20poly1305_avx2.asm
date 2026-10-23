@@ -1,8 +1,9 @@
 ;; Fused ChaCha20 + Poly1305 unit loop on AVX2 + MULX (x86-64 SysV), the tier for CPUs without
 ;; AVX-512: each iteration produces one 512-byte unit of ChaCha20 keystream XOR (eight blocks,
-;; the same code as chacha20_avx2.asm) while the scalar Poly1305 absorbs the 32 blocks of the
-;; PREVIOUS unit's ciphertext, spread over the 40 quarter-round pairs so that the vector pipes
-;; and the integer multiplier run concurrently.
+;; the same code as chacha20_avx2.asm: a/b/d rows in registers, one c pair in registers and the
+;; other in frame slots) while the scalar Poly1305 absorbs the 32 blocks of the PREVIOUS unit's
+;; ciphertext, spread over the 40 quarter-round pairs so that the vector pipes and the integer
+;; multiplier run concurrently.
 ;;   void rktcrypto_chacha20poly1305_units_avx2(uint32_t state[16], const unsigned char *in,
 ;;                                              unsigned char *out, intptr_t units,
 ;;                                              const unsigned char *mac, uint64_t hr[6])
@@ -12,58 +13,6 @@
 ;; in rdx, which mulx needs, so it is moved out first.
 ;; Oracle: the two-pass path (BMI2/ADX cleared); gate: asm/tests/test_chacha20poly1305_x86.c.
 
-.rodata chacha20poly1305_avx2_rol16 align=32
-  .byte 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13
-  .byte 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13
-.end
-.rodata chacha20poly1305_avx2_rol8 align=32
-  .byte 3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14
-  .byte 3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14
-.end
-.rodata chacha20poly1305_avx2_idx align=32
-  .long 0, 1, 2, 3, 4, 5, 6, 7
-.end
-
-;; two interleaved quarter rounds; d words in frame slots \d0 / \d1 (addresses), pulled into
-;; ymm.t0 / ymm.t1, shift scratch ymm.s0 / ymm.s1
-.macro QR2 a0, b0, c0, d0, a1, b1, c1, d1
-  vpaddd \a0, \a0, \b0
-  vpaddd \a1, \a1, \b1
-  vpxor ymm.t0, \a0, ymmword ptr [\d0]
-  vpxor ymm.t1, \a1, ymmword ptr [\d1]
-  vpshufb ymm.t0, ymm.t0, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
-  vpshufb ymm.t1, ymm.t1, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
-  vpaddd \c0, \c0, ymm.t0
-  vpaddd \c1, \c1, ymm.t1
-  vpxor \b0, \b0, \c0
-  vpxor \b1, \b1, \c1
-  vpslld ymm.s0, \b0, 12
-  vpslld ymm.s1, \b1, 12
-  vpsrld \b0, \b0, 20
-  vpsrld \b1, \b1, 20
-  vpor \b0, \b0, ymm.s0
-  vpor \b1, \b1, ymm.s1
-  vpaddd \a0, \a0, \b0
-  vpaddd \a1, \a1, \b1
-  vpxor ymm.t0, ymm.t0, \a0
-  vpxor ymm.t1, ymm.t1, \a1
-  vpshufb ymm.t0, ymm.t0, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
-  vpshufb ymm.t1, ymm.t1, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
-  vpaddd \c0, \c0, ymm.t0
-  vpaddd \c1, \c1, ymm.t1
-  vmovdqu ymmword ptr [\d0], ymm.t0
-  vmovdqu ymmword ptr [\d1], ymm.t1
-  vpxor \b0, \b0, \c0
-  vpxor \b1, \b1, \c1
-  vpslld ymm.s0, \b0, 7
-  vpslld ymm.s1, \b1, 7
-  vpsrld \b0, \b0, 25
-  vpsrld \b1, \b1, 25
-  vpor \b0, \b0, ymm.s0
-  vpor \b1, \b1, ymm.s1
-.endm
-
-;; frame: d row at 0..127 (slot j = 32 j), the sixteen finished words at 128..639 (word i = 128 + 32 i)
 ;; one Poly1305 block of the ciphertext at mac + 16 k (radix 2^64, MULX; the same sequence as
 ;; chacha20poly1305_x86.asm): h = (h + m + 2^128) * r mod 2^130-5, partially reduced
 .macro POLY1305_BLOCK k
@@ -100,70 +49,231 @@
   adc q.h2, 0
 .endm
 
+.rodata chacha20poly1305_avx2_rol16 align=32
+  .byte 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13
+  .byte 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13
+.end
+.rodata chacha20poly1305_avx2_rol8 align=32
+  .byte 3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14
+  .byte 3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14
+.end
+.rodata chacha20poly1305_avx2_idx align=32
+  .long 0, 1, 2, 3, 4, 5, 6, 7
+.end
+
+;; frame: c slots at 0..127 (c8 + 32 (i - 8)), the smashed state at 128..639 (word i = 128 + 32 i),
+;; the sixteen finished words at 640..1151 (word i = 640 + 32 i)
 .function rktcrypto_chacha20poly1305_units_avx2 export (
   in: q.st, q.in, rdx, q.n, q.mac, q.hr
 )
   .simd avx2
-  .frame 640
+  .frame 1152
   mov q.out, rdx
   test q.n, q.n
   jz done
   mov q.h0, qword ptr [q.hr]
   mov q.h1, qword ptr [q.hr + 8]
   mov q.h2, qword ptr [q.hr + 16]
+.for i, 0, 16
+  .for z, if i == 12 {1} else {0}, 1
+  vpbroadcastd ymm.t0, dword ptr [q.st + ${4 * i}]
+  vmovdqu ymmword ptr [rsp + ${128 + 32 * i}], ymm.t0
+  .endfor
+.endfor
 unit:
-.for i, 0, 12
-  vpbroadcastd ymm.x${i}, dword ptr [q.st + ${4 * i}]
+  vpbroadcastd ymm.x12, dword ptr [q.st + 48]
+  vpaddd ymm.x12, ymm.x12, ymmword ptr [rip + chacha20poly1305_avx2_idx]
+  vmovdqu ymmword ptr [rsp + 512], ymm.x12
+.for i, 0, 8
+  vmovdqu ymm.x${i}, ymmword ptr [rsp + ${128 + 32 * i}]
 .endfor
-  vpbroadcastd ymm.t0, dword ptr [q.st + 48]
-  vpaddd ymm.t0, ymm.t0, ymmword ptr [rip + chacha20poly1305_avx2_idx]
-  vmovdqu ymmword ptr [rsp + 0], ymm.t0
-.for j, 1, 4
-  vpbroadcastd ymm.t0, dword ptr [q.st + ${48 + 4 * j}]
-  vmovdqu ymmword ptr [rsp + ${32 * j}], ymm.t0
+.for i, 13, 16
+  vmovdqu ymm.x${i}, ymmword ptr [rsp + ${128 + 32 * i}]
 .endfor
+  vmovdqu ymm.c0, ymmword ptr [rsp + 384]
+  vmovdqu ymm.c1, ymmword ptr [rsp + 416]
+  vmovdqu ymm.t0, ymmword ptr [rsp + 448]
+  vmovdqu ymmword ptr [rsp + 64], ymm.t0
+  vmovdqu ymm.t1, ymmword ptr [rsp + 480]
+  vmovdqu ymmword ptr [rsp + 96], ymm.t1
 .for r, 0, 10
-  QR2(ymm.x0, ymm.x4, ymm.x8, rsp + 0, ymm.x1, ymm.x5, ymm.x9, rsp + 32)
+  vpaddd ymm.x0, ymm.x0, ymm.x4
+  vpaddd ymm.x1, ymm.x1, ymm.x5
+  vpxor ymm.x12, ymm.x12, ymm.x0
+  vpxor ymm.x13, ymm.x13, ymm.x1
+  vpshufb ymm.x12, ymm.x12, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpshufb ymm.x13, ymm.x13, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpaddd ymm.c0, ymm.c0, ymm.x12
+  vpaddd ymm.c1, ymm.c1, ymm.x13
+  vpxor ymm.x4, ymm.x4, ymm.c0
+  vpxor ymm.x5, ymm.x5, ymm.c1
+  vpslld ymm.t0, ymm.x4, 12
+  vpslld ymm.t1, ymm.x5, 12
+  vpsrld ymm.x4, ymm.x4, 20
+  vpsrld ymm.x5, ymm.x5, 20
+  vpor ymm.x4, ymm.x4, ymm.t0
+  vpor ymm.x5, ymm.x5, ymm.t1
+  vpaddd ymm.x0, ymm.x0, ymm.x4
+  vpaddd ymm.x1, ymm.x1, ymm.x5
+  vpxor ymm.x12, ymm.x12, ymm.x0
+  vpxor ymm.x13, ymm.x13, ymm.x1
+  vpshufb ymm.x12, ymm.x12, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpshufb ymm.x13, ymm.x13, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpaddd ymm.c0, ymm.c0, ymm.x12
+  vpaddd ymm.c1, ymm.c1, ymm.x13
+  vpxor ymm.x4, ymm.x4, ymm.c0
+  vpxor ymm.x5, ymm.x5, ymm.c1
+  vpslld ymm.t0, ymm.x4, 7
+  vpslld ymm.t1, ymm.x5, 7
+  vpsrld ymm.x4, ymm.x4, 25
+  vpsrld ymm.x5, ymm.x5, 25
+  vpor ymm.x4, ymm.x4, ymm.t0
+  vpor ymm.x5, ymm.x5, ymm.t1
+  vmovdqu ymmword ptr [rsp + 0], ymm.c0
+  vmovdqu ymmword ptr [rsp + 32], ymm.c1
+  vmovdqu ymm.c0, ymmword ptr [rsp + 64]
+  vmovdqu ymm.c1, ymmword ptr [rsp + 96]
   .for k, (r * 4 + 0) * 32 / 40, (r * 4 + 1) * 32 / 40
   POLY1305_BLOCK(k)
   .endfor
-  QR2(ymm.x2, ymm.x6, ymm.x10, rsp + 64, ymm.x3, ymm.x7, ymm.x11, rsp + 96)
+  vpaddd ymm.x2, ymm.x2, ymm.x6
+  vpaddd ymm.x3, ymm.x3, ymm.x7
+  vpxor ymm.x14, ymm.x14, ymm.x2
+  vpxor ymm.x15, ymm.x15, ymm.x3
+  vpshufb ymm.x14, ymm.x14, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpshufb ymm.x15, ymm.x15, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpaddd ymm.c0, ymm.c0, ymm.x14
+  vpaddd ymm.c1, ymm.c1, ymm.x15
+  vpxor ymm.x6, ymm.x6, ymm.c0
+  vpxor ymm.x7, ymm.x7, ymm.c1
+  vpslld ymm.t0, ymm.x6, 12
+  vpslld ymm.t1, ymm.x7, 12
+  vpsrld ymm.x6, ymm.x6, 20
+  vpsrld ymm.x7, ymm.x7, 20
+  vpor ymm.x6, ymm.x6, ymm.t0
+  vpor ymm.x7, ymm.x7, ymm.t1
+  vpaddd ymm.x2, ymm.x2, ymm.x6
+  vpaddd ymm.x3, ymm.x3, ymm.x7
+  vpxor ymm.x14, ymm.x14, ymm.x2
+  vpxor ymm.x15, ymm.x15, ymm.x3
+  vpshufb ymm.x14, ymm.x14, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpshufb ymm.x15, ymm.x15, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpaddd ymm.c0, ymm.c0, ymm.x14
+  vpaddd ymm.c1, ymm.c1, ymm.x15
+  vpxor ymm.x6, ymm.x6, ymm.c0
+  vpxor ymm.x7, ymm.x7, ymm.c1
+  vpslld ymm.t0, ymm.x6, 7
+  vpslld ymm.t1, ymm.x7, 7
+  vpsrld ymm.x6, ymm.x6, 25
+  vpsrld ymm.x7, ymm.x7, 25
+  vpor ymm.x6, ymm.x6, ymm.t0
+  vpor ymm.x7, ymm.x7, ymm.t1
   .for k, (r * 4 + 1) * 32 / 40, (r * 4 + 2) * 32 / 40
   POLY1305_BLOCK(k)
   .endfor
-  QR2(ymm.x0, ymm.x5, ymm.x10, rsp + 96, ymm.x1, ymm.x6, ymm.x11, rsp + 0)
+  vpaddd ymm.x0, ymm.x0, ymm.x5
+  vpaddd ymm.x1, ymm.x1, ymm.x6
+  vpxor ymm.x15, ymm.x15, ymm.x0
+  vpxor ymm.x12, ymm.x12, ymm.x1
+  vpshufb ymm.x15, ymm.x15, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpshufb ymm.x12, ymm.x12, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpaddd ymm.c0, ymm.c0, ymm.x15
+  vpaddd ymm.c1, ymm.c1, ymm.x12
+  vpxor ymm.x5, ymm.x5, ymm.c0
+  vpxor ymm.x6, ymm.x6, ymm.c1
+  vpslld ymm.t0, ymm.x5, 12
+  vpslld ymm.t1, ymm.x6, 12
+  vpsrld ymm.x5, ymm.x5, 20
+  vpsrld ymm.x6, ymm.x6, 20
+  vpor ymm.x5, ymm.x5, ymm.t0
+  vpor ymm.x6, ymm.x6, ymm.t1
+  vpaddd ymm.x0, ymm.x0, ymm.x5
+  vpaddd ymm.x1, ymm.x1, ymm.x6
+  vpxor ymm.x15, ymm.x15, ymm.x0
+  vpxor ymm.x12, ymm.x12, ymm.x1
+  vpshufb ymm.x15, ymm.x15, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpshufb ymm.x12, ymm.x12, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpaddd ymm.c0, ymm.c0, ymm.x15
+  vpaddd ymm.c1, ymm.c1, ymm.x12
+  vpxor ymm.x5, ymm.x5, ymm.c0
+  vpxor ymm.x6, ymm.x6, ymm.c1
+  vpslld ymm.t0, ymm.x5, 7
+  vpslld ymm.t1, ymm.x6, 7
+  vpsrld ymm.x5, ymm.x5, 25
+  vpsrld ymm.x6, ymm.x6, 25
+  vpor ymm.x5, ymm.x5, ymm.t0
+  vpor ymm.x6, ymm.x6, ymm.t1
+  vmovdqu ymmword ptr [rsp + 64], ymm.c0
+  vmovdqu ymmword ptr [rsp + 96], ymm.c1
+  vmovdqu ymm.c0, ymmword ptr [rsp + 0]
+  vmovdqu ymm.c1, ymmword ptr [rsp + 32]
   .for k, (r * 4 + 2) * 32 / 40, (r * 4 + 3) * 32 / 40
   POLY1305_BLOCK(k)
   .endfor
-  QR2(ymm.x2, ymm.x7, ymm.x8, rsp + 32, ymm.x3, ymm.x4, ymm.x9, rsp + 64)
+  vpaddd ymm.x2, ymm.x2, ymm.x7
+  vpaddd ymm.x3, ymm.x3, ymm.x4
+  vpxor ymm.x13, ymm.x13, ymm.x2
+  vpxor ymm.x14, ymm.x14, ymm.x3
+  vpshufb ymm.x13, ymm.x13, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpshufb ymm.x14, ymm.x14, ymmword ptr [rip + chacha20poly1305_avx2_rol16]
+  vpaddd ymm.c0, ymm.c0, ymm.x13
+  vpaddd ymm.c1, ymm.c1, ymm.x14
+  vpxor ymm.x7, ymm.x7, ymm.c0
+  vpxor ymm.x4, ymm.x4, ymm.c1
+  vpslld ymm.t0, ymm.x7, 12
+  vpslld ymm.t1, ymm.x4, 12
+  vpsrld ymm.x7, ymm.x7, 20
+  vpsrld ymm.x4, ymm.x4, 20
+  vpor ymm.x7, ymm.x7, ymm.t0
+  vpor ymm.x4, ymm.x4, ymm.t1
+  vpaddd ymm.x2, ymm.x2, ymm.x7
+  vpaddd ymm.x3, ymm.x3, ymm.x4
+  vpxor ymm.x13, ymm.x13, ymm.x2
+  vpxor ymm.x14, ymm.x14, ymm.x3
+  vpshufb ymm.x13, ymm.x13, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpshufb ymm.x14, ymm.x14, ymmword ptr [rip + chacha20poly1305_avx2_rol8]
+  vpaddd ymm.c0, ymm.c0, ymm.x13
+  vpaddd ymm.c1, ymm.c1, ymm.x14
+  vpxor ymm.x7, ymm.x7, ymm.c0
+  vpxor ymm.x4, ymm.x4, ymm.c1
+  vpslld ymm.t0, ymm.x7, 7
+  vpslld ymm.t1, ymm.x4, 7
+  vpsrld ymm.x7, ymm.x7, 25
+  vpsrld ymm.x4, ymm.x4, 25
+  vpor ymm.x7, ymm.x7, ymm.t0
+  vpor ymm.x4, ymm.x4, ymm.t1
   .for k, (r * 4 + 3) * 32 / 40, (r * 4 + 4) * 32 / 40
   POLY1305_BLOCK(k)
   .endfor
 .endfor
-  ;; original state back, every word to the frame
-.for i, 0, 12
-  vpbroadcastd ymm.t0, dword ptr [q.st + ${4 * i}]
-  vpaddd ymm.x${i}, ymm.x${i}, ymm.t0
-  vmovdqu ymmword ptr [rsp + ${128 + 32 * i}], ymm.x${i}
+  ;; original state back (c8, c9 in registers; c10, c11 in their slots), every word to the frame
+.for i, 0, 8
+  vpaddd ymm.x${i}, ymm.x${i}, ymmword ptr [rsp + ${128 + 32 * i}]
+  vmovdqu ymmword ptr [rsp + ${640 + 32 * i}], ymm.x${i}
 .endfor
-  vpbroadcastd ymm.t0, dword ptr [q.st + 48]
-  vpaddd ymm.t0, ymm.t0, ymmword ptr [rip + chacha20poly1305_avx2_idx]
-  vpaddd ymm.t0, ymm.t0, ymmword ptr [rsp + 0]
-  vmovdqu ymmword ptr [rsp + ${128 + 32 * 12}], ymm.t0
-.for j, 1, 4
-  vpbroadcastd ymm.t0, dword ptr [q.st + ${48 + 4 * j}]
-  vpaddd ymm.t0, ymm.t0, ymmword ptr [rsp + ${32 * j}]
-  vmovdqu ymmword ptr [rsp + ${128 + 32 * (12 + j)}], ymm.t0
+.for i, 12, 16
+  vpaddd ymm.x${i}, ymm.x${i}, ymmword ptr [rsp + ${128 + 32 * i}]
+  vmovdqu ymmword ptr [rsp + ${640 + 32 * i}], ymm.x${i}
 .endfor
+  vpaddd ymm.c0, ymm.c0, ymmword ptr [rsp + 384]
+  vmovdqu ymmword ptr [rsp + 896], ymm.c0
+  vpaddd ymm.c1, ymm.c1, ymmword ptr [rsp + 416]
+  vmovdqu ymmword ptr [rsp + 928], ymm.c1
+  vmovdqu ymm.t0, ymmword ptr [rsp + 64]
+  vpaddd ymm.t0, ymm.t0, ymmword ptr [rsp + 448]
+  vmovdqu ymmword ptr [rsp + 960], ymm.t0
+  vmovdqu ymm.t1, ymmword ptr [rsp + 96]
+  vpaddd ymm.t1, ymm.t1, ymmword ptr [rsp + 480]
+  vmovdqu ymmword ptr [rsp + 992], ymm.t1
   ;; transpose, two word groups at a time (register budget): group g of four words ->
   ;; u_j with lane L = words 4g..4g+3 of block 4L+j; the pair of groups (0,1) gives each
   ;; block's first 32 bytes, (2,3) the second; output block 4L+j = lane L of u_j of both
 .for half, 0, 2
   .for g, 2 * half, 2 * half + 2
-  vmovdqu ymm.w0, ymmword ptr [rsp + ${128 + 32 * (4 * g)}]
-  vmovdqu ymm.w1, ymmword ptr [rsp + ${128 + 32 * (4 * g + 1)}]
-  vmovdqu ymm.w2, ymmword ptr [rsp + ${128 + 32 * (4 * g + 2)}]
-  vmovdqu ymm.w3, ymmword ptr [rsp + ${128 + 32 * (4 * g + 3)}]
+  vmovdqu ymm.w0, ymmword ptr [rsp + ${640 + 32 * (4 * g)}]
+  vmovdqu ymm.w1, ymmword ptr [rsp + ${640 + 32 * (4 * g + 1)}]
+  vmovdqu ymm.w2, ymmword ptr [rsp + ${640 + 32 * (4 * g + 2)}]
+  vmovdqu ymm.w3, ymmword ptr [rsp + ${640 + 32 * (4 * g + 3)}]
   vpunpckldq ymm.p0, ymm.w0, ymm.w1
   vpunpckhdq ymm.p1, ymm.w0, ymm.w1
   vpunpckldq ymm.p2, ymm.w2, ymm.w3
