@@ -105,6 +105,12 @@ void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
    absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */
 void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned char *in, unsigned char *out,
                                           intptr_t units, const unsigned char *mac, uint64_t hr[6]);
+/* the same fused loop on the AVX2 tier (512-byte units, 32 Poly1305 blocks each) and the SSSE3 tier
+   (256-byte units, 16 blocks); both need MULX (BMI2) */
+void rktcrypto_chacha20poly1305_units_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out,
+                                           intptr_t units, const unsigned char *mac, uint64_t hr[6]);
+void rktcrypto_chacha20poly1305_units_ssse3(uint32_t state[16], const unsigned char *in, unsigned char *out,
+                                            intptr_t units, const unsigned char *mac, uint64_t hr[6]);
 /* Poly1305 state in radix 2^64 for the kernels (rktcrypto_poly1305.c); the context buffer must be empty */
 struct rktcrypto_poly1305_ctx_t;
 void rktcrypto_poly1305_export64(const struct rktcrypto_poly1305_ctx_t *ctx, uint64_t hr[6]);

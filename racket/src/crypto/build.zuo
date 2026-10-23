@@ -117,6 +117,8 @@
       "rktcrypto_chacha20_ssse3.S"
       "rktcrypto_poly1305_x86.S"
       "rktcrypto_chacha20poly1305_x86.S"
+      "rktcrypto_chacha20poly1305_avx2.S"
+      "rktcrypto_chacha20poly1305_ssse3.S"
       "rktcrypto_p256_mul_x86.S"
       "rktcrypto_keccak_avx512.S"
       "rktcrypto_sha512_x86.S"
