@@ -157,3 +157,63 @@ int rktcrypto_ffdhe_derive(int group, const unsigned char *priv, intptr_t privle
   bn_to_be(out, (int)plen, &S);
   return 1;
 }
+
+/* ---- caller-supplied group (see rktcrypto_ffc.h) ---- */
+
+#define DH_MAX_BYTES 512   /* 4096-bit primes: BN_LIMBS has headroom for the products */
+
+int rktcrypto_dh_keygen(const unsigned char *p, intptr_t plen,
+                        const unsigned char *g, intptr_t glen, int privbits,
+                        unsigned char *priv_out, intptr_t *privlen,
+                        unsigned char *pub_out)
+{
+  BN P, G, X, Y, One, Pm1;
+  intptr_t nb = (privbits + 7) / 8;
+  unsigned char buf[64];
+  int tries;
+  if (plen <= 0 || plen > DH_MAX_BYTES || glen <= 0 || glen > plen) return 0;
+  if (privbits < 1 || nb > (intptr_t)sizeof(buf)) return 0;
+  bn_from_be(&P, p, (int)plen);
+  bn_from_be(&G, g, (int)glen);
+  bn_set_u64(&One, 1);
+  if (bn_is_zero(&P) || !(P.d[0] & 1)) return 0;        /* p must be odd */
+  bn_sub(&Pm1, &P, &One);
+  if (bn_cmp(&G, &One) <= 0 || bn_cmp(&G, &Pm1) >= 0) return 0;   /* g in [2, p-2] */
+  for (tries = 0; ; tries++) {
+    if (tries == 100) return 0;
+    if (!rktcrypto_random_bytes(buf, 0, nb)) return 0;
+    if (privbits % 8) buf[0] &= (unsigned char)(0xff >> (8 - privbits % 8));
+    bn_from_be(&X, buf, (int)nb);
+    if (!bn_is_zero(&X)) break;
+  }
+  bn_modexp(&Y, &G, &X, &P);
+  memcpy(priv_out, buf, nb);
+  *privlen = nb;
+  bn_to_be(pub_out, (int)plen, &Y);
+  return 1;
+}
+
+int rktcrypto_dh_derive(const unsigned char *p, intptr_t plen,
+                        const unsigned char *priv, intptr_t privlen,
+                        const unsigned char *peer, intptr_t peerlen,
+                        unsigned char *out)
+{
+  BN P, X, T, S, Pm1, One;
+  if (plen <= 0 || plen > DH_MAX_BYTES || peerlen <= 0 || peerlen > plen) return 0;
+  if (privlen <= 0 || privlen > 64) return 0;
+  bn_from_be(&P, p, (int)plen);
+  bn_from_be(&T, peer, (int)peerlen);
+  bn_set_u64(&One, 1);
+  bn_sub(&Pm1, &P, &One);
+  /* peer must be in [2, p-2] */
+  if (bn_is_zero(&T)) return 0;
+  if (bn_cmp(&T, &One) <= 0) return 0;
+  if (bn_cmp(&T, &Pm1) >= 0) return 0;
+  bn_from_be(&X, priv, (int)privlen);
+  if (bn_is_zero(&X)) return 0;
+  bn_modexp(&S, &T, &X, &P);
+  /* reject degenerate shared secrets */
+  if (bn_is_zero(&S) || bn_cmp(&S, &One) == 0 || bn_cmp(&S, &Pm1) == 0) return 0;
+  bn_to_be(out, (int)plen, &S);
+  return 1;
+}

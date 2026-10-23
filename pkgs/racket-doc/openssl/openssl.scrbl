@@ -630,9 +630,12 @@ Suites without forward secrecy (plain RSA key exchange) and other ciphers
 are not available; a specification that matches none of the implemented
 suites causes connections to fail. Aliases such as @tt{ECDHE}, @tt{EDH},
 @tt{AESGCM}, @tt{SHA256}, the @tt{!} and @tt{-} prefixes, and @tt{+} for
-intersection (@tt{"AES+EDH"}) are supported. Finite-field DHE uses the
-RFC 7919 named groups (@tt{ffdhe2048} on the server side); a client
-rejects DHE parameters from a server that are not one of those groups.
+intersection (@tt{"AES+EDH"}) are supported. Finite-field DHE uses
+well-known safe primes only: a server sends the RFC 7919 group
+@tt{ffdhe2048}, and a client accepts the RFC 7919 groups ffdhe2048/3072/4096
+and the RFC 3526 MODP groups 14/15/16 (2048/3072/4096 bits) with
+generator 2, rejecting any other parameters. CBC suites use
+encrypt-then-MAC (RFC 7366) when the peer supports it.
 }
 
 @defproc[(ssl-seal-context! [context (or/c ssl-client-context? ssl-server-context?)])
@@ -876,10 +879,20 @@ access to @filepath{keylogfile.txt} is able to decrypt connections made via
 
 Requires certificate verification on the peer SSL connection when
 @racket[on?] is @racket[#t]. If @racket[clp] is an SSL port, then the
-connection is immediately renegotiated, and an exception is raised
-immediately if certificate verification fails. If @racket[clp] is a
+peer is asked for its certificate immediately, and an exception is
+raised immediately if certificate verification fails. If @racket[clp] is a
 context or listener, certification verification happens on each
 subsequent connection using the context or listener.
+
+Asking an established connection for a certificate is possible only on
+the server side of a TLS 1.3 connection (post-handshake authentication,
+RFC 8446 section 4.6.2; the client must have been made by this library
+or another one that offers it). On a TLS 1.2 connection, where this used
+to be done by renegotiation, an exception is raised instead, and the
+context shared with the port's listener is left unchanged.
+
+A certificate that the peer presents must verify; with
+@racket[ssl-set-verify!] a peer that presents none is rejected as well.
 
 Enabling verification also requires, at a minimum, designating trusted
 certificate authorities with @racket[ssl-load-verify-source!].
@@ -896,8 +909,9 @@ attacks}.  See also @racket[ssl-set-verify-hostname!].
                           [on? any/c])
          void?]{
 
-Like @racket[ssl-set-verify!], but when peer certificate verification fails,
-then connection continues to work. Use @racket[ssl-peer-verified?] to determine
+Like @racket[ssl-set-verify!], but a peer that presents no certificate
+is accepted, and the connection continues unverified; a certificate that
+is presented must still verify. Use @racket[ssl-peer-verified?] to determine
 whether verification succeeded.}
 
 

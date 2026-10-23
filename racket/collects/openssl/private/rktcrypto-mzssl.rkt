@@ -180,15 +180,23 @@
 (define (ssl-set-verify! c/l on?) (set-verify-mode! 'ssl-set-verify! c/l (if on? 'require 'none)))
 (define (ssl-try-verify! c/l on?) (set-verify-mode! 'ssl-try-verify! c/l (if on? 'try 'none)))
 (define (set-verify-mode! who c/l mode)
-  ;; libssl applied a change on an established connection by renegotiating
-  ;; (TLS 1.2); this engine has no renegotiation, and the ports share their
-  ;; context with the listener, so the request is refused rather than
-  ;; silently changing every later connection.
-  (when (or (input-port? c/l) (output-port? c/l))
-    (error who "failed (verification cannot be changed on an established connection; set it on the context before the handshake)"))
-  (define c (->context c/l))
-  (cx-set! c 'verify? (eq? mode 'require))
-  (cx-set! c 'try-verify? (eq? mode 'try)))
+  (cond
+    [(or (input-port? c/l) (output-port? c/l))
+     ;; On an established connection, libssl renegotiated (TLS 1.2). Here a
+     ;; TLS 1.3 server asks the client to authenticate now (post-handshake
+     ;; authentication, RFC 8446 4.6.2) and waits for the answer, so
+     ;; `ssl-peer-verified?` reflects it on return; a TLS 1.2 connection
+     ;; cannot do it. The ports' context is left alone: it is shared with
+     ;; the listener, so changing it would affect every later connection.
+     (unless (eq? mode 'none)
+       (define obj (port-obj c/l))
+       (with-handlers ([exn:fail? (lambda (e) (error who "failed (~a)" (exn-message e)))])
+         (tls-conn-request-client-auth! (ssl-port-obj-conn obj) (eq? mode 'require)
+                                        (cx-ref (ssl-port-obj-ctx obj) 'trust-anchors))))]
+    [else
+     (define c (->context c/l))
+     (cx-set! c 'verify? (eq? mode 'require))
+     (cx-set! c 'try-verify? (eq? mode 'try))]))
 (define (ssl-set-verify-hostname! c on?) (cx-set! c 'verify-hostname? (and on? #t)))
 ;; ssl-set-ciphers!: translate an OpenSSL cipher string into an ordered list of
 ;; the suite ids this backend supports (TLS 1.3 #x1301/1302/1303, and the

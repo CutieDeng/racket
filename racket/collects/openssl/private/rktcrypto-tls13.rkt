@@ -32,7 +32,8 @@
          tls-conn-close-notify
          tls-conn-abandon-write!
          tls-conn-channel-binding
-         tls-conn-request-key-update)
+         tls-conn-request-key-update
+         tls-conn-request-client-auth!)
 
 ;; ---- byte building ----
 (define (u8 n) (bytes n))
@@ -507,8 +508,36 @@
                   binding                ; binding: hash for channel binding, or #f
                   key-update             ; thunk to send a post-handshake KeyUpdate, or #f
                   recv-nb                ; A1: non-blocking recv (-> bytes | eof | evt), or #f
-                  verified)              ; this connection's peer-verification result (boolean)
+                  verified               ; this connection's peer-verification result (boolean)
+                  pha)                   ; post-handshake client authentication state, or #f (TLS 1.2)
   #:mutable)
+
+;; Post-handshake client authentication (RFC 8446 §4.6.2). Each request is
+;; CertificateRequest -> Certificate [CertificateVerify] Finished, with the
+;; transcript = the original handshake transcript || these messages, the
+;; CertificateVerify context "TLS 1.3, client CertificateVerify", and the
+;; Finished keyed by the current client_application_traffic_secret.
+;;   role        : 'client | 'server
+;;   tr          : handshake transcript bytes (ClientHello .. client Finished)
+;;   client-auth : client: (cons cert-ders key) to present, or #f
+;;   offered?    : server: the client sent post_handshake_auth
+;;   pending     : server: the request in flight (a pha-req), or #f
+;;   request     : server: (require? anchors -> void), installed by the conn
+(struct pha (role tr alg client-auth offered? [pending #:mutable] [request #:mutable]))
+(struct pha-req (require? anchors tr certs cv cv-th state done) #:mutable)
+
+;; The client's Certificate / CertificateVerify messages, for the handshake
+;; and for post-handshake authentication.
+(define (client-certificate-msg ctx ccerts)
+  (define clist (apply bytes-append (for/list ([d (in-list ccerts)]) (bytes-append (vec 3 d) (vec 2 #"")))))
+  (define cbody (bytes-append (vec 1 ctx) (vec 3 clist)))
+  (bytes-append (u8 11) (u24 (bytes-length cbody)) cbody))
+(define (client-certificate-verify-msg ck th)
+  (define scheme (server-sig-scheme ck))
+  (define cvc (bytes-append (make-bytes 64 #x20) #"TLS 1.3, client CertificateVerify" (bytes 0) th))
+  (define csig (server-sign ck scheme cvc))
+  (define cvbody (bytes-append (u16 scheme) (vec 2 csig)))
+  (bytes-append (u8 15) (u24 (bytes-length cvbody)) cvbody))
 
 ;; Post-handshake key-update state (RFC 8446 §4.6.3): key schedule + AEAD + the
 ;; current receive/send application traffic secrets (boxed, advanced per update).
@@ -519,7 +548,7 @@
 
 ;; Build the 1.3 tls-conn from an installed record layer. `kus` (a ku struct or
 ;; #f) enables post-handshake KeyUpdate processing on the read path.
-(define (tls13-make-conn r alpn peer-certs [binding #f] [kus #f] [resume #f] [verified? #f])
+(define (tls13-make-conn r alpn peer-certs [binding #f] [kus #f] [resume #f] [verified? #f] [pha #f])
   ;; A2: on the client, capture a server NewSessionTicket into resume's
   ;; 'session-box so a later connect can offer it as a PSK.
   (define (capture-nst! payload)
@@ -551,14 +580,85 @@
       (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
       (rl-set-write-key! r (ku-aead kus) sk siv)))
   ;; one record -> application bytes, eof, or 'again (nothing for the caller)
+  ;; post-handshake messages: reassembled across records, then handled by type
+  (define hs-acc #"")
+  (define (handle-hs-message! mt msg)
+    (cond
+      [(= mt 24) (when kus (do-key-update! msg))]              ; KeyUpdate
+      [(= mt 4) (capture-nst! msg)]                            ; NewSessionTicket
+      [(and pha (eq? (pha-role pha) 'client) (= mt 13))        ; CertificateRequest
+       (answer-certificate-request! msg)]
+      [(and pha (eq? (pha-role pha) 'server) (pha-pending pha) (memv mt '(11 15 20)))
+       (server-pha-step! mt msg (pha-pending pha))]
+      [else (fatal-alert! r 10 (format "unexpected post-handshake message ~a" mt))]))
+  ;; client: answer a post-handshake CertificateRequest with our identity (or
+  ;; an empty Certificate) and a Finished keyed by the current client
+  ;; application traffic secret
+  (define (answer-certificate-request! cr)
+    (define ctx (subbytes cr 5 (+ 5 (bytes-ref cr 4))))
+    (define alg (pha-alg pha))
+    (define tr (make-transcript alg))
+    (set-transcript-data! tr (bytes-append (pha-tr pha) cr))
+    (define ca (pha-client-auth pha))
+    (define cmsg (client-certificate-msg ctx (if ca (car ca) '())))
+    (tr-add! tr cmsg) (rl-write-record r 22 cmsg)
+    (when ca
+      (define cvmsg (client-certificate-verify-msg (cdr ca) (tr-hash tr)))
+      (tr-add! tr cvmsg) (rl-write-record r 22 cvmsg))
+    (define fin (finished-verify-data alg (unbox (ku-send kus)) (tr-hash tr)))
+    (rl-write-record r 22 (bytes-append (u8 20) (u24 (bytes-length fin)) fin)))
+  ;; server: one message of the client's answer
+  (define (server-pha-step! mt msg req)
+    (define tr (pha-req-tr req))
+    (define state (pha-req-state req))
+    (define (unexpected) (fatal-alert! r 10 (format "unexpected message ~a in client authentication" mt)))
+    (case mt
+      [(11)
+       (unless (eq? state 'certificate) (unexpected))
+       (unless (equal? (subbytes msg 5 (+ 5 (bytes-ref msg 4))) (pha-req-cv req))   ; cv holds our context until Certificate
+         (fatal-alert! r 47 "certificate_request_context mismatch"))
+       (set-pha-req-certs! req (parse-certificate-msg msg))
+       (set-pha-req-cv! req #f)
+       (tr-add! tr msg)
+       (set-pha-req-state! req (if (pair? (pha-req-certs req)) 'certificate-verify 'finished))]
+      [(15)
+       (unless (eq? state 'certificate-verify) (unexpected))
+       (set-pha-req-cv-th! req (tr-hash tr))
+       (set-pha-req-cv! req msg)
+       (tr-add! tr msg)
+       (set-pha-req-state! req 'finished)]
+      [(20)
+       (unless (eq? state 'finished) (unexpected))
+       (define expected (finished-verify-data (pha-alg pha) (unbox (ku-recv kus)) (tr-hash tr)))
+       (unless (ct-equal? expected (subbytes msg 4)) (fatal-alert! r 51 "client Finished mismatch"))
+       (define certs (pha-req-certs req))
+       (define verified?
+         (cond
+           [(pair? certs)
+            (with-handlers ([exn:fail? (lambda (e) (fatal-alert! r (verify-failure-alert e) (exn-message e)))])
+              (verify-certificate-verify (pha-req-cv req) certs (pha-req-cv-th req) 'client)
+              (verify-chain certs (pha-req-anchors req)))
+            #t]
+           [(pha-req-require? req) (fatal-alert! r 116 "client certificate required")]
+           [else #f]))
+       (set-tls-conn-peer-certs! conn certs)
+       (set-tls-conn-verified! conn verified?)
+       (set-pha-req-done! req #t)]))
   (define (dispatch type payload)
     (cond
       [(and (= type 23) (positive? (bytes-length payload))) payload]
       [(= type 21) (alert->eof payload)]                 ; close_notify -> eof; fatal -> raise
-      [(= type 22)                                       ; NewSessionTicket(4) / KeyUpdate(24)
-       (cond
-         [(and kus (>= (bytes-length payload) 1) (= 24 (bytes-ref payload 0))) (do-key-update! payload)]
-         [(and (>= (bytes-length payload) 1) (= 4 (bytes-ref payload 0))) (capture-nst! payload)])
+      [(= type 22)
+       (set! hs-acc (bytes-append hs-acc payload))
+       (let loop ()
+         (when (>= (bytes-length hs-acc) 4)
+           (define mlen (be->int hs-acc 1 4))
+           (when (> mlen MAX-HANDSHAKE-MESSAGE) (fatal-alert! r 50 "handshake message too large"))
+           (when (>= (bytes-length hs-acc) (+ 4 mlen))
+             (define msg (subbytes hs-acc 0 (+ 4 mlen)))
+             (set! hs-acc (subbytes hs-acc (+ 4 mlen)))
+             (handle-hs-message! (bytes-ref msg 0) msg)
+             (loop))))
        'again]
       [else 'again]))
   (define (transport-eof? e) (and (exn:tls? e) (not (exn:tls-alert e))))
@@ -595,8 +695,58 @@
       (define alg (ks-alg (ku-k kus)))
       (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
       (rl-set-write-key! r (ku-aead kus) sk siv)))
-  (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding request-key-update recv-nb
-            (and verified? #t)))
+  ;; server: ask the client to authenticate now (ssl-set-verify! / ssl-try-verify!
+  ;; on an established connection). Blocks until the client's answer has been
+  ;; processed; application data that arrives meanwhile is queued for the reader.
+  (define (request-client-auth! require? anchors)
+    (unless (pha-offered? pha)
+      (raise (tls-error "the client did not offer post-handshake authentication")))
+    (when (pha-pending pha)
+      (raise (tls-error "a client authentication request is already in progress")))
+    (define ctx (random-bytes 32))
+    (define cr-body (bytes-append (vec 1 ctx)
+                                  (vec 2 (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes)))))))
+    (define cr (bytes-append (u8 13) (u24 (bytes-length cr-body)) cr-body))
+    (define tr (make-transcript (pha-alg pha)))
+    (set-transcript-data! tr (bytes-append (pha-tr pha) cr))
+    (define req (pha-req require? anchors tr '() ctx #f 'certificate #f))
+    (set-pha-pending! pha req)
+    (dynamic-wind
+     void
+     (lambda ()
+       (rl-write-record r 22 cr)
+       ;; one record at a time (`recv` would block until application data)
+       (let loop ()
+         (unless (pha-req-done req)
+           (define-values (type payload)
+             (with-handlers ([transport-eof? (lambda (_) (values 21 (bytes 1 0)))])
+               (rl-read-record r)))
+           (define v (dispatch type payload))
+           (cond
+             [(eof-object? v)
+              (set-tls-conn-closed! conn #t)
+              (raise (tls-error "connection closed before the client authenticated"))]
+             [(bytes? v) (set-tls-conn-rbuf! conn (bytes-append (tls-conn-rbuf conn) v))]
+             [else (void)])
+           (loop))))
+     (lambda () (set-pha-pending! pha #f))))
+  (define conn
+    (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls1.3 binding request-key-update recv-nb
+              (and verified? #t) pha))
+  (when (and pha (eq? (pha-role pha) 'server))
+    (set-pha-request! pha request-client-auth!))
+  conn)
+
+;; ssl-set-verify! / ssl-try-verify! on an established connection: TLS 1.3
+;; post-handshake authentication (libssl renegotiated under TLS 1.2, which
+;; this engine does not do).
+(define (tls-conn-request-client-auth! c require? anchors)
+  (define p (tls-conn-pha c))
+  (unless (and p (eq? (pha-role p) 'server) (pha-request p))
+    (raise (tls-error (if (eq? (tls-conn-protocol c) 'tls1.3)
+                          "post-handshake authentication is only available to the server side"
+                          "verification cannot be changed on an established TLS 1.2 connection (renegotiation is not supported); set it on the context before the handshake"))))
+  ((pha-request p) require? anchors))
 
 ;; Post-handshake KeyUpdate: advance our send key and ask the peer to update its
 ;; keys too (RFC 8446 §4.6.3). No-op on a connection without key-update support.
@@ -706,7 +856,7 @@
     [else (raise (tls-error (format "unsupported channel binding ~a" kind)))]))
 ;; Generic tls-conn constructor used by the TLS 1.2 engine.
 (define (make-tls-conn recv send shut peer-ders protocol [binding #f] [verified? #f])
-  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding #f #f (and verified? #t)))
+  (tls-conn recv send shut #"" #f #f #f peer-ders protocol binding #f #f (and verified? #t) #f))
 
 ;; Peer verification outcome for a connection. Chain validation
 ;; (`verify?`) and hostname matching (`verify-hostname?`) are independent
@@ -842,6 +992,8 @@
        (ext #x0033 (vec 2 (apply bytes-append key-share-entries)))    ; key_share
        (ext #x0017 #"")                                        ; extended_master_secret
        (ext #xff01 (vec 1 #""))                                ; renegotiation_info (empty)
+       (if offer-12? (ext #x0016 #"") #"")                      ; encrypt_then_mac (RFC 7366, TLS 1.2 CBC)
+       (if only-12? #"" (ext #x0031 #""))                       ; post_handshake_auth (RFC 8446 4.2.6)
        (if cookie (ext #x002c (vec 2 cookie)) #"")
        (if host (ext #x0000 (vec 2 (bytes-append (u8 0) (vec 2 (string->bytes/latin-1 host))))) #"")  ; SNI
        (if (pair? alpn)
@@ -1064,24 +1216,11 @@
   ;; with our client Certificate + CertificateVerify, else an empty Certificate.
   (when (unbox cert-req-ctx)
     (define ctx (unbox cert-req-ctx))
-    (cond
-      [client-auth
-       (define ccerts (car client-auth))
-       (define ck (cdr client-auth))
-       (define clist (apply bytes-append (for/list ([d (in-list ccerts)]) (bytes-append (vec 3 d) (vec 2 #"")))))
-       (define cbody (bytes-append (vec 1 ctx) (vec 3 clist)))
-       (define cmsg (bytes-append (u8 11) (u24 (bytes-length cbody)) cbody))
-       (tr-add! tr cmsg) (rl-write-record r 22 cmsg)
-       (define scheme (server-sig-scheme ck))
-       (define cvc (bytes-append (make-bytes 64 #x20) #"TLS 1.3, client CertificateVerify" (bytes 0) (tr-hash tr)))
-       (define csig (server-sign ck scheme cvc))
-       (define cvbody (bytes-append (u16 scheme) (vec 2 csig)))
-       (define cvmsg (bytes-append (u8 15) (u24 (bytes-length cvbody)) cvbody))
-       (tr-add! tr cvmsg) (rl-write-record r 22 cvmsg)]
-      [else
-       (define cbody (bytes-append (vec 1 ctx) (vec 3 #"")))
-       (define cmsg (bytes-append (u8 11) (u24 (bytes-length cbody)) cbody))
-       (tr-add! tr cmsg) (rl-write-record r 22 cmsg)]))
+    (define cmsg (client-certificate-msg ctx (if client-auth (car client-auth) '())))
+    (tr-add! tr cmsg) (rl-write-record r 22 cmsg)
+    (when client-auth
+      (define cvmsg (client-certificate-verify-msg (cdr client-auth) (tr-hash tr)))
+      (tr-add! tr cvmsg) (rl-write-record r 22 cvmsg)))
   ;; middlebox-compat CCS (plaintext) is optional; skip.
   (define cfin (finished-verify-data alg (ks-c-hs k) (tr-hash tr)))
   (define fin-msg (bytes-append (u8 20) (u24 (bytes-length cfin)) cfin))
@@ -1106,7 +1245,9 @@
                                             (and (pair? pc) (car pc))))
                    (ku k aead (box (ks-s-ap k)) (box (ks-c-ap k)))  ; recv=server, send=client
                    resume
-                   verified?))
+                   verified?
+                   ;; we offered post_handshake_auth: be ready to answer a CertificateRequest
+                   (pha 'client (transcript-data tr) alg client-auth #t #f #f)))
 
 ;; ---- helpers for client ----
 (define (p256-priv)
@@ -1420,7 +1561,8 @@
                          'server-cert-der (and (pair? cert-ders) (car cert-ders)))
                    (ku k aead (box (ks-c-ap k)) (box (ks-s-ap k)))   ; recv=client, send=server
                    #f
-                   peer-verified?)))
+                   peer-verified?
+                   (pha 'server (transcript-data tr) alg #f (and (assoc #x0031 ch-exts) #t) #f #f))))
 
 ;; Send a fatal alert (best effort) and raise it.
 (define (fatal-alert! r code msg)

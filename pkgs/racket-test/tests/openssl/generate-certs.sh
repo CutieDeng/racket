@@ -98,6 +98,15 @@ make_server "server_ultimate_key.pem" "server_ultimate_crt.pem" \
             "DNS.1=theultimate" \
             "ca_key.pem" "cacert.pem"
 
+# A P-256 (ECDSA) server identity for the ECDHE-ECDSA cipher suites
+if [ ! -f "server_ec_key.pem" ] ; then
+    openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "server_ec_key.pem"
+fi
+make_server "server_ec_key.pem" "server_ec_crt.pem" \
+            "$NAME_PREFIX2/CN=server.example.com/emailAddress=server@example.com" \
+            "DNS.1=server.example.com" \
+            "ca_key.pem" "cacert.pem"
+
 CLIENT_ALT_NAMES="
 DNS.1=client.example.com
 email.1=client@example.com

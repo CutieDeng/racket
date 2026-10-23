@@ -115,11 +115,12 @@
 
 ;; ---- key exchange ----
 (define-rkt rktcrypto_x25519 (_fun _bytes _bytes _bytes -> _int))
-;; finite-field DH over the RFC 7919 groups (group id = prime bits)
-(define-rkt rktcrypto_ffdhe_keygen
-  (_fun _int _bytes (privlen : (_ptr o _intptr)) _bytes -> (r : _int) -> (values r privlen)))
-(define-rkt rktcrypto_ffdhe_derive
-  (_fun _int _bytes _intptr _bytes _intptr _bytes -> _int))
+;; finite-field DH over a caller-supplied prime (TLS 1.2 DHE)
+(define-rkt rktcrypto_dh_keygen
+  (_fun _bytes _intptr _bytes _intptr _int _bytes (privlen : (_ptr o _intptr)) _bytes
+        -> (r : _int) -> (values r privlen)))
+(define-rkt rktcrypto_dh_derive
+  (_fun _bytes _intptr _bytes _intptr _bytes _intptr _bytes -> _int))
 (define-rkt rktcrypto_p256_pubkey (_fun _bytes _bytes -> _int))
 (define-rkt rktcrypto_p256_ecdh (_fun _bytes _bytes _bytes -> _int))
 (define-rkt rktcrypto_p384_pubkey (_fun _bytes _bytes -> _int))

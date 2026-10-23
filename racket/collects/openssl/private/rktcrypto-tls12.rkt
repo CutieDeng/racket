@@ -95,7 +95,7 @@
 ;; IV XORed with the sequence number (RFC 7905), no explicit nonce.
 ;; cipher: AEAD id or 'aes-cbc; mac: HMAC digest id for CBC suites (else #f),
 ;; with cmac/smac the client/server MAC keys.
-(struct r12 (in out cipher mac
+(struct r12 (in out cipher mac etm?
              ckey cfixed skey sfixed cmac smac
              chacha?
              [rseq #:mutable] [wseq #:mutable]
@@ -106,7 +106,7 @@
 
 ;; Key block (RFC 5246 6.3): client/server MAC keys (CBC suites only), then
 ;; write keys, then fixed IVs (AEAD only; CBC uses an explicit per-record IV).
-(define (make-r12/keys in out cipher mac key-len prf-alg master server-random client-random client?)
+(define (make-r12/keys in out cipher mac etm? key-len prf-alg master server-random client-random client?)
   (define chacha? (eqv? cipher AEAD-CHACHA20-POLY1305))
   (define mac-len (if mac (digest-size mac) 0))
   (define fixed-iv-len (cond [(eq? cipher 'aes-cbc) 0] [chacha? 12] [else 4]))
@@ -119,7 +119,7 @@
   (define skey (slice (+ (* 2 mac-len) key-len) key-len))
   (define cfixed (slice (+ (* 2 mac-len) (* 2 key-len)) fixed-iv-len))
   (define sfixed (slice (+ (* 2 mac-len) (* 2 key-len) fixed-iv-len) fixed-iv-len))
-  (r12 in out cipher mac ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #""))
+  (r12 in out cipher mac (and etm? #t) ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #""))
 (define (r12-read-exact! r n)
   (buffered-read-exact! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b)) n))
 (define (r12-fill-nb! r)
@@ -150,7 +150,7 @@
   (define body
     (cond
       [(eq? (r12-cipher r) 'aes-cbc)
-       (cbc-seal key (if (r12-we-are-client? r) (r12-cmac r) (r12-smac r)) (r12-mac r) a frag)]
+       (cbc-seal key (if (r12-we-are-client? r) (r12-cmac r) (r12-smac r)) (r12-mac r) (r12-etm? r) seq type frag)]
       [(r12-chacha? r)
        (define nonce (xor-iv (if (r12-we-are-client? r) (r12-cfixed r) (r12-sfixed r)) seq))
        (aead-seal (r12-cipher r) key nonce a frag)]
@@ -208,7 +208,7 @@
      (define pt
        (cond
          [(eq? (r12-cipher r) 'aes-cbc)
-          (cbc-open key (if (r12-we-are-client? r) (r12-smac r) (r12-cmac r)) (r12-mac r) seq type body)]
+          (cbc-open key (if (r12-we-are-client? r) (r12-smac r) (r12-cmac r)) (r12-mac r) (r12-etm? r) seq type body)]
          [else
           (define fixed (if (r12-we-are-client? r) (r12-sfixed r) (r12-cfixed r)))
           (define-values (nonce ct)
@@ -225,45 +225,86 @@
 
 (define (aead-tag aead) (rktcrypto_aead_tag_size aead))
 
-;; ---- AES-CBC with HMAC, MAC-then-encrypt (RFC 5246 6.2.3.2) ----
-;; GenericBlockCipher: IV(16) || CBC( fragment || MAC || padding || padding_length )
-;; MAC = HMAC(mac_key, seq(8) || type || 0303 || length(2) || fragment), which
-;; is exactly the AEAD additional data followed by the fragment.
-(define (cbc-seal key mac-key mac-alg a frag)
-  (define mac (hmac mac-alg mac-key (bytes-append a frag)))
+;; ---- AES-CBC with HMAC ----
+;; Two framings, chosen per connection by the encrypt_then_mac extension
+;; (RFC 7366), which both our client and server offer/accept:
+;;   encrypt-then-MAC: IV(16) || CBC(fragment || padding) || MAC, with
+;;     MAC = HMAC(mac_key, seq(8) || type || 0303 || len(IV||ciphertext) || IV || ciphertext).
+;;     The MAC covers only public-length data, so verification time does not
+;;     depend on the plaintext padding (no Lucky 13 class leak), and padding
+;;     is examined only after the MAC verified.
+;;   MAC-then-encrypt (RFC 5246 6.2.3.2), for peers without the extension:
+;;     IV(16) || CBC(fragment || MAC || padding || padding_length), with
+;;     MAC = HMAC(mac_key, seq(8) || type || 0303 || len(fragment) || fragment).
+;;     The padding check scans a fixed window of 256 bytes with no
+;;     data-dependent branches, and a MAC is always computed; what remains is
+;;     the length of the HMAC input (hence its number of compression blocks),
+;;     which depends on the secret padding length -- the Lucky 13 signal. It
+;;     is not eliminated here (that needs a constant-block-count HMAC over the
+;;     hash's internal state); it is only present for peers that do not
+;;     negotiate encrypt-then-MAC.
+(define (cbc-seal key mac-key mac-alg etm? seq type frag)
   (define iv (random-bytes 16))
-  (define unpadded (bytes-append frag mac))
-  (define padlen (- 15 (modulo (bytes-length unpadded) 16)))     ; 0..15 -> total multiple of 16
-  (define padded (bytes-append unpadded (make-bytes (add1 padlen) padlen)))
-  (define out (make-bytes (bytes-length padded)))
-  (rktcrypto_aes_cbc_encrypt key (bytes-length key) iv padded out (bytes-length padded))
-  (bytes-append iv out))
+  (define (pad bs)                                ; -> bs || padding, a multiple of 16
+    (define padlen (- 15 (modulo (bytes-length bs) 16)))     ; 0..15
+    (bytes-append bs (make-bytes (add1 padlen) padlen)))
+  (define (encrypt padded)
+    (define out (make-bytes (bytes-length padded)))
+    (rktcrypto_aes_cbc_encrypt key (bytes-length key) iv padded out (bytes-length padded))
+    out)
+  (cond
+    [etm?
+     (define ct (bytes-append iv (encrypt (pad frag))))
+     (bytes-append ct (hmac mac-alg mac-key (bytes-append (aad seq type (bytes-length ct)) ct)))]
+    [else
+     (define mac (hmac mac-alg mac-key (bytes-append (aad seq type (bytes-length frag)) frag)))
+     (bytes-append iv (encrypt (pad (bytes-append frag mac))))]))
 
-;; -> fragment, or #f when padding or MAC is wrong. Padding and MAC are
-;; both checked on every record, and a MAC is always computed, so a bad
-;; padding and a bad MAC take about the same time (the usual mitigation
-;; shape for Lucky 13; this is not a constant-time implementation).
-(define (cbc-open key mac-key mac-alg seq type body)
+;; -> fragment, or #f when padding or MAC is wrong.
+(define (cbc-open key mac-key mac-alg etm? seq type body)
   (define mac-len (digest-size mac-alg))
   (define n (bytes-length body))
-  (and (>= n (+ 16 16)) (zero? (modulo n 16))
-       (let ()
-         (define iv (subbytes body 0 16))
-         (define ct (subbytes body 16))
-         (define pt (make-bytes (bytes-length ct)))
-         (rktcrypto_aes_cbc_decrypt key (bytes-length key) iv ct pt (bytes-length ct))
-         (define ptlen (bytes-length pt))
-         (define padlen (bytes-ref pt (sub1 ptlen)))
-         (define len-ok? (<= (+ padlen 1 mac-len) ptlen))
-         (define pad-ok?
-           (for/fold ([ok len-ok?]) ([i (in-range (if len-ok? (- ptlen padlen 1) (sub1 ptlen)) ptlen)])
-             (and (= (bytes-ref pt i) padlen) ok)))
-         (define frag-len (if len-ok? (- ptlen padlen 1 mac-len) (max 0 (- ptlen mac-len))))
-         (define frag (subbytes pt 0 frag-len))
-         (define got-mac (subbytes pt frag-len (+ frag-len mac-len)))
-         (define exp-mac (hmac mac-alg mac-key (bytes-append (aad seq type frag-len) frag)))
-         (define mac-ok? (ct-equal? got-mac exp-mac))
-         (and pad-ok? mac-ok? frag))))
+  (define (decrypt iv ct)
+    (define pt (make-bytes (bytes-length ct)))
+    (rktcrypto_aes_cbc_decrypt key (bytes-length key) iv ct pt (bytes-length ct))
+    pt)
+  ;; padding check without data-dependent control flow: the last byte is the
+  ;; padding length; every byte in the last padlen+1 positions must equal it.
+  ;; A fixed 256-byte window is scanned (the padding length is at most 255),
+  ;; each position masked by whether it lies inside the padding.
+  (define (padding-ok? pt)
+    (define ptlen (bytes-length pt))
+    (define padlen (bytes-ref pt (sub1 ptlen)))
+    (define in-range? (<= (+ padlen 1) ptlen))
+    (define start (max 0 (- ptlen 256)))
+    (define bad
+      (for/fold ([bad 0]) ([i (in-range start ptlen)])
+        (define inside (if (>= i (- ptlen padlen 1)) #xff 0))           ; mask: in padding
+        (bitwise-ior bad (bitwise-and inside (bitwise-xor (bytes-ref pt i) padlen)))))
+    (and in-range? (zero? bad) padlen))
+  (cond
+    [etm?
+     (and (>= n (+ 16 16 mac-len))
+          (let* ([ct (subbytes body 0 (- n mac-len))]
+                 [got-mac (subbytes body (- n mac-len))]
+                 [exp-mac (hmac mac-alg mac-key (bytes-append (aad seq type (bytes-length ct)) ct))])
+            (and (ct-equal? got-mac exp-mac)
+                 (zero? (modulo (bytes-length ct) 16))
+                 (let* ([pt (decrypt (subbytes ct 0 16) (subbytes ct 16))]
+                        [padlen (padding-ok? pt)])
+                   (and padlen (subbytes pt 0 (- (bytes-length pt) padlen 1)))))))]
+    [else
+     (and (>= n (+ 16 16)) (zero? (modulo n 16))
+          (let* ([pt (decrypt (subbytes body 0 16) (subbytes body 16))]
+                 [ptlen (bytes-length pt)]
+                 [padlen (padding-ok? pt)]
+                 [len-ok? (and padlen (<= (+ padlen 1 mac-len) ptlen))]
+                 [frag-len (if len-ok? (- ptlen padlen 1 mac-len) (max 0 (- ptlen mac-len)))]
+                 [frag (subbytes pt 0 frag-len)]
+                 [got-mac (subbytes pt frag-len (+ frag-len mac-len))]
+                 [exp-mac (hmac mac-alg mac-key (bytes-append (aad seq type frag-len) frag))]
+                 [mac-ok? (ct-equal? got-mac exp-mac)])
+            (and len-ok? mac-ok? frag)))]))
 
 ;; =====================================================================
 ;; Client: continue after ServerHello chose TLS 1.2
@@ -281,7 +322,8 @@
   (define sid-len (bytes-ref sh 38))
   (define pos (+ 39 sid-len))
   (define suite (+ (* 256 (bytes-ref sh pos)) (bytes-ref sh (add1 pos))))
-  (define exts-em? (sh-has-ems? sh pos))
+  (define exts-em? (sh-has-ext? sh pos #x0017))
+  (define etm? (sh-has-ext? sh pos #x0016))          ; encrypt_then_mac (RFC 7366)
   ;; A2 (1.2): resumption is signalled by the server echoing our (non-empty)
   ;; session_id (RFC 5077 §3.4) when we offered a ticket.
   (define ticket12-box (hash-ref opts 'ticket12-box #f))
@@ -377,7 +419,7 @@
   (when ccv (write-plaintext rl-out 22 ccv))
   (write-plaintext rl-out 20 (bytes 1))         ; ChangeCipherSpec
 
-  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #t))
+  (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #t))
 
   ;; client Finished: PRF(master,"client finished",Hash(handshake))[0:12]
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
@@ -419,6 +461,7 @@
 (define (tls12-client-resume rl-in rl-out raw-transcript sh client-random ticket12-box)
   (define server-random (subbytes sh 6 38))
   (define sid-len (bytes-ref sh 38))
+  (define etm? (sh-has-ext? sh (+ 39 sid-len) #x0016))   ; RFC 7366: re-signalled on resumption
   (define suite (let ([p (+ 39 sid-len)]) (+ (* 256 (bytes-ref sh p)) (bytes-ref sh (add1 p)))))
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define rec (unbox ticket12-box))            ; #(ticket master suite ems? peer-ders verified?)
@@ -428,7 +471,7 @@
   (define verified? (vector-ref rec 5))
   (define tr (box raw-transcript))             ; CH1 || SH
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
-  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #t))
+  (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #t))
   ;; server flight: optional NewSessionTicket (plaintext) then ChangeCipherSpec
   (let loop ()
     (define hdr (read-exact rl-in 5))
@@ -467,6 +510,7 @@
   (unless kx (raise (tls-error "unsupported 1.2 suite (server)")))
   (define ch-exts (client-hello-exts ch))
   (define ems? (assoc #x0017 ch-exts))          ; extended_master_secret ext type = 0x0017
+  (define etm? (and (eq? cipher 'aes-cbc) (assoc #x0016 ch-exts) #t))   ; encrypt_then_mac, CBC only
   ;; A2 (1.2) SessionTicket (RFC 5077): a store maps ticket bytes -> a session
   ;; record #(master suite ems? issued-ms). If the client presents a live ticket
   ;; for this suite we do an abbreviated handshake; otherwise, if it signalled
@@ -478,6 +522,7 @@
     (and ticket-store presented-ticket
          (let ([e (hash-ref ticket-store presented-ticket #f)])
            (and e (= (vector-ref e 1) suite)
+                (eq? (vector-ref e 4) etm?)        ; RFC 7366 3: the framing cannot change on resumption
                 (< (- (current-inexact-milliseconds) (vector-ref e 3)) (* 1000 7200)) e))))
   (define tr (box ch))                           ; transcript begins with ClientHello
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
@@ -485,7 +530,7 @@
   (cond
    [resume-entry
     ;; abbreviated handshake: recover the master secret, skip cert/kx
-    (tls12-server-resume rl-in rl-out hs ch client-random suite (vector-ref resume-entry 0))]
+    (tls12-server-resume rl-in rl-out hs ch client-random suite etm? (vector-ref resume-entry 0))]
    [else
   (define server-random
     (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r)) ; downgrade sentinel
@@ -493,6 +538,7 @@
   (define issue-ticket? (and ticket-store ticket-ext))    ; both sides support tickets
   (define sh-exts (bytes-append
                    (if ems? (ext #x0017 #"") #"")
+                   (if etm? (ext #x0016 #"") #"")
                    (if issue-ticket? (ext #x0023 #"") #"")  ; SessionTicket: negotiate (empty in SH)
                    (ext #xff01 (vec 1 #""))))    ; renegotiation_info (empty)
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 #"")
@@ -508,11 +554,11 @@
   ;; ServerKeyExchange: ECDHE with a group from the client's supported_groups,
   ;; or DHE over ffdhe2048 (RFC 7919; what libssl's automatic DH picks for a
   ;; 2048-bit certificate key)
-  (define group (if (eq? kx 'dhe) FFDHE2048 (choose-group ch-exts)))
+  (define group (if (eq? kx 'dhe) (ffdhe-prime FFDHE2048) (choose-group ch-exts)))
   (define-values (our-priv our-pub) (gen-kx group))
   (define kx-params
     (if (eq? kx 'dhe)
-        (bytes-append (vec 2 (ffdhe-prime group)) (vec 2 (bytes 2)) (vec 2 our-pub))   ; ServerDHParams
+        (bytes-append (vec 2 group) (vec 2 (bytes 2)) (vec 2 our-pub))   ; ServerDHParams
         (bytes-append (u8 3) (u16 group) (vec 1 our-pub))))                           ; ECParams: named_curve
   (define scheme (if (eq? sig-type 'ecdsa) #x0403 #x0804))
   (define signed (bytes-append client-random server-random kx-params))
@@ -583,7 +629,7 @@
       [(hash-ref opts 'require-client-cert #f)
        (fatal-plain! 40 "client certificate required")]           ; handshake_failure
       [else #f]))
-  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #f))
+  (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #f))
 
   ;; read client CCS + Finished
   (read-until-ccs rl-in)
@@ -599,7 +645,7 @@
   ;; and is covered by the server Finished hash.
   (when (and ticket-store ticket-ext)
     (define ticket (random-bytes 48))
-    (hash-set! ticket-store ticket (vector master suite (and ems? #t) (current-inexact-milliseconds)))
+    (hash-set! ticket-store ticket (vector master suite (and ems? #t) (current-inexact-milliseconds) etm?))
     (define nst-body (bytes-append (u32 7200) (vec 2 ticket)))
     (define nst (bytes-append (u8 4) (u24 (bytes-length nst-body)) nst-body))
     (tr+ nst)
@@ -614,17 +660,17 @@
 ;; A2 (1.2): abbreviated (resumption) server handshake — ServerHello + CCS +
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
 ;; recovered master secret and the new randoms (no Certificate/ServerKeyExchange).
-(define (tls12-server-resume rl-in rl-out hs ch client-random suite master)
+(define (tls12-server-resume rl-in rl-out hs ch client-random suite etm? master)
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define tr (box ch))
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
   (define server-random (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r))
   (define sid (let ([sl (bytes-ref ch 38)]) (subbytes ch 39 (+ 39 sl)))) ; echo the client's session id
-  (define sh-exts (bytes-append (ext #x0023 #"") (ext #xff01 (vec 1 #""))))
+  (define sh-exts (bytes-append (ext #x0023 #"") (if etm? (ext #x0016 #"") #"") (ext #xff01 (vec 1 #""))))
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 sid) (u16 suite) (u8 0) (vec 2 sh-exts)))
   (define sh (bytes-append (u8 2) (u24 (bytes-length sh-body)) sh-body))
   (tr+ sh) (write-plaintext rl-out 22 sh)
-  (define r (make-r12/keys rl-in rl-out cipher mac key-len prf-alg master server-random client-random #f))
+  (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #f))
   (write-plaintext rl-out 20 (bytes 1))                       ; server ChangeCipherSpec
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (tr+ (bytes-append (u8 20) (u24 12) sfin-vd))               ; server Finished in the transcript
@@ -702,7 +748,7 @@
   (define sig (subbytes msg (+ end 4) (+ end 4 sig-len)))
   (values group pub (subbytes msg 4 end) scheme sig))
 
-(define (sh-has-ems? sh pos)
+(define (sh-has-ext? sh pos want)
   ;; pos points at cipher_suite; after suite(2)+compression(1) come extensions
   (define ep (+ pos 3))
   (and (< ep (bytes-length sh))
@@ -711,7 +757,7 @@
            (and (< p end)
                 (let ([t (+ (* 256 (bytes-ref sh p)) (bytes-ref sh (add1 p)))]
                       [l (+ (* 256 (bytes-ref sh (+ p 2))) (bytes-ref sh (+ p 3)))])
-                  (or (= t #x0017) (loop (+ p 4 l) end))))))))
+                  (or (= t want) (loop (+ p 4 l) end))))))))
 
 (define (client-hello-exts ch)
   (define sid-len (bytes-ref ch 38))
@@ -746,69 +792,100 @@
 ;; (the C side holds the same constants and does the arithmetic). A server's
 ;; parameters are accepted only when they are exactly one of these groups:
 ;; custom or small primes are refused rather than checked.
+;; ---- finite-field DHE ----
+;; A DH group is represented by its prime as big-endian bytes (generator 2).
+;; Only well-known safe primes are accepted from a peer: the RFC 7919 groups
+;; ffdhe2048/3072/4096 and the RFC 3526 MODP groups 14/15/16 (what libssl's
+;; automatic DH sends when the client does not advertise named groups).
+;; Both families are defined by a formula over a transcendental constant,
+;;   RFC 7919: p = 2^b - 2^(b-64) + (floor(2^(b-130) e)  + X) 2^64 - 1
+;;   RFC 3526: p = 2^b - 2^(b-64) + (floor(2^(b-130) pi) + X) 2^64 - 1
+;; and are computed here once from those formulas (checked byte-for-byte
+;; against the constants in rktcrypto_dh.c and OpenSSL's built-in groups).
+;; Custom primes are refused rather than tested: the arithmetic in C takes
+;; whatever prime it is given, so the whitelist is the whole policy.
 (define FFDHE2048 2048)
-(define (floor-2^n*e n)
-  ;; floor(2^n e), e = sum 1/k!, summed exactly until the tail is below 2^-80;
-  ;; the fractional part is then checked to be well away from an integer.
-  (let loop ([k 0] [term (expt 2 n)] [acc 0])
-    (define acc2 (+ acc term))
-    (define next (/ term (add1 k)))
-    (if (< next (expt 2 -80))
-        (let* ([f (floor acc2)] [frac (- acc2 f)])
-          (unless (< (expt 2 -70) frac (- 1 (expt 2 -70))) (error 'ffdhe "ambiguous floor"))
-          f)
-        (loop (add1 k) next acc2))))
-(define ffdhe-primes (make-hasheqv))
-(define (ffdhe-prime bits)
-  (hash-ref! ffdhe-primes bits
+(define (floor-2^n*x n x-series)
+  ;; floor(2^n x) for x given as an exact rational accurate to 2^-(n+100);
+  ;; the fractional part is checked to be well away from an integer.
+  (define v (* (expt 2 n) (x-series (+ n 100))))
+  (define f (floor v))
+  (define frac (- v f))
+  (unless (< (expt 2 -60) frac (- 1 (expt 2 -60))) (error 'dh-prime "ambiguous floor"))
+  f)
+(define (e-series bits)                          ; sum 1/k!, tail below 2^-bits
+  (let loop ([k 0] [term 1] [acc 0])
+    (if (< term (expt 2 (- bits))) acc (loop (add1 k) (/ term (add1 k)) (+ acc term)))))
+(define (pi-series bits)                         ; Machin: 16 atan(1/5) - 4 atan(1/239)
+  (define (atan-inv x)
+    (let loop ([k 0] [acc 0])
+      (define term (/ 1 (* (+ (* 2 k) 1) (expt x (+ (* 2 k) 1)))))
+      (if (< term (expt 2 (- bits))) acc (loop (add1 k) (if (even? k) (+ acc term) (- acc term))))))
+  (- (* 16 (atan-inv 5)) (* 4 (atan-inv 239))))
+(define dh-primes (make-hash))                   ; (family . bits) -> prime bytes
+(define (dh-prime family bits)
+  (hash-ref! dh-primes (cons family bits)
              (lambda ()
-               (define X (case bits [(2048) 560316] [(3072) 2625351] [(4096) 5736041]))
+               (define-values (series X)
+                 (case family
+                   [(ffdhe) (values e-series (case bits [(2048) 560316] [(3072) 2625351] [(4096) 5736041]))]
+                   [(modp) (values pi-series (case bits [(2048) 124476] [(3072) 1690314] [(4096) 240904]))]))
                (define p (+ (- (expt 2 bits) (expt 2 (- bits 64)))
-                            (* (+ (floor-2^n*e (- bits 130)) X) (expt 2 64))
+                            (* (+ (floor-2^n*x (- bits 130) series) X) (expt 2 64))
                             -1))
                (define out (make-bytes (quotient bits 8)))
                (let loop ([i (sub1 (bytes-length out))] [n p])
                  (when (>= i 0) (bytes-set! out i (bitwise-and n 255)) (loop (sub1 i) (arithmetic-shift n -8))))
                out)))
+(define (ffdhe-prime bits) (dh-prime 'ffdhe bits))
 (define (strip-leading-zeros bs)
   (let loop ([i 0]) (if (and (< i (sub1 (bytes-length bs))) (zero? (bytes-ref bs i))) (loop (add1 i)) (subbytes bs i))))
-;; p, g as sent by the server -> group id, or #f
+;; p, g as sent by the server -> the prime (as our group id), or #f
 (define (ffdhe-group-of p g)
   (define p* (strip-leading-zeros p))
   (define bits (* 8 (bytes-length p*)))
   (and (memv bits '(2048 3072 4096))
        (equal? (strip-leading-zeros g) (bytes 2))
-       (equal? p* (ffdhe-prime bits))
-       bits))
+       (or (equal? p* (dh-prime 'ffdhe bits)) (equal? p* (dh-prime 'modp bits)))
+       p*))
+;; private exponent size per prime size (RFC 7919 section 5.2; twice the
+;; security level, as libssl uses for these groups)
+(define (dh-privbits p) (case (bytes-length p) [(256) 225] [(384) 275] [else 325]))
 
 (define (gen-kx group)
-  (case group
-    [(2048 3072 4096)
+  (cond
+    [(bytes? group)                               ; a DH prime
      (define priv (make-bytes 64))
-     (define pub (make-bytes (quotient group 8)))
-     (define-values (ok privlen) (rktcrypto_ffdhe_keygen group priv pub))
-     (unless (eqv? ok 1) (raise (tls-error "ffdhe keygen failed")))
+     (define pub (make-bytes (bytes-length group)))
+     (define-values (ok privlen)
+       (rktcrypto_dh_keygen group (bytes-length group) (bytes 2) 1 (dh-privbits group) priv pub))
+     (unless (eqv? ok 1) (raise (tls-error "DH keygen failed")))
      (values (subbytes priv 0 privlen) pub)]
-    [(#x001d) (let ([priv (random-bytes 32)] [pub (make-bytes 32)])
-                (rktcrypto_x25519 pub priv (bytes-append (bytes 9) (make-bytes 31 0)))
-                (values priv pub))]
-    [(#x0017) (let loop () (let ([priv (random-bytes 32)] [pub (make-bytes 65)])
-                             (if (eqv? 1 (rktcrypto_p256_pubkey pub priv)) (values priv pub) (loop))))]
-    [(#x0018) (let ([priv (random-bytes 48)] [pub (make-bytes 97)])
-                (rktcrypto_p384_pubkey pub priv) (values priv pub))]))
+    [else
+     (case group
+       [(#x001d) (let ([priv (random-bytes 32)] [pub (make-bytes 32)])
+                   (rktcrypto_x25519 pub priv (bytes-append (bytes 9) (make-bytes 31 0)))
+                   (values priv pub))]
+       [(#x0017) (let loop () (let ([priv (random-bytes 32)] [pub (make-bytes 65)])
+                                (if (eqv? 1 (rktcrypto_p256_pubkey pub priv)) (values priv pub) (loop))))]
+       [(#x0018) (let ([priv (random-bytes 48)] [pub (make-bytes 97)])
+                   (rktcrypto_p384_pubkey pub priv) (values priv pub))])]))
 
 ;; premaster secret from our private key and the peer's public value
 (define (kx-secret group priv peer)
-  (case group
-    [(2048 3072 4096)
-     (define out (make-bytes (quotient group 8)))
-     (unless (eqv? 1 (rktcrypto_ffdhe_derive group priv (bytes-length priv) peer (bytes-length peer) out))
+  (cond
+    [(bytes? group)
+     (define out (make-bytes (bytes-length group)))
+     (unless (eqv? 1 (rktcrypto_dh_derive group (bytes-length group) priv (bytes-length priv)
+                                          peer (bytes-length peer) out))
        (raise (tls-alert 47 "invalid DH public value")))
      ;; RFC 5246 8.1.2: leading zero bytes of Z are stripped
      (strip-leading-zeros out)]
-    [(#x001d) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519"))) o)]
-    [(#x0017) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_p256_ecdh o priv peer)) (raise (tls-error "p256"))) o)]
-    [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)]))
+    [else
+     (case group
+       [(#x001d) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519"))) o)]
+       [(#x0017) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_p256_ecdh o priv peer)) (raise (tls-error "p256"))) o)]
+       [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)])]))
 
 (define (sign-12 key scheme content)
   (case (car key)
