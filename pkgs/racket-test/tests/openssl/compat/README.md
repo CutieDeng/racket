@@ -10,16 +10,16 @@
 
 | ID | 问题 | 状态 | 修复提交 | 回归测试(`tests/openssl/`) |
 |---|---|---|---|---|
-| C1 | `ssl-set-verify-hostname!` 被忽略 | 已修复 | 5f3c1c5171 | `test-verify-hostname.rkt`(8) |
-| C2 | `ssl-try-verify!` 等同 `ssl-set-verify!` | 已修复 | 977915ee1f | `test-try-verify.rkt`(6) |
-| C3 | 未加载信任根时接受任意客户端证书 | 已修复 | 977915ee1f | `test-verify-without-anchors.rkt`(4) |
-| C4 | 服务端不记录客户端证书 | 已修复 | 977915ee1f | `test-client-identity.rkt`(4)、`peer-verif2.rkt` |
-| C5 | `ssl-peer-verified?` 读 context 标志 | 已修复 | 5f3c1c5171 | `test-peer-verified.rkt`(3) |
-| C6 | 双方同时写入时死锁 | 已修复 | ba85f0392b | `test-small-buffer.rkt`(3)、`basic.rkt`(9 用例全过) |
-| C7 | 不支持 DHE/CBC 套件 | 已实现 | f655e53388 | `test-ephemeral.rkt`(2)、`test-suites.rkt`(28) |
-| C8 | alert 报告不准确 | 已修复 | 977915ee1f | 无专门测试;C2/C3 测试的异常文本含 alert 名 |
-| S1 | 读密钥安装后接受明文记录 | 已修复 | 922eb6ff17 | `repro/record-plaintext-after-keys.rkt` 输出 REJECTED |
-| S2 | 握手前明文 application_data 无界缓冲 | 已修复 | 922eb6ff17 | `repro/handshake-unbounded-buffer.rkt` 输出 REJECTED |
+| C1 | `ssl-set-verify-hostname!` 被忽略 | 已修复 | b0b3ff1e75 | `test-verify-hostname.rkt`(8) |
+| C2 | `ssl-try-verify!` 等同 `ssl-set-verify!` | 已修复 | ae27376cad | `test-try-verify.rkt`(6) |
+| C3 | 未加载信任根时接受任意客户端证书 | 已修复 | ae27376cad | `test-verify-without-anchors.rkt`(4) |
+| C4 | 服务端不记录客户端证书 | 已修复 | ae27376cad | `test-client-identity.rkt`(4)、`peer-verif2.rkt` |
+| C5 | `ssl-peer-verified?` 读 context 标志 | 已修复 | b0b3ff1e75 | `test-peer-verified.rkt`(3) |
+| C6 | 双方同时写入时死锁 | 已修复 | c403621a69 | `test-small-buffer.rkt`(3)、`basic.rkt`(9 用例全过) |
+| C7 | 不支持 DHE/CBC 套件 | 已实现 | 8523104d3b | `test-ephemeral.rkt`(2)、`test-suites.rkt`(28) |
+| C8 | alert 报告不准确 | 已修复 | ae27376cad | 无专门测试;C2/C3 测试的异常文本含 alert 名 |
+| S1 | 读密钥安装后接受明文记录 | 已修复 | 3177a562d8 | `repro/record-plaintext-after-keys.rkt` 输出 REJECTED |
+| S2 | 握手前明文 application_data 无界缓冲 | 已修复 | 3177a562d8 | `repro/handshake-unbounded-buffer.rkt` 输出 REJECTED |
 | S3 | 畸形握手消息抛 `exn:fail:contract` | 未处理 | — | — |
 | S4 | 客户端不按策略检查服务端所选 1.3 套件 | 未处理(信息) | — | — |
 
@@ -29,7 +29,7 @@
 
 状态标注:**已验证** = 有实测输出;**推断** = 有代码证据但未实测;**未知** = 无法判定。
 
-## 1. 第二轮(2026-10-23,提交 da9c4bd8e5)
+## 1. 第二轮(2026-10-23,提交 05031a47e8)
 
 用户决策:C 侧导出通用 modexp 并接受 MODP 群;实现 TLS 1.3 post-handshake authentication;分支保留不合入;
 "推断"项按源码正向分析。
