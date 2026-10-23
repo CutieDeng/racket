@@ -105,7 +105,8 @@
              we-are-client?
              lock                   ; held while a thread reads from `in`
              [pending #:mutable]    ; records read while draining during a write
-             [inbuf #:mutable]))    ; partial record pulled in by a draining write
+             [inbuf #:mutable]      ; partial record pulled in by a draining write
+             wlock))                ; serializes writers
 
 ;; Key block (RFC 5246 6.3): client/server MAC keys (CBC suites only), then
 ;; write keys, then fixed IVs (AEAD only; CBC uses an explicit per-record IV).
@@ -122,7 +123,7 @@
   (define skey (slice (+ (* 2 mac-len) key-len) key-len))
   (define cfixed (slice (+ (* 2 mac-len) (* 2 key-len)) fixed-iv-len))
   (define sfixed (slice (+ (* 2 mac-len) (* 2 key-len) fixed-iv-len) fixed-iv-len))
-  (r12 in out cipher mac (and etm? #t) ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #""))
+  (r12 in out cipher mac (and etm? #t) ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #"" (make-semaphore 1)))
 (define (r12-read-exact! r n)
   (buffered-read-exact! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b)) n))
 (define (r12-fill-nb! r)
@@ -147,6 +148,8 @@
 
 ;; write one record (already the plaintext fragment for `type`)
 (define (r12-write r type frag)
+  (call-with-semaphore (r12-wlock r) (lambda () (r12-write/locked r type frag))))
+(define (r12-write/locked r type frag)
   (define seq (r12-wseq r))
   (define key (if (r12-we-are-client? r) (r12-ckey r) (r12-skey r)))
   (define a (aad seq type (bytes-length frag)))

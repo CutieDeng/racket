@@ -101,10 +101,11 @@
             lock                  ; held while a thread reads from `in`
             [pending #:mutable]   ; records read while draining during a write: list of (type . payload)
             [inbuf #:mutable]     ; partial record accumulated by the non-blocking reader
-            [handshake-done? #:mutable])) ; application keys installed: no plaintext CCS any more
+            [handshake-done? #:mutable] ; application keys installed: no plaintext CCS any more
+            wlock))               ; serializes writers (records are sealed and written whole, in sequence order)
 
 (define (make-rl in out)
-  (rl in out #f #f #f 0 #f #f #f 0 (make-semaphore 1) '() #"" #f))
+  (rl in out #f #f #f 0 #f #f #f 0 (make-semaphore 1) '() #"" #f (make-semaphore 1)))
 
 ;; Upper bound on records queued by a draining write before it stops
 ;; draining (a peer that floods while never reading must not grow our
@@ -295,13 +296,20 @@
 
 ;; Writes a record of `type` with `payload`, encrypting when a write key is
 ;; installed. Splits >16KiB payloads.
+;; Writers are serialized (`wlock`): the KeyUpdate reply and the
+;; post-handshake answer are written from the read path, concurrently with
+;; an application writer, and a key change must not fall between another
+;; writer's seal and its sequence-number step. Holding wlock while draining
+;; is safe: the read path never writes while holding the read lock.
 (define (rl-write-record r type payload)
+  (call-with-semaphore (rl-wlock r) (lambda () (rl-write-record/locked r type payload))))
+(define (rl-write-record/locked r type payload)
   (cond
     [(> (bytes-length payload) 16384)          ; RFC 8446 5.1: a record carries at most 2^14 bytes
      (let loop ([off 0])
        (when (< off (bytes-length payload))
          (define end (min (bytes-length payload) (+ off 16384)))
-         (rl-write-record r type (subbytes payload off end))
+         (rl-write-record/locked r type (subbytes payload off end))
          (loop end)))]
     [else
      (define rec
@@ -561,7 +569,7 @@
                 (if (pair? ca-names)
                     (ext #x002f (vec 2 (apply bytes-append (for/list ([n (in-list ca-names)]) (vec 2 n)))))
                     #"")))
-(struct pha-req (require? anchors tr certs cv cv-th state done) #:mutable)
+(struct pha-req (require? anchors tr certs cv cv-th state done) #:mutable)   ; done: a semaphore, posted once
 
 ;; The client's Certificate / CertificateVerify messages, for the handshake
 ;; and for post-handshake authentication.
@@ -613,9 +621,13 @@
     (define-values (rk riv) (traffic->keys (ku-k kus) (ku-advance! (ku-recv kus) alg)))
     (rl-set-read-key! r (ku-aead kus) rk riv)
     (when (and (>= (bytes-length payload) 5) (= 1 (bytes-ref payload 4)))  ; update_requested
-      (rl-write-record r 22 (bytes 24 0 0 1 0))                            ; KeyUpdate{not_requested}
-      (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
-      (rl-set-write-key! r (ku-aead kus) sk siv)))
+      ;; reply and switch our write key atomically with respect to other writers
+      (call-with-semaphore
+       (rl-wlock r)
+       (lambda ()
+         (rl-write-record/locked r 22 (bytes 24 0 0 1 0))                 ; KeyUpdate{not_requested}
+         (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
+         (rl-set-write-key! r (ku-aead kus) sk siv)))))
   ;; one record -> application bytes, eof, or 'again (nothing for the caller)
   ;; post-handshake messages: reassembled across records, then handled by type
   (define hs-acc #"")
@@ -684,7 +696,7 @@
            [else #f]))
        (set-tls-conn-peer-certs! conn certs)
        (set-tls-conn-verified! conn verified?)
-       (set-pha-req-done! req #t)]))
+       (semaphore-post (pha-req-done req))]))
   (define (dispatch type payload)
     (cond
       [(and (= type 23) (positive? (bytes-length payload))) payload]
@@ -732,10 +744,13 @@
   (define (shut) (with-handlers ([exn:fail? void]) (rl-write-record r 21 (bytes 1 0))))
   (define (request-key-update)      ; RFC 8446 §4.6.3: ask the peer to update too
     (when kus
-      (rl-write-record r 22 (bytes 24 0 0 1 1))  ; KeyUpdate{update_requested}
-      (define alg (ks-alg (ku-k kus)))
-      (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
-      (rl-set-write-key! r (ku-aead kus) sk siv)))
+      (call-with-semaphore
+       (rl-wlock r)
+       (lambda ()
+         (rl-write-record/locked r 22 (bytes 24 0 0 1 1))  ; KeyUpdate{update_requested}
+         (define alg (ks-alg (ku-k kus)))
+         (define-values (sk siv) (traffic->keys (ku-k kus) (ku-advance! (ku-send kus) alg)))
+         (rl-set-write-key! r (ku-aead kus) sk siv)))))
   ;; server: ask the client to authenticate now (ssl-set-verify! / ssl-try-verify!
   ;; on an established connection). Blocks until the client's answer has been
   ;; processed; application data that arrives meanwhile is queued for the reader.
@@ -749,26 +764,35 @@
     (define cr (bytes-append (u8 13) (u24 (bytes-length cr-body)) cr-body))
     (define tr (make-transcript (pha-alg pha)))
     (set-transcript-data! tr (bytes-append (pha-tr pha) cr))
-    (define req (pha-req require? anchors tr '() ctx #f 'certificate #f))
+    (define req (pha-req require? anchors tr '() ctx #f 'certificate (make-semaphore 0)))
     (set-pha-pending! pha req)
     (dynamic-wind
      void
      (lambda ()
        (rl-write-record r 22 cr)
-       ;; one record at a time (`recv` would block until application data)
+       ;; one record at a time, never blocking on the transport: another
+       ;; thread reading the connection may process the client's answer
+       ;; itself, which posts `done` and releases this wait
+       (define done (semaphore-peek-evt (pha-req-done req)))
        (let loop ()
-         (unless (pha-req-done req)
+         (unless (sync/timeout 0 done)
            (define-values (type payload)
              (with-handlers ([transport-eof? (lambda (_) (values 21 (bytes 1 0)))])
-               (rl-read-record r)))
-           (define v (dispatch type payload))
+               (rl-try-read-record r)))
            (cond
-             [(eof-object? v)
+             [(not type) (sync payload done) (loop)]           ; more input, or completed elsewhere
+             [(eq? type 'eof)
               (set-tls-conn-closed! conn #t)
               (raise (tls-error "connection closed before the client authenticated"))]
-             [(bytes? v) (set-tls-conn-rbuf! conn (bytes-append (tls-conn-rbuf conn) v))]
-             [else (void)])
-           (loop))))
+             [else
+              (define v (dispatch type payload))
+              (cond
+                [(eof-object? v)
+                 (set-tls-conn-closed! conn #t)
+                 (raise (tls-error "connection closed before the client authenticated"))]
+                [(bytes? v) (set-tls-conn-rbuf! conn (bytes-append (tls-conn-rbuf conn) v))]
+                [else (void)])
+              (loop)]))))
      (lambda () (set-pha-pending! pha #f))))
   (define conn
     (tls-conn recv send shut #"" #f #f alpn peer-certs 'tls13 binding request-key-update recv-nb
@@ -807,7 +831,7 @@
      (define got ((tls-conn-recv c)))
      (cond
        [(eof-object? got) (set-tls-conn-closed! c #t) eof]
-       [else (set-tls-conn-rbuf! c got) (tls-conn-read-bytes c n)])]))
+       [else (set-tls-conn-rbuf! c (bytes-append (tls-conn-rbuf c) got)) (tls-conn-read-bytes c n)])]))
 
 ;; A1: a make-input-port-compatible read step. Returns the number of bytes
 ;; copied into `bstr` (progress), eof, or an evt whose result is 0 (no bytes
@@ -826,13 +850,13 @@
      (define st ((tls-conn-recv-nb c)))
      (cond
        [(eof-object? st) (set-tls-conn-closed! c #t) eof]
-       [(bytes? st) (set-tls-conn-rbuf! c st) (tls-conn-read-in! c bstr)]
+       [(bytes? st) (set-tls-conn-rbuf! c (bytes-append (tls-conn-rbuf c) st)) (tls-conn-read-in! c bstr)]
        [else (wrap-evt st (lambda (_) 0))])]           ; evt: more input has arrived
     [else
      (define got ((tls-conn-recv c)))
      (cond
        [(eof-object? got) (set-tls-conn-closed! c #t) eof]
-       [else (set-tls-conn-rbuf! c got) (tls-conn-read-in! c bstr)])]))
+       [else (set-tls-conn-rbuf! c (bytes-append (tls-conn-rbuf c) got)) (tls-conn-read-in! c bstr)])]))
 
 (define (tls-conn-write-bytes c bs)
   (when (tls-conn-wclosed c)

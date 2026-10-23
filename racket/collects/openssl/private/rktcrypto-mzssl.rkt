@@ -168,9 +168,23 @@
       d))
   (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) ders)))
 
+;; The default sources are loaded once and reused: exporting the macOS
+;; keychain spawns a process and a file is read and parsed; a 'secure
+;; context is made per connection by net/url and raco pkg. Entries expire
+;; after ten minutes so an updated root store is picked up.
+(define default-anchor-cache (make-hash))     ; source -> (cons loaded-at-ms ders)
 (define (ssl-load-default-verify-sources! c)
   (for ([src (in-list (ssl-default-verify-sources))])
-    (ssl-load-verify-source! c src #:try? #t)))
+    (define now (current-inexact-milliseconds))
+    (define hit (hash-ref default-anchor-cache src #f))
+    (cond
+      [(and hit (< (- now (car hit)) 600000))
+       (cx-set! c 'trust-anchors (append (cx-ref c 'trust-anchors) (cdr hit)))]
+      [else
+       (define before (cx-ref c 'trust-anchors))
+       (ssl-load-verify-source! c src #:try? #t)
+       (define loaded (list-tail (cx-ref c 'trust-anchors) (length before)))
+       (hash-set! default-anchor-cache src (cons now loaded))])))
 
 ;; macOS: export the system roots as PEM via /usr/bin/security, then parse.
 (define (load-macosx-anchors c keychain)
