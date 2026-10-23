@@ -22,7 +22,9 @@ aes_ctr_vaes|rktcrypto_aes_ctr_vaes.S|asm/tests/test_aes_ctr_vaes.c|rktcrypto_x8
 ghash_vpclmul|rktcrypto_ghash_vpclmul.S|asm/tests/test_ghash_vpclmul.c|rktcrypto_x86.c rktcrypto_cpu.c
 gcm_vaes|rktcrypto_gcm_vaes.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 gcm_aesni|rktcrypto_gcm_aesni.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
+gcm_aesni_sse|rktcrypto_gcm_aesni_sse.S|asm/tests/test_gcm_vaes.c|rktcrypto_x86.c rktcrypto_cpu.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 chacha20_avx2|rktcrypto_chacha20_avx2.S|asm/tests/test_chacha20_avx512.c|rktcrypto_chacha20.c rktcrypto_poly1305.c rktcrypto_aead.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
+chacha20_ssse3|rktcrypto_chacha20_ssse3.S|asm/tests/test_chacha20_avx512.c|rktcrypto_chacha20.c rktcrypto_poly1305.c rktcrypto_aead.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 chacha20_avx512|rktcrypto_chacha20_avx512.S|asm/tests/test_chacha20_avx512.c|rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_poly1305.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 poly1305_x86|rktcrypto_poly1305_x86.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 chacha20poly1305_x86|rktcrypto_chacha20poly1305_x86.S|asm/tests/test_chacha20poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
@@ -33,6 +35,7 @@ sha512_x86|rktcrypto_sha512_x86.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c
 sha512_avx512|rktcrypto_sha512_avx512.S|asm/tests/test_sha512_x86.c|rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c
 ed25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_ed25519_x86.c|rktcrypto_ed25519.c rktcrypto_sha512.c rktcrypto_cpu.c rktcrypto_x86.c|asm/x86/x25519_x86.asm
 x25519_x86|rktcrypto_x25519_x86.S|asm/tests/test_x25519_x86.c|rktcrypto_x25519.c rktcrypto_cpu.c rktcrypto_x86.c
+poly1305_avx2|rktcrypto_poly1305_avx2.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 poly1305_ifma|rktcrypto_poly1305_ifma.S|asm/tests/test_poly1305_x86.c|rktcrypto_poly1305.c rktcrypto_chacha20.c rktcrypto_cpu.c rktcrypto_x86.c rktcrypto_aead.c rktcrypto_gcm.c rktcrypto_aes_modes.c rktcrypto_ccm.c rktcrypto_ct.c
 '
 rows() { echo "$TABLE" | grep -v '^$' | { if [ -n "${1:-}" ]; then grep "^$1|"; else cat; fi; }; }
@@ -45,7 +48,8 @@ gen() { # $1=kernel $2=out  (a row's fifth column names the .asm when it is not 
 cmd=${1:-}; k=${2:-}
 # emitted .asm sources: kernel | emitter (run from racket/src/crypto, output path as its argument)
 GENSRC="gcm_vaes|asm/gen/gcm-vaes-x86.rkt
-gcm_aesni|asm/gen/gcm-aesni-x86.rkt"
+gcm_aesni|asm/gen/gcm-aesni-x86.rkt
+gcm_aesni_sse|asm/gen/gcm-aesni-x86.rkt --sse"
 
 case "$cmd" in
   list) rows | cut -d'|' -f1 ;;
@@ -53,9 +57,9 @@ case "$cmd" in
     rc=0
     IFS=$NL; for row in $GENSRC; do IFS=' 	$NL'
       kk=$(echo "$row" | cut -d'|' -f1); emitter=$(echo "$row" | cut -d'|' -f2); src="asm/x86/$kk.asm"
-      if [ "$k" = "--write" ]; then ( cd "$ROOT" && "$RACKET" "$emitter" "$src" ) && echo "gensrc($kk): wrote $src"; continue; fi
+      if [ "$k" = "--write" ]; then ( cd "$ROOT" && "$RACKET" $emitter "$src" ) && echo "gensrc($kk): wrote $src"; continue; fi
       tmp=$(mktemp "${TMPDIR:-/tmp}/rktasm-x86-gensrc.XXXXXX")
-      if ( cd "$ROOT" && "$RACKET" "$emitter" "$tmp" ) && cmp -s "$tmp" "$ROOT/$src"; then echo "gensrc($kk): byte-identical $src"
+      if ( cd "$ROOT" && "$RACKET" $emitter "$tmp" ) && cmp -s "$tmp" "$ROOT/$src"; then echo "gensrc($kk): byte-identical $src"
       else echo "gensrc($kk): DIFFERS from committed $src (emitter $emitter)"; rc=1; fi
       rm -f "$tmp"
     done; exit $rc ;;

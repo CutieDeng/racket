@@ -550,13 +550,15 @@ static int gcm_setup(const unsigned char *key, intptr_t keylen, unsigned char rk
    accumulator, then the sub-256-byte tails on the CTR and GHASH paths, the lengths block
    and the tag. Mirrors gcm_hw. Returns 0 (nothing done) when the CPU lacks the extensions
    or the message is shorter than one chunk; the caller then takes the two-pass path. */
-/* 2: the VAES/VPCLMULQDQ/AVX-512 kernel; 1: the AES-NI/PCLMULQDQ/AVX2 kernel; 0: neither */
+/* 3: the VAES/VPCLMULQDQ/AVX-512 kernel; 2: AES-NI/PCLMULQDQ with AVX2 (VEX); 1: the same on SSSE3
+   (legacy encodings, aligned copies of the schedule and table); 0: no fused kernel */
 static int gcm_x86_fused_ready(void)
 {
   if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) &&
-      rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) return 2;
-  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_PCLMUL) &&
-      rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) return 1;
+      rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) return 3;
+  if (!(rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AESNI) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_PCLMUL))) return 0;
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) return 2;
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) return 1;
   return 0;
 }
 /* htab_pre: the table of an expanded key, or NULL to build it here */
@@ -566,20 +568,26 @@ static int gcm_x86_fused(const unsigned char rk[240], const uint64_t h[2], const
                          const unsigned char *in, unsigned char *out, intptr_t len,
                          int encrypt, unsigned char tag[16], int Nr)
 {
-  unsigned char htab_local[1280] __attribute__((aligned(64))), acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
+  unsigned char htab_local[1280] __attribute__((aligned(64))), rk_local[240] __attribute__((aligned(16)));
+  unsigned char acc[16], ctr[16], j0[16], ej0[16], lenblock[16];
   const unsigned char *htab = htab_pre ? htab_pre : htab_local;
   struct rktcrypto_gcm_vaes_ctx c;
   intptr_t done;
-  int i;
-  { int tier = gcm_x86_fused_ready();
-    if (!tier || len < (tier == 2 ? 512 : 128)) return 0; }
+  int i, tier = gcm_x86_fused_ready();
+  if (!tier || len < (tier == 3 ? 512 : 128)) return 0;
   if (!htab_pre) rktcrypto_gcm_vaes_setup(h, htab_local);
+  if (tier == 1) {   /* the SSE kernel reads the schedule and the table with aligned legacy operands */
+    if (htab_pre) { memcpy(htab_local, htab_pre, 1280); htab = htab_local; }
+    memcpy(rk_local, rk, 240); rk = rk_local;
+  }
   memset(acc, 0, 16);
   rktcrypto_ghash_region_x86(htab + 1024, acc, aad, aad_len);
   memcpy(ctr, nonce, 12);
   ctr[12] = 0; ctr[13] = 0; ctr[14] = 0; ctr[15] = 2;
   c.rk = rk; c.htab = htab; c.ctr = ctr; c.acc = acc; c.nr = Nr; c.enc = encrypt;
-  done = gcm_x86_fused_ready() == 2 ? rktcrypto_gcm_crypt_vaes(&c, in, out, len) : rktcrypto_gcm_crypt_aesni(&c, in, out, len);
+  done = tier == 3 ? rktcrypto_gcm_crypt_vaes(&c, in, out, len)
+       : tier == 2 ? rktcrypto_gcm_crypt_aesni(&c, in, out, len)
+       : rktcrypto_gcm_crypt_aesni_sse(&c, in, out, len);
   if (done < len) {
     /* the ciphertext is GHASHed before it is overwritten when decrypting in place */
     if (encrypt) {

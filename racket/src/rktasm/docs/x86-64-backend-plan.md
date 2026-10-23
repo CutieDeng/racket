@@ -426,6 +426,26 @@ make base、self-test #t、integration 77/77；基准 aes-256-gcm 29.6→31.3 GB
   （"unavailable: librktcrypto is not part of this Racket build"）；版本号变更会换用户作用域目录（9.3.10→9.3.11），
   构建辅助包须重装。
 
+**X3-5b 已落地（2026-10-23）——回退层补齐到同口径对标**（用户指出回退层应与同机、同特征集的 OpenSSL 对照，
+用 `OPENSSL_ia32cap` 屏蔽 CPUID 位；注意该变量为空串 = 全部清零，不可用作"默认"）。新增：`poly1305_avx2.asm`
+（4 路 radix 2^26，表行作内存操作数，lane 顺序随 qword unpack 为 0,2,1,3，末组按 lane 幂 r^4,r^2,r^3,r；首版把
+×5 项的表行索引错了 4 行，门禁 72% mismatch 定位后修正）；`gcm_aesni_sse.asm`（同一发射器 `--sse` 模式：两操作数
+遗留编码，`op3`/`shift` 抽象在 d≠a 时补 movdqa；SSE 内存操作数须 16 字节对齐→C 侧把密钥调度与表拷到对齐缓冲，
+输入异或经寄存器）；`chacha20_ssse3.asm`（4 块/256 字节单位，结构同 AVX2 版）；`RKTCRYPTO_CPU_X86_SSSE3` 位；
+GCM 融合分派三层（3=VAES、2=VEX AES-NI、1=SSE）。gensrc 表的发射器列允许带参数。
+同口径对照（lan-11，16 KB，MB/s；OpenSSL 3.2.6 同屏蔽位）：
+| 特征集 | 原语 | 我们 | OpenSSL | 比值 |
+|---|---|---|---|---|
+| 无 AVX-512/VAES/IFMA（AVX2 层） | chacha20 | 4186–4332 | 4358 | 0.96–0.99 |
+| | poly1305 | 7877–8314 | （反推 ≈8400） | ≈0.95 |
+| | chacha20-poly1305 | 2684–2913 | 2977 | 0.90–0.98 |
+| | aes-256-gcm | 6878（1 MiB 7303） | 6771 | 1.02 |
+| 再去 AVX2（SSE/AES-NI 层） | chacha20 | 2122 | 2231 | 0.95 |
+| | chacha20-poly1305 | 1562 | 1709 | 0.91 |
+| | aes-256-gcm | 6869 | 7206 | 0.95 |
+此前 SSE 层为 0.45 / 0.60。门禁：poly1305_avx2 0/10200、gcm_aesni_sse 0/15000、chacha20_ssse3 0/11000，全部 20 行
+全过，AES 差分 0/65121，make base、integration 77/77。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

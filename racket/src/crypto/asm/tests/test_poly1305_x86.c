@@ -24,9 +24,10 @@ static unsigned char msg[MAXLEN + 64], oa[MAXLEN + 64], ob[MAXLEN + 64], aad[256
 static void mulx(int on)   /* 1: everything; 0: neither MULX nor IFMA (radix 2^26) */
 {
   if (on) rktcrypto_cpu_override_features(0, 0);
-  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_BMI2ADX | RKTCRYPTO_CPU_X86_IFMA), 1);
+  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_BMI2ADX | RKTCRYPTO_CPU_X86_IFMA | RKTCRYPTO_CPU_X86_AVX2), 1);
 }
-static void no_ifma(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~RKTCRYPTO_CPU_X86_IFMA, 1); }
+static void no_ifma(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_IFMA | RKTCRYPTO_CPU_X86_AVX2), 1); }   /* MULX alone */
+static void avx2_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_IFMA | RKTCRYPTO_CPU_X86_AVX512), 1); }
 /* MAC over msg[0..len) fed in random pieces (the piece boundaries exercise the buffer path) */
 static void mac(const unsigned char *key, long len, unsigned seed, unsigned char tag[16])
 {
@@ -55,6 +56,8 @@ int main(void)
     if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_IFMA)) {   /* the MULX path alone must agree too */
       no_ifma(); mac(key, len, seed, tb); mulx(1);
       tot++; if (memcmp(ta, tb, 16)) { bad++; if (bad <= 5) printf("MAC MISMATCH (mulx vs ifma) t=%d len=%ld\n", t, len); continue; }
+      avx2_tier(); mac(key, len, seed, tb); mulx(1);
+      tot++; if (memcmp(ta, tb, 16)) { bad++; if (bad <= 5) printf("MAC MISMATCH (avx2 tier) t=%d len=%ld\n", t, len); continue; }
     }
     if (t % 5 == 0) {
       unsigned char nonce[12]; long alen = (long)(rnd() % 100); int ra, rb;
@@ -83,6 +86,12 @@ int main(void)
       mulx(0); t0 = now(); for (i = 0; i < 2; i++) rktcrypto_aead_seal(CP, key, 32, nonce, 12, aad, 0, 0, msg, 0, MAXLEN, ob, 0); t1 = now(); mulx(1);
       v = 2.0 * MAXLEN / (t1 - t0) / 1e6; if (v > sb) sb = v;
     }
+    { double mv = 0, sv = 0; for (r = 0; r < 5; r++) { double t0, t1, v; rktcrypto_poly1305_ctx_t ctx;
+        avx2_tier(); t0 = now(); for (i = 0; i < 8; i++) { rktcrypto_poly1305_init(&ctx, key); rktcrypto_poly1305_update(&ctx, msg, MAXLEN); rktcrypto_poly1305_final(&ctx, tag); } t1 = now();
+        v = 8.0 * MAXLEN / (t1 - t0) / 1e6; if (v > mv) mv = v;
+        t0 = now(); for (i = 0; i < 4; i++) rktcrypto_aead_seal(CP, key, 32, nonce, 12, aad, 0, 0, msg, 0, MAXLEN, oa, 0); t1 = now(); mulx(1);
+        v = 4.0 * MAXLEN / (t1 - t0) / 1e6; if (v > sv) sv = v; }
+      printf("BENCH poly1305-avx2: %.0f MB/s\nBENCH chacha20-poly1305-seal-avx2-tier: %.0f MB/s\n", mv, sv); }
     printf("BENCH poly1305-ifma: %.0f MB/s\nBENCH poly1305-mulx: %.0f MB/s\nBENCH poly1305-radix26: %.0f MB/s\nBENCH chacha20-poly1305-seal: %.0f MB/s\nBENCH chacha20-poly1305-seal-radix26: %.0f MB/s\n", ma, mi, mb, sa, sb); }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");
   return bad ? 1 : 0;

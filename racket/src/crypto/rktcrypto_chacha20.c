@@ -366,6 +366,11 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
     rktcrypto_chacha20_blocks_avx2(state, in, out, units);   /* the AVX2 tier (or the AVX-512 path's 512-byte remainder) */
     in += units * 512; out += units * 512; len -= units * 512;
   }
+  if (len >= 256 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) {
+    intptr_t units = len / 256;
+    rktcrypto_chacha20_blocks_ssse3(state, in, out, units);  /* the SSSE3 tier (or the tiers above's 256-byte remainder) */
+    in += units * 256; out += units * 256; len -= units * 256;
+  }
 #endif
 #if defined(__aarch64__)
   while (len >= 512) {

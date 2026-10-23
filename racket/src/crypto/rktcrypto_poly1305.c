@@ -118,6 +118,36 @@ void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80])
 }
 #endif
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* radix-2^26 product a*b (limbs below 2^27), partially reduced, for the AVX2 kernel's table */
+static void poly26_mul(uint32_t o[5], const uint32_t a[5], const uint32_t b[5])
+{
+  uint64_t d0, d1, d2, d3, d4; uint32_t c;
+  const uint64_t s1 = (uint64_t)b[1] * 5, s2 = (uint64_t)b[2] * 5, s3 = (uint64_t)b[3] * 5, s4 = (uint64_t)b[4] * 5;
+  d0 = (uint64_t)a[0]*b[0] + a[1]*s4 + a[2]*s3 + a[3]*s2 + a[4]*s1;
+  d1 = (uint64_t)a[0]*b[1] + (uint64_t)a[1]*b[0] + a[2]*s4 + a[3]*s3 + a[4]*s2;
+  d2 = (uint64_t)a[0]*b[2] + (uint64_t)a[1]*b[1] + (uint64_t)a[2]*b[0] + a[3]*s4 + a[4]*s3;
+  d3 = (uint64_t)a[0]*b[3] + (uint64_t)a[1]*b[2] + (uint64_t)a[2]*b[1] + (uint64_t)a[3]*b[0] + a[4]*s4;
+  d4 = (uint64_t)a[0]*b[4] + (uint64_t)a[1]*b[3] + (uint64_t)a[2]*b[2] + (uint64_t)a[3]*b[1] + (uint64_t)a[4]*b[0];
+  c = (uint32_t)(d0 >> 26); o[0] = (uint32_t)d0 & 0x3ffffff;
+  d1 += c; c = (uint32_t)(d1 >> 26); o[1] = (uint32_t)d1 & 0x3ffffff;
+  d2 += c; c = (uint32_t)(d2 >> 26); o[2] = (uint32_t)d2 & 0x3ffffff;
+  d3 += c; c = (uint32_t)(d3 >> 26); o[3] = (uint32_t)d3 & 0x3ffffff;
+  d4 += c; c = (uint32_t)(d4 >> 26); o[4] = (uint32_t)d4 & 0x3ffffff;
+  o[0] += c * 5; c = o[0] >> 26; o[0] &= 0x3ffffff; o[1] += c;
+}
+/* rows 0..4: r^4 limbs broadcast; 5..8: 5 * r^4 limbs 1..4; rows 9..17: the same per lane for the
+   final group, lanes in the kernel's block order (0, 2, 1, 3) -> powers (r^4, r^2, r^3, r) */
+void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72])
+{
+  uint32_t r2[5], r3[5], r4[5]; const uint32_t *pw[4]; int i, k;
+  poly26_mul(r2, r, r); poly26_mul(r3, r2, r); poly26_mul(r4, r2, r2);
+  pw[0] = r4; pw[1] = r2; pw[2] = r3; pw[3] = r;
+  for (i = 0; i < 5; i++) for (k = 0; k < 4; k++) { tab[4*i + k] = r4[i]; tab[36 + 4*i + k] = pw[k][i]; }
+  for (i = 1; i < 5; i++) for (k = 0; k < 4; k++) { tab[4*(4+i) + k] = (uint64_t)r4[i] * 5; tab[36 + 4*(4+i) + k] = (uint64_t)pw[k][i] * 5; }
+}
+#endif
+
 static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *m,
                             intptr_t bytes, uint32_t hibit)
 {
@@ -126,6 +156,24 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
   uint32_t h0 = ctx->h[0], h1 = ctx->h[1], h2 = ctx->h[2], h3 = ctx->h[3], h4 = ctx->h[4];
 
 #if defined(__x86_64__) && defined(__ELF__)
+  /* the AVX2 tier (no IFMA): four-way radix 2^26 on whole groups of four blocks */
+  if (bytes >= 256 && hibit && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2) && !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_IFMA)) {
+    uint64_t tab[72] __attribute__((aligned(32))), hv[5];
+    intptr_t groups = bytes / 64;
+    uint64_t c;
+    rktcrypto_poly1305_avx2_table(ctx->r, tab);
+    hv[0] = h0; hv[1] = h1; hv[2] = h2; hv[3] = h3; hv[4] = h4;
+    rktcrypto_poly1305_blocks_avx2(hv, tab, m, groups);
+    /* lane sums (below 2^29) back to 26-bit limbs */
+    c = hv[0] >> 26; h0 = (uint32_t)hv[0] & 0x3ffffff;
+    hv[1] += c; c = hv[1] >> 26; h1 = (uint32_t)hv[1] & 0x3ffffff;
+    hv[2] += c; c = hv[2] >> 26; h2 = (uint32_t)hv[2] & 0x3ffffff;
+    hv[3] += c; c = hv[3] >> 26; h3 = (uint32_t)hv[3] & 0x3ffffff;
+    hv[4] += c; c = hv[4] >> 26; h4 = (uint32_t)hv[4] & 0x3ffffff;
+    h0 += (uint32_t)c * 5; c = h0 >> 26; h0 &= 0x3ffffff; h1 += (uint32_t)c;
+    ctx->h[0] = h0; ctx->h[1] = h1; ctx->h[2] = h2; ctx->h[3] = h3; ctx->h[4] = h4;
+    m += groups * 64; bytes -= groups * 64;
+  }
   /* rktasm/x86 kernel in radix 2^64: convert the accumulator and r, run the whole-block
      prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */
   if (bytes >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {

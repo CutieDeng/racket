@@ -24,6 +24,7 @@ static void fused(int on)   /* 1: everything; 0: the two-pass intrinsics path (n
   else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX2), 1);
 }
 static void aesni_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX512), 1); }
+static void sse_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX512 | RKTCRYPTO_CPU_X86_AVX2), 1); }
 static int seal(int k256, const unsigned char *key, const unsigned char *nonce, const unsigned char *a, long alen,
                 const unsigned char *p, long len, unsigned char *out)
 {
@@ -62,6 +63,11 @@ int main(void)
     tot++; if (ra != 1 || memcmp(pa, pt, len)) { bad++; fused(1); if (bad <= 5) printf("AESNI OPEN MISMATCH t=%d len=%ld\n", t, len); continue; }
     memcpy(buf, ctb, len + 16); ra = open_(k256, key, nonce, aad, alen, buf, len + 16, buf);
     tot++; if (ra != 1 || memcmp(buf, pt, len)) { bad++; fused(1); if (bad <= 5) printf("AESNI INPLACE OPEN MISMATCH t=%d len=%ld\n", t, len); continue; }
+    /* the SSE tier likewise */
+    sse_tier(); ra = seal(k256, key, nonce, aad, alen, pt, len, pa);
+    tot++; if (ra != 1 || memcmp(pa, ctb, len + 16)) { bad++; fused(1); if (bad <= 5) printf("SSE SEAL MISMATCH t=%d k256=%d len=%ld\n", t, k256, len); continue; }
+    memcpy(buf, ctb, len + 16); ra = open_(k256, key, nonce, aad, alen, buf, len + 16, buf);
+    tot++; if (ra != 1 || memcmp(buf, pt, len)) { bad++; fused(1); if (bad <= 5) printf("SSE INPLACE OPEN MISMATCH t=%d len=%ld\n", t, len); continue; }
     fused(1);
     /* open: fused vs two-pass, both must recover pt */
     fused(1); ra = open_(k256, key, nonce, aad, alen, cta, len + 16, pa);
@@ -97,6 +103,10 @@ int main(void)
           aesni_tier(); t0 = now(); for (i = 0; i < reps; i++) rktcrypto_aes256gcm_seal(key, nonce, aad, 0, 0, pt, 0, n, ctb, 0); t1 = now(); fused(1);
           v = (double)reps * n / (t1 - t0) / 1e6; if (v > best_c) best_c = v; }
         printf("BENCH aes-256-gcm-seal-%ldk-aesni: %.0f MB/s\n", n / 1024, best_c); }
+      { double best_d = 0; for (r = 0; r < 5; r++) { double t0, t1, v;
+          sse_tier(); t0 = now(); for (i = 0; i < reps; i++) rktcrypto_aes256gcm_seal(key, nonce, aad, 0, 0, pt, 0, n, ctb, 0); t1 = now(); fused(1);
+          v = (double)reps * n / (t1 - t0) / 1e6; if (v > best_d) best_d = v; }
+        printf("BENCH aes-256-gcm-seal-%ldk-sse: %.0f MB/s\n", n / 1024, best_d); }
       printf("BENCH aes-256-gcm-seal-%ldk-fused: %.0f MB/s\nBENCH aes-256-gcm-seal-%ldk-twopass: %.0f MB/s\n", n / 1024, best_a, n / 1024, best_b);
     } }
   printf("%ld/%ld mismatches\n%s\n", bad, tot, bad ? "FAIL" : "PASS");

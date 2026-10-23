@@ -57,6 +57,9 @@ intptr_t rktcrypto_gcm_crypt_vaes(const struct rktcrypto_gcm_vaes_ctx *c,
 /* the AES-NI + PCLMULQDQ + AVX2 tier (rktcrypto_gcm_aesni.S): same context, 128-byte chunks */
 intptr_t rktcrypto_gcm_crypt_aesni(const struct rktcrypto_gcm_vaes_ctx *c,
                                    const unsigned char *in, unsigned char *out, intptr_t len);
+/* the SSE tier (rktcrypto_gcm_aesni_sse.S): legacy encodings; rk and htab must be 16-byte aligned */
+intptr_t rktcrypto_gcm_crypt_aesni_sse(const struct rktcrypto_gcm_vaes_ctx *c,
+                                       const unsigned char *in, unsigned char *out, intptr_t len);
 /* From the GCM hash key h = (hi, lo) big-endian words: htab[0..511] = H^32..H^1 times x^-1
    (descending, byte-reversed) for the fused kernel, htab[512..1023] = the (lo ^ hi) halves of
    those entries duplicated per lane (its Karatsuba cross term), htab[1024..1279] = plain
@@ -76,12 +79,18 @@ void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *i
 void rktcrypto_chacha20_blocks2_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_chacha20_avx2.S): the AVX2 tier, `units` x 512 bytes, eight blocks per unit */
 void rktcrypto_chacha20_blocks_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
+/* rktasm/x86 kernel (rktcrypto_chacha20_ssse3.S): the SSSE3 tier, `units` x 256 bytes, four blocks per unit */
+void rktcrypto_chacha20_blocks_ssse3(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
    hibit = 1 for full blocks */
 void rktcrypto_poly1305_blocks_x86(uint64_t h[3], const uint64_t r[3], const unsigned char *m, intptr_t nblk, uint64_t hibit);
 /* rktasm/x86 kernel (rktcrypto_poly1305_ifma.S): eight blocks per vector in radix 2^44; h44 in = lane 0,
    out = the lane sum; tab = the 10 x 8 qword table from rktcrypto_poly1305_ifma_table; groups x 128 bytes */
 void rktcrypto_poly1305_blocks_ifma(uint64_t h44[3], const uint64_t tab[80], const unsigned char *m, intptr_t groups);
+/* rktasm/x86 kernel (rktcrypto_poly1305_avx2.S): four blocks per vector in radix 2^26; h in = lane 0, out = the
+   lane sums (below 2^29); tab = the 18 x 4 qword table from rktcrypto_poly1305_avx2_table; groups x 64 bytes */
+void rktcrypto_poly1305_blocks_avx2(uint64_t h[5], const uint64_t tab[72], const unsigned char *m, intptr_t groups);
+void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72]);
 void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
 /* rktasm/x86 kernel (rktcrypto_chacha20poly1305_x86.S): `units` x 1024 bytes of ChaCha20 XOR while Poly1305
    absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */

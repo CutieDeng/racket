@@ -4,7 +4,7 @@
 ;;                                      const unsigned char *in, unsigned char *out, intptr_t len)
 ;; The same context and table as rktcrypto_gcm_crypt_vaes; processes 128-byte chunks and returns
 ;; the bytes done (a multiple of 128); the C side finishes the remainder. Oracle: the two-pass
-;; path with AVX2 cleared; gate: asm/tests/test_gcm_vaes.c.
+;; path (the tiers above cleared); gate: asm/tests/test_gcm_vaes.c.
 
 .rodata gcm_aesni_bswap align=16
   .byte 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0
@@ -37,7 +37,7 @@
   mov q.nr, qword ptr [q.ctx + 32]
   mov q.enc, qword ptr [q.ctx + 40]
   vmovdqu xmm.base, xmmword ptr [q.p]
-  vpshufb xmm.base, xmm.base, xmmword ptr [rip + gcm_aesni_bswap]   ; little-endian counter
+  vpshufb xmm.base, xmm.base, xmmword ptr [rip + gcm_aesni_bswap]
   mov q.p, qword ptr [q.ctx + 24]                ; accumulator
   vmovdqu xmm.acc, xmmword ptr [q.p]
   test d.enc, d.enc
@@ -247,7 +247,7 @@ eloop14:
   vpaddd xmm.s6, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 96]
   vpaddd xmm.s7, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 112]
   ;; -- slot 1
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.mid, xmm.t2, xmmword ptr [q.htab + 912], 0x00
   vmovdqu xmm.t, xmmword ptr [q.g + 32]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
@@ -427,7 +427,7 @@ eloop14:
   ;; -- slot 13
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 192]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 192]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 192]
@@ -479,7 +479,7 @@ eloop14:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -526,7 +526,7 @@ d14:
   vpaddd xmm.s6, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 96]
   vpaddd xmm.s7, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 112]
   ;; -- slot 1
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.mid, xmm.t2, xmmword ptr [q.htab + 912], 0x00
   vmovdqu xmm.t, xmmword ptr [q.g + 32]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
@@ -706,7 +706,7 @@ d14:
   ;; -- slot 13
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 192]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 192]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 192]
@@ -758,7 +758,7 @@ d14:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -955,7 +955,7 @@ eloop12:
   vpclmulqdq xmm.lo, xmm.t, xmmword ptr [q.htab + 400], 0x00
   vpclmulqdq xmm.hi, xmm.t, xmmword ptr [q.htab + 400], 0x11
   vpshufd xmm.t2, xmm.t, 0x4e
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpaddd xmm.s0, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 0]
   vpaddd xmm.s1, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 16]
   vpaddd xmm.s2, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 32]
@@ -1126,7 +1126,7 @@ eloop12:
   ;; -- slot 11
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 160]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 160]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 160]
@@ -1178,7 +1178,7 @@ eloop12:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -1216,7 +1216,7 @@ d12:
   vpclmulqdq xmm.lo, xmm.t, xmmword ptr [q.htab + 400], 0x00
   vpclmulqdq xmm.hi, xmm.t, xmmword ptr [q.htab + 400], 0x11
   vpshufd xmm.t2, xmm.t, 0x4e
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpaddd xmm.s0, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 0]
   vpaddd xmm.s1, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 16]
   vpaddd xmm.s2, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 32]
@@ -1387,7 +1387,7 @@ d12:
   ;; -- slot 11
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 160]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 160]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 160]
@@ -1439,7 +1439,7 @@ d12:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -1618,7 +1618,7 @@ eloop10:
   vpclmulqdq xmm.lo, xmm.t, xmmword ptr [q.htab + 400], 0x00
   vpclmulqdq xmm.hi, xmm.t, xmmword ptr [q.htab + 400], 0x11
   vpshufd xmm.t2, xmm.t, 0x4e
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.mid, xmm.t2, xmmword ptr [q.htab + 912], 0x00
   vpaddd xmm.s0, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 0]
   vpaddd xmm.s1, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 16]
@@ -1771,7 +1771,7 @@ eloop10:
   ;; -- slot 9
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 128]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 128]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 128]
@@ -1823,7 +1823,7 @@ eloop10:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -1861,7 +1861,7 @@ d10:
   vpclmulqdq xmm.lo, xmm.t, xmmword ptr [q.htab + 400], 0x00
   vpclmulqdq xmm.hi, xmm.t, xmmword ptr [q.htab + 400], 0x11
   vpshufd xmm.t2, xmm.t, 0x4e
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.mid, xmm.t2, xmmword ptr [q.htab + 912], 0x00
   vpaddd xmm.s0, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 0]
   vpaddd xmm.s1, xmm.base, xmmword ptr [rip + gcm_aesni_inc + 16]
@@ -2014,7 +2014,7 @@ d10:
   ;; -- slot 9
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vaesenc xmm.s0, xmm.s0, xmmword ptr [q.rk + 128]
   vaesenc xmm.s1, xmm.s1, xmmword ptr [q.rk + 128]
   vaesenc xmm.s2, xmm.s2, xmmword ptr [q.rk + 128]
@@ -2066,7 +2066,7 @@ d10:
   vmovdqu xmmword ptr [q.out + 96], xmm.s6
   vpxor xmm.s7, xmm.s7, xmmword ptr [q.in + 112]
   vmovdqu xmmword ptr [q.out + 112], xmm.s7
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
@@ -2097,14 +2097,13 @@ d10:
   jae d10
   jmp fin
 fin_last:
-  ;; the last encrypted chunk's GHASH
   lea q.g, [q.out -128]
   vmovdqu xmm.t, xmmword ptr [q.g + 16]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
   vpclmulqdq xmm.lo, xmm.t, xmmword ptr [q.htab + 400], 0x00
   vpclmulqdq xmm.hi, xmm.t, xmmword ptr [q.htab + 400], 0x11
   vpshufd xmm.t2, xmm.t, 0x4e
-  vpxor xmm.t2, xmm.t2, xmm.t                   ; a0 ^ a1 in both halves
+  vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.mid, xmm.t2, xmmword ptr [q.htab + 912], 0x00
   vmovdqu xmm.t, xmmword ptr [q.g + 32]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
@@ -2168,7 +2167,7 @@ fin_last:
   vpxor xmm.mid, xmm.mid, xmm.t2
   vmovdqu xmm.t, xmmword ptr [q.g + 0]
   vpshufb xmm.t, xmm.t, xmmword ptr [rip + gcm_aesni_bswap]
-  vpxor xmm.t, xmm.t, xmm.acc                 ; accumulator into block 0
+  vpxor xmm.t, xmm.t, xmm.acc
   vpclmulqdq xmm.t2, xmm.t, xmmword ptr [q.htab + 384], 0x00
   vpxor xmm.lo, xmm.lo, xmm.t2
   vpclmulqdq xmm.t2, xmm.t, xmmword ptr [q.htab + 384], 0x11
@@ -2177,7 +2176,7 @@ fin_last:
   vpxor xmm.t2, xmm.t2, xmm.t
   vpclmulqdq xmm.t2, xmm.t2, xmmword ptr [q.htab + 896], 0x00
   vpxor xmm.mid, xmm.mid, xmm.t2
-  vpxor xmm.mid, xmm.mid, xmm.lo                ; Karatsuba: mid = sum of the cross terms
+  vpxor xmm.mid, xmm.mid, xmm.lo
   vpxor xmm.mid, xmm.mid, xmm.hi
   vpslldq xmm.t, xmm.mid, 8
   vpsrldq xmm.t2, xmm.mid, 8
