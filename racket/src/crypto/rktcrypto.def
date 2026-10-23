@@ -120,3 +120,8 @@ rktcrypto_pem_to_der
 rktcrypto_x509_verify_selfsigned
 rktcrypto_cms_verify
 rktcrypto_selftest_core
+rktcrypto_ffdhe_size
+rktcrypto_ffdhe_keygen
+rktcrypto_ffdhe_derive
+rktcrypto_dh_keygen
+rktcrypto_dh_derive

@@ -655,7 +655,17 @@ int rktcrypto_p256_ecdh(unsigned char out[32],const unsigned char scalar[32],con
   if(point65[0]!=4) return 0;
   bytes_to_bn(k,scalar);
   bytes_to_bn(px,point65+1); bytes_to_bn(py,point65+33);
+  /* coordinates below p, and the point on the curve (y^2 = x^3 - 3x + b):
+     scalar multiplication on a point off the curve runs on a weaker twist
+     and leaks scalar bits (invalid-curve attack) */
+  { u64 t[4]; if(bn_sub(t,px,P)==0||bn_sub(t,py,P)==0) return 0; }   /* no borrow: coordinate >= p */
   to_mont(P_.X,px,&FP); to_mont(P_.Y,py,&FP);
+  { u64 l[4],r[4],t[4];
+    mont_mul(l,P_.Y,P_.Y,&FP);
+    mont_mul(t,P_.X,P_.X,&FP); mont_mul(r,t,P_.X,&FP);
+    mont_add(t,P_.X,P_.X,P); mont_add(t,t,P_.X,P); mont_sub(r,r,t,P);
+    mont_add(r,r,CURVE_B,P);
+    if(memcmp(l,r,sizeof l)!=0) return 0; }
   { u64 one[4]={1,0,0,0}; to_mont(P_.Z,one,&FP); }
   jac_scalarmult_win(&R,k,&P_);
   if(!jac_to_affine(xa,ya,&R)) return 0;

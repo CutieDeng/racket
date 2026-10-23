@@ -10,6 +10,7 @@
          racket/date
          racket/random)
 
+(provide cert-subject-name-tlv)
 (provide create-self-signed-certificate    ; -> (values cert-der ec-private-scalar-bytes)
          create-certificate                 ; CA-issued leaf -> (values cert-der ec-private-scalar-bytes)
          create-certificate-request         ; -> (values csr-der ec-private-scalar-bytes)
