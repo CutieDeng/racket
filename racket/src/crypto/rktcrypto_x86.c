@@ -53,6 +53,23 @@ void rktcrypto_aes256_block_aesni(const unsigned char rk[240],
   _mm_storeu_si128((__m128i *)out, s);
 }
 
+__attribute__((target("aes,sse2")))
+void rktcrypto_aes_enc_blk2_x86(const unsigned char *rk, int Nr, const unsigned char in0[16], const unsigned char in1[16],
+                                unsigned char out0[16], unsigned char out1[16])
+{
+  __m128i k = _mm_loadu_si128((const __m128i *)rk);
+  __m128i s0 = _mm_xor_si128(_mm_loadu_si128((const __m128i *)in0), k);
+  __m128i s1 = _mm_xor_si128(_mm_loadu_si128((const __m128i *)in1), k);
+  int r;
+  for (r = 1; r < Nr; r++) {
+    k = _mm_loadu_si128((const __m128i *)(rk + 16 * r));
+    s0 = _mm_aesenc_si128(s0, k); s1 = _mm_aesenc_si128(s1, k);
+  }
+  k = _mm_loadu_si128((const __m128i *)(rk + 16 * Nr));
+  _mm_storeu_si128((__m128i *)out0, _mm_aesenclast_si128(s0, k));
+  _mm_storeu_si128((__m128i *)out1, _mm_aesenclast_si128(s1, k));
+}
+
 /* ===================== SHA-1 blocks (SHA-NI) ===================== */
 /* The canonical sha1rnds4 / sha1nexte / sha1msg1 / sha1msg2 sequence: the
    state A..D stays in one register across all blocks, E rides in the top lane

@@ -33,6 +33,9 @@ int  rktcrypto_aes_expand_x86(const unsigned char *key, int keylen, unsigned cha
 void rktcrypto_aes_expand_dec_x86(const unsigned char rk[240], int Nr, unsigned char dk[240]);
 void rktcrypto_aes_enc_blk_x86(const unsigned char *rk, int Nr,
                                const unsigned char in[16], unsigned char out[16]);
+/* two independent blocks with their rounds interleaved (one AES latency for both) */
+void rktcrypto_aes_enc_blk2_x86(const unsigned char *rk, int Nr, const unsigned char in0[16], const unsigned char in1[16],
+                                unsigned char out0[16], unsigned char out1[16]);
 void rktcrypto_aes_dec_blk_x86(const unsigned char *dk, int Nr,
                                const unsigned char in[16], unsigned char out[16]);
 /* AES-NI, eight blocks in flight (the oracle for the VAES kernel) */
@@ -93,9 +96,10 @@ void rktcrypto_poly1305_blocks_ifma(uint64_t h44[3], const uint64_t tab[80], con
    lane sums (below 2^29); tab = the 18 x 4 qword table from rktcrypto_poly1305_avx2_table; groups x 64 bytes */
 void rktcrypto_poly1305_blocks_avx2(uint64_t h[5], const uint64_t tab[72], const unsigned char *m, intptr_t groups);
 void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72]);
-/* rktasm/x86 kernel (rktcrypto_poly1305_sse2.S): two blocks per vector in radix 2^26; tab = 18 x 2 qwords, 16-aligned */
-void rktcrypto_poly1305_blocks_sse2(uint64_t h[5], const uint64_t tab[36], const unsigned char *m, intptr_t groups);
-void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[36]);
+/* rktasm/x86 kernel (rktcrypto_poly1305_sse2.S): four blocks per group as two two-lane accumulator sets in
+   radix 2^26; tab = 27 x 2 qwords (steady r^4 rows, then the final powers of each set), 16-aligned */
+void rktcrypto_poly1305_blocks_sse2(uint64_t h[5], const uint64_t tab[54], const unsigned char *m, intptr_t groups);
+void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[54]);
 void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
 /* rktasm/x86 kernel (rktcrypto_chacha20poly1305_x86.S): `units` x 1024 bytes of ChaCha20 XOR while Poly1305
    absorbs the preceding unit's ciphertext at mac; hr = {h0 h1 h2 r0 r1 s1} radix 2^64, h updated */

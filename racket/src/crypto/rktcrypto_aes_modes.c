@@ -44,6 +44,11 @@ static inline uint8x16_t aes_enc1(uint8x16_t s,const unsigned char*rk,int Nr){
 /* General AES key schedule / single-block encrypt, exported for GMAC (gcm.c). */
 int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return aes_expand(key,(int)keylen,rk); }
 void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ vst1q_u8(out,aes_enc1(vld1q_u8(in),rk,Nr)); }
+void rktcrypto_aes_enc_block2(const unsigned char*rk,int Nr,const unsigned char in0[16],const unsigned char in1[16],unsigned char out0[16],unsigned char out1[16]){
+  uint8x16_t s0=vld1q_u8(in0),s1=vld1q_u8(in1);
+  for(int r=0;r<Nr-1;r++){ uint8x16_t k=vld1q_u8(rk+16*r); s0=vaesmcq_u8(vaeseq_u8(s0,k)); s1=vaesmcq_u8(vaeseq_u8(s1,k)); }
+  { uint8x16_t k=vld1q_u8(rk+16*(Nr-1)),kl=vld1q_u8(rk+16*Nr);
+    vst1q_u8(out0,veorq_u8(vaeseq_u8(s0,k),kl)); vst1q_u8(out1,veorq_u8(vaeseq_u8(s1,k),kl)); } }
 /* CBC-encrypt is serial (each block depends on the previous ciphertext). Two
    levers: (1) keep the whole round-key schedule in NEON registers; (2) fold the
    final round-key XOR off the critical path -- the next block's input is
@@ -323,6 +328,10 @@ static void dec_blk(const unsigned char*rk,const unsigned char*dk,int Nr,const u
 static void ctr_add(unsigned char c[16],uint64_t add){ for(int i=15;i>=0&&add;i--){ unsigned v=c[i]+(add&0xff); c[i]=(unsigned char)v; add=(add>>8)+(v>>8); } }
 int rktcrypto_aes_expand_key(const unsigned char*key,intptr_t keylen,unsigned char rk[240]){ return expand_key(key,(int)keylen,rk); }
 void rktcrypto_aes_enc_block(const unsigned char*rk,int Nr,const unsigned char in[16],unsigned char out[16]){ enc_blk(rk,Nr,in,out); }
+/* two independent blocks (GCM: H = AES_K(0) and E(J0) share one AES latency on AES-NI) */
+void rktcrypto_aes_enc_block2(const unsigned char*rk,int Nr,const unsigned char in0[16],const unsigned char in1[16],unsigned char out0[16],unsigned char out1[16]){
+  if(AES_X86()) rktcrypto_aes_enc_blk2_x86(rk,Nr,in0,in1,out0,out1); else { aes_enc_blk(rk,Nr,in0,out0); aes_enc_blk(rk,Nr,in1,out1); }
+}
 void rktcrypto_aes_ctr(const unsigned char*key,intptr_t keylen,const unsigned char iv[16],
                        const unsigned char*in,unsigned char*out,intptr_t len){
   unsigned char rk[240]; int Nr=expand_key(key,(int)keylen,rk); unsigned char ctr[16],ks[16]; memcpy(ctr,iv,16);

@@ -452,6 +452,24 @@ GCM 融合分派三层（3=VAES、2=VEX AES-NI、1=SSE）。gensrc 表的发射�
 vpsrldq/vpslldq；SHA-NI 缺席且 AVX2+BMI2 时分派）：937 MB/s，OpenSSL 屏蔽 SHA 位后 960（AVX2 路径）→ 0.98×。
 新 `RKTCRYPTO_CPU_X86_SSE2` 位只为让 harness 关掉 SSE2 内核。门禁 poly1305_sse2 0/13200、sha256_avx2 0/6001。
 
+**X3-5d 已落地（2026-10-23，已验证）——SSE2 Poly1305 四路、GCM 的 E(J0) 与 H 配对、融合路径阈值**：
+- `poly1305_sse2.asm` 改为四块一组的两组两路累加器（A 组取块 4g/4g+1、B 组 4g+2/4g+3，稳态都乘 r^4，末组按组各乘自身幂
+  A:(r^4,r^3)、B:(r^2,r)，四路之和即哈希）；B 组的乘积在 A 组进位之后发射，xmm 恰好 16 个（两组 10 + d0–4 + t）。表 tab[54]
+  = 27 行（稳态 9 行 + A 末 9 行 + B 末 9 行），`rktcrypto_poly1305_sse2_table` 算 r^2/r^3/r^4；分派 ≥256 字节、64 字节一组。
+  门禁 0/13200；1 MiB 4150→6428 MB/s（+55%），与 MULX 6408 持平。同机 OpenSSL Poly1305 单独（EVP_MAC，1 MiB，
+  `~/ossl-poly.c`）：屏蔽 AVX2 走 AVX 128 位四路 6054、再屏蔽 AVX 走标量 mulq 7835、无屏蔽 IFMA 21073；
+  SSE2 内核对 OpenSSL 的 AVX 路径 1.06×、对标量路径 0.82×（Zen 5 上 OpenSSL 的标量 mulq 快于其 AVX 四路，这是本机特性）。
+  另：`rktcrypto_poly1305_sse2_table` 原在 x86-ELF 守卫之外调用守卫内的 `poly26_mul`，macOS 编译失败，已挪入守卫。
+- GCM：`gcm_setup` 用新的 `rktcrypto_aes_enc_block2`（AES-NI 两块轮交错，`rktcrypto_aes_enc_blk2_x86`；ARM 对应
+  vaese 两块交错）一次算 H=AES_K(0) 与 E(J0)，E(J0) 传入 `gcm_x86_fused`/`gcm_tag`（展开密钥路径传 NULL，E(J0) 改在
+  主体之前发射以与 GHASH/CTR 重叠）。探针 `~/gcm-fixed-probe.c`（perf cycles:u / 2M 次，best-of-5，交替）：
+  n=0 683→643、n=64 776→743、n=1024 1114→1075、n=4096 1623→1575 周期/次，即 −15…−48 周期（−3…−8 ns @5.65 GHz），
+  n=16 一次测得 +2（噪声 ±10 周期）。原估 −10 ns 未达到：单块 AES 链 ~40 周期中，原来已有一部分被乱序窗口吸收。
+- 阈值扫描（`-DGCM_FUSED_MIN3/12`，三层各 5 档）：融合内核在 <256 字节时输给两趟路径（128 B：792 对 976–1026、
+  192 B：913 对 1110–1140），256 B 持平或反超（第 3 层 988 对 1259），384 B 第 3 层领先 20%（1117 对 1400）；
+  三层阈值统一为 256（原 512/128：第 3 层 256–511 字节慢 21–25%，第 1/2 层 128–255 字节慢 20%）。
+  最终 A/B：n=256 1298→997、n=384 1440→1111 周期/次。
+
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
 （`vpxor`→`vpxorq`）。主机测试 +3 组。

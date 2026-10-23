@@ -146,16 +146,27 @@ void rktcrypto_poly1305_avx2_table(const uint32_t r[5], uint64_t tab[72])
   for (i = 0; i < 5; i++) for (k = 0; k < 4; k++) { tab[4*i + k] = r4[i]; tab[36 + 4*i + k] = pw[k][i]; }
   for (i = 1; i < 5; i++) for (k = 0; k < 4; k++) { tab[4*(4+i) + k] = (uint64_t)r4[i] * 5; tab[36 + 4*(4+i) + k] = (uint64_t)pw[k][i] * 5; }
 }
-#endif
 
-/* rows 0..4: r^2 limbs in both lanes; 5..8: 5 * r^2 limbs 1..4; rows 9..17 per lane (r^2, r) */
-void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[36])
+void rktcrypto_poly1305_sse2_table(const uint32_t r[5], uint64_t tab[54])
 {
-  uint32_t r2[5]; int i;
+  /* rows 0..8: r^4 in both lanes (and 5*r^4 limbs 1..4); rows 9..17: set A's final powers
+     (r^4, r^3); rows 18..26: set B's (r^2, r) */
+  uint32_t r2[5], r3[5], r4[5]; int i;
   poly26_mul(r2, r, r);
-  for (i = 0; i < 5; i++) { tab[2*i] = tab[2*i+1] = r2[i]; tab[18 + 2*i] = r2[i]; tab[18 + 2*i + 1] = r[i]; }
-  for (i = 1; i < 5; i++) { tab[2*(4+i)] = tab[2*(4+i)+1] = (uint64_t)r2[i] * 5; tab[18 + 2*(4+i)] = (uint64_t)r2[i] * 5; tab[18 + 2*(4+i) + 1] = (uint64_t)r[i] * 5; }
+  poly26_mul(r3, r2, r);
+  poly26_mul(r4, r2, r2);
+  for (i = 0; i < 5; i++) {
+    tab[2*i] = tab[2*i+1] = r4[i];
+    tab[18 + 2*i] = r4[i]; tab[18 + 2*i + 1] = r3[i];
+    tab[36 + 2*i] = r2[i]; tab[36 + 2*i + 1] = r[i];
+  }
+  for (i = 1; i < 5; i++) {
+    tab[2*(4+i)] = tab[2*(4+i)+1] = (uint64_t)r4[i] * 5;
+    tab[18 + 2*(4+i)] = (uint64_t)r4[i] * 5; tab[18 + 2*(4+i) + 1] = (uint64_t)r3[i] * 5;
+    tab[36 + 2*(4+i)] = (uint64_t)r2[i] * 5; tab[36 + 2*(4+i) + 1] = (uint64_t)r[i] * 5;
+  }
 }
+#endif
 
 static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *m,
                             intptr_t bytes, uint32_t hibit)
@@ -183,11 +194,12 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
     ctx->h[0] = h0; ctx->h[1] = h1; ctx->h[2] = h2; ctx->h[3] = h3; ctx->h[4] = h4;
     m += groups * 64; bytes -= groups * 64;
   }
-  /* the SSE2 tier (no AVX2, no BMI2): two-way radix 2^26 on whole groups of two blocks */
-  if (bytes >= 128 && hibit && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSE2) &&
+  /* the SSE2 tier (no AVX2, no BMI2): two two-lane accumulator sets in radix 2^26 on whole
+     groups of four blocks */
+  if (bytes >= 256 && hibit && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSE2) &&
       !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2) && !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
-    uint64_t tab[36] __attribute__((aligned(16))), hv[5];
-    intptr_t groups = bytes / 32;
+    uint64_t tab[54] __attribute__((aligned(16))), hv[5];
+    intptr_t groups = bytes / 64;
     uint64_t c;
     rktcrypto_poly1305_sse2_table(ctx->r, tab);
     hv[0] = h0; hv[1] = h1; hv[2] = h2; hv[3] = h3; hv[4] = h4;
@@ -199,7 +211,7 @@ static void poly1305_blocks(rktcrypto_poly1305_ctx_t *ctx, const unsigned char *
     hv[4] += c; c = hv[4] >> 26; h4 = (uint32_t)hv[4] & 0x3ffffff;
     h0 += (uint32_t)c * 5; c = h0 >> 26; h0 &= 0x3ffffff; h1 += (uint32_t)c;
     ctx->h[0] = h0; ctx->h[1] = h1; ctx->h[2] = h2; ctx->h[3] = h3; ctx->h[4] = h4;
-    m += groups * 32; bytes -= groups * 32;
+    m += groups * 64; bytes -= groups * 64;
   }
   /* rktasm/x86 kernel in radix 2^64: convert the accumulator and r, run the whole-block
      prefix, convert back (h4 may come back up to 2^27, which the radix-2^26 math absorbs). */

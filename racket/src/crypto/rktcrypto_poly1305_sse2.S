@@ -18,10 +18,16 @@ rktcrypto_poly1305_blocks_sse2:
         movq xmm9, qword ptr [rdi + 8]
         movq xmm8, qword ptr [rdi + 16]
         movq xmm7, qword ptr [rdi + 24]
-        movq xmm1, qword ptr [rdi + 32]
+        movq xmm6, qword ptr [rdi + 32]
+        pxor xmm15, xmm15
+        pxor xmm14, xmm14
+        pxor xmm13, xmm13
+        pxor xmm12, xmm12
+        pxor xmm1, xmm1
+        xor r8, r8
         cmp rcx, 0x1
         jne .Lrktcrypto_poly1305_blocks_sse2_grp
-        add rsi, 0x90
+        mov r8, 0x90
 .Lrktcrypto_poly1305_blocks_sse2_grp:
         movdqu xmm3, xmmword ptr [rdx]
         movdqu xmm0, xmmword ptr [rdx + 16]
@@ -47,76 +53,210 @@ rktcrypto_poly1305_blocks_sse2:
         paddq xmm7, xmm0
         psrlq xmm2, 0x28
         por xmm2, xmmword ptr [rip + poly1305_sse2_consts + 16]
-        paddq xmm1, xmm2
-        movdqa xmm6, xmm10
-        pmuludq xmm6, xmmword ptr [rsi]
+        paddq xmm6, xmm2
+        lea rax, [rsi + r8]
+        movdqa xmm11, xmm10
+        pmuludq xmm11, xmmword ptr [rax]
         movdqa xmm0, xmm9
-        pmuludq xmm0, xmmword ptr [rsi + 128]
-        paddq xmm6, xmm0
+        pmuludq xmm0, xmmword ptr [rax + 128]
+        paddq xmm11, xmm0
         movdqa xmm0, xmm8
-        pmuludq xmm0, xmmword ptr [rsi + 112]
-        paddq xmm6, xmm0
+        pmuludq xmm0, xmmword ptr [rax + 112]
+        paddq xmm11, xmm0
         movdqa xmm0, xmm7
-        pmuludq xmm0, xmmword ptr [rsi + 96]
-        paddq xmm6, xmm0
-        movdqa xmm0, xmm1
-        pmuludq xmm0, xmmword ptr [rsi + 80]
-        paddq xmm6, xmm0
+        pmuludq xmm0, xmmword ptr [rax + 96]
+        paddq xmm11, xmm0
+        movdqa xmm0, xmm6
+        pmuludq xmm0, xmmword ptr [rax + 80]
+        paddq xmm11, xmm0
         movdqa xmm5, xmm10
-        pmuludq xmm5, xmmword ptr [rsi + 16]
+        pmuludq xmm5, xmmword ptr [rax + 16]
         movdqa xmm0, xmm9
-        pmuludq xmm0, xmmword ptr [rsi]
+        pmuludq xmm0, xmmword ptr [rax]
         paddq xmm5, xmm0
         movdqa xmm0, xmm8
-        pmuludq xmm0, xmmword ptr [rsi + 128]
+        pmuludq xmm0, xmmword ptr [rax + 128]
         paddq xmm5, xmm0
         movdqa xmm0, xmm7
-        pmuludq xmm0, xmmword ptr [rsi + 112]
+        pmuludq xmm0, xmmword ptr [rax + 112]
         paddq xmm5, xmm0
-        movdqa xmm0, xmm1
-        pmuludq xmm0, xmmword ptr [rsi + 96]
+        movdqa xmm0, xmm6
+        pmuludq xmm0, xmmword ptr [rax + 96]
         paddq xmm5, xmm0
         movdqa xmm4, xmm10
-        pmuludq xmm4, xmmword ptr [rsi + 32]
+        pmuludq xmm4, xmmword ptr [rax + 32]
         movdqa xmm0, xmm9
-        pmuludq xmm0, xmmword ptr [rsi + 16]
+        pmuludq xmm0, xmmword ptr [rax + 16]
         paddq xmm4, xmm0
         movdqa xmm0, xmm8
-        pmuludq xmm0, xmmword ptr [rsi]
+        pmuludq xmm0, xmmword ptr [rax]
         paddq xmm4, xmm0
         movdqa xmm0, xmm7
-        pmuludq xmm0, xmmword ptr [rsi + 128]
+        pmuludq xmm0, xmmword ptr [rax + 128]
         paddq xmm4, xmm0
-        movdqa xmm0, xmm1
-        pmuludq xmm0, xmmword ptr [rsi + 112]
+        movdqa xmm0, xmm6
+        pmuludq xmm0, xmmword ptr [rax + 112]
         paddq xmm4, xmm0
         movdqa xmm3, xmm10
-        pmuludq xmm3, xmmword ptr [rsi + 48]
+        pmuludq xmm3, xmmword ptr [rax + 48]
         movdqa xmm0, xmm9
-        pmuludq xmm0, xmmword ptr [rsi + 32]
+        pmuludq xmm0, xmmword ptr [rax + 32]
         paddq xmm3, xmm0
         movdqa xmm0, xmm8
-        pmuludq xmm0, xmmword ptr [rsi + 16]
+        pmuludq xmm0, xmmword ptr [rax + 16]
         paddq xmm3, xmm0
         movdqa xmm0, xmm7
-        pmuludq xmm0, xmmword ptr [rsi]
+        pmuludq xmm0, xmmword ptr [rax]
         paddq xmm3, xmm0
-        movdqa xmm0, xmm1
-        pmuludq xmm0, xmmword ptr [rsi + 128]
+        movdqa xmm0, xmm6
+        pmuludq xmm0, xmmword ptr [rax + 128]
         paddq xmm3, xmm0
         movdqa xmm2, xmm10
-        pmuludq xmm2, xmmword ptr [rsi + 64]
-        pmuludq xmm9, xmmword ptr [rsi + 48]
-        paddq xmm2, xmm9
-        pmuludq xmm8, xmmword ptr [rsi + 32]
-        paddq xmm2, xmm8
-        pmuludq xmm7, xmmword ptr [rsi + 16]
-        paddq xmm2, xmm7
-        pmuludq xmm1, xmmword ptr [rsi]
-        paddq xmm2, xmm1
+        pmuludq xmm2, xmmword ptr [rax + 64]
+        movdqa xmm0, xmm9
+        pmuludq xmm0, xmmword ptr [rax + 48]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm8
+        pmuludq xmm0, xmmword ptr [rax + 32]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm7
+        pmuludq xmm0, xmmword ptr [rax + 16]
+        paddq xmm2, xmm0
         movdqa xmm0, xmm6
+        pmuludq xmm0, xmmword ptr [rax]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm11
         psrlq xmm0, 0x1a
-        pand xmm6, xmmword ptr [rip + poly1305_sse2_consts]
+        pand xmm11, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm5, xmm0
+        movdqa xmm0, xmm5
+        psrlq xmm0, 0x1a
+        pand xmm5, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm4, xmm0
+        movdqa xmm0, xmm4
+        psrlq xmm0, 0x1a
+        pand xmm4, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm3, xmm0
+        movdqa xmm0, xmm3
+        psrlq xmm0, 0x1a
+        pand xmm3, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm2, xmm0
+        movdqa xmm6, xmm2
+        psrlq xmm6, 0x1a
+        pand xmm2, xmmword ptr [rip + poly1305_sse2_consts]
+        movdqa xmm0, xmm6
+        psllq xmm0, 0x2
+        paddq xmm6, xmm0
+        paddq xmm11, xmm6
+        movdqa xmm0, xmm11
+        psrlq xmm0, 0x1a
+        pand xmm11, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm5, xmm0
+        movdqa xmm10, xmm11
+        movdqa xmm9, xmm5
+        movdqa xmm8, xmm4
+        movdqa xmm7, xmm3
+        movdqa xmm6, xmm2
+        movdqu xmm3, xmmword ptr [rdx + 32]
+        movdqu xmm0, xmmword ptr [rdx + 48]
+        movdqa xmm2, xmm3
+        punpcklqdq xmm3, xmm0
+        punpckhqdq xmm2, xmm0
+        movdqa xmm0, xmm3
+        pand xmm0, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm15, xmm0
+        movdqa xmm0, xmm3
+        psrlq xmm0, 0x1a
+        pand xmm0, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm14, xmm0
+        psrlq xmm3, 0x34
+        movdqa xmm0, xmm2
+        psllq xmm0, 0xc
+        por xmm3, xmm0
+        pand xmm3, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm13, xmm3
+        movdqa xmm0, xmm2
+        psrlq xmm0, 0xe
+        pand xmm0, xmmword ptr [rip + poly1305_sse2_consts]
+        paddq xmm12, xmm0
+        psrlq xmm2, 0x28
+        por xmm2, xmmword ptr [rip + poly1305_sse2_consts + 16]
+        paddq xmm1, xmm2
+        lea rax, [rsi + r8]
+        add rax, r8
+        movdqa xmm11, xmm15
+        pmuludq xmm11, xmmword ptr [rax]
+        movdqa xmm0, xmm14
+        pmuludq xmm0, xmmword ptr [rax + 128]
+        paddq xmm11, xmm0
+        movdqa xmm0, xmm13
+        pmuludq xmm0, xmmword ptr [rax + 112]
+        paddq xmm11, xmm0
+        movdqa xmm0, xmm12
+        pmuludq xmm0, xmmword ptr [rax + 96]
+        paddq xmm11, xmm0
+        movdqa xmm0, xmm1
+        pmuludq xmm0, xmmword ptr [rax + 80]
+        paddq xmm11, xmm0
+        movdqa xmm5, xmm15
+        pmuludq xmm5, xmmword ptr [rax + 16]
+        movdqa xmm0, xmm14
+        pmuludq xmm0, xmmword ptr [rax]
+        paddq xmm5, xmm0
+        movdqa xmm0, xmm13
+        pmuludq xmm0, xmmword ptr [rax + 128]
+        paddq xmm5, xmm0
+        movdqa xmm0, xmm12
+        pmuludq xmm0, xmmword ptr [rax + 112]
+        paddq xmm5, xmm0
+        movdqa xmm0, xmm1
+        pmuludq xmm0, xmmword ptr [rax + 96]
+        paddq xmm5, xmm0
+        movdqa xmm4, xmm15
+        pmuludq xmm4, xmmword ptr [rax + 32]
+        movdqa xmm0, xmm14
+        pmuludq xmm0, xmmword ptr [rax + 16]
+        paddq xmm4, xmm0
+        movdqa xmm0, xmm13
+        pmuludq xmm0, xmmword ptr [rax]
+        paddq xmm4, xmm0
+        movdqa xmm0, xmm12
+        pmuludq xmm0, xmmword ptr [rax + 128]
+        paddq xmm4, xmm0
+        movdqa xmm0, xmm1
+        pmuludq xmm0, xmmword ptr [rax + 112]
+        paddq xmm4, xmm0
+        movdqa xmm3, xmm15
+        pmuludq xmm3, xmmword ptr [rax + 48]
+        movdqa xmm0, xmm14
+        pmuludq xmm0, xmmword ptr [rax + 32]
+        paddq xmm3, xmm0
+        movdqa xmm0, xmm13
+        pmuludq xmm0, xmmword ptr [rax + 16]
+        paddq xmm3, xmm0
+        movdqa xmm0, xmm12
+        pmuludq xmm0, xmmword ptr [rax]
+        paddq xmm3, xmm0
+        movdqa xmm0, xmm1
+        pmuludq xmm0, xmmword ptr [rax + 128]
+        paddq xmm3, xmm0
+        movdqa xmm2, xmm15
+        pmuludq xmm2, xmmword ptr [rax + 64]
+        movdqa xmm0, xmm14
+        pmuludq xmm0, xmmword ptr [rax + 48]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm13
+        pmuludq xmm0, xmmword ptr [rax + 32]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm12
+        pmuludq xmm0, xmmword ptr [rax + 16]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm1
+        pmuludq xmm0, xmmword ptr [rax]
+        paddq xmm2, xmm0
+        movdqa xmm0, xmm11
+        psrlq xmm0, 0x1a
+        pand xmm11, xmmword ptr [rip + poly1305_sse2_consts]
         paddq xmm5, xmm0
         movdqa xmm0, xmm5
         psrlq xmm0, 0x1a
@@ -136,39 +276,44 @@ rktcrypto_poly1305_blocks_sse2:
         movdqa xmm0, xmm1
         psllq xmm0, 0x2
         paddq xmm1, xmm0
-        paddq xmm6, xmm1
-        movdqa xmm0, xmm6
+        paddq xmm11, xmm1
+        movdqa xmm0, xmm11
         psrlq xmm0, 0x1a
-        pand xmm6, xmmword ptr [rip + poly1305_sse2_consts]
+        pand xmm11, xmmword ptr [rip + poly1305_sse2_consts]
         paddq xmm5, xmm0
-        movdqa xmm10, xmm6
-        movdqa xmm9, xmm5
-        movdqa xmm8, xmm4
-        movdqa xmm7, xmm3
+        movdqa xmm15, xmm11
+        movdqa xmm14, xmm5
+        movdqa xmm13, xmm4
+        movdqa xmm12, xmm3
         movdqa xmm1, xmm2
-        add rdx, 0x20
+        add rdx, 0x40
         sub rcx, 0x1
         jz .Lrktcrypto_poly1305_blocks_sse2_done
         cmp rcx, 0x1
         jne .Lrktcrypto_poly1305_blocks_sse2_grp
-        add rsi, 0x90
+        mov r8, 0x90
         jmp .Lrktcrypto_poly1305_blocks_sse2_grp
 .Lrktcrypto_poly1305_blocks_sse2_done:
+        paddq xmm10, xmm15
         pshufd xmm0, xmm10, 0x4e
         paddq xmm10, xmm0
         movq qword ptr [rdi], xmm10
+        paddq xmm9, xmm14
         pshufd xmm0, xmm9, 0x4e
         paddq xmm9, xmm0
         movq qword ptr [rdi + 8], xmm9
+        paddq xmm8, xmm13
         pshufd xmm0, xmm8, 0x4e
         paddq xmm8, xmm0
         movq qword ptr [rdi + 16], xmm8
+        paddq xmm7, xmm12
         pshufd xmm0, xmm7, 0x4e
         paddq xmm7, xmm0
         movq qword ptr [rdi + 24], xmm7
-        pshufd xmm0, xmm1, 0x4e
-        paddq xmm1, xmm0
-        movq qword ptr [rdi + 32], xmm1
+        paddq xmm6, xmm1
+        pshufd xmm0, xmm6, 0x4e
+        paddq xmm6, xmm0
+        movq qword ptr [rdi + 32], xmm6
         ret
         .size   rktcrypto_poly1305_blocks_sse2, .-rktcrypto_poly1305_blocks_sse2
 

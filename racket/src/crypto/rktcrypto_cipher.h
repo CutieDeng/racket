@@ -153,6 +153,9 @@ int rktcrypto_aesccm_open_x(const struct rktcrypto_aead_xkey *k, const unsigned 
                             const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
                             unsigned char *out, intptr_t out_start);
 void rktcrypto_aes_enc_block(const unsigned char *rk, int Nr, const unsigned char in[16], unsigned char out[16]);
+/* two independent blocks with their rounds interleaved (hardware AES: one latency for both) */
+void rktcrypto_aes_enc_block2(const unsigned char *rk, int Nr, const unsigned char in0[16], const unsigned char in1[16],
+                              unsigned char out0[16], unsigned char out1[16]);
 /* AES-GMAC (SP 800-38D): GCM authentication over msg-as-AAD with empty
    plaintext; 12-byte iv. key is 16/24/32 bytes. Writes the 16-byte tag. */
 void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],
