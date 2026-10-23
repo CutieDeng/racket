@@ -58,5 +58,54 @@ sign inter-plain "$SUBJ/CN=Inter plain" "basicConstraints=critical,CA:TRUE
 keyUsage=critical,keyCertSign"
 sign leaf-ip "$SUBJ/CN=leaf-ip.example.test" "$LEAF_EXTS
 subjectAltName=DNS:leaf-ip.example.test,IP:127.0.0.1,IP:::1" inter-plain.key inter-plain.crt
+# 7. self-issued intermediate (key rollover) under a pathlen:1 root (must pass)
+key root-p1.key
+openssl req -x509 -new -key root-p1.key -sha256 -days $DAYS -out root-p1.crt -subj "$SUBJ/CN=Policy Root p1" \
+  -addext "basicConstraints=critical,CA:TRUE,pathlen:1" -addext "keyUsage=critical,keyCertSign,cRLSign" 2>/dev/null
+sign inter-si "$SUBJ/CN=Inter self-issued" "basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign" root-p1.key root-p1.crt
+sign inter-si2 "$SUBJ/CN=Inter self-issued" "basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign" inter-si.key inter-si.crt         # same subject as its issuer
+sign leaf-si "$SUBJ/CN=leaf-si.example.test" "$LEAF_EXTS
+subjectAltName=DNS:leaf-si.example.test" inter-si2.key inter-si2.crt
+# 8. X.509 v1 self-signed root (no extensions) issuing a leaf (must pass)
+key root-v1.key
+printf '[req]\ndistinguished_name=dn\n[dn]\n' > v1.cnf     # no extension section: a real v1 certificate
+openssl req -x509 -x509v1 -config v1.cnf -new -key root-v1.key -sha256 -days $DAYS -out root-v1.crt -subj "$SUBJ/CN=Policy Root v1" 2>/dev/null
+rm -f v1.cnf
+sign leaf-v1 "$SUBJ/CN=leaf-v1.example.test" "$LEAF_EXTS
+subjectAltName=DNS:leaf-v1.example.test" root-v1.key root-v1.crt
+# 9. self-signed end entity used directly as its own anchor (must pass)
+key selfsigned.key
+openssl req -x509 -new -key selfsigned.key -sha256 -days $DAYS -out selfsigned.crt -subj "$SUBJ/CN=selfsigned.example.test" \
+  -addext "basicConstraints=critical,CA:FALSE" -addext "keyUsage=critical,digitalSignature" \
+  -addext "subjectAltName=DNS:selfsigned.example.test" 2>/dev/null
+# 10. intermediate with anyExtendedKeyUsage only (libssl rejects for TLS)
+sign inter-anyeku "$SUBJ/CN=Inter anyEKU" "basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign
+extendedKeyUsage=anyExtendedKeyUsage"
+sign leaf-anyeku "$SUBJ/CN=leaf-anyeku.example.test" "$LEAF_EXTS
+subjectAltName=DNS:leaf-anyeku.example.test" inter-anyeku.key inter-anyeku.crt
+# 11. name constraints via the CN (no SAN) and via rfc822Name
+sign leaf-nc-cn "$SUBJ/CN=my_host.other.test" "basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+extendedKeyUsage=serverAuth" inter-nc.key inter-nc.crt
+sign inter-nc-email "$SUBJ/CN=Inter email constrained" "basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign
+nameConstraints=critical,permitted;email:example.test"
+sign leaf-nc-email-ok "$SUBJ/CN=mailer" "basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+subjectAltName=email:user@example.test" inter-nc-email.key inter-nc-email.crt
+sign leaf-nc-email-bad "$SUBJ/CN=mailer2" "basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature
+subjectAltName=email:user@sub.example.test" inter-nc-email.key inter-nc-email.crt
+# 12. a "*.test" wildcard (too broad) and a critical inhibitAnyPolicy
+sign leaf-wild "$SUBJ/CN=wildcard" "$LEAF_EXTS
+subjectAltName=DNS:*.test,DNS:*.example.test" inter-plain.key inter-plain.crt
+sign inter-iap "$SUBJ/CN=Inter inhibitAnyPolicy" "basicConstraints=critical,CA:TRUE
+keyUsage=critical,keyCertSign
+inhibitAnyPolicy=critical,0"
+sign leaf-iap "$SUBJ/CN=leaf-iap.example.test" "$LEAF_EXTS
+subjectAltName=DNS:leaf-iap.example.test" inter-iap.key inter-iap.crt
 rm -f *.srl
 ls *.crt | tr '\n' ' '; echo

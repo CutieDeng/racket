@@ -628,7 +628,7 @@ ciphers} command}, restricted to the suites that are implemented:
 
 Suites without forward secrecy (plain RSA key exchange) and other ciphers
 are not available; a specification that matches none of the implemented
-suites causes connections to fail. Aliases such as @tt{ECDHE}, @tt{EDH},
+suites is an error. Aliases such as @tt{ECDHE}, @tt{EDH},
 @tt{AESGCM}, @tt{SHA256}, the @tt{!} and @tt{-} prefixes, and @tt{+} for
 intersection (@tt{"AES+EDH"}) are supported. Finite-field DHE uses
 well-known safe primes only: a server sends the RFC 7919 group
@@ -685,9 +685,10 @@ procedure is usually used with server contexts or listeners, seldom
 with client contexts.
 
 Keys may be RSA, EC on P-256, P-384 or P-521, or Ed25519, in PKCS#1,
-SEC1 or PKCS#8 PEM form (PKCS#8 may be PBES2-encrypted, see
-@racket[#:password]); the certificate's key type decides the signature
-scheme offered to peers.
+SEC1 or PKCS#8 form, PEM by default or DER when @racket[asn1?] is true
+(PKCS#8 may be PBES2-encrypted, see @racket[#:password]); the
+certificate's key type decides the signature scheme offered to peers.
+The @racket[rsa?] argument is accepted for compatibility and ignored.
 
 If @racket[path-or-data] is a @tech[#:doc '(lib "scribblings/reference/reference.scrbl")]{
 path or string}, the private key is loaded from a file at the given

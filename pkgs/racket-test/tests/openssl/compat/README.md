@@ -86,6 +86,21 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 
 仍未对标(设计如此):TLS 1.0/1.1、重协商、RSA 密钥交换。
 
+### 1.2.2 subagent 评审后的修复(第六轮)
+
+两个独立评审(TLS 引擎/记录层/DH;校验器/X.509/API)共报 27 项,已核对并全部修复(除按设计不做的);
+分组列于下表,每项对应测试:
+
+| 组 | 修复 | 验证 |
+|---|---|---|
+| 安全 | S1 对端 ECDH 公钥长度校验+NIST 曲线上点校验(Racket 公开数据大数运算,曲线常量以测试证书公钥自检)、X25519 全零共享密钥拒绝;S2 CN 作主机名时一律受 nameConstraints 约束;S3 rfc822Name/URI 约束无前导点时精确匹配主机、本地部分区分大小写;S4 通配符至少两级(`*.com` 无效) | test-chain-policy 28(新增 CN/邮箱/通配符等固件,OpenSSL `verify` 同判) |
+| 记录层 | C1 排空队列存原始密文、出队时解密(对端 KeyUpdate 后的记录不再用旧密钥);C4 >16KB 载荷分记录;R1 1.2 短记录(GCM <24/ChaCha <16/CBC 不足 MAC+1)返回 bad_record_mac 而非合约错误;1.2 排空队列上限;对端长度字段引发的合约错误统一转为 decode_error(50) | test-key-update-drain 4(1MB 对写 + KeyUpdate);test-suites/basic 不变 |
+| 校验器 | C6 自签发中间证书不计 pathLen、不受名称约束;C7 v1 自签名根(无扩展)与自签名叶子作锚;C8 critical 的 inhibitAnyPolicy/policyMappings/CRLDP/proxyCertInfo 视为已知;C9 anyEKU 不满足 serverAuth/clientAuth(同 libssl);R2 不可解析的锚/目录文件跳过;R4 私钥解析:坏 base64、Ed25519 种子长度、EC 标量长度 | test-chain-policy |
+| API | C3 `'tls12` 服务端 context 只协商 1.2(且不写 DOWNGRD 哨兵);C5 cipher 串:`!` 永久、`-` 可恢复、COMPLEMENTOFDEFAULT 为空、无匹配在 `ssl-set-ciphers!` 报错;C10 DER 私钥(`asn1? #t`、`'der`);C11 `'(macosx-keychain #f)`;C12 端口可传给 `ssl-load-verify-root-certificates!`;C13 `#:shutdown-on-close?` 为假时关闭输出端口不发 close_notify(同文档) | test-api-compat 11 |
+| 协议 | C14 客户端检查 session_id 回显(仅 1.3)、HRR 群/套件一致、PSK selected_identity 与哈希;1.2 恢复套件/EMS 一致;C2 1.2 服务端恢复回显 extended_master_secret、保留客户端身份、不再在恢复 SH 里带 SessionTicket 扩展(RFC 5077 §3.3 否则须发 NST) | OpenSSL `s_client -tls1_2 -reconnect`:5 次恢复均成功、无错误 |
+
+未修(低):写路径无锁(读路径发出的 KeyUpdate 应答/PHA 应答与并发应用写理论上可字节交错,实跑未触发);PHA 请求与并发应用读线程可能乱序;`ssl-secure-client-context` 每次 spawn `security`(~15ms);ECDH 点校验在 C 侧仍缺(Racket 侧已补)。
+
 ### 1.3 仍存在的差异
 
 1. `peer-verif.rkt` 的三个 `#:later` 用例:强制 'tls12,需重协商;TLS 1.3 下同样的调用已可用(见上表)。

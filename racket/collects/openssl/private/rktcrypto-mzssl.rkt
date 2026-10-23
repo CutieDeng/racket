@@ -28,7 +28,7 @@
   (or/c path-string?
         (list/c 'directory path-string?)
         (list/c 'win32-store string?)
-        (list/c 'macosx-keychain path-string?)))
+        (list/c 'macosx-keychain (or/c #f path-string?))))
 
 ;; ---- context ----
 (struct ssl-context (mutable) #:mutable)   ; base
@@ -106,16 +106,18 @@
   (cond
     [(and (list? spec) (eq? (car spec) 'pem)) (ssl-load-private-key! c (cadr spec))]
     [(and (list? spec) (eq? (car spec) 'pem-data)) (cx-set! c 'private-key (pem->private-key (cadr spec)))]
-    [(and (list? spec) (eq? (car spec) 'der)) (ssl-load-private-key! c (cadr spec))]
+    [(and (list? spec) (eq? (car spec) 'der)) (ssl-load-private-key! c (cadr spec) #t #t)]
     [else (void)]))
 
 ;; #:password decrypts an encrypted PKCS#8 (PBES2) key file.
+;; asn1? selects DER input (PKCS#8, PKCS#1 RSA or SEC1 EC); rsa? is kept for
+;; the historical signature and ignored, the key's own type decides.
 (define (ssl-load-private-key! c/l path-or-data [rsa? #t] [asn1? #f] #:password [password #f])
   (define c (->context c/l))
   (define bs (if (and (list? path-or-data) (eq? (car path-or-data) 'data))
                  (cadr path-or-data)
                  (read-file-bytes path-or-data)))
-  (cx-set! c 'private-key (pem->private-key bs password)))
+  (cx-set! c 'private-key (if asn1? (der->private-key bs) (pem->private-key bs password))))
 
 ;; Load a PKCS#12 (.p12/.pfx) identity bundle — both the private key and the
 ;; certificate chain — into a context (handy for a client-auth identity).
@@ -138,7 +140,8 @@
     (cond
       [(path-string? src) (ssl-load-verify-root-certificates! c src)]
       [(and (pair? src) (eq? (car src) 'directory)) (load-directory-anchors c (cadr src))]
-      [(and (pair? src) (eq? (car src) 'macosx-keychain)) (load-macosx-anchors c (cadr src))]
+      [(and (pair? src) (eq? (car src) 'macosx-keychain))
+       (load-macosx-anchors c (or (cadr src) "/System/Library/Keychains/SystemRootCertificates.keychain"))]
       [(and (pair? src) (eq? (car src) 'win32-store)) (load-win32-anchors c (cadr src))]
       [else (void)])))
 
@@ -266,7 +269,8 @@
 (define (cipher-alias->ids tok)
   ;; expand an OpenSSL alias/group token to a list of suite ids (default order)
   (case (string-upcase tok)
-    [("ALL" "HIGH" "DEFAULT" "COMPLEMENTOFDEFAULT") ALL-SUITES]
+    [("ALL" "HIGH" "DEFAULT") ALL-SUITES]
+    [("COMPLEMENTOFDEFAULT") '()]            ; everything here is in DEFAULT
     [("ECDHE" "EECDH" "KECDHE" "KEECDH") (append (suites-with 'tls13) (suites-with 'ecdhe))]
     [("DHE" "EDH" "KDHE" "KEDH" "DH") (suites-with 'dhe)]
     [("AEAD") (suites-with 'aead)]
@@ -303,7 +307,9 @@
     [else
      (define toks (filter (lambda (t) (> (string-length t) 0))
                           (regexp-split #rx"[:, ]+" s)))
-     (let loop ([toks toks] [acc '()])
+     ;; "!" removes permanently (later tokens cannot add the suite back), "-"
+     ;; removes until re-added, as in the openssl ciphers syntax
+     (let loop ([toks toks] [acc '()] [killed '()])
        (cond
          [(null? toks) (reverse acc)]
          [else
@@ -311,16 +317,22 @@
           ;; strip @STRENGTH/@SECLEVEL
           (define t0 (regexp-replace #rx"@.*$" raw ""))
           (cond
-            [(regexp-match? #rx"^[!-]" t0)
+            [(regexp-match? #rx"^!" t0)
              (define ids (cipher-token->ids (substring t0 1)))
-             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc))]
+             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc) (append ids killed))]
+            [(regexp-match? #rx"^-" t0)
+             (define ids (cipher-token->ids (substring t0 1)))
+             (loop (cdr toks) (filter (lambda (x) (not (memv x ids))) acc) killed)]
             [else
-             (define ids (cipher-token->ids t0))
-             (loop (cdr toks) (append (reverse (filter (lambda (x) (not (memv x acc))) ids)) acc))])]))]))
+             (define ids (filter (lambda (x) (not (memv x killed))) (cipher-token->ids t0)))
+             (loop (cdr toks) (append (reverse (filter (lambda (x) (not (memv x acc))) ids)) acc) killed)])]))]))
 (define (ssl-set-ciphers! c str)
   (define pol (parse-cipher-policy str))
-  ;; A non-#f policy that resolves to nothing = "no cipher match" -> record 'none
-  (cx-set! c 'suite-policy (if (and pol (null? pol)) 'none pol)))
+  ;; a specification that matches no implemented suite is an error here, as
+  ;; it was with libssl ("no cipher match"), rather than at connect time
+  (when (and pol (null? pol))
+    (error 'ssl-set-ciphers! "no cipher match: ~e" str))
+  (cx-set! c 'suite-policy pol))
 (define (ssl-set-server-alpn! c protos [allow-no-match? #t])
   (cx-set! c 'server-alpn protos)
   (cx-set! c 'alpn-allow-no-match? (and allow-no-match? #t)))
@@ -343,6 +355,7 @@
   (cond [(ssl-context? c/l) c/l]
         [(ssl-listener? c/l) (ssl-listener-ctx c/l)]
         [(ssl-port-obj? c/l) (ssl-port-obj-ctx c/l)]
+        [(port-obj c/l) => ssl-port-obj-ctx]
         [else (error 'ssl "not a context/listener/port: ~e" c/l)]))
 
 ;; =====================================================================
@@ -369,7 +382,7 @@
   ;; write-direction action, and it belongs to the output port's close.
   (make-input-port name read-in #f on-close))
 
-(define (make-ssl-output conn name on-close)
+(define (make-ssl-output conn name on-close shutdown?)
   ;; Every write goes out as a TLS record at once, so the buffer mode is
   ;; nominal; it is kept so `file-stream-buffer-mode` works on SSL ports as
   ;; it did with the libssl-based implementation.
@@ -378,7 +391,9 @@
                     (lambda (bstr start end non-block? breakable?)
                       (if (= start end) 0
                           (tls-conn-write-bytes conn (subbytes bstr start end))))
-                    (lambda () (tls-conn-close-notify conn) (on-close))
+                    ;; close_notify only when shutdown-on-close? was given (the
+                    ;; libssl-based behavior); otherwise the write side just ends
+                    (lambda () (if shutdown? (tls-conn-close-notify conn) (tls-conn-abandon-write! conn)) (on-close))
                     #f #f #f #f void 1
                     (case-lambda
                       [() buffer-mode]
@@ -469,6 +484,7 @@
                            'require-client-cert (cx-ref context 'verify?)
                            'client-ca-anchors (cx-ref context 'trust-anchors)
                            'client-ca-names (cx-ref context 'client-ca-names)
+                           'tls12-only? (and (memq (cx-ref context 'protocol) '(tls12 tls11 tls)) #t)
                            'alpn-allow-no-match? (cx-ref context 'alpn-allow-no-match?)
                            'ticket-store (cx-ref context 'ticket-store)   ; A2: issue resumption tickets
                            'alpn (let ([sa (cx-ref context 'server-alpn)])
@@ -489,7 +505,7 @@
          (close-input-port i)
          (close-output-port o)))))
   (define in (make-ssl-input conn name one-side-closed!))
-  (define out (make-ssl-output conn name one-side-closed!))
+  (define out (make-ssl-output conn name one-side-closed! shutdown?))
   (define obj (ssl-port-obj conn context i o close? in out))
   (register-port! in obj) (register-port! out obj)
   (values in out))

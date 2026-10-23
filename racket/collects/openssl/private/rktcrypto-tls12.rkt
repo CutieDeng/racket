@@ -171,12 +171,11 @@
     (write-draining (r12-out r) (r12-in r) rec (r12-lock r)
                     (lambda ()
                       (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) #f)])
-                        (case (r12-fill-nb! r)
+                        (case (if (>= (length (r12-pending r)) MAX-PENDING-RECORDS) 'full (r12-fill-nb! r))
                           [(record)
-                           (define-values (type pt) (r12-read/raw r))
-                           (set-r12-pending! r (append (r12-pending r) (list (cons type pt))))
+                           (set-r12-pending! r (append (r12-pending r) (list (r12-read-raw-record! r))))
                            #t]
-                          [(eof) #f]
+                          [(eof full) #f]
                           [else #t]))))))
 
 (define (read-exact in n)
@@ -191,16 +190,23 @@
    (lambda ()
      (define pending (r12-pending r))
      (cond
-       [(pair? pending)
+       [(pair? pending)                      ; queued raw by a draining write; decrypted here, in order
         (set-r12-pending! r (cdr pending))
-        (values (caar pending) (cdar pending))]
+        (r12-process-record r (caar pending) (cdar pending))]
        [else (r12-read/raw r)]))))
 
-(define (r12-read/raw r)
+(define (r12-read-raw-record! r)
   (define hdr (r12-read-exact! r 5))
-  (define type (bytes-ref hdr 0))
   (define len (+ (* 256 (bytes-ref hdr 3)) (bytes-ref hdr 4)))
-  (define body (r12-read-exact! r len))
+  (when (> len 18432) (raise (tls-alert 22 "record_overflow")))   ; RFC 5246 6.2.3: 2^14 + 2048
+  (cons hdr (r12-read-exact! r len)))
+
+(define (r12-read/raw r)
+  (define rec (r12-read-raw-record! r))
+  (r12-process-record r (car rec) (cdr rec)))
+
+(define (r12-process-record r hdr body)
+  (define type (bytes-ref hdr 0))
   (cond
     ;; this layer exists only once both ChangeCipherSpecs have passed, so
     ;; every record is protected; an unprotected one is attacker-writable
@@ -214,13 +220,15 @@
           (cbc-open key (if (r12-we-are-client? r) (r12-smac r) (r12-cmac r)) (r12-mac r) (r12-etm? r) seq type body)]
          [else
           (define fixed (if (r12-we-are-client? r) (r12-sfixed r) (r12-cfixed r)))
-          (define-values (nonce ct)
-            (if (r12-chacha? r)
-                (values (xor-iv fixed seq) body)
-                (values (bytes-append fixed (subbytes body 0 (min 8 (bytes-length body))))
-                        (subbytes body (min 8 (bytes-length body))))))
-          (define a (aad seq type (- (bytes-length ct) (aead-tag (r12-cipher r)))))
-          (aead-open (r12-cipher r) key nonce a ct)]))
+          (define explicit-len (if (r12-chacha? r) 0 8))
+          ;; a record must hold the explicit nonce and the tag
+          (and (>= (bytes-length body) (+ explicit-len (aead-tag (r12-cipher r))))
+               (let-values ([(nonce ct)
+                             (if (r12-chacha? r)
+                                 (values (xor-iv fixed seq) body)
+                                 (values (bytes-append fixed (subbytes body 0 8)) (subbytes body 8)))])
+                 (define a (aad seq type (- (bytes-length ct) (aead-tag (r12-cipher r)))))
+                 (aead-open (r12-cipher r) key nonce a ct)))]))
      (unless pt (raise (tls-alert 20 "bad_record_mac")))
      (when (> (bytes-length pt) 16384) (raise (tls-alert 22 "record_overflow")))
      (set-r12-rseq! r (add1 seq))
@@ -318,6 +326,7 @@
                    (and padlen (subbytes pt 0 (- (bytes-length pt) padlen 1)))))))]
     [else
      (and (>= n (+ 16 16)) (zero? (modulo n 16))
+          (>= (- n 16) (+ mac-len 1))              ; room for the MAC and the padding length byte
           (let* ([pt (decrypt (subbytes body 0 16) (subbytes body 16))]
                  [ptlen (bytes-length pt)]
                  [padlen (padding-ok? pt)]
@@ -340,6 +349,8 @@
 ;; (CH||SH already accumulated as raw bytes), sh (ServerHello msg),
 ;; client-random, server chosen fields, opts.
 (define (tls12-client-finish rl-in rl-out hs raw-transcript sh client-random opts)
+  (with-decode-errors (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts)))
+(define (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts)
   (define host (hash-ref opts 'host #f))
   (define verify? (hash-ref opts 'verify? #t))
   (define verify-hostname? (hash-ref opts 'verify-hostname? #f))
@@ -362,7 +373,12 @@
                 [ssid (subbytes sh 39 (+ 39 sid-len))])
            (and (positive? (bytes-length csid)) (equal? csid ssid)))))
   (cond
-   [resuming? (tls12-client-resume rl-in rl-out raw-transcript sh client-random ticket12-box)]
+   [resuming?
+    (unless (= suite (vector-ref (unbox ticket12-box) 2))
+      (raise (tls-alert 47 "resumed session with a different cipher suite")))
+    (unless (eq? (and exts-em? #t) (vector-ref (unbox ticket12-box) 3))
+      (raise (tls-alert 40 "extended_master_secret mismatch on resumption")))   ; RFC 7627 5.3
+    (tls12-client-resume rl-in rl-out raw-transcript sh client-random ticket12-box)]
    [else
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (unless kx (raise (tls-error "server chose unsupported 1.2 suite")))
@@ -533,6 +549,8 @@
 ;; into the last 8 bytes of ServerHello.random when it negotiates TLS 1.2.
 (define DOWNGRADE-12 #"\x44\x4f\x57\x4e\x47\x52\x44\x01")
 (define (tls12-accept rl-in rl-out hs ch client-random suite opts)
+  (with-decode-errors (tls12-accept* rl-in rl-out hs ch client-random suite opts)))
+(define (tls12-accept* rl-in rl-out hs ch client-random suite opts)
   (define cert-ders (hash-ref opts 'cert-ders))
   (define key (hash-ref opts 'key))
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
@@ -560,6 +578,7 @@
     (and ticket-store presented-ticket
          (let ([e (hash-ref ticket-store presented-ticket #f)])
            (and e (= (vector-ref e 1) suite)
+                (eq? (vector-ref e 2) (and ems? #t))   ; RFC 7627 5.3: no resumption across an EMS change
                 (eq? (vector-ref e 4) etm?)        ; RFC 7366 3: the framing cannot change on resumption
                 (< (- (current-inexact-milliseconds) (vector-ref e 3)) (* 1000 7200)) e))))
   (define tr (box ch))                           ; transcript begins with ClientHello
@@ -568,10 +587,15 @@
   (cond
    [resume-entry
     ;; abbreviated handshake: recover the master secret, skip cert/kx
-    (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn (vector-ref resume-entry 0))]
+    (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn resume-entry
+                         (not (hash-ref opts 'tls12-only? #f)))]
    [else
+  ;; RFC 8446 4.1.3: the downgrade sentinel is written only by a server that
+  ;; could have negotiated TLS 1.3; a 'tls12 context must not set it
   (define server-random
-    (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r)) ; downgrade sentinel
+    (let ([r (random-bytes 32)])
+      (unless (hash-ref opts 'tls12-only? #f) (bytes-copy! r 24 DOWNGRADE-12))
+      r))
   ;; ServerHello (1.2)
   (define issue-ticket? (and ticket-store ticket-ext))    ; both sides support tickets
   (define sh-exts (bytes-append
@@ -686,7 +710,9 @@
   ;; and is covered by the server Finished hash.
   (when (and ticket-store ticket-ext)
     (define ticket (random-bytes 48))
-    (hash-set! ticket-store ticket (vector master suite (and ems? #t) (current-inexact-milliseconds) etm?))
+    ;; #(master suite ems? issued-ms etm? client-certs verified?)
+    (hash-set! ticket-store ticket (vector master suite (and ems? #t) (current-inexact-milliseconds) etm?
+                                           (unbox client-ders) client-verified?))
     (define nst-body (bytes-append (u32 7200) (vec 2 ticket)))
     (define nst (bytes-append (u8 4) (u24 (bytes-length nst-body)) nst-body))
     (tr+ nst)
@@ -701,13 +727,18 @@
 ;; A2 (1.2): abbreviated (resumption) server handshake — ServerHello + CCS +
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
 ;; recovered master secret and the new randoms (no Certificate/ServerKeyExchange).
-(define (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn master)
+(define (tls12-server-resume rl-in rl-out hs ch client-random suite etm? neg-alpn entry sentinel?)
+  (define master (vector-ref entry 0))
+  (define ems? (vector-ref entry 2))
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (define tr (box ch))
   (define (tr+ b) (set-box! tr (bytes-append (unbox tr) b)))
-  (define server-random (let ([r (random-bytes 32)]) (bytes-copy! r 24 DOWNGRADE-12) r))
+  (define server-random (let ([r (random-bytes 32)]) (when sentinel? (bytes-copy! r 24 DOWNGRADE-12)) r))
   (define sid (let ([sl (bytes-ref ch 38)]) (subbytes ch 39 (+ 39 sl)))) ; echo the client's session id
-  (define sh-exts (bytes-append (ext #x0023 #"") (if etm? (ext #x0016 #"") #"")
+  ;; no SessionTicket extension here: RFC 5077 3.3 would then require a
+  ;; NewSessionTicket (ticket renewal), which this server does not do
+  (define sh-exts (bytes-append (if ems? (ext #x0017 #"") #"")            ; RFC 7627 5.3: echoed on resumption
+                                (if etm? (ext #x0016 #"") #"")
                                 (if neg-alpn (ext #x0010 (vec 2 (vec 1 neg-alpn))) #"")
                                 (ext #xff01 (vec 1 #""))))
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 sid) (u16 suite) (u8 0) (vec 2 sh-exts)))
@@ -723,16 +754,21 @@
   (unless (= cft 20) (raise (tls-error "expected client Finished (resume)")))
   (define expect-cfin (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-cfin (subbytes cfmsg 4)) (raise (tls-alert 51 "client Finished mismatch (resume)")))
-  (make-conn-12 r '() expect-cfin #f neg-alpn))
+  ;; the original handshake's client identity carries over
+  (make-conn-12 r (vector-ref entry 5) expect-cfin (vector-ref entry 6) neg-alpn))
 
 ;; =====================================================================
 ;; helpers
 ;; =====================================================================
 (define (write-plaintext out type payload)
   (with-transport-errors
-    (write-bytes (bytes-append (bytes type 3 3)
-                               (bytes (arithmetic-shift (bytes-length payload) -8) (bitwise-and (bytes-length payload) 255))
-                               payload) out)
+    (let loop ([off 0])                 ; at most 2^14 bytes per record
+      (define end (min (bytes-length payload) (+ off 16384)))
+      (define chunk (subbytes payload off end))
+      (write-bytes (bytes-append (bytes type 3 3)
+                                 (bytes (arithmetic-shift (bytes-length chunk) -8) (bitwise-and (bytes-length chunk) 255))
+                                 chunk) out)
+      (when (< end (bytes-length payload)) (loop end)))
     (flush-output out)))
 
 ;; Read raw records until a ChangeCipherSpec passes (discard it). Handshake
@@ -949,10 +985,12 @@
                    (rktcrypto_p384_pubkey pub priv) (values priv pub))]
        [(#x0019) (let loop () (let ([priv (random-bytes 66)] [pub (make-bytes 133)])
                                 (bytes-set! priv 0 (bitwise-and (bytes-ref priv 0) 1))
-                                (if (eqv? 1 (rktcrypto_p521_pubkey pub priv)) (values priv pub) (loop))))])]))
+                                (if (eqv? 1 (rktcrypto_p521_pubkey pub priv)) (values priv pub) (loop))))]
+       [else (raise (tls-alert 47 "unsupported key exchange group"))])]))
 
 ;; premaster secret from our private key and the peer's public value
 (define (kx-secret group priv peer)
+  (unless (bytes? group) (check-peer-public! group peer))
   (cond
     [(bytes? group)
      (define out (make-bytes (bytes-length group)))
@@ -963,7 +1001,10 @@
      (strip-leading-zeros out)]
     [else
      (case group
-       [(#x001d) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519"))) o)]
+       [(#x001d) (let ([o (make-bytes 32)])
+                   (unless (eqv? 1 (rktcrypto_x25519 o priv peer)) (raise (tls-error "x25519")))
+                   (when (for/and ([b (in-bytes o)]) (zero? b)) (raise (tls-alert 47 "invalid peer key share")))
+                   o)]
        [(#x0017) (let ([o (make-bytes 32)]) (unless (eqv? 1 (rktcrypto_p256_ecdh o priv peer)) (raise (tls-error "p256"))) o)]
        [(#x0018) (let ([o (make-bytes 48)]) (unless (eqv? 1 (rktcrypto_p384_ecdh o priv peer)) (raise (tls-error "p384"))) o)]
        [(#x0019) (let ([o (make-bytes 66)]) (unless (eqv? 1 (rktcrypto_p521_ecdh o priv peer)) (raise (tls-error "p521"))) o)])]))

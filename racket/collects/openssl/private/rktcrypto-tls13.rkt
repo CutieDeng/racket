@@ -141,7 +141,7 @@
             ;; another thread is reading: it keeps the peer draining
             (sync (handle-evt out void) (semaphore-peek-evt lock))
             (loop off #t)])]))))
-(provide write-draining)
+(provide write-draining MAX-PENDING-RECORDS)
 
 ;; report raw transport I/O errors as TLS (network) errors, so that
 ;; callers' network-retry logic applies to them as it did with the
@@ -205,7 +205,9 @@
 ;; Reads one record; returns (values content-type payload-bytes). Decrypts
 ;; when a read key is installed (skipping the outer app_data type and the
 ;; inner content-type/padding). Records queued by a draining write come
-;; first.
+;; first; they are queued as raw ciphertext and decrypted only here, in
+;; order, so that a KeyUpdate in the queue takes effect before the records
+;; that follow it.
 (define (rl-read-record r)
   (call-with-semaphore
    (rl-lock r)
@@ -214,7 +216,7 @@
      (cond
        [(pair? pending)
         (set-rl-pending! r (cdr pending))
-        (values (caar pending) (cdar pending))]
+        (rl-process-record r (caar pending) (cdar pending))]
        [else (rl-read-record/raw r)]))))
 
 ;; Non-blocking variant: (values type payload) when a whole record is
@@ -229,7 +231,7 @@
      (cond
        [(pair? pending)
         (set-rl-pending! r (cdr pending))
-        (values (caar pending) (cdar pending))]
+        (rl-process-record r (caar pending) (cdar pending))]
        [else
         (case (rl-fill-nb! r)
           [(record) (rl-read-record/raw r)]
@@ -243,18 +245,25 @@
   (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) #f)])
     (case (if (>= (length (rl-pending r)) MAX-PENDING-RECORDS) 'full (rl-fill-nb! r))
       [(record)
-       (define-values (type payload) (rl-read-record/raw r))
-       (set-rl-pending! r (append (rl-pending r) (list (cons type payload))))
+       (set-rl-pending! r (append (rl-pending r) (list (rl-read-raw-record! r))))
        #t]
       [(eof full) #f]
       [else #t])))
 
-(define (rl-read-record/raw r)
+;; one record's bytes, (cons header body); lock held
+(define (rl-read-raw-record! r)
   (define hdr (rl-read-exact! r 5))
   (define len (be->int hdr 3 5))
   ;; RFC 8446 §5.2: TLSCiphertext.length MUST NOT exceed 2^14 + 256.
   (when (> len 16640) (raise (tls-alert 22 "record_overflow")))
-  (define body (rl-read-exact! r len))
+  (cons hdr (rl-read-exact! r len)))
+
+(define (rl-read-record/raw r)
+  (define rec (rl-read-raw-record! r))
+  (rl-process-record r (car rec) (cdr rec)))
+
+;; a raw record -> (values type payload), decrypting under the current read key
+(define (rl-process-record r hdr body)
   (define type (bytes-ref hdr 0))
   (cond
     ;; RFC 8446 §5: once a read key is installed, everything the peer sends
@@ -287,15 +296,23 @@
 ;; Writes a record of `type` with `payload`, encrypting when a write key is
 ;; installed. Splits >16KiB payloads.
 (define (rl-write-record r type payload)
-  (define rec
-    (cond
-      [(rl-wkey r)
-       (define inner (bytes-append payload (u8 type)))
-       (begin0 (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner)
-               (set-rl-wseq! r (add1 (rl-wseq r))))]
-      [else (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)]))
-  (with-transport-errors
-    (write-draining (rl-out r) (rl-in r) rec (rl-lock r) (lambda () (rl-drain-one! r)))))
+  (cond
+    [(> (bytes-length payload) 16384)          ; RFC 8446 5.1: a record carries at most 2^14 bytes
+     (let loop ([off 0])
+       (when (< off (bytes-length payload))
+         (define end (min (bytes-length payload) (+ off 16384)))
+         (rl-write-record r type (subbytes payload off end))
+         (loop end)))]
+    [else
+     (define rec
+       (cond
+         [(rl-wkey r)
+          (define inner (bytes-append payload (u8 type)))
+          (begin0 (tls13-seal (rl-waead r) (rl-wkey r) (rl-wiv r) (rl-wseq r) inner)
+                  (set-rl-wseq! r (add1 (rl-wseq r))))]
+         [else (bytes-append (u8 type) (u16 #x0303) (u16 (bytes-length payload)) payload)]))
+     (with-transport-errors
+       (write-draining (rl-out r) (rl-in r) rec (rl-lock r) (lambda () (rl-drain-one! r))))]))
 
 (define (rl-set-read-key! r aead key iv) (set-rl-raead! r aead) (set-rl-rkey! r key) (set-rl-riv! r iv) (set-rl-rseq! r 0))
 (define (rl-set-write-key! r aead key iv) (set-rl-waead! r aead) (set-rl-wkey! r key) (set-rl-wiv! r iv) (set-rl-wseq! r 0))
@@ -603,6 +620,10 @@
   ;; post-handshake messages: reassembled across records, then handled by type
   (define hs-acc #"")
   (define (handle-hs-message! mt msg)
+    (with-handlers ([exn:fail:contract?
+                     (lambda (e) (fatal-alert! r 50 (string-append "malformed post-handshake message: " (exn-message e))))])
+      (handle-hs-message!* mt msg)))
+  (define (handle-hs-message!* mt msg)
     (cond
       [(= mt 24) (when kus (do-key-update! msg))]              ; KeyUpdate
       [(= mt 4) (capture-nst! msg)]                            ; NewSessionTicket
@@ -926,7 +947,17 @@
 ;; =====================================================================
 ;; opts: hash with keys 'host 'alpn (list of bytes) 'verify? 'trust-anchors
 ;;       'groups (subset for HRR testing)
+;; A malformed peer message surfaces from the parsers as a Racket contract
+;; error (an index past a peer-supplied length); report it as decode_error.
+(define-syntax-rule (with-decode-errors body ...)
+  (with-handlers ([exn:fail:contract?
+                   (lambda (e) (raise (tls-alert 50 (string-append "malformed message from peer: " (exn-message e)))))])
+    body ...))
+(provide with-decode-errors)
+
 (define (tls13-connect in out opts)
+  (with-decode-errors (tls13-connect* in out opts)))
+(define (tls13-connect* in out opts)
   (define host (hash-ref opts 'host #f))
   (define alpn (hash-ref opts 'alpn '()))
   (define verify? (hash-ref opts 'verify? #t))
@@ -1082,9 +1113,12 @@
     [(equal? sh-random HRR-RANDOM)
      ;; server told us which group to use
      (define-values (suite exts) (parse-server-hello sh))
-     (define ks-ext (assoc #x0033 exts))
+     (define ks-ext (or (assoc #x0033 exts) (raise (tls-alert 47 "HelloRetryRequest without key_share"))))
      (define cookie (let ([c (assoc #x002c exts)]) (and c (subbytes (cdr c) 2))))
      (define want-group (be->int (cdr ks-ext) 0 2))
+     (unless (and (memv want-group groups) (not (memv want-group share-groups)))
+       (raise (tls-alert 47 "HelloRetryRequest for a group we did not offer, or already supplied")))
+     (unless (suite-supported? suite) (raise (tls-alert 47 "HelloRetryRequest with an unsupported suite")))
      ;; switch transcript to synthetic-message form: replace CH with hash-of-CH msg
      (define-values (h aead klen ilen dname) (suite-params suite))
      (tr-set-alg! tr h)
@@ -1096,6 +1130,10 @@
      (rl-write-record r 22 ch2)
      (define-values (sh2-type sh2) (hsr-next hs))
      (unless (= sh2-type 2) (raise (tls-error "expected ServerHello after HRR")))
+     ;; RFC 8446 4.1.4: the second ServerHello must keep the suite, must not be another HRR
+     (when (equal? (subbytes sh2 6 38) HRR-RANDOM) (raise (tls-alert 10 "second HelloRetryRequest")))
+     (let-values ([(suite2 exts2) (parse-server-hello sh2)])
+       (unless (= suite2 suite) (raise (tls-alert 47 "ServerHello suite differs from HelloRetryRequest"))))
      (finish-client-handshake r hs tr sh2 want-group privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth resume-box)]
     [else
      (define-values (suite exts) (parse-server-hello sh))
@@ -1104,8 +1142,12 @@
                             (= #x0304 (be->int (cdr sv-ext) 0 2))))
      (cond
        [chose-13?
+        ;; RFC 8446 4.1.3: legacy_session_id_echo must echo ours (a TLS 1.2
+        ;; server may answer with its own session id instead)
+        (unless (equal? (subbytes sh 39 (+ 39 (bytes-ref sh 38))) session-id)
+          (raise (tls-alert 47 "ServerHello session id does not echo ours")))
         (tr-add! tr sh)
-        (define ks-ext (assoc #x0033 exts))
+        (define ks-ext (or (assoc #x0033 exts) (raise (tls-alert 109 "ServerHello without key_share"))))
         (define grp (be->int (cdr ks-ext) 0 2))
         (finish-client-handshake-with-suite r hs tr sh suite exts grp privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth resume-box)]
        [else
@@ -1142,7 +1184,9 @@
   (unless alg (raise (tls-error "server chose unsupported cipher suite")))
   (tr-set-alg! tr alg)
   ;; server key_share
-  (define ks-ext (assoc #x0033 exts))
+  (define ks-ext (or (assoc #x0033 exts) (raise (tls-alert 109 "ServerHello without key_share"))))
+  (unless (and (>= (bytes-length (cdr ks-ext)) 4) (= grp (be->int (cdr ks-ext) 0 2)) (hash-ref privs grp #f))
+    (raise (tls-alert 47 "server key_share for a group we did not offer a share for")))
   (define peer-pub (subbytes (cdr ks-ext) 4))
   (define ecdhe (compute-ecdhe grp (hash-ref privs grp) peer-pub))
   (define k (ks alg aead klen ilen #f #f #f #f #f #f))
@@ -1151,6 +1195,14 @@
   ;; (EncryptedExtensions + Finished, no Certificate/CertificateVerify).
   (define offered-psk (and resume-box (tls-session? (unbox resume-box)) (unbox resume-box)))
   (define resuming? (and offered-psk (assoc #x0029 exts) #t))
+  (when resuming?
+    ;; RFC 8446 4.2.11: selected_identity names our single offer, and the
+    ;; selected suite's hash must be the PSK's hash
+    (define psk-ext (cdr (assoc #x0029 exts)))
+    (unless (and (= 2 (bytes-length psk-ext)) (zero? (be->int psk-ext 0 2)))
+      (raise (tls-alert 47 "ServerHello pre_shared_key selects an identity we did not offer")))
+    (unless (let-values ([(a _1 _2 _3 _4) (suite-params (tls-session-suite offered-psk))]) (eqv? a alg))
+      (raise (tls-alert 47 "ServerHello suite hash differs from the resumed session's"))))
   (ks-derive-handshake! k ecdhe (and resuming? (tls-session-psk offered-psk)))
   (define th-chsh (tr-hash tr))
   (ks-hs-traffic! k th-chsh)
@@ -1288,10 +1340,41 @@
     (define k (random-bytes 32))
     (if (eqv? 1 (rktcrypto_p256_pubkey (make-bytes 65) k)) k (loop))))
 
+;; ---- peer public value validation (RFC 8446 4.2.8.2, RFC 7748) ----
+;; Exact encoding length for the group, and for the NIST curves the point
+;; must lie on the curve: the C routines take fixed-size buffers and do
+;; not check membership. Field arithmetic here is on public data.
+(define nist-curves   ; group -> (list p b field-bytes)
+  (hash #x0017 (list (- (+ (- (expt 2 256) (expt 2 224)) (expt 2 192) (expt 2 96)) 1)
+                     #x5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b 32)
+        #x0018 (list (- (+ (- (- (expt 2 384) (expt 2 128)) (expt 2 96)) (expt 2 32)) 1)
+                     #xb3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef 48)
+        #x0019 (list (- (expt 2 521) 1)
+                     #x051953eb9618e1c9a1f929a21a0b68540eea2da725b99b315f3b8b489918ef109e156193951ec7e937b1652c0bd3bb1bf073573df883d2c34f1ef451fd46b503f00 66)))
+(define (bytes->nat bs) (for/fold ([n 0]) ([b (in-bytes bs)]) (+ (* n 256) b)))
+(define (check-peer-public! group pub)
+  (define (bad) (raise (tls-alert 47 "invalid peer key share")))     ; illegal_parameter
+  (cond
+    [(= group #x001d) (unless (= (bytes-length pub) 32) (bad))]
+    [(hash-ref nist-curves group #f)
+     => (lambda (c)
+          (define p (car c)) (define b (cadr c)) (define n (caddr c))
+          (unless (and (= (bytes-length pub) (+ 1 (* 2 n))) (= (bytes-ref pub 0) 4)) (bad))
+          (define x (bytes->nat (subbytes pub 1 (+ 1 n))))
+          (define y (bytes->nat (subbytes pub (+ 1 n))))
+          (unless (and (< x p) (< y p)
+                       (= (modulo (* y y) p) (modulo (+ (* x x x) (* -3 x) b) p)))
+            (bad)))]
+    [else (bad)]))
+(provide check-peer-public!)
+
 (define (compute-ecdhe group priv peer-pub)
+  (check-peer-public! group peer-pub)
   (case group
     [(#x001d) (let ([out (make-bytes 32)])
                 (unless (eqv? 1 (rktcrypto_x25519 out priv peer-pub)) (raise (tls-error "x25519 failed")))
+                ;; RFC 8446 7.4.2: abort on an all-zero shared secret (low-order point)
+                (when (zero? (bytes->nat out)) (raise (tls-alert 47 "invalid peer key share")))
                 out)]
     [(#x0017) (let ([out (make-bytes 32)])
                 (unless (eqv? 1 (rktcrypto_p256_ecdh out priv peer-pub)) (raise (tls-error "p256 ecdh failed")))
@@ -1346,6 +1429,8 @@
 ;; opts: hash with 'cert-ders (list of DER, leaf first), 'key (private-key
 ;;       struct: (cons type der)), 'alpn (list of bytes we support)
 (define (tls13-accept in out opts)
+  (with-decode-errors (tls13-accept* in out opts)))
+(define (tls13-accept* in out opts)
   (define cert-ders (hash-ref opts 'cert-ders))
   (define key (hash-ref opts 'key))       ; (cons 'rsa der) or (cons 'p256 raw-scalar)
   (define our-alpn (hash-ref opts 'alpn '()))
@@ -1361,7 +1446,8 @@
   ;; carries 0x0304) and offers a 1.3 suite; otherwise fall to TLS 1.2.
   (define sv (let ([e (assoc #x002b ch-exts)]) (and e (cdr e))))
   (define client-13?
-    (and sv (positive? (bytes-length sv))
+    (and (not (hash-ref opts 'tls12-only? #f))     ; a 'tls12 server context negotiates 1.2 only
+         sv (positive? (bytes-length sv))
          (let ([n (bytes-ref sv 0)])
            (let loop ([i 1]) (and (< i (+ 1 n))
                                   (or (= #x0304 (be->int sv i (+ i 2))) (loop (+ i 2))))))))
@@ -1386,7 +1472,7 @@
   (define-values (alg aead klen ilen dname) (suite-params suite))
   (define tr (make-transcript alg))
   ;; key_share: find a group we both support
-  (define offered (parse-key-share-list (cdr (assoc #x0033 ch-exts))))
+  (define offered (parse-key-share-list (cdr (or (assoc #x0033 ch-exts) (raise (tls-alert 109 "ClientHello without key_share"))))))
   (define chosen (or (for/or ([g (in-list (list GROUP-X25519 GROUP-P256 GROUP-P384 GROUP-P521))])
                        (and (assoc g offered) g))
                      (raise (tls-error "no common key-share group"))))

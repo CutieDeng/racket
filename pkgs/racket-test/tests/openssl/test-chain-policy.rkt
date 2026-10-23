@@ -46,6 +46,32 @@
   (check-regexp-match #rx"critical extension" (verifies? (list (der "leaf-critical.crt"))))
   ;; untrusted: no anchor
   (check-regexp-match #rx"no trusted anchor" (verifies? (list (der "leaf-ip.crt")) #:anchors '()))
+  ;; self-issued intermediate (key rollover) under a pathlen:1 root: not counted
+  (check-true (verifies? (list (der "leaf-si.crt") (der "inter-si2.crt") (der "inter-si.crt"))
+                         #:anchors (list (der "root-p1.crt"))))
+  ;; X.509 v1 self-signed root as the anchor
+  (check-true (verifies? (list (der "leaf-v1.crt")) #:anchors (list (der "root-v1.crt"))))
+  ;; a self-signed end entity pinned as its own anchor
+  (check-true (verifies? (list (der "selfsigned.crt")) #:anchors (list (der "selfsigned.crt"))))
+  ;; anyExtendedKeyUsage does not satisfy serverAuth (as libssl)
+  (check-regexp-match #rx"extendedKeyUsage"
+                      (verifies? (list (der "leaf-anyeku.crt") (der "inter-anyeku.crt"))))
+  ;; name constraints reach a CN used as the host name (no SAN), whatever it looks like
+  (check-regexp-match #rx"permitted names"
+                      (verifies? (list (der "leaf-nc-cn.crt") (der "inter-nc.crt"))))
+  ;; rfc822Name constraint: exact host unless the base starts with a dot
+  (check-true (verifies? (list (der "leaf-nc-email-ok.crt") (der "inter-nc-email.crt")) #:purpose #f))
+  (check-regexp-match #rx"permitted names"
+                      (verifies? (list (der "leaf-nc-email-bad.crt") (der "inter-nc-email.crt")) #:purpose #f))
+  ;; a critical inhibitAnyPolicy is understood (ignored: no policy processing)
+  (check-true (verifies? (list (der "leaf-iap.crt") (der "inter-iap.crt"))))
+  ;; an unparsable anchor is skipped, not fatal
+  (check-true (verifies? (list (der "leaf-ip.crt") (der "inter-plain.crt")) #:anchors (list #"\0\0\0" root)))
+  ;; wildcard: "*.test" is too broad to match anything; "*.example.test" matches one label
+  (define leaf-wild (parse-certificate (der "leaf-wild.crt")))
+  (check-exn exn:fail? (lambda () (check-hostname leaf-wild "evil.test")))
+  (check-not-exn (lambda () (check-hostname leaf-wild "a.example.test")))
+  (check-exn exn:fail? (lambda () (check-hostname leaf-wild "a.b.example.test")))
   ;; IP-address SANs
   (define leaf-ip (parse-certificate (der "leaf-ip.crt")))
   (check-not-exn (lambda () (check-hostname leaf-ip "127.0.0.1")))

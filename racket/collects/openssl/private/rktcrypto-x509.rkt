@@ -35,7 +35,8 @@
    eku              ; list of oid-strings or #f
    san-other        ; other subjectAltName entries: list of (type . value), type in 'email 'ip 'uri 'dn 'other
    name-constraints ; #f or (cons permitted excluded), each a list of (type . value) general subtrees
-   critical-unknown) ; list of oid-strings of critical extensions this parser does not understand
+   critical-unknown ; list of oid-strings of critical extensions this parser does not understand
+   version)         ; X.509 version number: 1, 2 or 3
   #:transparent)
 
 ;; Public key: type is 'rsa 'ec 'ed25519; for RSA (n . e) big-endian
@@ -66,9 +67,11 @@
 (define known-critical-exts
   (list oid-ext-san oid-ext-bc oid-ext-ku oid-ext-eku oid-ext-nc
         #"\x55\x1d\x20"     ; certificatePolicies (not evaluated: no policy processing is requested)
-        #"\x55\x1d\x23"     ; authorityKeyIdentifier
-        #"\x55\x1d\x0e"     ; subjectKeyIdentifier
-        #"\x55\x1d\x24"))   ; policyConstraints: ignored only if no policy processing
+        #"\x55\x1d\x24"     ; policyConstraints   (same)
+        #"\x55\x1d\x21"     ; policyMappings      (same)
+        #"\x55\x1d\x36"     ; inhibitAnyPolicy    (same)
+        #"\x55\x1d\x1f"     ; cRLDistributionPoints (no CRL processing)
+        #"\x2b\x06\x01\x05\x05\x07\x01\x0e"))   ; proxyCertInfo (libssl lists it as supported)
 
 (define (oid-symbol d)
   (cond
@@ -270,7 +273,10 @@
    (parse-spki spki)
    (raw-time (car val-kids)) (raw-time (cadr val-kids))
    (parse-name subject) (parse-name issuer)
-   san is-ca path-len ku eku san-other nc critical-unknown))
+   san is-ca path-len ku eku san-other nc critical-unknown
+   (if (and (pair? (der-children tbs)) (= #xA0 (der-tag (car (der-children tbs)))))
+       (add1 (der-uint (car (der-children (car (der-children tbs))))))
+       1)))
 
 (define (raw-time d) (bytes->string/latin-1 (der-content d)))
 
@@ -313,7 +319,7 @@
   (define m (regexp-match #rx#"-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----(.*?)-----END" s))
   (unless m (error 'pem->private-key "no private key block found"))
   (define label (cadr m))
-  (define der (base64-decode (caddr m)))
+  (define der (or (base64-decode (caddr m)) (error 'pem->private-key "invalid base64 in private key block")))
   (cond
     [(regexp-match? #rx#"ENCRYPTED PRIVATE KEY" label)           ; PKCS#8 PBES2
      (unless password (error 'pem->private-key "encrypted private key requires a password"))
@@ -336,6 +342,7 @@
   (define curve (or (and params (curve-oid->symbol params)) curve-hint
                     (error 'pem->private-key "EC private key without a named curve")))
   (define size (case curve [(p256) 32] [(p384) 48] [(p521) 66]))
+  (when (> (bytes-length raw) size) (error 'pem->private-key "EC private key longer than the field"))
   (cons curve (if (< (bytes-length raw) size)
                   (bytes-append (make-bytes (- size (bytes-length raw)) 0) raw)
                   raw)))
@@ -357,7 +364,10 @@
      (define params (let ([ks (der-children algid)]) (and (pair? (cdr ks)) (cadr ks))))
      (sec1->key inner (and params (= #x06 (der-tag params)) (curve-oid->symbol params)))]
     ;; RFC 8410: the key is an OCTET STRING holding CurvePrivateKey (the 32-byte seed)
-    [(der-oid=? alg-oid oid-ed25519) (cons 'ed25519 (der-content (der-read inner)))]
+    [(der-oid=? alg-oid oid-ed25519)
+     (define seed (der-content (der-read inner)))
+     (unless (= 32 (bytes-length seed)) (error 'pem->private-key "Ed25519 private key is not 32 bytes"))
+     (cons 'ed25519 seed)]
     [else (error 'pem->private-key "unsupported PKCS#8 key algorithm")]))
 
 ;; ---- Encrypted PKCS#8 (PBES2 = PBKDF2 + AES-CBC), RFC 8018 §6.2 ----
@@ -419,4 +429,16 @@
     (error 'pem->private-key "PKCS#8 decryption failed (wrong password?)"))
   (subbytes pt 0 (- (bytes-length pt) n)))
 
-(provide pem->private-key pkcs8->key)
+(provide pem->private-key pkcs8->key der->private-key)
+
+;; A DER private key: PKCS#8 PrivateKeyInfo, PKCS#1 RSAPrivateKey or SEC1
+;; ECPrivateKey, told apart by their shape (an AlgorithmIdentifier SEQUENCE
+;; second, nine or more INTEGERs starting with 0, or version 1 + OCTET STRING).
+(define (der->private-key der)
+  (define kids (with-handlers ([exn:fail? (lambda (_) (error 'ssl-load-private-key! "not a DER private key"))])
+                 (der-children (der-read der))))
+  (cond
+    [(and (>= (length kids) 3) (= #x30 (der-tag (cadr kids)))) (pkcs8->key der)]
+    [(and (>= (length kids) 9) (andmap (lambda (k) (= #x02 (der-tag k))) kids)) (cons 'rsa der)]
+    [(and (>= (length kids) 2) (= #x02 (der-tag (car kids))) (= #x04 (der-tag (cadr kids)))) (sec1->key der #f)]
+    [else (error 'ssl-load-private-key! "unrecognized DER private key structure")]))
