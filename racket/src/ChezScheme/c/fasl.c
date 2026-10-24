@@ -475,7 +475,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals);
 static ptr bv_fasl_entry(ptr tc, ptr bv, IFASLCODE ty, uptr offset, uptr len, faslFile f, ptr externals);
 static void fillFaslFile(faslFile f);
 static void toolarge(ptr path);
-static iptr iptrin(faslFile f);
+static iptr iptrin_slow(faslFile f);
 static int must_bytein(faslFile f);
 static void skipbytes(iptr n, faslFile f);
 static iptr sizein(faslFile f);
@@ -972,7 +972,7 @@ static void toolarge(ptr path) {
 
 #define bytein(f) (((f)->next == (f)->end) ? must_bytein(f) : *((f)->next++))
 
-static iptr iptrin(faslFile f) {
+static iptr iptrin_slow(faslFile f) {
   uptr n, m; octet k, k0;
 
   k0 = k = bytein(f);
@@ -1029,10 +1029,35 @@ uptr S_fasl_uptrin(faslFile f, INT *bytes_consumed) {
   return n;
 }
 
-#define uptrin(f) S_fasl_uptrin(f, NULL)
+/* The one-byte case dominates: lengths, small counts, relocation
+   offsets, and every character of a symbol or string are read through
+   these decoders, and almost all of them fit in one byte.  Take that
+   byte straight from the buffer and fall back to the general decoders
+   for a multi-byte value or an empty buffer. */
+FORCEINLINE uptr uptrin_fast(faslFile f) {
+  if (f->next != f->end) {
+    octet k = *(f->next);
+    if (!(k & 0x80)) { f->next++; return (uptr)k; }
+  }
+  return S_fasl_uptrin(f, NULL);
+}
+
+FORCEINLINE iptr iptrin(faslFile f) {
+  if (f->next != f->end) {
+    octet k = *(f->next);
+    if (!(k & 1)) {
+      iptr n = (iptr)((k & 0x7f) >> 1);
+      f->next++;
+      return (k & 0x80) ? -n : n;
+    }
+  }
+  return iptrin_slow(f);
+}
+
+#define uptrin(f) uptrin_fast(f)
 
 static iptr sizein(faslFile f) {
-  iptr n = S_fasl_uptrin(f, NULL);
+  iptr n = (iptr)uptrin_fast(f);
   if ((uptr)n > (uptr)most_positive_fixnum)
     toolarge(f->uf.path);
   return n;
