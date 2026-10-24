@@ -84,7 +84,7 @@ void rktcrypto_chacha20_blocks_avx512(uint32_t state[16], const unsigned char *i
 void rktcrypto_chacha20_blocks2_avx512(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 /* rktasm/x86 kernel (rktcrypto_chacha20_avx2.S): the AVX2 tier, `units` x 512 bytes, eight blocks per unit */
 void rktcrypto_chacha20_blocks_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
-/* rktasm/x86 kernel (rktcrypto_chacha20_ssse3.S): the SSSE3 tier, `units` x 256 bytes, four blocks per unit */
+/* rktasm/x86 kernel (rktcrypto_chacha20_ssse3.S): the SSSE3 tier, `units` x 512 bytes, two four-block groups per unit (state[12] += 8) */
 void rktcrypto_chacha20_blocks_ssse3(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);
 void rktcrypto_chacha20_blocks_ssse3_4(uint32_t state[16], const unsigned char *in, unsigned char *out, intptr_t units);   /* one four-block group per 256-byte unit */
 /* rktasm/x86 kernel (rktcrypto_poly1305_x86.S): radix-2^64 Poly1305 blocks on MULX; r = {r0, r1, s1 = r1 + r1>>2},
@@ -107,7 +107,7 @@ void rktcrypto_poly1305_ifma_table(const uint64_t r[3], uint64_t tab[80]);
 void rktcrypto_chacha20poly1305_units_x86(uint32_t state[16], const unsigned char *in, unsigned char *out,
                                           intptr_t units, const unsigned char *mac, uint64_t hr[6]);
 /* the same fused loop on the AVX2 tier (512-byte units, 32 Poly1305 blocks each) and the SSSE3 tier
-   (256-byte units, 16 blocks); both need MULX (BMI2) */
+   (512-byte units of two four-block groups, 32 blocks); both need MULX (BMI2) */
 void rktcrypto_chacha20poly1305_units_avx2(uint32_t state[16], const unsigned char *in, unsigned char *out,
                                            intptr_t units, const unsigned char *mac, uint64_t hr[6]);
 void rktcrypto_chacha20poly1305_units_ssse3(uint32_t state[16], const unsigned char *in, unsigned char *out,

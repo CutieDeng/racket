@@ -109,6 +109,21 @@
 (err/rt-test (aead-encrypt 'chacha20-poly1305 rfc-key (make-bytes 8) #"x") exn:fail?)
 (err/rt-test (aead-encrypt 'aes-gcm rfc-key rfc-nonce #"x") exn:fail:contract?)
 
+;; expanded keys: wrong raw key length, and an expanded key used with another algorithm
+;; (aes-128-ccm and aes-256-ccm expanded keys have the same length on every platform)
+(err/rt-test (aead-expand-key 'aes-256-gcm (make-bytes 16)) exn:fail?)
+(err/rt-test (aead-expand-key 'aes-128-ccm (make-bytes 32)) exn:fail?)
+(let* ([k128 (make-bytes 16 1)] [k256 (make-bytes 32 2)] [nonce (make-bytes 12 3)]
+       [x128 (aead-expand-key 'aes-128-ccm k128)] [x256 (aead-expand-key 'aes-256-ccm k256)]
+       [xgcm (aead-expand-key 'aes-256-gcm k256)]
+       [sealed (aead-encrypt 'aes-128-ccm x128 nonce #"hello")])
+  (test #"hello" aead-decrypt 'aes-128-ccm x128 nonce sealed)
+  (err/rt-test (aead-encrypt 'aes-256-ccm x128 nonce #"x") exn:fail?)
+  (err/rt-test (aead-encrypt 'aes-128-ccm x256 nonce #"x") exn:fail?)
+  (err/rt-test (aead-decrypt 'aes-256-ccm x128 nonce sealed) exn:fail?)
+  (err/rt-test (aead-encrypt 'aes-256-ccm xgcm nonce #"x") exn:fail?)
+  (err/rt-test (aead-decrypt 'aes-256-gcm x256 nonce sealed) exn:fail?))
+
 ;; ----------------------------------------
 ;; secretbox (high-level, auto nonce, misuse-resistant)
 

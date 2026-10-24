@@ -21,7 +21,7 @@ static unsigned char pt[MAXLEN + 64], cta[MAXLEN + 64], ctb[MAXLEN + 64], pa[MAX
 static void fused(int on)   /* 1: everything; 0: the two-pass intrinsics path (no fused kernel of either tier) */
 {
   if (on) rktcrypto_cpu_override_features(0, 0);
-  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX2), 1);
+  else rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX2 | RKTCRYPTO_CPU_X86_SSSE3), 1);   /* SSSE3 off too: otherwise the SSE fused kernel would be its own oracle */
 }
 static void aesni_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX512), 1); }
 static void sse_tier(void) { rktcrypto_cpu_override_features(rktcrypto_cpu_features() & ~(RKTCRYPTO_CPU_X86_VAES | RKTCRYPTO_CPU_X86_VPCLMULQDQ | RKTCRYPTO_CPU_X86_AVX512 | RKTCRYPTO_CPU_X86_AVX2), 1); }
@@ -86,7 +86,7 @@ int main(void)
       memset(pa, 0x5a, len);
       ra = open_(k256, key, nonce, aad, alen, buf, len + 16, pa);
       for (i = 0; i < len; i++) if (pa[i] != 0) { wiped = 0; break; }
-      tot++; if (ra != 0 || (len >= 512 && !wiped)) { bad++; if (bad <= 5) printf("TAMPER t=%d len=%ld pos=%ld ra=%d wiped=%d\n", t, len, pos, ra, wiped); } }
+      tot++; if (ra != 0 || (len >= 256 && !wiped)) { bad++; if (bad <= 5) printf("TAMPER t=%d len=%ld pos=%ld ra=%d wiped=%d\n", t, len, pos, ra, wiped); } }
   }
   /* BENCH: AES-256-GCM seal, 16 KiB and 1 MiB, best of 5, fused vs two-pass */
   { unsigned char key[32] = {1, 2, 3}, nonce[12] = {4, 5, 6}; long sizes[2] = {16384, MAXLEN}; int s;

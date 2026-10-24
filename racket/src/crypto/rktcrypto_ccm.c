@@ -29,12 +29,14 @@ static void ccm_bulk_portable(const unsigned char *rk, int Nr, unsigned char X[1
     unsigned char S[16]; const unsigned char *ib = in + 16*b, *macp;
     unsigned char *ob = out + 16*b; uint64_t c; int i;
     rktcrypto_aes_enc_block(rk, Nr, ctr, S);
+    /* sealing MACs the plaintext block before the ciphertext overwrites it (in-place callers pass
+       out == in); opening MACs the plaintext it has just written */
+    if (!mac_out) { for (i = 0; i < 16; i++) X[i] ^= ib[i]; rktcrypto_aes_enc_block(rk, Nr, X, X); }
     for (i = 0; i < 16; i++) ob[i] = (unsigned char)(ib[i] ^ S[i]);
     c = 0; for (i = 0; i < 8; i++) c = (c << 8) | ctr[8 + i];
     c++; for (i = 0; i < 8; i++) ctr[15 - i] = (unsigned char)(c >> (8 * i));
-    macp = mac_out ? ob : ib;
-    for (i = 0; i < 16; i++) X[i] ^= macp[i];
-    rktcrypto_aes_enc_block(rk, Nr, X, X);
+    macp = ob;
+    if (mac_out) { for (i = 0; i < 16; i++) X[i] ^= macp[i]; rktcrypto_aes_enc_block(rk, Nr, X, X); }
   }
 }
 
@@ -115,8 +117,8 @@ static int ccm_seal_rk(const unsigned char rk[240], int Nr, const unsigned char 
   ccm_bulk_seal(rk, Nr, X, ctr, P, O, nfull);
   if (tail) {
     rktcrypto_aes_enc_block(rk, Nr, ctr, S);              /* keystream for tail */
+    memset(padded, 0, 16); memcpy(padded, P + nfull * 16, (size_t)tail);   /* the plaintext tail, before it is overwritten in place */
     for (i = 0; i < tail; i++) O[nfull * 16 + i] = (unsigned char)(P[nfull * 16 + i] ^ S[i]);
-    memset(padded, 0, 16); memcpy(padded, P + nfull * 16, (size_t)tail);
     for (i = 0; i < 16; i++) X[i] ^= padded[i];
     rktcrypto_aes_enc_block(rk, Nr, X, X);
   }

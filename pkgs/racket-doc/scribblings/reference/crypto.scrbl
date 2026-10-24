@@ -282,7 +282,12 @@ expanded private key).}
 Returns the 64-byte expanded private key, the seed followed by its
 public key. Signing with the expanded form skips deriving the public key,
 about half of the work of a signature; the result is as secret as the
-seed. An expanded key is returned unchanged.}
+seed. An expanded key is returned unchanged.
+
+The second half of a 64-byte key is trusted, not recomputed: it must be
+the public key of the seed in the first half, as this function produces.
+Signing with a 64-byte key whose second half is anything else yields
+signatures that leak the private key.}
 
 @defproc[(ed25519-sign [private-key bytes?] [message bytes?]) bytes?]{
 Signs @racket[message] with the seed or expanded private key, returning

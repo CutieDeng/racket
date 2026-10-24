@@ -522,8 +522,13 @@ void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280])
   unsigned char hb[16]; int i;
   for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
 #if defined(__x86_64__) && defined(__ELF__)
-  rktcrypto_gcm_htab_vaes(htab, hb);                      /* the whole table in one kernel pass */
-#else
+  /* the table kernel is AVX-512 + VPCLMULQDQ code; the AES-NI and SSE tiers reach this setup on
+     CPUs without either (an unconditional call was an illegal instruction there) */
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ)) {
+    rktcrypto_gcm_htab_vaes(htab, hb);                    /* the whole table in one kernel pass */
+    return;
+  }
+#endif
   { const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
     __m128i H, p; int k;
     H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
@@ -538,7 +543,6 @@ void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280])
       kk = lo ^ hi;                                         /* Karatsuba rows: lo ^ hi in both halves */
       memcpy(htab + 512 + 16 * i, &kk, 8); memcpy(htab + 512 + 16 * i + 8, &kk, 8);
     } }
-#endif
 }
 
 /* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then

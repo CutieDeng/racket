@@ -309,6 +309,7 @@ static void aes_dec_blk(const unsigned char*rk,int Nr,const unsigned char in[16]
 #define rktcrypto_aes_expand_x86(k,l,rk) 0
 #define rktcrypto_aes_expand_dec_x86(rk,Nr,dk) ((void)0)
 #define rktcrypto_aes_enc_blk_x86(rk,Nr,i,o) ((void)0)
+#define rktcrypto_aes_enc_blk2_x86(rk,Nr,i0,i1,o0,o1) ((void)0)
 #define rktcrypto_aes_dec_blk_x86(dk,Nr,i,o) ((void)0)
 #define rktcrypto_aes_ctr_x86(rk,Nr,c,i,o,l,inc) ((void)0)
 #define rktcrypto_aes_cbc_enc_x86(rk,Nr,iv,i,o,l) ((void)0)

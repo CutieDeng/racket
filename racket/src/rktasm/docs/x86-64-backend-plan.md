@@ -474,7 +474,7 @@ vpsrldq/vpslldq；SHA-NI 缺席且 AVX2+BMI2 时分派）：937 MB/s，OpenSSL �
 AVX2 层 chacha20 4333 / poly1305 7690 / seal 2712，两趟模型 1/(1/C+1/P)=2772；SSE 层 2129 / 6035 / 1560，模型 1574
 ——seal 与两趟模型吻合，差距是结构（AVX-512 以下的层走两趟），不是胶水。OpenSSL 同屏蔽下也是两趟，但其单项更快。
 改法：把 `chacha20poly1305_x86.asm` 的融合结构移植到两层——`chacha20poly1305_avx2.asm`（512 字节单位，
-32 个 Poly 块摊在 40 个 QR2 槽）与 `chacha20poly1305_ssse3.asm`（256 字节单位，16 块），均由对应的明文 ChaCha 内核
+32 个 Poly 块摊在 40 个 QR2 槽）与 `chacha20poly1305_ssse3.asm`（当时 256 字节单位，16 块；X3-5f 重派生后为 512 字节单位、32 块），均由对应的明文 ChaCha 内核
 经脚本变换生成（POLY1305_BLOCK 宏 = x86 融合内核的 MULX 块序列，`${16 * \k}` 在 .for 内求值），GPR 预算与 AVX-512
 版一致（无溢出）；`rktcrypto_chacha20poly1305_fused` 按 AVX-512 → AVX2 → SSSE3 选单位大小（都要 BMI2）。
 门禁 harness 改三层（tier 3/2/1 各 600 组，oracle = 同层清 BMI2 的两趟路径）：0/9000。
@@ -510,6 +510,28 @@ harness 只清 AVX-512 不清 IFMA 时会落到便携循环（真机不会出现
   （1.00×）。Ch 的 (f^g) 跨轮携带不成立（f_{i+1}^g_{i+1} = e_i^f_i，与 e'^e 差一轮）且要第 16 个 GPR（溢出 +32 周期），已撤。
   五周期 a 链界 = 320 周期/块，两边都在界上方 13%，再往下是调度细节，收益不确定，到此为止。
 - **GCM AES-NI 层/SSE 层**：三次交替 7191–7232 / 7191–7210 对 OpenSSL 7167–7183 = 1.00–1.01×，持平，未动。
+
+**X3-5g（2026-10-24/25）——合并 v9.3-dev 后的 subagent 评审与修复（已验证）**：
+- 合并 `v9.3-dev`（8d69192bc2）→ 9f4ac7ab39，唯一冲突 rktcrypto.def；合并树 25 gate、AES 差分、build、integration、
+  core crypto .rktl、openssl 套件（45 文件）全过，只剩 peer-verif.rkt（建连后改 verify，v9.3-dev 既有限制）。
+  发现并修 v9.3-dev 既有缺陷：DH 五个入口只在 rktcrypto_ffc.h 声明、无 C 引用，静态库成员被链接器丢弃
+  （`rktcrypto_dh_keygen: implementation not found`）→ 原型加进 rktcrypto.h 再生 .inc/.def（6cff8842e1）。
+- 两个评审 subagent 的发现与处理：
+  (1) **高**：`rktcrypto_gcm_vaes_setup` 无条件调 AVX-512+VPCLMULQDQ 的表内核，AES-NI/SSE 层在无 AVX-512 的 CPU 上
+  调到它 → GCM ≥256 B 与任何 GCM 展开密钥 SIGILL；lan-11 有 AVX-512，特征覆盖只换分派不换建表，门禁看不见。
+  修：有 AVX512&&VPCLMULQDQ 才走内核，否则 intrinsics 建表（两建表 20000 组逐字节一致）。
+  (2) 便携 AES 分支缺 `rktcrypto_aes_enc_blk2_x86` 宏桩：无 crypto 扩展的 aarch64（`-march=armv8-a`）、riscv 等编译失败。
+  (3) GCM 门禁 `fused(0)` 未清 SSSE3，SSE 层 oracle 是自己；改后仍 0/15000。篡改检查阈值随融合阈值改 256。
+  (4) Racket 层：展开密钥用于另一算法时 x86 报错、其他平台 decrypt 静默 #f → `racket/crypto/aead` 在长度为展开长度时
+  校验头部 magic/alg id；补测试（错长度展开、错算法双向）。
+  (5) 文档：Ed25519 64 字节密钥后半段被信任须写明；README 状态/待做列表、rktcrypto_x86.h 单元大小注释过期。
+- 新增跨层烟测 `smoke.c`：公共 API 全 AEAD 多尺寸（含原地、篡改）+ 摘要 + x25519/ed25519/p256，折叠成一个摘要，
+  原生与 `qemu-x86_64-static -cpu Haswell`（AVX2 层）/`Westmere`（SSE 层）/`qemu64`（便携）四者摘要一致
+  （6b8e75ba…）。它顺带暴露一个**既有**缺陷：AES-CCM 原地 seal 标签错（便携 bulk 先写密文后取 MAC 输入；尾块同；
+  Apple asm bulk 对整块正确、尾块仍错）→ MAC 先于覆盖，Mac/lan-11 原地 seal/open 全尺寸一致。
+- 评审确认正确：合并无丢失（v9.3-dev 改动的 103 文件逐一同一）、再生文件逐字节一致、build.zuo/TABLE 42 个 .S
+  一一对应、`regen check` 25/25、FFI 表/kernel.ss/版本一致、三个 ChaCha 内核寄存器方案与帧边界逐 QR 核对、
+  Poly SSE2 表、SHA-256 两块调度、E(J0) 路径、其余 AVX-512 内核调用点均有守卫。
 
 **DSL `.simd avx512`（2026-10-21）**：函数级指令把向量池扩到 xmm0–31（16–31 仅在压力下使用）；分配后
 驱动做可编码检查——落在 16–31 的寄存器要求指令有 AVX-512(EVEX) 形式，否则报错提示换 EVEX 助记符
