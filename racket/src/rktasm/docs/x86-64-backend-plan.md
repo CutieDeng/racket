@@ -512,10 +512,10 @@ harness 只清 AVX-512 不清 IFMA 时会落到便携循环（真机不会出现
 - **GCM AES-NI 层/SSE 层**：三次交替 7191–7232 / 7191–7210 对 OpenSSL 7167–7183 = 1.00–1.01×，持平，未动。
 
 **X3-5g（2026-10-24/25）——合并 v9.3-dev 后的 subagent 评审与修复（已验证）**：
-- 合并 `v9.3-dev`（8d69192bc2）→ 9f4ac7ab39，唯一冲突 rktcrypto.def；合并树 25 gate、AES 差分、build、integration、
+- 合并 `v9.3-dev`（8d69192bc2）→ 539e746d0d，唯一冲突 rktcrypto.def；合并树 25 gate、AES 差分、build、integration、
   core crypto .rktl、openssl 套件（45 文件）全过，只剩 peer-verif.rkt（建连后改 verify，v9.3-dev 既有限制）。
   发现并修 v9.3-dev 既有缺陷：DH 五个入口只在 rktcrypto_ffc.h 声明、无 C 引用，静态库成员被链接器丢弃
-  （`rktcrypto_dh_keygen: implementation not found`）→ 原型加进 rktcrypto.h 再生 .inc/.def（6cff8842e1）。
+  （`rktcrypto_dh_keygen: implementation not found`）→ 原型加进 rktcrypto.h 再生 .inc/.def（50b80e32d6）。
 - 两个评审 subagent 的发现与处理：
   (1) **高**：`rktcrypto_gcm_vaes_setup` 无条件调 AVX-512+VPCLMULQDQ 的表内核，AES-NI/SSE 层在无 AVX-512 的 CPU 上
   调到它 → GCM ≥256 B 与任何 GCM 展开密钥 SIGILL；lan-11 有 AVX-512，特征覆盖只换分派不换建表，门禁看不见。
