@@ -100,10 +100,10 @@ void S_resize_oblist(void) {
   S_G.oblist = new_oblist;
 }
 
-#define MIX_HASH(hc) (hc += (hc << 10), hc ^= (hc >> 6))
+#define MIX_HASH(hc) SYM_HASH_MIX(hc)
 
 #define SYM_HASH_LOOP(uptr, iptr, extract, mask)  {     \
-    uptr h = (uptr)n + 401887359;                       \
+    uptr h = SYM_HASH_INIT(n);                          \
     while (n--) { h += extract(*s++); MIX_HASH(h); }    \
     return (iptr)h & mask;                              \
   }
@@ -193,7 +193,11 @@ ptr S_intern(const unsigned char *s) {
 
 /* handles string_chars, explicit length */
 ptr S_intern_sc(const string_char *name, iptr n, ptr name_str) {
-  iptr hc = hash_sc(name, n);
+  return S_intern_sc_hc(name, n, hash_sc(name, n), name_str);
+}
+
+/* `hc` is the symbol-name hash of `name`, as `hash_sc` computes it */
+ptr S_intern_sc_hc(const string_char *name, iptr n, iptr hc, ptr name_str) {
   iptr idx = OBINDEX(hc, S_G.oblist_length);
   ptr sym;
   bucket *b;
@@ -230,7 +234,11 @@ ptr S_intern_sc(const string_char *name, iptr n, ptr name_str) {
 }
 
 ptr S_intern3(const string_char *pname, iptr plen, const string_char *uname, iptr ulen, ptr pname_str, ptr uname_str) {
-  iptr hc = hash_uname(uname, ulen);
+  return S_intern3_hc(pname, plen, uname, ulen, hash_uname(uname, ulen), pname_str, uname_str);
+}
+
+/* `hc` is the symbol-name hash of `uname`, as `hash_uname` computes it */
+ptr S_intern3_hc(const string_char *pname, iptr plen, const string_char *uname, iptr ulen, iptr hc, ptr pname_str, ptr uname_str) {
   iptr idx = OBINDEX(hc, S_G.oblist_length);
   ptr sym;
   bucket *b;

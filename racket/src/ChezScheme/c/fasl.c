@@ -482,6 +482,7 @@ static iptr sizein(faslFile f);
 static float singlein(faslFile f);
 static double doublein(faslFile f);
 static iptr stringin(ptr *pstrbuf, iptr start, faslFile f);
+static iptr symbolin(ptr *pstrbuf, iptr start, faslFile f, iptr *phc);
 static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f);
 static void fasl_record(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f, iptr size);
 static IBOOL rtd_equiv(ptr x, ptr y);
@@ -1097,6 +1098,28 @@ static iptr stringin(ptr *pstrbuf, iptr start, faslFile f) {
   return n;
 }
 
+/* Like `stringin`, but also computes the symbol-name hash of the decoded
+   characters (the same value as `hash_sc` in intern.c), so that interning
+   the symbol does not need a second pass over the name. */
+static iptr symbolin(ptr *pstrbuf, iptr start, faslFile f, iptr *phc) {
+  iptr end, n, i; ptr p = *pstrbuf; uptr h;
+
+  end = start + (n = sizein(f));
+  if (Sstring_length(*pstrbuf) < end) {
+     ptr newp = S_string((char *)0, end);
+     for (i = 0; i != start; i += 1) Sstring_set(newp, i, Sstring_ref(p, i));
+     *pstrbuf = p = newp;
+  }
+  h = SYM_HASH_INIT(n);
+  for (i = start; i != end; i += 1) {
+    uptr c = uptrin(f);
+    Sstring_set(p, i, c);
+    h += c; SYM_HASH_MIX(h);
+  }
+  *phc = (iptr)h & most_positive_fixnum;
+  return n;
+}
+
 static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
     IFASLCODE ty = bytein(f);
     switch (ty) {
@@ -1121,16 +1144,16 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
               BOXTYPE(*x) = type_immutable_box;
             return;
         case fasl_type_symbol: {
-            iptr n;
-            n = stringin(pstrbuf, 0, f);
-            *x = S_intern_sc(&STRIT(*pstrbuf, 0), n, Sfalse);
+            iptr n, hc;
+            n = symbolin(pstrbuf, 0, f, &hc);
+            *x = S_intern_sc_hc(&STRIT(*pstrbuf, 0), n, hc, Sfalse);
             return;
         }
         case fasl_type_gensym: {
-            iptr pn, un;
+            iptr pn, un, hc;
             pn = stringin(pstrbuf, 0, f);
-            un = stringin(pstrbuf, pn, f);
-            *x = S_intern3(&STRIT(*pstrbuf, 0), pn, &STRIT(*pstrbuf, pn), un, Sfalse, Sfalse);
+            un = symbolin(pstrbuf, pn, f, &hc);
+            *x = S_intern3_hc(&STRIT(*pstrbuf, 0), pn, &STRIT(*pstrbuf, pn), un, hc, Sfalse, Sfalse);
             return;
         }
         case fasl_type_uninterned_symbol: {
@@ -1428,9 +1451,11 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             *x = str;
             return;
         }
-        case fasl_type_small_integer:
-            *x = Sinteger(iptrin(f));
+        case fasl_type_small_integer: {
+            iptr n = iptrin(f);
+            *x = FIXRANGE(n) ? FIX(n) : Sinteger(n);
             return;
+        }
         case fasl_type_large_integer: {
             IBOOL sign; iptr n; ptr t; bigit *p;
             sign = bytein(f);
