@@ -503,6 +503,15 @@ typedef struct thread_gc {
   seginfo *dirty_segments[DIRTY_SEGMENT_LISTS];
 
   iptr bitmask_overhead[static_generation+1];
+
+  /* "fasl.c": generation that a fasl read allocates into (0 normally),
+     and the pointer-holding objects it allocated there, whose cards
+     are marked dirty when the read completes */
+  IGEN fasl_gen;
+  uptr fasl_gen_mask; /* which kinds of object use fasl_gen; see "fasl.c" */
+  ptr *fasl_log;
+  iptr fasl_log_n;
+  iptr fasl_log_cap;
 } thread_gc;
 
 #define THREAD_GC(tc) ((thread_gc *)TO_VOIDP(GCDATA(tc)))

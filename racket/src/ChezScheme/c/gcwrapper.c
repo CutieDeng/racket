@@ -593,6 +593,27 @@ static void check_pointer(ptr *pp, IBOOL address_is_meaningful, IBOOL is_referen
                (ptrdiff_t)p, (aftergc ? " after gc" : ""));
         printf("from: "); segment_tell(seg);
         printf("to:   "); segment_tell(ptr_get_segment(p));
+        /* automated forensics: dump the slot's neighborhood and the
+           target's remains so every report carries the scene */
+        if (address_is_meaningful) {
+          int fi;
+          uptr *fw = (uptr *)((uptr)TO_VOIDP(pp) & ~(uptr)7);
+          printf("from-context:");
+          for (fi = -6; fi <= 2; fi += 1)
+            printf(" ["PHtx"]="PHtx, (ptrdiff_t)(uptr)(fw + fi), (ptrdiff_t)fw[fi]);
+          printf("\n");
+        }
+        {
+          seginfo *tsi = MaybeSegInfo(ptr_get_segment(p));
+          if (tsi != NULL && tsi->space != space_empty) {
+            int ti;
+            uptr *tw = (uptr *)((uptr)TO_VOIDP(p) & ~(uptr)7);
+            printf("to-remains:");
+            for (ti = 0; ti <= 3; ti += 1)
+              printf(" "PHtx, (ptrdiff_t)tw[ti]);
+            printf("\n");
+          }
+        }
         {
           ptr l;
           for (l = S_G.locked_objects[psi->generation]; l != Snil; l = Scdr(l))
@@ -1052,7 +1073,12 @@ void S_check_heap(IBOOL aftergc, IGEN mcg) {
 
   if (S_checkheap_errors) {
     printf("heap check failed%s\n", (aftergc ? " after gc" : ""));
-    abort();
+    /* report-only mode for hunting intermittent corruption: keep the
+       process alive so one run yields many reports and the Scheme
+       level can still be probed afterwards */
+    if (getenv("CHEZ_CHECK_HEAP_NO_ABORT") == NULL)
+      abort();
+    S_checkheap_errors = 0;
   }
 }
 

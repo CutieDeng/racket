@@ -21,6 +21,15 @@
 (test expected-sig-abc bytes->hex-string (ed25519-sign seed #"abc"))
 
 ;; valid signature verifies; wrong message / tampered signature do not
+;; the expanded private key signs identically and yields the same public key
+(let ([xk (ed25519-expand-private-key seed)])
+  (test 64 bytes-length xk)
+  (test seed subbytes xk 0 32)
+  (test (ed25519-public-key seed) ed25519-public-key xk)
+  (test (ed25519-sign seed #"abc") ed25519-sign xk #"abc")
+  (test xk ed25519-expand-private-key xk)
+  (test #t ed25519-verify (ed25519-public-key xk) #"abc" (ed25519-sign xk #"abc")))
+
 (let ([pk (ed25519-public-key seed)]
       [sig (ed25519-sign seed #"abc")])
   (test #t ed25519-verify pk #"abc" sig)

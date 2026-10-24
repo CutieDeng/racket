@@ -122,6 +122,22 @@
     (lambda (p pos)
       (vector-ref (syntax-e p) pos)))
 
+  ;; a syntax pvector?
+  (define-values (stx-pvector?)
+    (lambda (p len)
+      (if (syntax? p)
+          (if (core-pvector? (syntax-e p))
+              (if len
+                  (= len (core-pvector-length (syntax-e p)))
+                  #t)
+              #f)
+          #f)))
+
+  ;; syntax pvector reference
+  (define-values (stx-pvector-ref)
+    (lambda (p pos)
+      (core-pvector-ref (syntax-e p) pos)))
+
   ;; a syntax box?
   (define-values (stx-box?)
     (lambda (p)
@@ -314,6 +330,7 @@
   (#%provide identifier? stx-null? stx-null/#f stx-pair? stx-list?
              stx-car stx-cdr stx->list
              stx-vector? stx-vector-ref
+             stx-pvector? stx-pvector-ref
              stx-box?
              stx-prefab?
              stx-check/esc cons/#f append/#f

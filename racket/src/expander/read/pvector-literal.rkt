@@ -4,8 +4,12 @@
          "wrap.rkt"
          "error.rkt"
          "parameter.rkt"
+         "primitive-parameter.rkt"
+         "sequence.rkt"
          (only-in '#%kernel
                   core-pvector-literal->pvector
+                  core-list->pvector
+                  core-pvector-map
                   make-pvector-placeholder))
 
 (provide read-pvector)
@@ -79,34 +83,70 @@
   (let loop ([chars chars] [accum-str accum-str])
     (cond
       [(null? chars)
-       (define datum (read-one #f in (disable-wrapping config)))
-       (define normalized
-         (cond
-           [(elements-pvector-literal-datum? datum) datum]
-           [(raw-pvector-literal-datum? datum)
-            (unless (check-parameter read-accept-pvector-raw config)
-              (reader-error in config "`#pvector` raw literals not enabled"))
-            datum]
-           [(list? datum)
-            ;; plain elements form: `#pvector(element ...)`
-            (list datum #f)]
-           [else datum]))
-       (define graph? (and (read-config-state-graph
-                            (read-config-st config))
-                           #t))
-       (wrap (catch-and-reraise-as-reader
-              in
-              config
-              (if (and graph?
-                       (elements-pvector-literal-datum? normalized))
-                  ;; graph references (#N#) inside the elements are
-                  ;; placeholders at this point; defer construction to
-                  ;; make-reader-graph so they resolve
-                  (make-pvector-placeholder (car normalized))
-                  (core-pvector-literal->pvector normalized)))
-             in
-             config
-             init-c)]
+       (read-pvector-body accum-str init-c in config read-one)]
       [else
        (define c (read-expect-char (car chars) accum-str in config))
        (loop (cdr chars) (string-append accum-str (string c)))])))
+
+;; `#pvector` has been read; the body is a parenthesized sequence,
+;; whose elements are read with the current configuration: in
+;; `read-syntax` mode, each element is wrapped as a syntax object with
+;; its own source location, as for a vector.  The two escape forms are
+;; recognized on the unwrapped datum, and their elements are wrapped
+;; afterward, all with the literal's location.
+(define (read-pvector-body accum-str init-c in config read-one)
+  (define c (read-char/special in config))
+  (define closer
+    (case c
+      [(#\() #\)]
+      [(#\[) (and (check-parameter read-square-bracket-as-paren config) #\])]
+      [(#\{) (and (check-parameter read-curly-brace-as-paren config) #\})]
+      [else #f]))
+  (unless closer
+    (discard-current-line in config)
+    (reader-error in config
+                  #:due-to c
+                  "expected `(` after `~a`"
+                  accum-str))
+  (define for-syntax? (read-config-for-syntax? config))
+  (define seq (read-unwrapped-sequence read-one c c closer in config
+                                       #:whitespace-read-one read-one
+                                       #:dot-mode #f))
+  (define datum
+    (if for-syntax?
+        (let ([coerce (read-config-coerce config)])
+          (map (lambda (e) (coerce #f e #f)) seq))
+        seq))
+  (define graph? (and (read-config-state-graph
+                       (read-config-st config))
+                      #t))
+  (define (wrap-element e)
+    (if for-syntax? (wrap e in config #f) e))
+  (define pv
+    (cond
+      [(elements-pvector-literal-datum? datum)
+       ;; `((element ...) #f)`
+       (define elements (map wrap-element (car datum)))
+       (if graph?
+           ;; graph references (#N#) inside the elements are
+           ;; placeholders at this point; defer construction to
+           ;; make-reader-graph so they resolve
+           (make-pvector-placeholder elements)
+           (core-list->pvector elements))]
+      [(raw-pvector-literal-datum? datum)
+       (unless (check-parameter read-accept-pvector-raw config)
+         (reader-error in config "`#pvector` raw literals not enabled"))
+       (define raw-pv
+         (catch-and-reraise-as-reader
+          in
+          config
+          (core-pvector-literal->pvector datum)))
+       (if for-syntax?
+           (core-pvector-map raw-pv wrap-element)
+           raw-pv)]
+      [else
+       ;; `#pvector(element ...)`
+       (if graph?
+           (make-pvector-placeholder seq)
+           (core-list->pvector seq))]))
+  (wrap pv in config init-c))

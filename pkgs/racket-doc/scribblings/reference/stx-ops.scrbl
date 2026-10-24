@@ -146,6 +146,8 @@ leaving nested syntax structure (if any) in place.  The result of
 
        @item{an immutable vector containing @tech{syntax object}s}
 
+       @item{a @tech{pvector} containing @tech{syntax object}s}
+
        @item{an immutable box containing @tech{syntax object}s}
 
        @item{an immutable @tech{hash table} containing @tech{syntax
@@ -208,25 +210,30 @@ object in the result of @racket[(syntax->list stx)] is @tech{tainted}.
 
 Returns a datum by stripping the lexical information, source-location
 information, properties, and tamper status from @racket[stx]. Inside of
-pairs, (immutable) vectors, (immutable) boxes, immutable @tech{hash
-table} values (not keys), and immutable @tech{prefab} structures,
-@tech{syntax object}s are recursively stripped.
+pairs, (immutable) vectors, @tech{pvectors}, (immutable) boxes,
+immutable @tech{hash table} values (not keys), and immutable
+@tech{prefab} structures, @tech{syntax object}s are recursively
+stripped.
 
 The stripping operation does not mutate @racket[stx]; it creates new
-pairs, vectors, boxes, hash tables, and @tech{prefab} structures as
-needed to strip lexical and source-location information recursively.
+pairs, vectors, pvectors, boxes, hash tables, and @tech{prefab}
+structures as needed to strip lexical and source-location information
+recursively.
 
 @examples[#:eval stx-eval
   (syntax->datum #'a)
   (syntax->datum #'(x . y))
   (syntax->datum #'#(1 2 (+ 3 4)))
+  (syntax->datum #'#pvector(1 2 (+ 3 4)))
   (syntax->datum #'#&"hello world")
   (syntax->datum #'#hash((imperial . "yellow") (festival . "green")))
   (syntax->datum #'#(point 3 4))
   (syntax->datum #'3)
   (syntax->datum #'"three")
   (syntax->datum #'#t)
-]}
+]
+
+@history[#:changed "9.3.10" @elem{Added stripping inside @tech{pvectors}.}]}
 
 @defproc[(datum->syntax [ctxt (or/c syntax? #f)]
                         [v any/c]
@@ -251,12 +258,13 @@ needed to strip lexical and source-location information recursively.
 Converts the @tech{datum} @racket[v] to a @tech{syntax object}.
 If @racket[v] is already a @tech{syntax object}, then there is no conversion,
 and @racket[v] is returned unmodified.
-The contents of pairs, vectors, and boxes, the values of immutable hash tables,
-and the fields of immutable @tech{prefab} structures are recursively converted.
+The contents of pairs, vectors, @tech{pvectors}, and boxes, the values of
+immutable hash tables, and the fields of immutable @tech{prefab} structures are
+recursively converted.
 The keys of @tech{prefab} structures and the keys of immutable hash tables are
 not converted. Mutable vectors and boxes are replaced by immutable vectors and
 boxes. For any kind of value other than a
-pair, vector, box, immutable @tech{hash table}, immutable
+pair, vector, pvector, box, immutable @tech{hash table}, immutable
 @tech{prefab} structure, or @tech{syntax object}, conversion means
 wrapping the value with lexical information, source-location
 information, and properties after the value is @tech{interned}
@@ -267,7 +275,7 @@ information of @racket[ctxt] and the source-location information of
 @racket[srcloc]. The resulting immediate @tech{syntax object} from conversion is given the
 properties (see @secref["stxprops"]) of @racket[prop] (even the
 hidden ones that would not be visible via @racket[syntax-property-symbol-keys]); if @racket[v]
-is a pair, vector, box, immutable @tech{hash table}, or immutable
+is a pair, vector, pvector, box, immutable @tech{hash table}, or immutable
 @tech{prefab} structure, recursively converted values are not given
 properties. If @racket[ctxt] is @tech{tainted}, then the resulting syntax object from
 @racket[datum->syntax] is @tech{tainted}. The @tech{code inspector}
@@ -287,15 +295,16 @@ that correspond to @racket-srcloc fields.
 
 Graph structure is not preserved by the conversion of @racket[v] to a
 @tech{syntax object}. Instead, @racket[v] is essentially unfolded into
-a tree. If @racket[v] has a cycle through pairs, vectors, boxes,
-immutable @tech{hash tables}, and immutable @tech{prefab} structures,
-then the @exnraise[exn:fail:contract].
+a tree. If @racket[v] has a cycle through pairs, vectors, pvectors,
+boxes, immutable @tech{hash tables}, and immutable @tech{prefab}
+structures, then the @exnraise[exn:fail:contract].
 
 The @racket[ignored] argument is allowed for backward compatibility
 and has no effect on the returned syntax object.
 
 @history[#:changed "8.2.0.5" @elem{Allow a @racket-srcloc value as a
-                                   @racket[srcloc] argument.}]}
+                                   @racket[srcloc] argument.}
+         #:changed "9.3.10" @elem{Convert the elements of @tech{pvectors}.}]}
 
 @deftogether[(
 @defproc[(syntax-binding-set? [v any/c]) boolean?]

@@ -72,6 +72,7 @@ extern void S_record_new_dirty_card(thread_gc *tgc, ptr *ppp, IGEN to_g);
 extern ptr S_find_more_gc_room(thread_gc *tgc, IGEN g, ISPC s, iptr n, ptr old);
 extern void S_close_off_thread_local_segment(ptr tc, ISPC s, IGEN g);
 extern void S_dirty_set(ptr *loc, ptr x);
+extern void S_young_ref_add(ptr *v, iptr n);
 extern void S_mark_card_dirty(uptr card, IGEN to_g);
 extern void S_scan_dirty(ptr *p, ptr *endp);
 extern void S_scan_remembered_set(void);
@@ -117,6 +118,7 @@ extern void S_phantom_bytevector_adjust(ptr ph, uptr new_sz);
 extern void S_fasl_init(void);
 extern ptr S_fasl_read(INT fd, IFASLCODE situation, ptr path, ptr externals);
 extern ptr S_bv_fasl_read(ptr bv, int ty, uptr offset, uptr len, ptr path, ptr externals);
+extern ptr S_load_seg4_to_static(INT fd); /* fasl2 fourth-segment C-level boot loader */
 extern ptr S_boot_read(faslFile f, const char *path);
 extern char *S_format_scheme_version(uptr n);
 extern char *S_lookup_machine_type(uptr n);
@@ -139,7 +141,7 @@ extern uptr S_fasl_uptrin(faslFile f, INT *bytes_consumed);
 extern void S_fasl_bytesin(octet *s, iptr n, faslFile f);
 
 /* vfasl.c */
-extern ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr len);
+extern ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr len, ptr externals);
 extern ptr S_vfasl_to(ptr v);
 
 /* flushcache.c */

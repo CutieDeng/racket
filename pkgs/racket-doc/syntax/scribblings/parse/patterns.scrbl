@@ -563,6 +563,20 @@ list, match the @tech{@Spattern} corresponding to
 ]
 }
 
+@specsubform[(code:line #,(tt "#pvector")(#, @svar[pattern-part] ...))]{
+
+Matches a term that is a pvector (see @racketmodname[racket/pvector])
+whose elements, when considered as a list, match the @tech{@Spattern}
+corresponding to @racket[(pattern-part ...)].
+
+@examples[#:eval the-eval
+(syntax-parse #'#pvector(1 2 3)
+  [#pvector(x y z) (syntax->datum #'z)])
+(syntax-parse #'#pvector(1 2 3)
+  [#pvector(x y ...) (syntax->datum #'(y ...))])
+]
+}
+
 @specsubform[#s(prefab-struct-key #, @svar[pattern-part] ...)]{
 
 Matches a term that is a prefab struct whose key is exactly the given

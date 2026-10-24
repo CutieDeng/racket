@@ -14,3 +14,6 @@ data/aarchmrs/cache/
 
 # m3 ABI smoke-test binary is built by test/m3/run.sh, never committed
 test/m3/m3test
+
+# generated from the Intel XED checkout by x86/xed-convert.rkt
+x86/data/*.rktd

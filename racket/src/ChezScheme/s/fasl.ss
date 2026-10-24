@@ -101,6 +101,34 @@
             (bld ($closure-ref x i) t a? d)
             (loop (fx+ i 1)))))))
 
+;; everything fasl-write needs from a live code object: a vector of
+;; (flags length bytes free reloc-entries), where each reloc entry is
+;; #(type extended? code-off-delta item-off obj) in table order.  #f
+;; when the relocation table is unavailable (static-generation code
+;; without retain_static_relocation).
+(define $fasl-code-info
+  (let ([proc #f])
+    (lambda (co)
+      (unless proc
+        (set! proc (foreign-procedure "(cs)s_fasl_code_info" (ptr) ptr)))
+      (proc co))))
+
+(define bld-code
+   (lambda (x t a? d)
+      (let ([info ($fasl-code-info x)])
+        (unless info
+          ($oops 'fasl-write "code object ~s has no relocation table" x))
+        (bld ($code-name x) t a? d)
+        (bld ($code-arity-mask x) t a? d)
+        (bld ($code-info x) t a? d)
+        (bld ($code-pinfo* x) t a? d)
+        ;; only kind 0 (plain object) items are in the graph; library
+        ;; entries, C entries, and immediates travel as indices/values
+        (for-each (lambda (e)
+                    (when (fx= (vector-ref e 4) 0)
+                      (bld (vector-ref e 5) t a? d)))
+                  (vector-ref info 4)))))
+
 (define bld-stencil-vector
    (lambda (x t a? d)
       (let ([len ($stencil-vector-length x)])
@@ -261,6 +289,7 @@
                          (bld-graph (maybe-intern-bignum x t) t a? d #t bld-simple))]
         [(and (procedure? x) (not ($continuation? x)))
          (bld-graph x t a? d #t bld-closure)]
+        [($code? x) (bld-graph x t a? d #t bld-code)]
         [else (bld-graph x t a? d #t bld-simple)])))
 
 (module (small-integer? large-integer?)
@@ -681,12 +710,60 @@
              (put-u8 p (constant fasl-type-graph-ref))
              (put-uptr p (car a))]))))
 
+(define wrf-code
+  ;; a live code object serializes in the same fasl_type_code wire
+  ;; format the compiler emits: the reader unconditionally re-patches
+  ;; every relocation span after copying the machine bytes, so the
+  ;; baked-in addresses in the live bytes never survive the roundtrip
+  (lambda (x p t a?)
+    (let ([info ($fasl-code-info x)])
+      (unless info
+        ($oops 'fasl-write "code object ~s has no relocation table" x))
+      (put-u8 p (constant fasl-type-code))
+      (put-u8 p (vector-ref info 0))
+      (put-uptr p (vector-ref info 3))
+      (put-uptr p (vector-ref info 1))
+      (wrf ($code-name x) p t a?)
+      (wrf ($code-arity-mask x) p t a?)
+      (wrf ($code-info x) p t a?)
+      (wrf ($code-pinfo* x) p t a?)
+      (put-bytevector p (vector-ref info 2))
+      (let ([rl (vector-ref info 4)])
+        (put-uptr p (fold-left (lambda (m e) (fx+ m (if (vector-ref e 1) 3 1))) 0 rl))
+        (for-each
+          (lambda (e)
+            (let ([type (vector-ref e 0)]
+                  [long? (vector-ref e 1)]
+                  [code-off (vector-ref e 2)]
+                  [item-off (vector-ref e 3)]
+                  [kind (vector-ref e 4)]
+                  [payload (vector-ref e 5)])
+              (put-u8 p (let* ([k (fxsll type 2)]
+                               [k (if (eqv? item-off 0) k (fxlogor k 2))])
+                          (if long? (fxlogor k 1) k)))
+              (put-uptr p code-off)
+              (unless (eqv? item-off 0) (put-uptr p item-off))
+              ;; the item: plain objects recurse; library entries, C
+              ;; entries, and immediates use their index/value forms,
+              ;; exactly as the compiler's writer encodes them
+              (case kind
+                [(0) (wrf payload p t a?)]
+                [(1) (put-u8 p (constant fasl-type-library))
+                     (put-uptr p payload)]
+                [(2) (put-u8 p (constant fasl-type-library-code))
+                     (put-uptr p payload)]
+                [(3) (put-u8 p (constant fasl-type-entry))
+                     (put-uptr p payload)]
+                [(4) (put-u8 p (constant fasl-type-immediate))
+                     (put-uptr p payload)]
+                [else ($oops 'fasl-write "unknown reloc item kind ~s" kind)])))
+          rl)))))
+
 (define wrf-closure
   (lambda (x p t a?)
     ;; a closure serializes as its free-variable values plus its code;
-    ;; the code object must be provided through the externals mechanism
-    ;; (or be otherwise picked up by an enclosing graph), since a live
-    ;; code object cannot be written into a fasl stream
+    ;; the code either arrives through the externals mechanism or is
+    ;; written natively by wrf-code
     (put-u8 p (constant fasl-type-closure-freevars))
     (let ([n ($closure-length x)])
       (put-uptr p n)
@@ -748,6 +825,7 @@
          [(phantom-bytevector? x) (wrf-graph x p t a? wrf-phantom)]
          [(and (procedure? x) (not ($continuation? x)))
           (wrf-graph x p t a? wrf-closure)]
+         [($code? x) (wrf-graph x p t a? wrf-code)]
          [else (wrf-invalid x p t a?)])))
 
 (module (start)

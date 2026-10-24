@@ -1991,3 +1991,262 @@
         ) ; end read
   ) ; end test
 ) ; end let
+
+;; quoted pvector literals travel through compiled code: directly and
+;; inside syntax objects, machine-dependent and machine-independent
+(define (read-pvector-datum str
+                            ) ; end read-pvector-datum args
+  (parameterize ([read-accept-pvector #t
+                 ] ; end read-accept-pvector
+                ) ; end parameterize args
+    (read (open-input-string str
+          ) ; end open-input-string
+    ) ; end read
+  ) ; end parameterize
+) ; end define
+
+(define (compiled-round-trip datum target [finish values]
+                             ) ; end compiled-round-trip args
+  (parameterize ([current-namespace (make-base-namespace
+                                     ) ; end make-base-namespace
+                 ] ; end current-namespace
+                 [current-compile-target-machine target
+                 ] ; end current-compile-target-machine
+                 [read-accept-compiled #t
+                 ] ; end read-accept-compiled
+                ) ; end parameterize args
+    (define o (open-output-bytes
+               ) ; end open-output-bytes
+    ) ; end define
+    (write (compile datum
+           ) ; end compile
+           o
+    ) ; end write
+    (finish (eval (read (open-input-bytes (get-output-bytes o
+                                          ) ; end get-output-bytes
+                        ) ; end open-input-bytes
+                  ) ; end read
+            ) ; end eval
+    ) ; end finish
+  ) ; end parameterize
+) ; end define
+
+(for ([target (in-list (list (current-compile-target-machine
+                             ) ; end current-compile-target-machine
+                             #f
+                       ) ; end list
+               ) ; end in-list
+      ] ; end target
+     ) ; end for clauses
+  (test (pvector 1 "two" 'three
+        ) ; end pvector
+        compiled-round-trip
+        (read-pvector-datum "(quote #pvector(1 \"two\" three))"
+        ) ; end read-pvector-datum
+        target
+  ) ; end test
+  (test (pvector
+        ) ; end pvector
+        compiled-round-trip
+        (read-pvector-datum "(quote #pvector())"
+        ) ; end read-pvector-datum
+        target
+  ) ; end test
+  (test (pvector 1 "two" 'three
+        ) ; end pvector
+        compiled-round-trip
+        (read-pvector-datum "(quote-syntax #pvector(1 \"two\" three))"
+        ) ; end read-pvector-datum
+        target
+        syntax->datum
+  ) ; end test
+  (let ([pv (list->pvector (build-list 100 values
+                           ) ; end build-list
+            ) ; end list->pvector
+           ]
+       ) ; end bindings
+    (test pv compiled-round-trip (list 'quote pv
+                                 ) ; end list
+          target
+    ) ; end test
+    (test (list pv (vector pv
+                   ) ; end vector
+          ) ; end list
+          compiled-round-trip
+          (list 'quote (list pv (vector pv
+                                ) ; end vector
+                       ) ; end list
+          ) ; end list
+          target
+    ) ; end test
+  ) ; end let
+  ;; the empty pvector literal loads as the runtime's empty pvector, so
+  ;; `pvector-empty?` and the `(pvector)` pattern recognize it
+  (let ([e (compiled-round-trip (read-pvector-datum "(quote #pvector())"
+                                ) ; end read-pvector-datum
+                                target
+          ) ; end compiled-round-trip
+         ]
+       ) ; end bindings
+    (test #t pvector-empty? e
+    ) ; end test
+    (test #t eq? e (pvector-empty
+                   ) ; end pvector-empty
+    ) ; end test
+    (test 'empty
+          (lambda (v
+                   ) ; end lambda args
+            (match v
+              [(pvector) 'empty
+               ] ; end clause
+              [_ 'other
+               ] ; end clause
+            ) ; end match
+          ) ; end lambda
+          e
+    ) ; end test
+    (test #t pvector-empty? (syntax-e (compiled-round-trip (read-pvector-datum "(quote-syntax #pvector())"
+                                                           ) ; end read-pvector-datum
+                                                           target
+                                      ) ; end compiled-round-trip
+                            ) ; end syntax-e
+    ) ; end test
+  ) ; end let
+  ;; the shape survives: a cons-built pvector comes back with the same
+  ;; digit lengths and node tree, on both the native and the
+  ;; machine-independent path
+  (let ([pv (for/fold ([pv (pvector
+                           ) ; end pvector
+                          ]
+                      ) ; end accumulator
+                      ([i 300
+                       ] ; end i
+                      ) ; end for clauses
+              (pvector-cons-right pv i
+              ) ; end pvector-cons-right
+            ) ; end for/fold
+           ]
+       ) ; end bindings
+    (test (raw:pvector-shape-stats pv
+          ) ; end raw:pvector-shape-stats
+          raw:pvector-shape-stats
+          (compiled-round-trip (list 'quote pv
+                               ) ; end list
+                               target
+          ) ; end compiled-round-trip
+    ) ; end test
+  ) ; end let
+  ;; a gensym inside a pvector literal is exposed to the whole linklet
+  ;; directory, like one inside a vector literal, so the module body
+  ;; and its syntax literals agree on it after a compiled round trip;
+  ;; in the syntax literal the element is itself a syntax object
+  (let* ([g (gensym "pv"
+            ) ; end gensym
+           ]
+         [a+b (compiled-round-trip
+               `(module pvector-literal-gensym racket/base
+                  (provide a b
+                  ) ; end provide
+                  (define a (quote ,(pvector g
+                                    ) ; end pvector
+                            ) ; end quote
+                  ) ; end define
+                  (define b (quote-syntax ,(pvector g
+                                           ) ; end pvector
+                            ) ; end quote-syntax
+                  ) ; end define
+               ) ; end module
+               target
+               (lambda (_
+                        ) ; end lambda args
+                 (list (dynamic-require ''pvector-literal-gensym 'a
+                       ) ; end dynamic-require
+                       (dynamic-require ''pvector-literal-gensym 'b
+                       ) ; end dynamic-require
+                 ) ; end list
+               ) ; end lambda
+              ) ; end compiled-round-trip
+             ]
+        ) ; end bindings
+    (test #t pvector? (car a+b
+                      ) ; end car
+    ) ; end test
+    (test #t eq?
+          (pvector-ref (car a+b
+                       ) ; end car
+                       0
+          ) ; end pvector-ref
+          (syntax-e (pvector-ref (syntax-e (cadr a+b
+                                           ) ; end cadr
+                                 ) ; end syntax-e
+                                 0
+                    ) ; end pvector-ref
+          ) ; end syntax-e
+    ) ; end test
+  ) ; end let*
+) ; end for
+
+;; the raw literal parser bounds measures like the fasl constructors: a
+;; chain of shared nodes whose measure doubles at each level is accepted
+;; below the maximum length and rejected once it exceeds it
+(define (doubling-literal k
+                          ) ; end doubling-literal args
+  (list (+ k 3
+        ) ; end +
+        (append (list (list 0 '(Node/val 2 1 1)
+                      ) ; end list
+                ) ; end list
+                (for/list ([i (in-range 1 (+ k 1
+                                           ) ; end +
+                              ) ; end in-range
+                           ] ; end i
+                          ) ; end for clauses
+                  (list i (list 'Node (expt 2 (+ i 1
+                                               ) ; end +
+                                      ) ; end expt
+                                (- i 1
+                                ) ; end -
+                                (- i 1
+                                ) ; end -
+                          ) ; end list
+                  ) ; end list
+                ) ; end for/list
+                (list (list (+ k 1
+                            ) ; end +
+                            '(Digit/val 1 0)
+                      ) ; end list
+                      (list (+ k 2
+                            ) ; end +
+                            '(Digit/val 1 0)
+                      ) ; end list
+                      (list (+ k 3
+                            ) ; end +
+                            (list 'Deep/val (+ 2 (expt 2 (+ k 1
+                                                         ) ; end +
+                                                 ) ; end expt
+                                            ) ; end +
+                                  (+ k 1
+                                  ) ; end +
+                                  (+ k 2
+                                  ) ; end +
+                                  k
+                            ) ; end list
+                      ) ; end list
+                ) ; end list
+        ) ; end append
+  ) ; end list
+) ; end define
+(test (+ 2 (expt 2 11
+          ) ; end expt
+      ) ; end +
+      pvector-length
+      (literal-datum->pvector (doubling-literal 10
+                              ) ; end doubling-literal
+      ) ; end literal-datum->pvector
+) ; end test
+(err/rt-test (literal-datum->pvector (doubling-literal 57
+                                     ) ; end doubling-literal
+             ) ; end literal-datum->pvector
+             exn:fail?
+             #rx"too large"
+) ; end err/rt-test

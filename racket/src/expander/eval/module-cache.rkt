@@ -30,10 +30,20 @@
   ;; all instances of the module.
   (and hash-code
        ;; Encode as a symbol so we can use an eq?-based hash table
-       ;; (i.e., explot the low-level lock on the symbol table)
-       (string->symbol (format "~s" (list hash-code (path->directory-path
-                                                     (or (current-load-relative-directory)
-                                                         (current-directory))))))))
+       ;; (i.e., explot the low-level lock on the symbol table).
+       ;; The key is built directly from bytes instead of printing
+       ;; with `format`, which costs several microseconds per call and
+       ;; is called twice per module load: a length byte, the hash
+       ;; code, then the directory's bytes, decoded as Latin-1 so that
+       ;; the mapping from (hash code, directory) to symbol is injective.
+       (string->symbol
+        (bytes->string/latin-1
+         (bytes-append (bytes (bytes-length hash-code))
+                       hash-code
+                       (path->bytes
+                        (path->directory-path
+                         (or (current-load-relative-directory)
+                             (current-directory)))))))))
 
 (define (module-cache-set! key proc)
   (hash-set! module-cache key (make-ephemeron key proc)))

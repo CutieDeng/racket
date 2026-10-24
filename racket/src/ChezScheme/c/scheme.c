@@ -630,6 +630,8 @@ static IBOOL next_path(const char *execpath, char *path,
 #endif
 
 extern int S_vfasl_source_is_permanent_mapping;
+extern int S_vfasl_mapping_fd;
+extern uptr S_vfasl_mapping_base;
 
 typedef struct boot_desc {
   struct fileFaslFileObj ffo;
@@ -930,11 +932,12 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
          to streaming if the mapping is not available. */
       {
         struct stat sb;
-        if ((fstat(boot->ffo.f.uf.fd, &sb) == 0)
+        int boot_fd = boot->ffo.f.uf.fd; /* the uf union is repurposed by S_fasl_init_bytes below */
+        if ((fstat(boot_fd, &sb) == 0)
             && (sb.st_size > boot->offset)) {
           boot_map_len = (size_t)sb.st_size;
           boot_map = mmap(NULL, boot_map_len, PROT_READ, MAP_PRIVATE,
-                          boot->ffo.f.uf.fd, 0);
+                          boot_fd, 0);
           if (boot_map != MAP_FAILED) {
             iptr avail = (iptr)sb.st_size - boot->offset;
             iptr use = ((boot->len > 0) && (boot->len < avail)) ? boot->len : avail;
@@ -942,6 +945,10 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
             S_fasl_init_bytes(&boot->ffo.f, (ptr)0,
                               (char *)boot_map + boot->offset, use);
             S_vfasl_source_is_permanent_mapping = 1;
+            /* arm64 PIC (P2.3): let the vfasl loader map the boot file's
+               code+got pages over its code-space allocation (COW) */
+            S_vfasl_mapping_fd = boot_fd;
+            S_vfasl_mapping_base = (uptr)boot_map;
           }
         }
       }
@@ -1000,8 +1007,11 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
   S_G.load_binary = Sfalse;
 #ifndef WIN32
   /* the mapping stays for the life of the process: loaded spaces may
-     point into it, and the shared pages are part of the benefit */
+     point into it, and the shared pages are part of the benefit; the fd
+     does not (close_after may close it below) */
   S_vfasl_source_is_permanent_mapping = 0;
+  S_vfasl_mapping_fd = -1;
+  S_vfasl_mapping_base = 0;
 #endif
   if (boot->close_after)
     CLOSE(boot->ffo.f.uf.fd);

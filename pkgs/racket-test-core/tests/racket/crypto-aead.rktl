@@ -25,6 +25,22 @@
 (test rfc-pt aead-decrypt 'chacha20-poly1305 rfc-key rfc-nonce rfc-sealed #:aad rfc-aad)
 
 ;; sizes
+;; expanded keys seal and open exactly like the raw key, for every algorithm and across sizes
+(for ([alg (aead-algorithms)])
+  (define key (list->bytes (for/list ([i (aead-key-size alg)]) (+ 7 i))))
+  (define nonce (list->bytes (for/list ([i (aead-nonce-size alg)]) (+ 3 i))))
+  (define xkey (aead-expand-key alg key))
+  (test #t bytes? xkey)
+  (test #t >= (bytes-length xkey) (aead-key-size alg))
+  (for ([len '(0 1 15 16 63 64 255 256 511 512 513 1023 1024 2047 2048 4096 16384 20000)])
+    (define pt (list->bytes (for/list ([i len]) (bitwise-and (* i 37) 255))))
+    (define sealed (aead-encrypt alg key nonce pt #:aad #"aad"))
+    (test sealed aead-encrypt alg xkey nonce pt #:aad #"aad")
+    (test pt aead-decrypt alg xkey nonce sealed #:aad #"aad")
+    (test #f aead-decrypt alg xkey nonce sealed #:aad #"bad"))
+  ;; expanding twice gives the same bytes
+  (test xkey aead-expand-key alg key))
+
 (test 32 aead-key-size 'chacha20-poly1305)
 (test 12 aead-nonce-size 'chacha20-poly1305)
 (test 16 aead-tag-size 'chacha20-poly1305)
@@ -92,6 +108,21 @@
 (err/rt-test (aead-encrypt 'chacha20-poly1305 (make-bytes 16) rfc-nonce #"x") exn:fail?)
 (err/rt-test (aead-encrypt 'chacha20-poly1305 rfc-key (make-bytes 8) #"x") exn:fail?)
 (err/rt-test (aead-encrypt 'aes-gcm rfc-key rfc-nonce #"x") exn:fail:contract?)
+
+;; expanded keys: wrong raw key length, and an expanded key used with another algorithm
+;; (aes-128-ccm and aes-256-ccm expanded keys have the same length on every platform)
+(err/rt-test (aead-expand-key 'aes-256-gcm (make-bytes 16)) exn:fail?)
+(err/rt-test (aead-expand-key 'aes-128-ccm (make-bytes 32)) exn:fail?)
+(let* ([k128 (make-bytes 16 1)] [k256 (make-bytes 32 2)] [nonce (make-bytes 12 3)]
+       [x128 (aead-expand-key 'aes-128-ccm k128)] [x256 (aead-expand-key 'aes-256-ccm k256)]
+       [xgcm (aead-expand-key 'aes-256-gcm k256)]
+       [sealed (aead-encrypt 'aes-128-ccm x128 nonce #"hello")])
+  (test #"hello" aead-decrypt 'aes-128-ccm x128 nonce sealed)
+  (err/rt-test (aead-encrypt 'aes-256-ccm x128 nonce #"x") exn:fail?)
+  (err/rt-test (aead-encrypt 'aes-128-ccm x256 nonce #"x") exn:fail?)
+  (err/rt-test (aead-decrypt 'aes-256-ccm x128 nonce sealed) exn:fail?)
+  (err/rt-test (aead-encrypt 'aes-256-ccm xgcm nonce #"x") exn:fail?)
+  (err/rt-test (aead-decrypt 'aes-256-gcm x256 nonce sealed) exn:fail?))
 
 ;; ----------------------------------------
 ;; secretbox (high-level, auto nonce, misuse-resistant)

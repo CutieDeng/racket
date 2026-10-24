@@ -1,6 +1,12 @@
 #lang racket/base
 (require (for-syntax racket/base)
          racket/fasl
+         (only-in '#%unsafe unsafe-hasheq-from-vectors unsafe-hasheqv-from-vectors)
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-length
+                  core-pvector-for-each
+                  core-fresh-vector->pvector)
          "serialize-property.rkt"
          "serialize-state.rkt"
          "../common/set.rkt"
@@ -383,6 +389,9 @@
               (begin
                 (hash-set! mutables v (hash-count mutables))
                 (add-frontier! (unbox v))))]
+         [(core-pvector? v)
+          ;; immutable, like a vector that needs no shell
+          (core-pvector-for-each v (lambda (e) (loop e)))]
          [(hash? v)
           (if (immutable? v)
               (for ([k (in-list (sorted-hash-keys v))])
@@ -535,6 +544,20 @@
           (ser-push! i)
           (and all-quoted?
                (quoted? i-pos))))
+      (when all-quoted?
+        (ser-reset! start-pos)
+        (ser-push-optional-quote!)
+        (ser-push! 'exact v))]
+     [(core-pvector? v)
+      (define start-pos (next-push-position))
+      (ser-push! 'tag '#:pvector)
+      (ser-push! 'exact (core-pvector-length v))
+      (define all-quoted? #t)
+      (core-pvector-for-each v (lambda (i)
+                                 (define i-pos (next-push-position))
+                                 (ser-push! i)
+                                 (unless (quoted? i-pos)
+                                   (set! all-quoted? #f))))
       (when all-quoted?
         (ser-reset! start-pos)
         (ser-push-optional-quote!)
@@ -847,7 +870,7 @@
      (decode* (box-immutable v))]
     [(#:cons)
      (decode* (cons a d))]
-    [(#:list #:vector)
+    [(#:list #:vector #:pvector)
      (define len (vector*-ref vec (add1 pos)))
      (define r (make-vector len))
      (define next-pos
@@ -855,23 +878,35 @@
          (define-values (v next-pos) (decodes #:pos pos (v) v))
          (vector-set! r i v)
          next-pos))
-     (values (if (eq? (vector*-ref vec pos) '#:list)
-                 (vector->list r)
-                 (vector->immutable-vector r))
+     (values (case (vector*-ref vec pos)
+               [(#:list) (vector->list r)]
+               [(#:pvector) (core-fresh-vector->pvector r)]
+               [else (vector->immutable-vector r)])
              next-pos)]
-    [(#:hash #:hasheq #:hasheqv)
-     (define ht (case (vector*-ref vec pos)
-                  [(#:hash) (hash)]
-                  [(#:hasheq) (hasheq)]
-                  [(#:hasheqv) (hasheqv)]))
+    [(#:hash)
      (define len (vector*-ref vec (add1 pos)))
-     (for/fold ([ht ht] [pos (+ pos 2)]) ([i (in-range len)])
+     (for/fold ([ht (hash)] [pos (+ pos 2)]) ([i (in-range len)])
        (decodes #:pos pos (k v) (hash-set ht k v)))]
-    [(#:hasheqv/phase+space)
-     (define ht (hasheqv))
+    [(#:hasheq #:hasheqv #:hasheqv/phase+space)
+     ;; Decode the entries into vectors and build the table from them in
+     ;; one pass: adding entries one at a time path-copies the trie, which
+     ;; allocates several times the table's size, and a module's provides
+     ;; tables run to thousands of entries
+     (define tag (vector*-ref vec pos))
      (define len (vector*-ref vec (add1 pos)))
-     (for/fold ([ht ht] [pos (+ pos 2)]) ([i (in-range len)])
-       (decodes #:pos pos (k v) (hash-set ht (intern-phase+space k) v)))]
+     (define keys (make-vector len #f))
+     (define vals (make-vector len #f))
+     (define next-pos
+       (for/fold ([pos (+ pos 2)]) ([i (in-range len)])
+         (define-values (k k-pos) (decodes #:pos pos (k) k))
+         (define-values (v v-pos) (decodes #:pos k-pos (v) v))
+         (vector-set! keys i (if (eq? tag '#:hasheqv/phase+space) (intern-phase+space k) k))
+         (vector-set! vals i v)
+         v-pos))
+     (values (if (eq? tag '#:hasheq)
+                 (unsafe-hasheq-from-vectors keys vals)
+                 (unsafe-hasheqv-from-vectors keys vals))
+             next-pos)]
     [(#:set #:seteq #:seteqv)
      (define s (case (vector*-ref vec pos)
                  [(#:set) (set)]

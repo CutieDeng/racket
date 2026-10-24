@@ -106,7 +106,8 @@
              lock                   ; held while a thread reads from `in`
              [pending #:mutable]    ; records read while draining during a write
              [inbuf #:mutable]      ; partial record pulled in by a draining write
-             wlock))                ; serializes writers
+             wlock                  ; serializes writers
+             [expect-ccs? #:mutable])) ; a renegotiation is waiting for the peer's ChangeCipherSpec
 
 ;; Key block (RFC 5246 6.3): client/server MAC keys (CBC suites only), then
 ;; write keys, then fixed IVs (AEAD only; CBC uses an explicit per-record IV).
@@ -123,7 +124,7 @@
   (define skey (slice (+ (* 2 mac-len) key-len) key-len))
   (define cfixed (slice (+ (* 2 mac-len) (* 2 key-len)) fixed-iv-len))
   (define sfixed (slice (+ (* 2 mac-len) (* 2 key-len) fixed-iv-len) fixed-iv-len))
-  (r12 in out cipher mac (and etm? #t) ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #"" (make-semaphore 1)))
+  (r12 in out cipher mac (and etm? #t) ckey cfixed skey sfixed cmac smac chacha? 0 0 client? (make-semaphore 1) '() #"" (make-semaphore 1) #f))
 (define (r12-read-exact! r n)
   (buffered-read-exact! (r12-in r) (lambda () (r12-inbuf r)) (lambda (b) (set-r12-inbuf! r b)) n))
 (define (r12-fill-nb! r)
@@ -211,10 +212,11 @@
 (define (r12-process-record r hdr body)
   (define type (bytes-ref hdr 0))
   (cond
-    ;; this layer exists only once both ChangeCipherSpecs have passed, so
-    ;; every record is protected; an unprotected one is attacker-writable
-    [(= type 20) (raise (tls-alert 10 "unprotected ChangeCipherSpec after keys were installed"))]
     [else
+     ;; this layer exists only once both ChangeCipherSpecs have passed, so every
+     ;; record is protected, a ChangeCipherSpec included: it is decrypted like any
+     ;; other (an injected plaintext one fails the MAC) and then accepted only
+     ;; while a renegotiation is waiting for it (RFC 5246 7.1)
      (define seq (r12-rseq r))
      (define key (if (r12-we-are-client? r) (r12-skey r) (r12-ckey r)))
      (define pt
@@ -235,7 +237,68 @@
      (unless pt (raise (tls-alert 20 "bad_record_mac")))
      (when (> (bytes-length pt) 16384) (raise (tls-alert 22 "record_overflow")))
      (set-r12-rseq! r (add1 seq))
+     (when (and (= type 20) (not (and (r12-expect-ccs? r) (equal? pt (bytes 1)))))
+       (raise (tls-alert 10 "unexpected ChangeCipherSpec")))
      (values type pt)]))
+
+;; ---- renegotiation support on the record layer ----
+;; A handshake-message reader (same (values type msg) protocol as hsr-next) over the
+;; protected 1.2 stream: handshake records are reassembled into messages, application
+;; data that arrives meanwhile is queued for the connection's reader, a ChangeCipherSpec
+;; is passed through only to r12-read-ccs.
+(define (make-r12-hs-reader r app-queue)
+  (define buf #"")
+  (define (fill!)
+    (define-values (type pt) (r12-read r))
+    (cond
+      [(= type 22)
+       (when (> (+ (bytes-length buf) (bytes-length pt)) (+ (* 128 1024) 4))
+         (raise (tls-alert 50 "handshake message too large")))
+       (set! buf (bytes-append buf pt))]
+      [(= type 23) (when (positive? (bytes-length pt)) (set-box! app-queue (append (unbox app-queue) (list pt))))]
+      [(= type 21) (if (and (>= (bytes-length pt) 2) (= 1 (bytes-ref pt 0))) (void) (raise (peer-alert pt)))]
+      [else (raise (tls-alert 10 (format "unexpected record type ~a during renegotiation" type)))]))
+  (lambda ()
+    (let loop ()
+      (cond
+        [(< (bytes-length buf) 4) (fill!) (loop)]
+        [else
+         (define mlen (be->int buf 1 4))
+         (cond
+           [(< (bytes-length buf) (+ 4 mlen)) (fill!) (loop)]
+           [else
+            (define msg (subbytes buf 0 (+ 4 mlen)))
+            (set! buf (subbytes buf (+ 4 mlen)))
+            (values (bytes-ref msg 0) msg)])]))))
+;; Read protected records until the peer's ChangeCipherSpec (queueing application data).
+(define (r12-read-ccs r app-queue)
+  (set-r12-expect-ccs?! r #t)
+  (dynamic-wind
+   void
+   (lambda ()
+     (let loop ()
+       (define-values (type pt) (r12-read r))
+       (cond
+         [(= type 20) (void)]
+         [(= type 23) (when (positive? (bytes-length pt)) (set-box! app-queue (append (unbox app-queue) (list pt)))) (loop)]
+         [(= type 21) (if (and (>= (bytes-length pt) 2) (= 1 (bytes-ref pt 0))) (loop) (raise (peer-alert pt)))]
+         [else (raise (tls-alert 10 "handshake data where ChangeCipherSpec was expected"))])))
+   (lambda () (set-r12-expect-ccs?! r #f))))
+;; Records the old state already pulled from the transport after the peer's
+;; ChangeCipherSpec belong to the new state: carry them over.
+(define (r12-adopt-pending! new old)
+  (set-r12-pending! new (r12-pending old)) (set-r12-pending! old '())
+  (set-r12-inbuf! new (r12-inbuf old)) (set-r12-inbuf! old #""))
+;; hs is an hsr (initial handshake, over the plaintext record layer) or a reader thunk
+(define (hs-next hs) (if (procedure? hs) (hs) (hsr-next hs)))
+(define (client-hello-version ch) (be->int ch 4 6))
+(define (client-hello-suites ch)
+  (define sid-len (bytes-ref ch 38))
+  (define pos (+ 39 sid-len))
+  (define cs-len (be->int ch pos (+ pos 2)))
+  (for/list ([i (in-range (+ pos 2) (+ pos 2 cs-len) 2)]) (be->int ch i (+ i 2))))
+;; the result of a 1.2 handshake: the record layer and what the connection keeps of it
+(struct hs12 (r peer-ders tls-unique cfin-vd sfin-vd verified? alpn))
 
 (define (aead-tag aead) (rktcrypto_aead_tag_size aead))
 
@@ -352,8 +415,15 @@
 ;; (CH||SH already accumulated as raw bytes), sh (ServerHello msg),
 ;; client-random, server chosen fields, opts.
 (define (tls12-client-finish rl-in rl-out hs raw-transcript sh client-random opts)
-  (with-decode-errors (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts)))
-(define (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts)
+  (make-conn-12 (with-decode-errors (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts))
+                'client rl-in rl-out opts))
+;; send: writes a record of the handshake's own flight (plaintext initially; through the
+;; old record layer in a renegotiation); read-record: one record of the server's
+;; pre-ChangeCipherSpec flight; old-r: the record layer being replaced (renegotiation).
+(define (tls12-client-finish* rl-in rl-out hs raw-transcript sh client-random opts
+                              #:send [send (lambda (type payload) (write-plaintext rl-out type payload))]
+                              #:read-record [read-record (lambda () (read-plaintext-record rl-in))]
+                              #:old-r [old-r #f])
   (define host (hash-ref opts 'host #f))
   (define verify? (hash-ref opts 'verify? #t))
   (define verify-hostname? (hash-ref opts 'verify-hostname? #f))
@@ -393,13 +463,14 @@
   (define ske (box #f))
   (define cert-requested? (box #f))
   (let loop ()
-    (define-values (mt msg) (hsr-next hs))
+    (define-values (mt msg) (hs-next hs))
     (tr+ msg)
     (case mt
       [(11) (set-box! peer-ders (parse-certificate-msg-12 msg)) (loop)]
       [(12) (set-box! ske msg) (loop)]
       [(13) (set-box! cert-requested? (certificate-request-sigalgs msg)) (loop)]   ; CertificateRequest: its signature_algorithms
       [(14) (void)]                              ; ServerHelloDone
+      [(0) (loop)]                               ; HelloRequest: ignored while a handshake is in progress (RFC 5246 7.4.1.1)
       [else (raise (tls-error (format "unexpected 1.2 msg ~a" mt)))]))
 
   (when (null? (unbox peer-ders)) (raise (tls-error "server sent no certificate")))
@@ -461,10 +532,10 @@
   (when ccv (tr+ ccv))
 
   ;; send [Certificate], CKE, [CertificateVerify], CCS, then encrypted Finished
-  (when ccert (write-plaintext rl-out 22 ccert))
-  (write-plaintext rl-out 22 cke)
-  (when ccv (write-plaintext rl-out 22 ccv))
-  (write-plaintext rl-out 20 (bytes 1))         ; ChangeCipherSpec
+  (when ccert (send 22 ccert))
+  (send 22 cke)
+  (when ccv (send 22 ccv))
+  (send 20 (bytes 1))                           ; ChangeCipherSpec
 
   (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #t))
 
@@ -478,13 +549,11 @@
   ;; before the server ChangeCipherSpec, and covered by the server Finished
   ;; hash), then CCS, then the encrypted Finished. A2 (1.2): cache the ticket.
   (let loop ()
-    (define hdr (read-exact rl-in 5))
-    (define rlen (+ (* 256 (bytes-ref hdr 3)) (bytes-ref hdr 4)))
-    (define body (read-exact rl-in rlen))
+    (define-values (rtype body) (read-record))
     (cond
-      [(= (bytes-ref hdr 0) 20) (void)]                                        ; ChangeCipherSpec
-      [(= (bytes-ref hdr 0) 21) (raise (peer-alert body))]                     ; plaintext alert (server pre-CCS)
-      [(and (= (bytes-ref hdr 0) 22) (>= (bytes-length body) 1) (= (bytes-ref body 0) 4)) ; NewSessionTicket
+      [(= rtype 20) (void)]                                        ; ChangeCipherSpec
+      [(= rtype 21) (raise (peer-alert body))]                     ; alert (server pre-CCS)
+      [(and (= rtype 22) (>= (bytes-length body) 1) (= (bytes-ref body 0) 4)) ; NewSessionTicket
        (tr+ body)
        (when ticket12-box
          (let ([tlen (+ (* 256 (bytes-ref body 8)) (bytes-ref body 9))])
@@ -493,12 +562,13 @@
                                             (unbox peer-ders) verified?)))))
        (loop)]
       [else (loop)]))
+  (when old-r (r12-adopt-pending! r old-r))     ; what the old state already pulled in follows the CCS
   (define-values (ftype fmsg) (r12-read-handshake r))
   (unless (= ftype 20) (raise (tls-error "expected server Finished")))
   (define expect-sfin (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-sfin (subbytes fmsg 4)) (raise (tls-alert 51 "server Finished mismatch")))
 
-  (make-conn-12 r (unbox peer-ders) cfin-vd verified? alpn)]))
+  (hs12 r (unbox peer-ders) cfin-vd cfin-vd expect-sfin verified? alpn)]))
 
 ;; A2 (1.2): abbreviated (resumption) client handshake. Keys come from the cached
 ;; master secret; read the server's [NewSessionTicket] + CCS + Finished, then send
@@ -543,7 +613,7 @@
   (write-plaintext rl-out 20 (bytes 1))                ; client ChangeCipherSpec
   (define cfin-vd (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) cfin-vd))
-  (make-conn-12 r peer-ders cfin-vd verified? alpn))
+  (hs12 r peer-ders cfin-vd cfin-vd expect-sfin verified? alpn))
 
 ;; =====================================================================
 ;; Server (1.2)
@@ -552,13 +622,31 @@
 ;; into the last 8 bytes of ServerHello.random when it negotiates TLS 1.2.
 (define DOWNGRADE-12 #"\x44\x4f\x57\x4e\x47\x52\x44\x01")
 (define (tls12-accept rl-in rl-out hs ch client-random suite opts)
-  (with-decode-errors (tls12-accept* rl-in rl-out hs ch client-random suite opts)))
-(define (tls12-accept* rl-in rl-out hs ch client-random suite opts)
+  (make-conn-12 (with-decode-errors (tls12-accept* rl-in rl-out hs ch client-random suite opts))
+                'server rl-in rl-out opts))
+;; send / read-ccs: the handshake's transport (plaintext initially; the old record layer in a
+;; renegotiation); reneg: (cons client-verify-data server-verify-data) of the previous
+;; handshake (RFC 5746 3.7), or #f; old-r: the record layer being replaced.
+(define (tls12-accept* rl-in rl-out hs ch client-random suite opts
+                       #:send [send (lambda (type payload) (write-plaintext rl-out type payload))]
+                       #:read-ccs [read-ccs (lambda () (read-until-ccs rl-in))]
+                       #:reneg [reneg #f]
+                       #:old-r [old-r #f])
   (define cert-ders (hash-ref opts 'cert-ders))
   (define key (hash-ref opts 'key))
   (define-values (kx sig-type cipher mac key-len prf-alg) (suite12 suite))
   (unless kx (raise (tls-error "unsupported 1.2 suite (server)")))
   (define ch-exts (client-hello-exts ch))
+  ;; RFC 5746 3.7: a renegotiating ClientHello must carry renegotiation_info with the
+  ;; client's previous verify_data (and not the SCSV); anything else aborts the connection
+  (when reneg
+    (define ri (assoc #xff01 ch-exts))
+    (unless (and ri (equal? (cdr ri) (vec 1 (car reneg))))
+      (with-handlers ([exn:fail? void]) (send 21 (bytes 2 40)))
+      (raise (tls-alert 40 "renegotiation_info does not match the previous handshake")))
+    (when (memv #x00ff (client-hello-suites ch))
+      (with-handlers ([exn:fail? void]) (send 21 (bytes 2 40)))
+      (raise (tls-alert 40 "TLS_EMPTY_RENEGOTIATION_INFO_SCSV in a renegotiating ClientHello"))))
   (define ems? (assoc #x0017 ch-exts))          ; extended_master_secret ext type = 0x0017
   (define etm? (and (eq? cipher 'aes-cbc) (assoc #x0016 ch-exts) #t))   ; encrypt_then_mac, CBC only
   ;; ALPN (RFC 7301): the first of our protocols the client offered
@@ -566,7 +654,7 @@
   (define neg-alpn (and client-alpn (for/or ([p (in-list (hash-ref opts 'alpn '()))]
                                              #:when (member p client-alpn)) p)))
   (when (and client-alpn (not neg-alpn) (not (hash-ref opts 'alpn-allow-no-match? #t)))
-    (with-handlers ([exn:fail? void]) (write-plaintext rl-out 21 (bytes 2 120)))   ; no_application_protocol
+    (with-handlers ([exn:fail? void]) (send 21 (bytes 2 120)))   ; no_application_protocol
     (raise (tls-alert 120 "no application protocol in common")))
   ;; the signature scheme for ServerKeyExchange, from the client's signature_algorithms
   (define client-sigalgs (let ([e (assoc #x000d ch-exts)]) (and e (parse-sigalg-list (cdr e)))))
@@ -606,16 +694,18 @@
                    (if etm? (ext #x0016 #"") #"")
                    (if neg-alpn (ext #x0010 (vec 2 (vec 1 neg-alpn))) #"")
                    (if issue-ticket? (ext #x0023 #"") #"")  ; SessionTicket: negotiate (empty in SH)
-                   (ext #xff01 (vec 1 #""))))    ; renegotiation_info (empty)
+                   ;; renegotiation_info: empty, or client_verify_data || server_verify_data
+                   ;; of the previous handshake when renegotiating (RFC 5746 3.7)
+                   (ext #xff01 (vec 1 (if reneg (bytes-append (car reneg) (cdr reneg)) #"")))))
   (define sh-body (bytes-append (u16 #x0303) server-random (vec 1 #"")
                                 (u16 suite) (u8 0) (vec 2 sh-exts)))
   (define sh (bytes-append (u8 2) (u24 (bytes-length sh-body)) sh-body))
-  (tr+ sh) (write-plaintext rl-out 22 sh)
+  (tr+ sh) (send 22 sh)
 
   ;; Certificate
   (define cert-list (apply bytes-append (for/list ([d (in-list cert-ders)]) (vec 3 d))))
   (define cert-msg (let ([b (vec 3 cert-list)]) (bytes-append (u8 11) (u24 (bytes-length b)) b)))
-  (tr+ cert-msg) (write-plaintext rl-out 22 cert-msg)
+  (tr+ cert-msg) (send 22 cert-msg)
 
   ;; ServerKeyExchange: ECDHE with a group from the client's supported_groups,
   ;; or DHE over ffdhe2048 (RFC 7919; what libssl's automatic DH picks for a
@@ -631,7 +721,7 @@
   (define sig (sign-12 key scheme signed))
   (define ske-body (bytes-append kx-params (u16 scheme) (vec 2 sig)))
   (define ske (bytes-append (u8 12) (u24 (bytes-length ske-body)) ske-body))
-  (tr+ ske) (write-plaintext rl-out 22 ske)
+  (tr+ ske) (send 22 ske)
 
   ;; A4: CertificateRequest (ask the client to authenticate) if configured.
   (define request-client-cert? (hash-ref opts 'request-client-cert #f))
@@ -642,18 +732,18 @@
                                                   #x04 #x01 #x05 #x01 #x06 #x01))                      ; rsa_pkcs1_*
                                     (vec 2 (certificate-authorities-list (hash-ref opts 'client-ca-names '())))))
     (define creq (bytes-append (u8 13) (u24 (bytes-length creq-body)) creq-body))
-    (tr+ creq) (write-plaintext rl-out 22 creq))
+    (tr+ creq) (send 22 creq))
 
   ;; ServerHelloDone
   (define shd (bytes-append (u8 14) (u24 0)))
-  (tr+ shd) (write-plaintext rl-out 22 shd)
+  (tr+ shd) (send 22 shd)
 
   ;; read [Certificate], ClientKeyExchange, [CertificateVerify] (all plaintext)
   (define client-ders (box '()))
   (define cv-content (box #f)) (define cv-sig (box #f)) (define cv-scheme (box #f))
   (define cke (box #f))
   (let loop ()
-    (define-values (mt msg) (hsr-next hs))
+    (define-values (mt msg) (hs-next hs))
     (case mt
       [(11) (set-box! client-ders (parse-certificate-msg-12 msg)) (tr+ msg) (loop)]
       [(16) (set-box! cke msg) (tr+ msg)]                 ; ClientKeyExchange ends this flight
@@ -662,7 +752,7 @@
   (define ems-session-hash (digest prf-alg (unbox tr)))
   (when (pair? (unbox client-ders))                       ; client authenticated -> CertificateVerify
     (set-box! cv-content (bytes-copy (unbox tr)))          ; signed content = CH..CKE (raw)
-    (define-values (cvt cvmsg) (hsr-next hs))
+    (define-values (cvt cvmsg) (hs-next hs))
     (unless (= cvt 15) (raise (tls-error "expected CertificateVerify")))
     (set-box! cv-scheme (be->int cvmsg 4 6))
     (set-box! cv-sig (subbytes cvmsg 8 (+ 8 (be->int cvmsg 6 8))))
@@ -682,7 +772,7 @@
   ;; server's write side is still plaintext here (its ChangeCipherSpec comes
   ;; later), so alerts go out unprotected.
   (define (fatal-plain! code msg)
-    (with-handlers ([exn:fail? void]) (write-plaintext rl-out 21 (bytes 2 code)))
+    (with-handlers ([exn:fail? void]) (send 21 (bytes 2 code)))
     (raise (tls-alert code msg)))
   (define client-verified?
     (cond
@@ -700,7 +790,8 @@
   (define r (make-r12/keys rl-in rl-out cipher mac etm? key-len prf-alg master server-random client-random #f))
 
   ;; read client CCS + Finished
-  (read-until-ccs rl-in)
+  (read-ccs)
+  (when old-r (r12-adopt-pending! r old-r))     ; what the old state already pulled in follows the CCS
   (define-values (cft cfmsg) (r12-read-handshake r))
   (unless (= cft 20) (raise (tls-error "expected client Finished")))
   (define expect-cfin (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
@@ -719,13 +810,13 @@
     (define nst-body (bytes-append (u32 7200) (vec 2 ticket)))
     (define nst (bytes-append (u8 4) (u24 (bytes-length nst-body)) nst-body))
     (tr+ nst)
-    (write-plaintext rl-out 22 nst))
+    (send 22 nst))
 
   ;; server CCS + Finished
-  (write-plaintext rl-out 20 (bytes 1))
+  (send 20 (bytes 1))
   (define sfin-vd (prf prf-alg master #"server finished" (digest prf-alg (unbox tr)) 12))
   (r12-write r 22 (bytes-append (u8 20) (u24 12) sfin-vd))
-  (make-conn-12 r (unbox client-ders) cfin-vd client-verified? neg-alpn)]))
+  (hs12 r (unbox client-ders) cfin-vd cfin-vd sfin-vd client-verified? neg-alpn)]))
 
 ;; A2 (1.2): abbreviated (resumption) server handshake — ServerHello + CCS +
 ;; Finished first, then read the client's CCS + Finished. Keys come from the
@@ -758,7 +849,7 @@
   (define expect-cfin (prf prf-alg master #"client finished" (digest prf-alg (unbox tr)) 12))
   (unless (ct-equal? expect-cfin (subbytes cfmsg 4)) (raise (tls-alert 51 "client Finished mismatch (resume)")))
   ;; the original handshake's client identity carries over
-  (make-conn-12 r (vector-ref entry 5) expect-cfin (vector-ref entry 6) neg-alpn))
+  (hs12 r (vector-ref entry 5) expect-cfin expect-cfin sfin-vd (vector-ref entry 6) neg-alpn))
 
 ;; =====================================================================
 ;; helpers
@@ -776,6 +867,10 @@
 
 ;; Read raw records until a ChangeCipherSpec passes (discard it). Handshake
 ;; records that arrive before are buffered by the caller's hsr already.
+(define (read-plaintext-record in)
+  (define hdr (read-exact in 5))
+  (define len (+ (* 256 (bytes-ref hdr 3)) (bytes-ref hdr 4)))
+  (values (bytes-ref hdr 0) (read-exact in len)))
 (define (read-until-ccs in)
   (let loop ()
     (define hdr (read-exact in 5))
@@ -1015,25 +1110,124 @@
 ;; signatures: the same routine as TLS 1.3 (schemes are the same ids)
 (define (sign-12 key scheme content) (server-sign key scheme content))
 
-;; Build a tls-conn from the 1.2 record layer. tls-unique (RFC 5929 §3.1) is the
+;; Build a tls-conn from a 1.2 handshake result. tls-unique (RFC 5929 §3.1) is the
 ;; first Finished's verify_data = the client Finished for a full handshake.
-(define (make-conn-12 r peer-ders [tls-unique #f] [verified? #f] [alpn #f])
+;;
+;; Renegotiation (RFC 5246 7.4.1.1 + RFC 5746): a server that is asked to change the
+;; verification mode on an established connection (ssl-set-verify! / ssl-try-verify!
+;; on a port, what libssl did with SSL_renegotiate) sends HelloRequest and runs a full
+;; handshake over the protected stream, requesting the client's certificate; the
+;; client answers a HelloRequest it reads with a new ClientHello whose
+;; renegotiation_info carries its previous Finished. Both sides keep the record layer
+;; in a box: handshake records go through the old state until the ChangeCipherSpecs,
+;; the new state takes over afterwards. Application data that arrives during the
+;; handshake is queued for the reader. The server drives its renegotiation in the
+;; calling thread; a concurrent reader of the same connection is not supported
+;; during it (the same holds for the libssl-based implementation's blocking
+;; renegotiation).
+(define (make-conn-12 res role rl-in rl-out opts)
+  (define rb (box (hs12-r res)))
+  (define cvd (box (hs12-cfin-vd res)))
+  (define svd (box (hs12-sfin-vd res)))
+  (define app-queue (box '()))
+  (define conn #f)
+  (define (adopt! res2)
+    (set-box! rb (hs12-r res2))
+    (set-box! cvd (hs12-cfin-vd res2))
+    (set-box! svd (hs12-sfin-vd res2))
+    (set-tls-conn-peer-certs! conn (hs12-peer-ders res2))
+    (set-tls-conn-verified! conn (and (hs12-verified? res2) #t))
+    (set-tls-conn-binding! conn (and (hs12-tls-unique res2) (hash 'tls-unique (hs12-tls-unique res2)))))
+  ;; client: answer a HelloRequest (or decline it with a no_renegotiation warning)
+  (define (client-renegotiate!)
+    (define r (unbox rb))
+    (define build (hash-ref opts 'reneg-client-hello #f))
+    (cond
+      [(not build) (r12-write r 21 (bytes 1 100))]                 ; warning: no_renegotiation
+      [else
+       (define client-random (random-bytes 32))
+       (define ch (build client-random (unbox cvd)))
+       (r12-write r 22 ch)
+       (define reader (make-r12-hs-reader r app-queue))
+       (define-values (mt sh) (reader))
+       (unless (= mt 2) (raise (tls-alert 10 (format "expected ServerHello, got ~a" mt))))
+       (unless (= (be->int sh 4 6) #x0303) (raise (tls-alert 70 "renegotiation changed the protocol version")))
+       (define sid-len (bytes-ref sh 38))
+       (unless (equal? (sh-ext sh (+ 39 sid-len) #xff01) (vec 1 (bytes-append (unbox cvd) (unbox svd))))
+         (raise (tls-alert 40 "renegotiation_info in ServerHello does not match the previous handshake")))
+       (define res2
+         (with-decode-errors
+           (tls12-client-finish* rl-in rl-out reader (bytes-append ch sh) sh client-random
+                                 (hash-remove opts 'ticket12-box)   ; no resumption inside a renegotiation
+                                 #:send (lambda (type payload) (r12-write r type payload))
+                                 #:read-record (lambda ()
+                                                 (set-r12-expect-ccs?! r #t)
+                                                 (dynamic-wind void (lambda () (r12-read r))
+                                                               (lambda () (set-r12-expect-ccs?! r #f))))
+                                 #:old-r r)))
+       (adopt! res2)]))
+  ;; server: HelloRequest, then a full handshake asking for (require? -> requiring) a
+  ;; client certificate verified against `anchors`
+  (define (server-renegotiate! require? anchors)
+    (define r (unbox rb))
+    (define key (hash-ref opts 'key))
+    (define policy (hash-ref opts 'suite-policy #f))
+    (define (pol-ok? id) (or (not policy) (and (list? policy) (memv id policy) #t)))
+    (r12-write r 22 (bytes 0 0 0 0))                                ; HelloRequest
+    (define reader (make-r12-hs-reader r app-queue))
+    (define-values (mt ch) (reader))
+    (unless (= mt 1) (raise (tls-alert 10 (format "expected ClientHello, got ~a" mt))))
+    (unless (= (client-hello-version ch) #x0303) (raise (tls-alert 70 "renegotiation changed the protocol version")))
+    (define suite (for/or ([s (in-list (client-hello-suites ch))]
+                           #:when (and (pol-ok? s) (tls12-server-can? s key))) s))
+    (unless suite
+      (with-handlers ([exn:fail? void]) (r12-write r 21 (bytes 2 40)))
+      (raise (tls-alert 40 "no common cipher suite")))
+    (define opts2 (hash-set* opts 'request-client-cert #t 'require-client-cert (and require? #t)
+                             'client-ca-anchors anchors 'ticket-store #f))
+    (define res2
+      (with-decode-errors
+        (tls12-accept* rl-in rl-out reader ch (subbytes ch 6 38) suite opts2
+                       #:send (lambda (type payload) (r12-write r type payload))
+                       #:read-ccs (lambda () (r12-read-ccs r app-queue))
+                       #:reneg (cons (unbox cvd) (unbox svd))
+                       #:old-r r)))
+    (adopt! res2))
   (define (recv)
-    (let loop ()
-      (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
-        (define-values (type pt) (r12-read r))
-        (cond
-          [(and (= type 23) (positive? (bytes-length pt))) pt]
-          [(= type 23) (loop)]
-          [(= type 21) (alert->eof pt)]
-          [(= type 20) (loop)]
-          [(= type 22) (loop)]
-          [else (loop)]))))
+    (cond
+      [(pair? (unbox app-queue))
+       (define q (unbox app-queue))
+       (set-box! app-queue (cdr q))
+       (car q)]
+      [else
+       (let loop ()
+         (with-handlers ([(lambda (e) (and (exn:tls? e) (not (exn:tls-alert e)))) (lambda (_) eof)])
+           (define-values (type pt) (r12-read (unbox rb)))
+           (cond
+             [(and (= type 23) (positive? (bytes-length pt))) pt]
+             [(= type 23) (loop)]
+             [(= type 21) (alert->eof pt)]
+             [(= type 20) (loop)]
+             [(= type 22)
+              (cond
+                [(and (eq? role 'client) (>= (bytes-length pt) 4) (= (bytes-ref pt 0) 0))
+                 (client-renegotiate!)
+                 (if (pair? (unbox app-queue)) (recv) (loop))]
+                [(and (eq? role 'server) (>= (bytes-length pt) 4) (= (bytes-ref pt 0) 1))
+                 ;; a client-initiated renegotiation is declined (RFC 5746 4.2 warning)
+                 (r12-write (unbox rb) 21 (bytes 1 100))
+                 (loop)]
+                [else (loop)])]
+             [else (loop)])))]))
   (define (send bs)
     (let loop ([off 0])
       (when (< off (bytes-length bs))
         (define chunk (min 16384 (- (bytes-length bs) off)))
-        (r12-write r 23 (subbytes bs off (+ off chunk)))
+        (r12-write (unbox rb) 23 (subbytes bs off (+ off chunk)))
         (loop (+ off chunk)))))
-  (define (shut) (with-handlers ([exn:fail? void]) (r12-write r 21 (bytes 1 0))))
-  (make-tls-conn recv send shut peer-ders 'tls12 (and tls-unique (hash 'tls-unique tls-unique)) verified? alpn))
+  (define (shut) (with-handlers ([exn:fail? void]) (r12-write (unbox rb) 21 (bytes 1 0))))
+  (set! conn (make-tls-conn recv send shut (hs12-peer-ders res) 'tls12
+                            (and (hs12-tls-unique res) (hash 'tls-unique (hs12-tls-unique res)))
+                            (hs12-verified? res) (hs12-alpn res)))
+  (when (eq? role 'server) (set-tls-conn-pha! conn server-renegotiate!))
+  conn)

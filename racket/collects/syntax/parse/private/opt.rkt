@@ -254,6 +254,8 @@
                 (pattern-equal? (pat:pair-tail a) (pat:pair-tail b)))]
           [(and (pat:vector? a) (pat:vector? b))
            (pattern-equal? (pat:vector-pattern a) (pat:vector-pattern b))]
+          [(and (pat:pvector? a) (pat:pvector? b))
+           (pattern-equal? (pat:pvector-pattern a) (pat:pvector-pattern b))]
           [(and (pat:box? a) (pat:box? b))
            (pattern-equal? (pat:box-pattern a) (pat:box-pattern b))]
           [(and (pat:pstruct? a) (pat:pstruct? b))

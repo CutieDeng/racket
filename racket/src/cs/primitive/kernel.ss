@@ -311,6 +311,7 @@
   [core-swisstable-iterate-key+value (known-procedure 8)]
   [core-swisstable-install-struct-property! (known-procedure/single-valued 4)]
   [cos (known-procedure/folding 2)]
+  [crypto-aead-expand-key (known-procedure/single-valued 4)]
   [crypto-aead-key-size (known-procedure/single-valued 2)]
   [crypto-argon2id (known-procedure/single-valued 256)]
   [crypto-aead-nonce-size (known-procedure/single-valued 2)]

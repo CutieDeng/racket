@@ -1,5 +1,6 @@
 #lang racket/base
-(require (for-template racket/base
+(require (only-in '#%kernel core-pvector? core-pvector->list)
+         (for-template racket/base
                        "keywords.rkt"
                        "residual.rkt"
                        "runtime.rkt")
@@ -597,6 +598,10 @@
     [#(a ...)
      (let ([lp (parse-single-pattern (syntax/loc stx (a ...)) decls)])
        (pat:vector lp))]
+    [pv
+     (core-pvector? (syntax-e #'pv))
+     (let ([lp (parse-single-pattern (datum->syntax stx (core-pvector->list (syntax-e #'pv)) stx) decls)])
+       (pat:pvector lp))]
     [b
      (box? (syntax-e #'b))
      (let ([bp (parse-single-pattern (unbox (syntax-e #'b)) decls)])
@@ -1264,6 +1269,8 @@
       ;;  (pat:literal id input-phase lit-phase)]
       [(pat:vector sp)
        (pat:vector (S sp))]
+      [(pat:pvector sp)
+       (pat:pvector (S sp))]
       [(pat:box sp)
        (pat:box (S sp))]
       [(pat:pstruct key sp)

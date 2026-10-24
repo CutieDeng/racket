@@ -8,6 +8,10 @@
 
 #include <string.h>
 #include <stdint.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 
 typedef uint64_t fe[5];   /* radix 2^51 field element */
 
@@ -190,6 +194,111 @@ static void fe_cswap(fe f, fe g, uint64_t b)
   }
 }
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* Radix-2^64 ladder on the rktasm/x86 kernels (fe64_mul/sqr/mul121665 on MULX/ADX): the same
+   Montgomery ladder as below over four-limb elements that stay below 2^256 (2^256 = 38 mod p is
+   folded after every operation); only the output encoding is made canonical. */
+typedef uint64_t fe64[4];
+static void fe64_add(fe64 h, const fe64 f, const fe64 g)
+{
+  unsigned __int128 c = 0; int i;
+  for (i = 0; i < 4; i++) { c += (unsigned __int128)f[i] + g[i]; h[i] = (uint64_t)c; c >>= 64; }
+  c = (unsigned __int128)h[0] + (uint64_t)c * 38; h[0] = (uint64_t)c; c >>= 64;
+  for (i = 1; i < 4; i++) { c += h[i]; h[i] = (uint64_t)c; c >>= 64; }
+  h[0] += (uint64_t)c * 38;
+}
+static void fe64_sub(fe64 h, const fe64 f, const fe64 g)
+{
+  unsigned __int128 x; uint64_t b = 0; int i;
+  for (i = 0; i < 4; i++) { x = (unsigned __int128)f[i] - g[i] - b; h[i] = (uint64_t)x; b = (uint64_t)(x >> 64) & 1; }
+  x = (unsigned __int128)h[0] - b * 38; h[0] = (uint64_t)x; b = (uint64_t)(x >> 64) & 1;
+  for (i = 1; i < 4; i++) { x = (unsigned __int128)h[i] - b; h[i] = (uint64_t)x; b = (uint64_t)(x >> 64) & 1; }
+  h[0] -= b * 38;
+}
+static void fe64_cswap(fe64 f, fe64 g, uint64_t b)
+{
+  uint64_t mask = 0 - b; int i;
+  for (i = 0; i < 4; i++) { uint64_t x = mask & (f[i] ^ g[i]); f[i] ^= x; g[i] ^= x; }
+}
+static void fe64_frombytes(fe64 h, const unsigned char *s)
+{
+  int i;
+  for (i = 0; i < 4; i++) h[i] = load64_le(s + 8 * i);
+  h[3] &= 0x7fffffffffffffffULL;   /* top bit ignored per RFC 7748 */
+}
+static void fe64_tobytes(unsigned char *s, const fe64 hh)
+{
+  uint64_t h[4], t[4], q; unsigned __int128 c; int i;
+  memcpy(h, hh, 32);
+  q = h[3] >> 63; h[3] &= 0x7fffffffffffffffULL;             /* fold bit 255: 2^255 = 19 */
+  c = (unsigned __int128)h[0] + 19 * q; h[0] = (uint64_t)c; c >>= 64;
+  for (i = 1; i < 4; i++) { c += h[i]; h[i] = (uint64_t)c; c >>= 64; }
+  c = (unsigned __int128)h[0] + 19; t[0] = (uint64_t)c; c >>= 64;  /* h >= p  <=>  h + 19 >= 2^255 */
+  for (i = 1; i < 4; i++) { c += h[i]; t[i] = (uint64_t)c; c >>= 64; }
+  q = (t[3] >> 63) | (uint64_t)c;
+  c = (unsigned __int128)h[0] + 19 * q; h[0] = (uint64_t)c; c >>= 64;  /* h - q*p = h + 19q - q*2^255 */
+  for (i = 1; i < 4; i++) { c += h[i]; h[i] = (uint64_t)c; c >>= 64; }
+  h[3] &= 0x7fffffffffffffffULL;
+  for (i = 0; i < 4; i++) store64_le(s + 8 * i, h[i]);
+}
+static void fe64_invert(fe64 out, const fe64 z)
+{
+  fe64 t0, t1, t2, t3; int i;
+  fe64_sqr_x86(t0, z);
+  fe64_sqr_x86(t1, t0); fe64_sqr_x86(t1, t1);
+  fe64_mul_x86(t1, z, t1);
+  fe64_mul_x86(t0, t0, t1);
+  fe64_sqr_x86(t2, t0);
+  fe64_mul_x86(t1, t1, t2);
+  fe64_sqr_x86(t2, t1); for (i = 1; i < 5; i++) fe64_sqr_x86(t2, t2);
+  fe64_mul_x86(t1, t2, t1);
+  fe64_sqr_x86(t2, t1); for (i = 1; i < 10; i++) fe64_sqr_x86(t2, t2);
+  fe64_mul_x86(t2, t2, t1);
+  fe64_sqr_x86(t3, t2); for (i = 1; i < 20; i++) fe64_sqr_x86(t3, t3);
+  fe64_mul_x86(t2, t3, t2);
+  fe64_sqr_x86(t2, t2); for (i = 1; i < 10; i++) fe64_sqr_x86(t2, t2);
+  fe64_mul_x86(t1, t2, t1);
+  fe64_sqr_x86(t2, t1); for (i = 1; i < 50; i++) fe64_sqr_x86(t2, t2);
+  fe64_mul_x86(t2, t2, t1);
+  fe64_sqr_x86(t3, t2); for (i = 1; i < 100; i++) fe64_sqr_x86(t3, t3);
+  fe64_mul_x86(t2, t3, t2);
+  fe64_sqr_x86(t2, t2); for (i = 1; i < 50; i++) fe64_sqr_x86(t2, t2);
+  fe64_mul_x86(t1, t2, t1);
+  fe64_sqr_x86(t1, t1); for (i = 1; i < 5; i++) fe64_sqr_x86(t1, t1);
+  fe64_mul_x86(out, t1, t0);
+}
+static int x25519_fe64(unsigned char out[32], const unsigned char scalar[32], const unsigned char point[32])
+{
+  unsigned char e[32];
+  fe64 x1;
+  uint64_t st[16];                /* x2 | z2 | x3 | z3, the layout x25519_step_x86 takes */
+  uint64_t *x2 = st, *z2 = st + 4, *x3 = st + 8, *z3 = st + 12;
+  uint64_t swap = 0;
+  int pos, i;
+  memcpy(e, scalar, 32);
+  e[0] &= 248; e[31] &= 127; e[31] |= 64;
+  fe64_frombytes(x1, point);
+  memset(st, 0, sizeof st);
+  x2[0] = 1;
+  memcpy(x3, x1, 32);
+  z3[0] = 1;
+  for (pos = 254; pos >= 0; pos--) {
+    uint64_t b = (e[pos >> 3] >> (pos & 7)) & 1;
+    swap ^= b;
+    fe64_cswap(x2, x3, swap);
+    fe64_cswap(z2, z3, swap);
+    swap = b;
+    x25519_step_x86(st, x1);     /* the whole step (10 multiplications, 8 add/sub) in one kernel */
+  }
+  fe64_cswap(x2, x3, swap);
+  fe64_cswap(z2, z3, swap);
+  fe64_invert(z2, z2);
+  fe64_mul_x86(x2, x2, z2);
+  fe64_tobytes(out, x2);
+  { unsigned char acc = 0; for (i = 0; i < 32; i++) acc |= out[i]; return acc != 0; }
+}
+#endif
+
 int rktcrypto_x25519(unsigned char out[32], const unsigned char scalar[32],
                      const unsigned char point[32])
 {
@@ -199,6 +308,9 @@ int rktcrypto_x25519(unsigned char out[32], const unsigned char scalar[32],
   uint64_t swap = 0;
   int pos;
 
+#if defined(__x86_64__) && defined(__ELF__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) return x25519_fe64(out, scalar, point);
+#endif
   memcpy(e, scalar, 32);
   e[0] &= 248;
   e[31] &= 127;

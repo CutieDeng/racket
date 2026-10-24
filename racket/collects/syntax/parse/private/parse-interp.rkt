@@ -184,6 +184,9 @@
       [(pat:vector sp)
        (define sp-expr (compile-s sp aenv))
        (D #`(s-vector #,(F sp-expr)))]
+      [(pat:pvector sp)
+       (define sp-expr (compile-s sp aenv))
+       (D #`(s-pvector #,(F sp-expr)))]
       [(pat:box sp)
        (define sp-expr (compile-s sp aenv))
        (D #`(s-box #,(F sp-expr)))]

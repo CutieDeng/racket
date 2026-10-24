@@ -43,6 +43,13 @@
       [(_ str arg ...) ($oops 'fasl-internal str arg ...)]))
 
   (module (read-entry)
+    ;; externalref extension (fasl2): while reading a standalone graph that
+    ;; declares external references, holds the graph index at which the
+    ;; external slots begin (graph-len - external-count), else #f.  A
+    ;; graph-ref at or past this base is an external, encoded as a
+    ;; fasl-indirect with a negative marker (-1-j) so vfasl.ss can tell it
+    ;; from an ordinary unresolved graph reference.
+    (define external-base #f)
     (define-syntax fasl-type-case
       (syntax-rules (else)
         [(_ e0 [(k ...) e1 e2 ...] ... [else ee1 ee2 ...])
@@ -227,6 +234,15 @@
            (let* ([offset (read-uptr p)]
                   [c (read-fasl p g)])
              (fasl-closure offset c))]
+          [(fasl-type-closure-freevars)
+           ;; fasl2: n free-var values + code (see wrf-closure in "fasl.ss")
+           (let* ([n (read-uptr p)]
+                  [c (read-fasl p g)]
+                  [fv* (let loop ([i 0] [acc '()])
+                         (if (fx= i n)
+                             (list->vector (reverse acc))
+                             (loop (fx+ i 1) (cons (read-fasl p g) acc))))])
+             (fasl-closure-freevars n c fv*))]
           [(fasl-type-flonum)
            (let* ([high (read-uptr p)]
                   [low (read-uptr p)])
@@ -281,17 +297,26 @@
              (fasl-code flags free name arity-mask info pinfo* bytes m vreloc))]
           [(fasl-type-immediate fasl-type-entry fasl-type-library fasl-type-library-code)
            (fasl-atom ty (read-uptr p))]
-          [(fasl-type-graph) (read-fasl p (let ([new-g (make-vector (read-uptr p) #f)])
-                                            (let ([n (read-uptr p)])
-                                              (unless (or (zero? n) (and g (>= (vector-length g) n)))
-                                                (bogus "incompatible external vector in ~a" (port-name p))))
-                                            (when g
-                                              (let ([delta (fx- (vector-length new-g) (vector-length g))])
-                                                (let loop ([i 0])
-                                                  (unless (fx= i (vector-length g))
-                                                    (vector-set! new-g (fx+ i delta) (vector-ref g i))
-                                                    (loop (fx+ i 1))))))
-                                            new-g))]
+          [(fasl-type-graph)
+           (let ([new-g (make-vector (read-uptr p) #f)])
+             (let ([n (read-uptr p)])
+               (cond
+                 [(or (zero? n) (and g (>= (vector-length g) n)))
+                  (when g
+                    (let ([delta (fx- (vector-length new-g) (vector-length g))])
+                      (let loop ([i 0])
+                        (unless (fx= i (vector-length g))
+                          (vector-set! new-g (fx+ i delta) (vector-ref g i))
+                          (loop (fx+ i 1))))))
+                  (read-fasl p new-g)]
+                 [else
+                  ;; externalref (fasl2): a standalone graph (g=#f) declaring
+                  ;; n externals.  Instead of the old "incompatible external
+                  ;; vector" bogus, allow it: external slots occupy the last
+                  ;; n graph indices, and graph-ref to an unfilled such slot
+                  ;; yields a fasl-indirect with a negative marker.
+                  (fluid-let ([external-base (fx- (vector-length new-g) n)])
+                    (read-fasl p new-g))])))]
           [(fasl-type-graph-def)
            (let ([n (read-uptr p)])
              (let ([x (read-fasl p g)])
@@ -301,7 +326,10 @@
           [(fasl-type-graph-ref)
            (let ([n (read-uptr p)])
              (or (vector-ref g n)
-                 (fasl-indirect g n)))]
+                 (if (and external-base (fx>= n external-base))
+                     ;; external slot j = n - external-base, marked negative
+                     (fasl-indirect g (fx- -1 (fx- n external-base)))
+                     (fasl-indirect g n))))]
           [(fasl-type-begin)
            (let loop ([n (read-uptr p)])
              (if (fx= n 1)
@@ -446,6 +474,10 @@
                      fld*))))]
           [rtd-ref (uid) (build-graph! x t (lambda () (build! uid #t)))]
           [closure (offset c) (build-graph! x t (lambda () (build! c t)))]
+          [closure-freevars (n c fv*)
+           (build-graph! x t (lambda ()
+                               (build! c t)
+                               (vector-for-each (lambda (fv) (build! fv t)) fv*)))]
           [flonum (high low) (build-graph! x t void)]
           [small-integer (iptr) (build-graph! x t void)]
           [large-integer (sign vuptr) (build-graph! x t void)]
@@ -612,6 +644,13 @@
                (put-u8 p (constant fasl-type-closure))
                (put-uptr p offset)
                (write-fasl p t c)))]
+          [closure-freevars (n c fv*)
+           (write-graph p t x
+             (lambda ()
+               (put-u8 p (constant fasl-type-closure-freevars))
+               (put-uptr p n)
+               (write-fasl p t c)
+               (vector-for-each (lambda (fv) (write-fasl p t fv)) fv*)))]
           [flonum (high low)
            (write-graph p t x
              (lambda ()
@@ -811,6 +850,11 @@
                        (vector 'CLOSURE
                                offset
                                (describe c))]
+              [closure-freevars (n c fv*)
+                       (vector 'CLOSURE-FREEVARS
+                               n
+                               (describe c)
+                               (vector-map describe fv*))]
               [flonum (high low) (build-flonum high low)]
               [large-integer (sign vuptr)
                (let loop ([v 0] [i 0])
@@ -960,15 +1004,80 @@
                                 (lambda ()
                                   (when script-header (put-bytevector op script-header))
                                   (for-each (lambda (entry) (write-entry op entry)) entry*)))))))
+      ;; In-memory vfasl conversion for compiled-code bytevectors (the
+      ;; ".zo" code path): parse the fasl stream, convert each entry to a
+      ;; vfasl image, and re-emit the stream.  No boot header, no
+      ;; alignment padding, and no GOT relocation -- the result is loaded
+      ;; into generation 0 by load-compiled-from-port, whose GC replays
+      ;; reloc tables against in-object pool quads.  External references
+      ;; (linklet literals) ride the externalref machinery and are
+      ;; resolved from the externals vector at load.
+      (set-who! $vfasl-convert-bytevector
+        (lambda (bv)
+          (unless (bytevector? bv) ($oops who "~s is not a bytevector" bv))
+          (fluid-let ([strip-inspector-information? #f]
+                      [strip-profile-information? #f]
+                      [strip-source-annotations? #f]
+                      [strip-compile-time-information? #f]
+                      [fasl-who who]
+                      [fasl-count 0])
+            (let-values ([(script-header mode entry*)
+                          (read-and-strip-from-port (open-bytevector-input-port bv) #f '#())])
+              (let-values ([(op get) (open-bytevector-output-port)])
+                (for-each (lambda (entry)
+                            (handle-entry
+                             entry
+                             (lambda (write-k) (write-k op))
+                             (lambda (situation x)
+                               (let ([vbv ($fasl-to-vfasl x)])
+                                 ($write-fasl-bytevectors op (list vbv) (bytevector-length vbv)
+                                                          (constant fasl-type-visit-revisit)
+                                                          (constant fasl-type-vfasl))))))
+                          entry*)
+                (get))))))
       (set-who! vfasl-convert-file
         (lambda (ifn ofn bootfile*)
           (convert-fasl-file who ifn ofn (fasl-strip-options)
                              (lambda (script-header mode entry* op)
+                               ;; arm64 PIC (P2.3): pad the boot stream so the next
+                               ;; entry's vfasl image DATA (past the entry framing and
+                               ;; the vfasl header) starts on a 4096-aligned file
+                               ;; offset; the loader can then keep the code+got vspaces
+                               ;; in the boot mapping with their baked adrp/ldr
+                               ;; immediates valid (it checks the alignment at run time
+                               ;; and copies otherwise).  The pad is a fasl-type-padding
+                               ;; entry: type byte, uptr length written in two bytes
+                               ;; (the reader accepts a redundant continuation byte,
+                               ;; which makes the entry's total length exactly
+                               ;; controllable), and that many zero bytes.
+                               (define pad-boot-vfasl-alignment
+                                 (lambda (op payload-size)
+                                   (constant-case architecture
+                                     [(arm64)
+                                      (unless (and (>= payload-size 100) (fasl-compressed)) ; mirrors $write-fasl-bytevectors
+                                        (let* ([uptr-length (lambda (n)
+                                                              (let loop ([n (ash n -7)] [k 1])
+                                                                (if (eqv? n 0) k (loop (ash n -7) (fx+ k 1)))))]
+                                               [pos (port-position op)]
+                                               ;; entry framing: situation u8, uptr size,
+                                               ;; compression u8, kind u8
+                                               [data-off (+ pos 1 (uptr-length (+ payload-size 2)) 2
+                                                            (constant size-vfasl-header))]
+                                               [pad (bitwise-and (- data-off) 4095)])
+                                          (unless (eqv? pad 0)
+                                            (let* ([pad (if (< pad 3) (+ pad 4096) pad)]
+                                                   [n (- pad 3)])
+                                              (put-u8 op (constant fasl-type-padding))
+                                              (put-u8 op (fxior #x80 (fxsrl n 7)))
+                                              (put-u8 op (fxand n #x7F))
+                                              (put-bytevector op (make-bytevector n 0))))))]
+                                     [else (void)])))
                                (when bootfile*
                                  ($emit-boot-header op (constant machine-type-name) bootfile*))
                                (let* ([write-out
                                        (lambda (x situation)
-                                         (let ([bv ($fasl-to-vfasl x)])
+                                         (let ([bv ($fasl-to-vfasl x #t)]) ; boot-mode static load: GOT on
+                                           (pad-boot-vfasl-alignment op (bytevector-length bv))
                                            ($write-fasl-bytevectors op (list bv) (bytevector-length bv)
                                                                     ;; see "promoting" below:
                                                                     (constant fasl-type-visit-revisit)
@@ -1103,6 +1212,8 @@
                              (andmap fld=? fld*1 fld*2))]
                        [rtd-ref (uid) (eq? uid1 uid2)]
                        [closure (offset c) (and (eqv? offset1 offset2) (fasl=? c1 c2))]
+                       [closure-freevars (n c fv*)
+                        (and (eqv? n1 n2) (fasl=? c1 c2) (vandmap fasl=? fv*1 fv*2))]
                        [flonum (high low)
                         (and (eqv? high1 high2)
                              (eqv? low1 low2))]

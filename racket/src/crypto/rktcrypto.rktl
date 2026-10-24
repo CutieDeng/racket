@@ -97,6 +97,16 @@
   (intptr_t out_start)
   (intptr_t out_len)))
 (define-function () intptr_t rktcrypto_aead_key_size ((int alg)))
+(define-function () intptr_t rktcrypto_aead_expanded_key_size ((int alg)))
+(define-function
+ ()
+ int
+ rktcrypto_aead_expand_key
+ ((int alg)
+  ((*ref unsigned-8) key)
+  (intptr_t key_len)
+  ((*ref unsigned-8) out)
+  (intptr_t out_len)))
 (define-function () intptr_t rktcrypto_aead_nonce_size ((int alg)))
 (define-function () intptr_t rktcrypto_aead_tag_size ((int alg)))
 (define-function
@@ -170,6 +180,19 @@
   ((*ref unsigned-8) msg)
   (intptr_t msglen)
   ((*ref unsigned-8) seed)))
+(define-function
+ ()
+ int
+ rktcrypto_ed25519_expand
+ (((*ref unsigned-8) sk) ((*ref unsigned-8) seed)))
+(define-function
+ ()
+ int
+ rktcrypto_ed25519_sign_expanded
+ (((*ref unsigned-8) sig)
+  ((*ref unsigned-8) msg)
+  (intptr_t msglen)
+  ((*ref unsigned-8) sk)))
 (define-function
  ()
  int

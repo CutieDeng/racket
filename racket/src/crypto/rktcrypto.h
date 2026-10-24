@@ -146,6 +146,16 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_digest_oneshot(int alg,
 #define RKTCRYPTO_AEAD_AES128_CCM          6
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_key_size(int alg);
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_expanded_key_size(int alg);
+/* Size of an expanded key for alg: the key schedule and whatever the algorithm precomputes per
+   key (for AES-GCM the hash key and, where the fused x86 kernel runs, its table). 0 when there
+   is nothing to precompute; then the raw key is used as is. */
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_aead_expand_key(int alg,
+                                                     const unsigned char *key, intptr_t key_len,
+                                                     unsigned char *out, intptr_t out_len);
+/* Writes the expanded form of key (key_len = key size) to out (out_len >= expanded size).
+   rktcrypto_aead_seal/open accept an expanded key in place of the raw key when key_len equals
+   the expanded size. Returns 1, or 0 on a size mismatch. */
 /* Key size in bytes, or -1 if `alg` is unknown. */
 
 RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_aead_nonce_size(int alg);
@@ -301,6 +311,28 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_tls13_selftest(void);
    pass, else a nonzero step index. */
 
 /*************************************************/
+/* Finite-field Diffie-Hellman (RFC 7919 named groups and explicit (p, g)),
+   used by the TLS engine in collects/openssl through the in-process FFI.
+   Declared here as well as in rktcrypto_ffc.h so that the generated keep
+   table (rktcrypto.inc) links them into the executable and the export
+   list (rktcrypto.def) carries them: a static-library member nothing
+   references is dropped by the linker. */
+
+RKTCRYPTO_EXTERN_NOERR intptr_t rktcrypto_ffdhe_size(int group);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ffdhe_keygen(int group, unsigned char *priv_out, intptr_t *privlen,
+                                                  unsigned char *pub_out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ffdhe_derive(int group, const unsigned char *priv, intptr_t privlen,
+                                                  const unsigned char *peer, intptr_t peerlen,
+                                                  unsigned char *out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_dh_keygen(const unsigned char *p, intptr_t plen,
+                                               const unsigned char *g, intptr_t glen, int privbits,
+                                               unsigned char *priv_out, intptr_t *privlen,
+                                               unsigned char *pub_out);
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_dh_derive(const unsigned char *p, intptr_t plen,
+                                               const unsigned char *priv, intptr_t privlen,
+                                               const unsigned char *peer, intptr_t peerlen,
+                                               unsigned char *out);
+
 /* X25519 key exchange (RFC 7748)                */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_x25519(unsigned char *out,
@@ -350,6 +382,15 @@ RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_sign(unsigned char *sig,
                                                   const unsigned char *seed);
 /* Signs msg[0..msglen) with the 32-byte seed, writing a 64-byte
    signature to sig. Constant-time in the secret. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_expand(unsigned char *sk, const unsigned char *seed);
+/* Writes the 64-byte expanded private key seed || public key to sk. Returns 1. */
+
+RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_sign_expanded(unsigned char *sig,
+                                                           const unsigned char *msg, intptr_t msglen,
+                                                           const unsigned char *sk);
+/* Like rktcrypto_ed25519_sign with the 64-byte expanded key: the public key is taken from it
+   instead of being recomputed (half the signing work). Returns 1. */
 
 RKTCRYPTO_EXTERN_NOERR int rktcrypto_ed25519_verify(const unsigned char *sig,
                                                     const unsigned char *msg, intptr_t msglen,

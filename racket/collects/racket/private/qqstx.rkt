@@ -252,6 +252,24 @@
                                              stx
                                              stx)
                                             bindings))))]
+                      [(core-pvector? (syntax-e stx))
+                       (loop (datum->syntax
+                              stx
+                              (core-pvector->list (syntax-e stx))
+                              stx)
+                             depth
+                             same-k
+                             (lambda (v bindings)
+                               (let ([stx-lst/#f (syntax->list v)])
+                                 (convert-k (datum->syntax
+                                             stx
+                                             (core-list->pvector
+                                              (if stx-lst/#f
+                                                  stx-lst/#f
+                                                  (list (cons #'~@! v))))
+                                             stx
+                                             stx)
+                                            bindings))))]
                       [(box? (syntax-e stx))
                        (loop (unbox (syntax-e stx))
                              depth

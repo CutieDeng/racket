@@ -10,7 +10,13 @@
                   datum->correlated
                   correlated-property)
          (only-in racket/fixnum fxvector)
-         (only-in racket/flonum flvector))
+         (only-in racket/flonum flvector)
+         (only-in racket/pvector
+                  pvector pvector? pvector-ref pvector-length list->pvector
+                  pvector-cons-right pvector-cons-left pvector-append
+                  pvector-take pvector-drop)
+         (only-in racket/private/pvector-runtime-adapter
+                  pvector-shape-stats))
 
 (define immutables
   ;; If you update this list, then also update `immutable-regression-bstr`:
@@ -104,6 +110,111 @@
 (test #t equal? (fxvector) (fasl->s-exp (s-exp->fasl (fxvector))))
 (test #t equal? (flvector 1. 2. 3.) (fasl->s-exp (s-exp->fasl (flvector 1. 2. 3.))))
 (test #t equal? (flvector) (fasl->s-exp (s-exp->fasl (flvector))))
+
+;; pvectors: every representation size, nested, and as a container
+;; of shared and lifted values
+(let ([pv (pvector 1 2 3)])
+  (define rt (fasl->s-exp (s-exp->fasl pv)))
+  (test #t pvector? rt)
+  (test pv values rt)
+  ;; the encoding is part of the forward-compatible format: tag 45,
+  ;; length 3, a shape byte for a one-element prefix and a two-element
+  ;; suffix with no middle, then the elements
+  (test #"racket/fasl:\0\6-\3\1opq" s-exp->fasl pv))
+;; the encoding is structural: every shape round-trips to the same shape
+(define (check-pvector-shape-round-trip pv)
+  (define rt (fasl->s-exp (s-exp->fasl pv)))
+  (test pv values rt)
+  (test (pvector-shape-stats pv) pvector-shape-stats rt))
+(for ([n (in-list '(2 5 17 100 5000))])
+  (check-pvector-shape-round-trip (list->pvector (build-list n values)))
+  (check-pvector-shape-round-trip (for/fold ([pv (pvector)]) ([i (in-range n)])
+                                    (pvector-cons-right pv i)))
+  (check-pvector-shape-round-trip (for/fold ([pv (pvector)]) ([i (in-range n)])
+                                    (pvector-cons-left pv i)))
+  (check-pvector-shape-round-trip (pvector-append (list->pvector (build-list n values))
+                                                  (for/fold ([pv (pvector)]) ([i (in-range n)])
+                                                    (pvector-cons-right pv i)))))
+;; shared subtrees are written once: slices and self-appends add only
+;; their spines to the encoding
+(let* ([big (list->pvector (build-list 20000 values))]
+       [one (bytes-length (s-exp->fasl big))]
+       [with-slices (bytes-length (s-exp->fasl (list big
+                                                     (pvector-take big 10000)
+                                                     (pvector-drop big 10000)
+                                                     (pvector-take big 19000))))]
+       [self-append (bytes-length (s-exp->fasl (pvector-append big big)))])
+  (test #t < with-slices (+ one 2000))
+  (test #t < self-append (+ one 2000))
+  (test (list big (pvector-take big 10000) (pvector-drop big 10000) (pvector-take big 19000))
+        fasl->s-exp
+        (s-exp->fasl (list big (pvector-take big 10000) (pvector-drop big 10000) (pvector-take big 19000))))
+  (test (pvector-append big big) fasl->s-exp (s-exp->fasl (pvector-append big big)))
+  (test (pvector-shape-stats (pvector-append big big))
+        pvector-shape-stats
+        (fasl->s-exp (s-exp->fasl (pvector-append big big)))))
+;; a node is accepted only inside a pvector: a stream whose top-level
+;; value is a leaf node (tag 46, kind 6, two small integers) is rejected
+(let ([bad (bytes-append #"racket/fasl:\0\4" (bytes 46 6 101 102))])
+  (err/rt-test (fasl->s-exp bad) exn:fail? #rx"outside a pvector"))
+;; shared nodes can form a DAG whose measure doubles at each level:
+;; definition k is a link node whose children are definition k-1 and a
+;; reference to it; a chain that overflows the maximum length is
+;; rejected by the link constructor rather than wrapping the measure
+(let ()
+  (define (fasl-int n)
+    (if (< n 128)
+        (bytes n)
+        (bytes 128 (bitwise-and n 255) (arithmetic-shift n -8))))
+  (define (chain k)
+    (if (zero? k)
+        (bytes-append (bytes 1) (fasl-int 0) (bytes 46 6 111 111))
+        (bytes-append (bytes 1) (fasl-int k) (bytes 46 2)
+                      (chain (sub1 k))
+                      (bytes 2) (fasl-int (sub1 k)))))
+  (define (stream k len)
+    ;; tag 45, length, shape byte 16 = one-element digits with a middle,
+    ;; prefix element 1, the middle chain, suffix element 1
+    (define data (bytes-append (bytes 45) (fasl-int len) (bytes 16 111) (chain k) (bytes 111)))
+    (bytes-append #"racket/fasl:" (fasl-int (add1 k)) (fasl-int (bytes-length data)) data))
+  (define ok (fasl->s-exp (stream 10 (+ 2 (expt 2 11)))))
+  (test #t pvector? ok)
+  (test (+ 2 (expt 2 11)) pvector-length ok)
+  (test 1 pvector-ref ok 1000)
+  (err/rt-test (fasl->s-exp (stream 57 2)) exn:fail? #rx"too large"))
+(for ([n (in-list '(0 1 2 3 4 5 6 17 100 5000))])
+  (define pv (list->pvector (build-list n (lambda (i) (- i 20)))))
+  (define rt (fasl->s-exp (s-exp->fasl pv)))
+  (test #t pvector? rt)
+  (test n pvector-length rt)
+  (test pv values rt)
+  (test (list pv (vector pv) (box pv) (hasheq 'k pv) #s(wrap pv))
+        fasl->s-exp (s-exp->fasl (list pv (vector pv) (box pv) (hasheq 'k pv) #s(wrap pv)))))
+(let ([pv (pvector (pvector) (pvector "one" 'two #"three" 4.0) (list (pvector 5)))])
+  (test pv fasl->s-exp (s-exp->fasl pv)))
+(let ([pv (pvector "look-for-this-string" 'look-for-this-symbol
+                   "look-for-this-string" 'look-for-this-symbol)])
+  (define s (s-exp->fasl pv))
+  (test pv fasl->s-exp s)
+  ;; sharing detection reaches into pvector elements:
+  (test #f regexp-match? #rx"look-for-this-string.*look-for-this-string" s)
+  (test #f regexp-match? #rx"look-for-this-symbol.*look-for-this-symbol" s))
+(let* ([u (string->uninterned-symbol "unread")]
+       [rt (fasl->s-exp (s-exp->fasl (pvector u (list u))))])
+  (test #t eq? (pvector-ref rt 0) (car (pvector-ref rt 1))))
+(let ([lifts '()]
+      [data (pvector 'a (pvector 'b 1) (list 'c))])
+  (let ([bstr (s-exp->fasl data
+                           #:external-lift? (lambda (v)
+                                              (cond
+                                                [(memq v '(a b c))
+                                                 (set! lifts (cons v lifts))
+                                                 #t]
+                                                [else #f])))])
+    (test '(c b a) values lifts)
+    (test data fasl->s-exp bstr #:external-lifts (list->vector (reverse lifts)))))
+(test (pvector 1 2 3) fasl->s-exp (s-exp->fasl (pvector 1 2 3) #:skip-prefix? #t) #:skip-prefix? #t)
+(test (pvector 1 2 3) fasl->s-exp (s-exp->fasl (pvector 1 2 3)) #:datum-intern? #f)
 
 (let* ([r1 #rx"[/\u5C][. ]+ap"]
        [r2 #px"[/\u5C][. ]+ap"]

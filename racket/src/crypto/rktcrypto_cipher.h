@@ -47,7 +47,7 @@ void rktcrypto_poly1305_update(rktcrypto_poly1305_ctx_t *ctx,
                                const unsigned char *data, intptr_t len);
 void rktcrypto_poly1305_final(rktcrypto_poly1305_ctx_t *ctx, unsigned char tag[16]);
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || (defined(__x86_64__) && defined(__ELF__))
 /* Fused ChaCha20 (en/decrypt) + Poly1305 absorb over whole 512-byte units,
    interleaved so the SIMD keystream and the scalar MAC run concurrently. Writes
    in..in+consumed to out; folds the ciphertext (out if encrypt, else in) into
@@ -119,7 +119,43 @@ void rktcrypto_aes_xts(const unsigned char *key, intptr_t keylen, const unsigned
 /* General AES key schedule / single-block encrypt (128/192/256). Returns the
    number of rounds Nr; rk must hold 240 bytes. Used by GMAC. */
 int rktcrypto_aes_expand_key(const unsigned char *key, intptr_t keylen, unsigned char rk[240]);
+
+/* An expanded AEAD key (rktcrypto_aead_expand_key): the AES key schedule, and for GCM the hash
+   key and, on x86-64 ELF, the fused kernel's 1280-byte table, so a sealed or opened message pays
+   none of that per call. The byte string the caller holds is this record. */
+#define RKTCRYPTO_AEAD_XKEY_MAGIC 0x4b58414eu
+struct rktcrypto_aead_xkey {
+  uint32_t magic;               /* RKTCRYPTO_AEAD_XKEY_MAGIC */
+  uint32_t alg;                 /* RKTCRYPTO_AEAD_* */
+  uint32_t nr;                  /* AES rounds */
+  uint32_t htab_valid;          /* GCM on x86-64 ELF: htab holds the fused kernel's table */
+  unsigned char rk[240];
+  uint64_t h[2];                /* GCM hash key, big-endian words */
+  unsigned char htab[1280];     /* present only when rktcrypto_aead_expanded_key_size says so */
+};
+#define RKTCRYPTO_AEAD_XKEY_BASE (16 + 240 + 16)
+int rktcrypto_aesgcm_expand_key(const unsigned char *key, intptr_t keylen, struct rktcrypto_aead_xkey *k);
+int rktcrypto_aesgcm_seal_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                            unsigned char *out, intptr_t out_start);
+int rktcrypto_aesgcm_open_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                            unsigned char *out, intptr_t out_start);
+int rktcrypto_aesccm_expand_key(const unsigned char *key, intptr_t keylen, struct rktcrypto_aead_xkey *k);
+int rktcrypto_aesccm_seal_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *pt, intptr_t pt_start, intptr_t pt_end,
+                            unsigned char *out, intptr_t out_start);
+int rktcrypto_aesccm_open_x(const struct rktcrypto_aead_xkey *k, const unsigned char nonce[12],
+                            const unsigned char *aad, intptr_t aad_start, intptr_t aad_end,
+                            const unsigned char *ct, intptr_t ct_start, intptr_t ct_end,
+                            unsigned char *out, intptr_t out_start);
 void rktcrypto_aes_enc_block(const unsigned char *rk, int Nr, const unsigned char in[16], unsigned char out[16]);
+/* two independent blocks with their rounds interleaved (hardware AES: one latency for both) */
+void rktcrypto_aes_enc_block2(const unsigned char *rk, int Nr, const unsigned char in0[16], const unsigned char in1[16],
+                              unsigned char out0[16], unsigned char out1[16]);
 /* AES-GMAC (SP 800-38D): GCM authentication over msg-as-AAD with empty
    plaintext; 12-byte iv. key is 16/24/32 bytes. Writes the 16-byte tag. */
 void rktcrypto_aes_gmac(const unsigned char *key, intptr_t keylen, const unsigned char iv[12],

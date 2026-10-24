@@ -7,6 +7,10 @@
 
 #include "rktcrypto_cipher.h"
 #include <string.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 #if defined(__aarch64__)
 # include <arm_neon.h>
 #endif
@@ -284,6 +288,78 @@ intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const uns
 }
 #endif
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* Fused ChaCha20 + Poly1305 on the rktasm/x86 kernels (the fused kernel absorbs 64 Poly1305
+   blocks from `mac` while producing one unit; encryption feeds it the previous unit, decryption
+   the current one, see below). Whole 1024-byte units only; returns bytes consumed (0 when the
+   message has fewer than two units or the CPU lacks AVX-512 / BMI2+ADX, or the Poly1305
+   buffer is not empty). `poly`'s r and h are read and h written back. */
+/* `units` x 1024 bytes of keystream XOR on the AVX-512 kernels: 2048-byte pairs on the two-set
+   kernel (its rounds keep the vector pipes busy), a trailing odd unit on the sixteen-block one */
+static void chacha20_units_avx512(uint32_t st[16], const unsigned char *in, unsigned char *out, intptr_t units)
+{
+  intptr_t pairs = units / 2;
+  if (pairs) { rktcrypto_chacha20_blocks2_avx512(st, in, out, pairs); in += pairs * 2048; out += pairs * 2048; }
+  if (units & 1) rktcrypto_chacha20_blocks_avx512(st, in, out, 1);
+}
+
+intptr_t rktcrypto_chacha20poly1305_fused(const unsigned char key[32], const unsigned char nonce[12],
+                                          const unsigned char *in, unsigned char *out, intptr_t len,
+                                          int encrypt, rktcrypto_poly1305_ctx_t *poly)
+{
+  uint32_t st[16]; uint64_t hr[6];
+  intptr_t usz, units;
+  int tier;
+  if (poly->buf_len != 0 || !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) return 0;
+  /* the fused kernels pair the vector ChaCha20 of one tier with the scalar MULX Poly1305 */
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) { tier = 3; usz = 1024; }
+  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) { tier = 2; usz = 512; }
+  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) { tier = 1; usz = 512; }   /* two four-block groups per unit */
+  else return 0;
+  units = len / usz;
+  if (units < 2) return 0;
+  chacha20_setup(st, key, nonce, 1);
+  if (tier == 3 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_IFMA)) {
+    /* with the eight-way IFMA Poly1305 the MAC runs at about 17 GB/s, so two passes over the
+       units (ChaCha20 at 10.7 GB/s, then Poly1305) beat the scalar-fused kernel; the
+       ciphertext is absorbed before it is overwritten when decrypting in place */
+    if (encrypt) {
+      chacha20_units_avx512(st, in, out, units);
+      rktcrypto_poly1305_update(poly, out, units * 1024);
+    } else {
+      rktcrypto_poly1305_update(poly, in, units * 1024);
+      chacha20_units_avx512(st, in, out, units);
+    }
+    return units * 1024;
+  }
+  rktcrypto_poly1305_export64(poly, hr);
+  if (encrypt) {
+    /* unit 0 on the plain kernel; each fused unit absorbs the PREVIOUS unit's ciphertext,
+       which in-place encryption leaves intact; the last unit is absorbed afterwards */
+    if (tier == 3) {
+      rktcrypto_chacha20_blocks_avx512(st, in, out, 1);
+      rktcrypto_chacha20poly1305_units_x86(st, in + usz, out + usz, units - 1, out, hr);
+    } else if (tier == 2) {
+      rktcrypto_chacha20_blocks_avx2(st, in, out, 1);
+      rktcrypto_chacha20poly1305_units_avx2(st, in + usz, out + usz, units - 1, out, hr);
+    } else {
+      rktcrypto_chacha20_blocks_ssse3(st, in, out, 1);
+      rktcrypto_chacha20poly1305_units_ssse3(st, in + usz, out + usz, units - 1, out, hr);
+    }
+    rktcrypto_poly1305_import64(poly, hr);
+    rktcrypto_poly1305_update(poly, out + (units - 1) * usz, usz);
+  } else {
+    /* each fused unit absorbs its OWN ciphertext: the Poly1305 loads precede the stores of
+       the unit, so in-place decryption cannot overwrite what is still to be absorbed */
+    if (tier == 3) rktcrypto_chacha20poly1305_units_x86(st, in, out, units, in, hr);
+    else if (tier == 2) rktcrypto_chacha20poly1305_units_avx2(st, in, out, units, in, hr);
+    else rktcrypto_chacha20poly1305_units_ssse3(st, in, out, units, in, hr);
+    rktcrypto_poly1305_import64(poly, hr);
+  }
+  return units * usz;
+}
+#endif
+
 void rktcrypto_chacha20_xor(const unsigned char key[32],
                             const unsigned char nonce[12],
                             uint32_t counter,
@@ -294,6 +370,27 @@ void rktcrypto_chacha20_xor(const unsigned char key[32],
   unsigned char block[64];
   chacha20_setup(state, key, nonce, counter);
 
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 1024 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t units = len / 1024;
+    chacha20_units_avx512(state, in, out, units);   /* rktasm/x86 kernels: 32-block pairs, then an odd 16-block unit */
+    in += units * 1024; out += units * 1024; len -= units * 1024;
+  }
+  if (len >= 512 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) {
+    intptr_t units = len / 512;
+    rktcrypto_chacha20_blocks_avx2(state, in, out, units);   /* the AVX2 tier (or the AVX-512 path's 512-byte remainder) */
+    in += units * 512; out += units * 512; len -= units * 512;
+  }
+  if (len >= 512 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3) && !rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX2)) {
+    intptr_t units = len / 512;
+    rktcrypto_chacha20_blocks_ssse3(state, in, out, units);  /* the SSSE3 tier: two four-block groups per unit */
+    in += units * 512; out += units * 512; len -= units * 512;
+  }
+  if (len >= 256 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SSSE3)) {
+    rktcrypto_chacha20_blocks_ssse3_4(state, in, out, 1);    /* the 256-byte remainder of every tier */
+    in += 256; out += 256; len -= 256;
+  }
+#endif
 #if defined(__aarch64__)
   while (len >= 512) {
     chacha20_8block_xor(state, state[12], in, out);

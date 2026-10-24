@@ -1318,6 +1318,31 @@ ptr GCENTRY(ptr tc, ptr count_roots_ls) {
         sweep_dirty_object_if_space_new(tgc, Scar(ls));
     }
 
+  /* sweep the objects that "fasl.c" allocated directly into an older
+     generation and that may still refer to younger objects. One whose
+     segment is being collected is handled like any other object of
+     its space (its segment already carries the target generation, so
+     only `old_space` tells); the rest act as roots here, swept whole.
+     Afterwards every target is in MAX_TG or older, so an entry whose
+     object is in MAX_TG or younger is done. */
+    {
+      iptr i, j = 0;
+      for (i = 0; i < S_G.young_ref_n; i++) {
+        ptr p = S_G.young_ref[i];
+        seginfo *p_si = SegInfo(ptr_get_segment(p));
+        if (!p_si->old_space) {
+          IGEN pg = p_si->generation;
+          if (Scodep(p))
+            sweep_code_object(tgc, p, pg);
+          else
+            sweep(tgc, p, pg);
+          if (pg > MAX_TG)
+            S_G.young_ref[j++] = p;
+        }
+      }
+      S_G.young_ref_n = j;
+    }
+
   /* prepare to sweep areas marked dirty by assignments into older generations */
     setup_sweep_dirty(tgc);
 

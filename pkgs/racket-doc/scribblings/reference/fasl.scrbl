@@ -1,5 +1,5 @@
 #lang scribble/doc
-@(require "mz.rkt" (for-label racket/fasl racket/serialize racket/fixnum racket/flonum))
+@(require "mz.rkt" (for-label racket/fasl racket/serialize racket/fixnum racket/flonum racket/pvector))
 
 @(define fasl-eval (make-base-eval))
 @examples[#:hidden #:eval fasl-eval (require racket/fasl)]
@@ -56,6 +56,15 @@ deserializing @racket[fasl->s-exp] receives a @racket[external-lifts]
 vector that has one value for each externally lifted value, in the
 same order as passed to @racket[external-lift?] on serialization.
 
+A @tech{pvector} is encoded by its structure rather than as a flat
+sequence of elements, so decoding rebuilds the same tree of nodes, and
+an interior subtree that is shared among pvectors within @racket[v]
+(as after @racket[pvector-take] or @racket[pvector-append]) is encoded
+once. On a Racket implementation that does not expose its pvector
+representation, a pvector cannot be encoded, and decoding produces a
+pvector with the same elements but possibly a different internal
+shape.
+
 Like @racket[(compile `(quote ,v))], @racket[s-exp->fasl] does not
 preserve graph structure, support cycles, or handle non-@tech{prefab}
 structures. Compose @racket[s-exp->fasl] with @racket[serialize] to
@@ -104,7 +113,8 @@ fasl
          #:changed "7.3.0.7" @elem{Added support for @tech{correlated objects}.}
          #:changed "7.5.0.3" @elem{Added the @racket[#:handle-fail] argument.}
          #:changed "7.5.0.9" @elem{Added the @racket[#:external-lift?] and @racket[#:external-lifts] arguments.}
-         #:changed "8.9.0.4" @elem{Added support for @tech{fxvectors} and @tech{flvectors}.}]}
+         #:changed "8.9.0.4" @elem{Added support for @tech{fxvectors} and @tech{flvectors}.}
+         #:changed "9.3.10" @elem{Added support for @tech{pvectors}.}]}
 
 @; ----------------------------------------------------------------------
 

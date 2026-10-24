@@ -14,6 +14,13 @@ enum {
   RKTCRYPTO_CPU_X86_PCLMUL = 1u << 1,
   RKTCRYPTO_CPU_X86_SHA    = 1u << 2,
   RKTCRYPTO_CPU_X86_AVX2   = 1u << 3,
+  RKTCRYPTO_CPU_X86_AVX512 = 1u << 4,   /* F+DQ+BW+VL with ZMM/opmask state enabled by the OS */
+  RKTCRYPTO_CPU_X86_VAES   = 1u << 5,
+  RKTCRYPTO_CPU_X86_VPCLMULQDQ = 1u << 6,
+  RKTCRYPTO_CPU_X86_BMI2ADX = 1u << 7,   /* MULX + ADCX/ADOX */
+  RKTCRYPTO_CPU_X86_IFMA   = 1u << 8,   /* AVX512_IFMA (with the AVX-512 state) */
+  RKTCRYPTO_CPU_X86_SSSE3  = 1u << 14,  /* pshufb and friends (the SSE tier of the kernels) */
+  RKTCRYPTO_CPU_X86_SSE2   = 1u << 15,  /* always set on x86-64; a bit so the harnesses can switch the SSE2 kernels off */
   RKTCRYPTO_CPU_ARM_AES    = 1u << 8,
   RKTCRYPTO_CPU_ARM_PMULL  = 1u << 9,
   RKTCRYPTO_CPU_ARM_SHA2   = 1u << 10,
@@ -24,6 +31,11 @@ enum {
 
 /* Returns the cached feature bitmask (detects on first call). */
 unsigned rktcrypto_cpu_features(void);
+
+/* Test-only: force the cached bitmask to `features` (enable = 1) so a
+   differential harness can run the portable and the hardware paths in
+   one process; enable = 0 returns to detection on the next query. */
+void rktcrypto_cpu_override_features(unsigned features, int enable);
 
 /* Convenience predicate. */
 static inline int rktcrypto_cpu_has(unsigned feature)

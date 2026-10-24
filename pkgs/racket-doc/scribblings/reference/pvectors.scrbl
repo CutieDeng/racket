@@ -2,6 +2,8 @@
 @(require "mz.rkt"
           (for-label racket/pvector
                      (submod racket/pvector unsafe)
+                     racket/fasl
+                     syntax/parse
                      racket/match
                      racket/place
                      racket/stream))
@@ -54,6 +56,18 @@ written elements, and @racket[read] accepts that form directly, so
 @racketresultfont{#pvector(1 2 3)} reads as
 @racket[(pvector 1 2 3)]. Displaying a pvector uses a compact
 @racketresultfont{(pvector ...)} form for human-readable output.
+A pvector can also appear as a @racket[quote]d literal in compiled
+code, and @racket[s-exp->fasl] from @racketmodname[racket/fasl]
+encodes a pvector by its structure, preserving its tree of nodes and
+shared subtrees. In @racket[read-syntax] mode, the elements of a
+@racketresultfont{#pvector(elem ...)} literal are wrapped as
+@tech{syntax objects} with their own source locations (see
+@secref["parse-pvector"]), and a pvector is @tech{syntax object}
+content like a vector: @racket[datum->syntax] and
+@racket[syntax->datum] convert its elements, scopes propagate into
+them, and @racket[syntax-case] patterns and templates,
+@racket[syntax-parse] patterns, @racket[quasisyntax], and
+@racket[quasiquote] recognize @racketresultfont{#pvector(...)} forms.
 
 @note-lib[racket/pvector #:use-sources (racket/pvector)]
 

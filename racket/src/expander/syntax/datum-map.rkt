@@ -1,7 +1,11 @@
 #lang racket/base
 (require "../common/prefab.rkt"
          "../common/inline.rkt"
-         racket/fixnum)
+         racket/fixnum
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-map
+                  core-pvector-length))
 
 (provide datum-map
          datum-has-elements?)
@@ -44,7 +48,7 @@
      [(symbol? s) (f #f s)]
      [(boolean? s) (f #f s)]
      [(number? s) (f #f s)]
-     [(or (vector? s) (box? s) (prefab-struct-key s) (hash? s))
+     [(or (vector? s) (box? s) (prefab-struct-key s) (hash? s) (core-pvector? s))
       (datum-map-slow tail? s (lambda (tail? s) (gf tail? s)) seen known-pairs)]
      [else (gf #f s)])))
 
@@ -77,6 +81,10 @@
                          (loop #f e seen))))]
      [(box? s)
       (f #f (box-immutable (loop #f (unbox s) seen)))]
+     [(core-pvector? s)
+      ;; a pvector is immutable, and its elements are content like a
+      ;; vector's; the map rebuilds the same tree of nodes
+      (f #f (core-pvector-map s (lambda (e) (loop #f e seen))))]
      [(immutable-prefab-struct-key s)
       => (lambda (key)
            (f #f
@@ -96,5 +104,6 @@
   (or (pair? d)
       (vector? d)
       (box? d)
+      (and (core-pvector? d) (positive? (core-pvector-length d)))
       (immutable-prefab-struct-key d)
       (and (hash? d) (immutable? d) (positive? (hash-count d)))))

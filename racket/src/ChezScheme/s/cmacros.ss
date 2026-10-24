@@ -547,6 +547,11 @@
 (define-constant fasl-type-gzip 45)
 (define-constant fasl-type-lz4 46)
 (define-constant fasl-type-closure-freevars 47)
+;; arm64 PIC boot alignment: a converter-inserted top-level gap entry
+;; (type byte, uptr length, that many ignored bytes) so the following
+;; entry's vfasl image data starts on a 4096-aligned file offset,
+;; letting the loader keep the code+got vspaces in the boot mapping
+(define-constant fasl-type-padding 48)
 
 (define-constant fasl-type-fasl 100)
 (define-constant fasl-type-vfasl 101)
@@ -600,7 +605,7 @@
   (ppc reloc-ppccall reloc-ppcload)
   (x86_64 reloc-x86_64-call reloc-x86_64-jump reloc-x86_64-popcount)
   (arm32 reloc-arm32-abs reloc-arm32-call reloc-arm32-jump)
-  (arm64 reloc-arm64-abs reloc-arm64-call reloc-arm64-jump)
+  (arm64 reloc-arm64-abs reloc-arm64-call reloc-arm64-jump reloc-arm64-got)
   (ppc32 reloc-ppc32-abs reloc-ppc32-call reloc-ppc32-jump)
   (riscv64 reloc-riscv64-abs reloc-riscv64-call reloc-riscv64-jump)
   (loongarch64 reloc-loongarch64-abs reloc-loongarch64-call reloc-loongarch64-jump)
@@ -2284,6 +2289,11 @@
   ;; rest rest are at then end to make the pointer bitmap
   ;; end with zeros (that can be dropped):
   vspace-code
+  ;; GOT: 8-byte slots holding heap/far references for PIC code (arm64).
+  ;; Written at load via the reloc table (like code), not GC-scanned; placed
+  ;; adjacent to code so the loader can keep [code][got] together in the boot
+  ;; mapping (code pages clean/shared, got pages COW on relink).
+  vspace-got
   vspace-data
   vspace-reloc ;; can be dropped after direct to static generation
   vspaces-count)
@@ -2318,7 +2328,13 @@
   singleton-equal
   singleton-symbol=?
   singleton-symbol-symbol
-  singleton-symbol-ht-rtd)
+  singleton-symbol-ht-rtd
+  ;; fasl2 eq-hashtable imaging: the `eq` type symbol and $eq-ht-rtd, so an
+  ;; eq-hashtable can be imaged as a record whose type/rtd are named singletons
+  ;; (resolved at load) rather than copied.  Must stay LAST so the existing
+  ;; singleton indices are unchanged.
+  singleton-eq-symbol
+  singleton-eq-ht-rtd)
 
 (define-constant vfasl-reloc-tag-bits 3)
 
@@ -2328,7 +2344,10 @@
   vfasl-reloc-library-entry-tag
   vfasl-reloc-library-entry-code-tag
   vfasl-reloc-symbol-tag
-  vfasl-reloc-singleton-tag)
+  vfasl-reloc-singleton-tag
+  ;; externalref extension (fasl2): a code reloc that references
+  ;; externals[pos], the per-load externals vector.  7th of 8 (3-bit).
+  vfasl-reloc-external-tag)
 
 ;; ---------------------------------------------------------------------
 ;; General helpers for the compiler and runtime implementation:

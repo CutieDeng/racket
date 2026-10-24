@@ -1298,7 +1298,7 @@ that @tech{hash tables} are restricted to those using @racket[eq?] as the key co
 predicate (see @racket[hash-eq?].) More precisely, a @racket[_cross-datum] is either a
 @tech{number}, @tech{extflonum}, @tech{boolean}, @tech{symbol}, @tech{character},
 @tech{keyword}, empty list, @tech{string}, @tech{byte string},
-@tech{vector} where every value is also a @racket[_cross-datum],
+@tech{vector} or @tech{pvector} where every value is also a @racket[_cross-datum],
 @racket[hash-eq?] where every key and every value is also a @racket[_cross-datum],
 @tech{box} where the value is also a @racket[_cross-datum], or
 @tech{prefab} structure where every field's value is also a @racket[_cross-datum].

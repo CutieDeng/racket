@@ -24,6 +24,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <immintrin.h>
+#include "rktcrypto_cpu.h"
+#include "rktcrypto_x86.h"
 
 /* SHA-256 round constants (FIPS 180-4), local so the module is
    self-contained (the core's K256 is file-static). */
@@ -51,15 +53,314 @@ void rktcrypto_aes256_block_aesni(const unsigned char rk[240],
   _mm_storeu_si128((__m128i *)out, s);
 }
 
+__attribute__((target("aes,sse2")))
+void rktcrypto_aes_enc_blk2_x86(const unsigned char *rk, int Nr, const unsigned char in0[16], const unsigned char in1[16],
+                                unsigned char out0[16], unsigned char out1[16])
+{
+  __m128i k = _mm_loadu_si128((const __m128i *)rk);
+  __m128i s0 = _mm_xor_si128(_mm_loadu_si128((const __m128i *)in0), k);
+  __m128i s1 = _mm_xor_si128(_mm_loadu_si128((const __m128i *)in1), k);
+  int r;
+  for (r = 1; r < Nr; r++) {
+    k = _mm_loadu_si128((const __m128i *)(rk + 16 * r));
+    s0 = _mm_aesenc_si128(s0, k); s1 = _mm_aesenc_si128(s1, k);
+  }
+  k = _mm_loadu_si128((const __m128i *)(rk + 16 * Nr));
+  _mm_storeu_si128((__m128i *)out0, _mm_aesenclast_si128(s0, k));
+  _mm_storeu_si128((__m128i *)out1, _mm_aesenclast_si128(s1, k));
+}
+
+/* ===================== SHA-1 blocks (SHA-NI) ===================== */
+/* The canonical sha1rnds4 / sha1nexte / sha1msg1 / sha1msg2 sequence: the
+   state A..D stays in one register across all blocks, E rides in the top lane
+   of its own register, and the 16-word schedule is four registers rotated
+   through the msg1/msg2 recurrence. Verified against the portable block by
+   asm/tests/test_sha1_x86.c. */
+__attribute__((target("sha,sse4.1,ssse3")))
+void rktcrypto_sha1_blocks_shani(uint32_t state[5], const unsigned char *data, intptr_t nblk)
+{
+  const __m128i MASK = _mm_set_epi64x(0x0001020304050607LL, 0x08090a0b0c0d0e0fLL);
+  __m128i ABCD, ABCD_SAVE, E0, E0_SAVE, E1, MSG0, MSG1, MSG2, MSG3;
+
+  ABCD = _mm_shuffle_epi32(_mm_loadu_si128((const __m128i *)state), 0x1B);
+  E0 = _mm_set_epi32((int)state[4], 0, 0, 0);
+
+  while (nblk-- > 0) {
+    ABCD_SAVE = ABCD; E0_SAVE = E0;
+
+    MSG0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 0)), MASK);
+    E0 = _mm_add_epi32(E0, MSG0); E1 = ABCD;
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 0);                                        /* 0-3 */
+
+    MSG1 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 16)), MASK);
+    E1 = _mm_sha1nexte_epu32(E1, MSG1); E0 = ABCD;
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 0); MSG0 = _mm_sha1msg1_epu32(MSG0, MSG1);  /* 4-7 */
+
+    MSG2 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 32)), MASK);
+    E0 = _mm_sha1nexte_epu32(E0, MSG2); E1 = ABCD;
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 0); MSG1 = _mm_sha1msg1_epu32(MSG1, MSG2);  /* 8-11 */
+    MSG0 = _mm_xor_si128(MSG0, MSG2);
+
+    MSG3 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 48)), MASK);
+    E1 = _mm_sha1nexte_epu32(E1, MSG3); E0 = ABCD;
+    MSG0 = _mm_sha1msg2_epu32(MSG0, MSG3);
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 0); MSG2 = _mm_sha1msg1_epu32(MSG2, MSG3);  /* 12-15 */
+    MSG1 = _mm_xor_si128(MSG1, MSG3);
+
+#define SHA1_X86_ROUNDS(EA, EB, MA, MB, MC, MD, F)                                   \
+    EA = _mm_sha1nexte_epu32(EA, MA); EB = ABCD;                                    \
+    MB = _mm_sha1msg2_epu32(MB, MA);                                                 \
+    ABCD = _mm_sha1rnds4_epu32(ABCD, EA, F);                                         \
+    MD = _mm_sha1msg1_epu32(MD, MA);                                                 \
+    MC = _mm_xor_si128(MC, MA);
+
+    SHA1_X86_ROUNDS(E0, E1, MSG0, MSG1, MSG2, MSG3, 0)   /* 16-19 */
+    SHA1_X86_ROUNDS(E1, E0, MSG1, MSG2, MSG3, MSG0, 1)   /* 20-23 */
+    SHA1_X86_ROUNDS(E0, E1, MSG2, MSG3, MSG0, MSG1, 1)   /* 24-27 */
+    SHA1_X86_ROUNDS(E1, E0, MSG3, MSG0, MSG1, MSG2, 1)   /* 28-31 */
+    SHA1_X86_ROUNDS(E0, E1, MSG0, MSG1, MSG2, MSG3, 1)   /* 32-35 */
+    SHA1_X86_ROUNDS(E1, E0, MSG1, MSG2, MSG3, MSG0, 1)   /* 36-39 */
+    SHA1_X86_ROUNDS(E0, E1, MSG2, MSG3, MSG0, MSG1, 2)   /* 40-43 */
+    SHA1_X86_ROUNDS(E1, E0, MSG3, MSG0, MSG1, MSG2, 2)   /* 44-47 */
+    SHA1_X86_ROUNDS(E0, E1, MSG0, MSG1, MSG2, MSG3, 2)   /* 48-51 */
+    SHA1_X86_ROUNDS(E1, E0, MSG1, MSG2, MSG3, MSG0, 2)   /* 52-55 */
+    SHA1_X86_ROUNDS(E0, E1, MSG2, MSG3, MSG0, MSG1, 2)   /* 56-59 */
+    SHA1_X86_ROUNDS(E1, E0, MSG3, MSG0, MSG1, MSG2, 3)   /* 60-63 */
+    SHA1_X86_ROUNDS(E0, E1, MSG0, MSG1, MSG2, MSG3, 3)   /* 64-67 */
+#undef SHA1_X86_ROUNDS
+
+    /* 68-71: schedule words beyond 79 are not needed, so msg1 drops out */
+    E1 = _mm_sha1nexte_epu32(E1, MSG1); E0 = ABCD;
+    MSG2 = _mm_sha1msg2_epu32(MSG2, MSG1);
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 3);
+    MSG3 = _mm_xor_si128(MSG3, MSG1);
+    /* 72-75 */
+    E0 = _mm_sha1nexte_epu32(E0, MSG2); E1 = ABCD;
+    MSG3 = _mm_sha1msg2_epu32(MSG3, MSG2);
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E0, 3);
+    /* 76-79 */
+    E1 = _mm_sha1nexte_epu32(E1, MSG3); E0 = ABCD;
+    ABCD = _mm_sha1rnds4_epu32(ABCD, E1, 3);
+
+    E0 = _mm_sha1nexte_epu32(E0, E0_SAVE);
+    ABCD = _mm_add_epi32(ABCD, ABCD_SAVE);
+    data += 64;
+  }
+  _mm_storeu_si128((__m128i *)state, _mm_shuffle_epi32(ABCD, 0x1B));
+  state[4] = (uint32_t)_mm_extract_epi32(E0, 3);
+}
+
+/* ===================== AES key schedules and modes (AES-NI) ===================== */
+/* The key expansion is the FIPS-197 word recurrence; the only per-word
+   nonlinear step is taken from aeskeygenassist (lane 1 of the result is
+   RotWord(SubWord(x)) and lane 0 is SubWord(x) for x in lane 1 of the
+   source, with RCON = 0), so no table lookup indexes key material.
+   The schedule layout and the round-key order are the portable code's. */
+#define X86_AES_TARGET __attribute__((target("aes,sse4.1,ssse3")))
+
+X86_AES_TARGET
+int rktcrypto_aes_expand_x86(const unsigned char *key, int keylen, unsigned char rk[240])
+{
+  static const uint32_t rcon[15] = {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36,0x6c,0xd8,0xab,0x4d,0x9a};
+  int Nk = keylen / 4, Nr = Nk + 6, total = 4 * (Nr + 1), i;
+  uint32_t w[60];
+  memcpy(w, key, (size_t)keylen);
+  for (i = Nk; i < total; i++) {
+    uint32_t t = w[i - 1];
+    if (i % Nk == 0) {
+      __m128i v = _mm_aeskeygenassist_si128(_mm_insert_epi32(_mm_setzero_si128(), (int)t, 1), 0);
+      t = (uint32_t)_mm_extract_epi32(v, 1) ^ rcon[i / Nk - 1];
+    } else if (Nk > 6 && i % Nk == 4) {
+      __m128i v = _mm_aeskeygenassist_si128(_mm_insert_epi32(_mm_setzero_si128(), (int)t, 1), 0);
+      t = (uint32_t)_mm_extract_epi32(v, 0);
+    }
+    w[i] = w[i - Nk] ^ t;
+  }
+  memcpy(rk, w, 16 * (size_t)(Nr + 1));
+  return Nr;
+}
+
+X86_AES_TARGET
+void rktcrypto_aes_expand_dec_x86(const unsigned char rk[240], int Nr, unsigned char dk[240])
+{
+  int r;
+  _mm_storeu_si128((__m128i *)dk, _mm_loadu_si128((const __m128i *)(rk + 16 * Nr)));
+  for (r = 1; r < Nr; r++)
+    _mm_storeu_si128((__m128i *)(dk + 16 * r),
+                     _mm_aesimc_si128(_mm_loadu_si128((const __m128i *)(rk + 16 * (Nr - r)))));
+  _mm_storeu_si128((__m128i *)(dk + 16 * Nr), _mm_loadu_si128((const __m128i *)rk));
+}
+
+X86_AES_TARGET static inline __m128i x86_aes_enc1(__m128i s, const unsigned char *rk, int Nr)
+{
+  int r;
+  s = _mm_xor_si128(s, _mm_loadu_si128((const __m128i *)rk));
+  for (r = 1; r < Nr; r++) s = _mm_aesenc_si128(s, _mm_loadu_si128((const __m128i *)(rk + 16 * r)));
+  return _mm_aesenclast_si128(s, _mm_loadu_si128((const __m128i *)(rk + 16 * Nr)));
+}
+
+X86_AES_TARGET static inline __m128i x86_aes_dec1(__m128i s, const unsigned char *dk, int Nr)
+{
+  int r;
+  s = _mm_xor_si128(s, _mm_loadu_si128((const __m128i *)dk));
+  for (r = 1; r < Nr; r++) s = _mm_aesdec_si128(s, _mm_loadu_si128((const __m128i *)(dk + 16 * r)));
+  return _mm_aesdeclast_si128(s, _mm_loadu_si128((const __m128i *)(dk + 16 * Nr)));
+}
+
+X86_AES_TARGET
+void rktcrypto_aes_enc_blk_x86(const unsigned char *rk, int Nr, const unsigned char in[16], unsigned char out[16])
+{
+  _mm_storeu_si128((__m128i *)out, x86_aes_enc1(_mm_loadu_si128((const __m128i *)in), rk, Nr));
+}
+
+X86_AES_TARGET
+void rktcrypto_aes_dec_blk_x86(const unsigned char *dk, int Nr, const unsigned char in[16], unsigned char out[16])
+{
+  _mm_storeu_si128((__m128i *)out, x86_aes_dec1(_mm_loadu_si128((const __m128i *)in), dk, Nr));
+}
+
+static inline uint64_t x86_load_be64(const unsigned char *p)
+{
+  uint64_t v = 0; int i;
+  for (i = 0; i < 8; i++) v = (v << 8) | p[i];
+  return v;
+}
+static inline void x86_store_be64(unsigned char *p, uint64_t v)
+{
+  int i;
+  for (i = 0; i < 8; i++) p[i] = (unsigned char)(v >> (56 - 8 * i));
+}
+/* Counter block from the big-endian (hi, lo) halves: memory bytes 0..7 are
+   `hi`, so the low 64-bit lane holds bswap(hi). */
+X86_AES_TARGET static inline __m128i x86_ctr_block(uint64_t hi, uint64_t lo)
+{
+  return _mm_set_epi64x((long long)__builtin_bswap64(lo), (long long)__builtin_bswap64(hi));
+}
+static inline void x86_ctr_step(uint64_t *hi, uint64_t *lo, int inc32)
+{
+  if (inc32) *lo = (*lo & 0xffffffff00000000ULL) | ((*lo + 1) & 0xffffffffULL);
+  else { *lo += 1; if (*lo == 0) *hi += 1; }
+}
+
+/* CTR keystream XOR, eight blocks in flight (AES-NI latency is ~4 cycles per
+   round per block; eight independent chains keep the unit busy). */
+X86_AES_TARGET
+void rktcrypto_aes_ctr_aesni(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                             const unsigned char *in, unsigned char *out, intptr_t len, int inc32)
+{
+  uint64_t hi = x86_load_be64(ctr), lo = x86_load_be64(ctr + 8);
+  const __m128i k0 = _mm_loadu_si128((const __m128i *)rk);
+  const __m128i klast = _mm_loadu_si128((const __m128i *)(rk + 16 * Nr));
+  while (len >= 128) {
+    __m128i s0, s1, s2, s3, s4, s5, s6, s7, k;
+    int r;
+    s0 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s1 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s2 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s3 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s4 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s5 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s6 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    s7 = _mm_xor_si128(x86_ctr_block(hi, lo), k0); x86_ctr_step(&hi, &lo, inc32);
+    for (r = 1; r < Nr; r++) {
+      k = _mm_loadu_si128((const __m128i *)(rk + 16 * r));
+      s0 = _mm_aesenc_si128(s0, k); s1 = _mm_aesenc_si128(s1, k);
+      s2 = _mm_aesenc_si128(s2, k); s3 = _mm_aesenc_si128(s3, k);
+      s4 = _mm_aesenc_si128(s4, k); s5 = _mm_aesenc_si128(s5, k);
+      s6 = _mm_aesenc_si128(s6, k); s7 = _mm_aesenc_si128(s7, k);
+    }
+    s0 = _mm_aesenclast_si128(s0, klast); s1 = _mm_aesenclast_si128(s1, klast);
+    s2 = _mm_aesenclast_si128(s2, klast); s3 = _mm_aesenclast_si128(s3, klast);
+    s4 = _mm_aesenclast_si128(s4, klast); s5 = _mm_aesenclast_si128(s5, klast);
+    s6 = _mm_aesenclast_si128(s6, klast); s7 = _mm_aesenclast_si128(s7, klast);
+#define X86_CTR_OUT(i, s) _mm_storeu_si128((__m128i *)(out + 16 * (i)), \
+      _mm_xor_si128(s, _mm_loadu_si128((const __m128i *)(in + 16 * (i)))))
+    X86_CTR_OUT(0, s0); X86_CTR_OUT(1, s1); X86_CTR_OUT(2, s2); X86_CTR_OUT(3, s3);
+    X86_CTR_OUT(4, s4); X86_CTR_OUT(5, s5); X86_CTR_OUT(6, s6); X86_CTR_OUT(7, s7);
+#undef X86_CTR_OUT
+    in += 128; out += 128; len -= 128;
+  }
+  while (len > 0) {
+    __m128i s = x86_aes_enc1(x86_ctr_block(hi, lo), rk, Nr);
+    x86_ctr_step(&hi, &lo, inc32);
+    if (len >= 16) {
+      _mm_storeu_si128((__m128i *)out, _mm_xor_si128(s, _mm_loadu_si128((const __m128i *)in)));
+      in += 16; out += 16; len -= 16;
+    } else {
+      unsigned char ks[16]; intptr_t i;
+      _mm_storeu_si128((__m128i *)ks, s);
+      for (i = 0; i < len; i++) out[i] = (unsigned char)(in[i] ^ ks[i]);
+      len = 0;
+    }
+  }
+  x86_store_be64(ctr, hi); x86_store_be64(ctr + 8, lo);
+}
+
+X86_AES_TARGET
+void rktcrypto_aes_cbc_enc_x86(const unsigned char *rk, int Nr, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len)
+{
+  __m128i prev = _mm_loadu_si128((const __m128i *)iv);
+  while (len >= 16) {
+    prev = x86_aes_enc1(_mm_xor_si128(prev, _mm_loadu_si128((const __m128i *)in)), rk, Nr);
+    _mm_storeu_si128((__m128i *)out, prev);
+    in += 16; out += 16; len -= 16;
+  }
+}
+
+/* CBC decryption is parallel: eight ciphertext blocks are decrypted together
+   and each is XORed with its predecessor afterwards. */
+X86_AES_TARGET
+void rktcrypto_aes_cbc_dec_x86(const unsigned char *dk, int Nr, const unsigned char iv[16],
+                               const unsigned char *in, unsigned char *out, intptr_t len)
+{
+  __m128i prev = _mm_loadu_si128((const __m128i *)iv);
+  const __m128i k0 = _mm_loadu_si128((const __m128i *)dk);
+  const __m128i klast = _mm_loadu_si128((const __m128i *)(dk + 16 * Nr));
+  while (len >= 128) {
+    __m128i c0 = _mm_loadu_si128((const __m128i *)(in +   0)), c1 = _mm_loadu_si128((const __m128i *)(in +  16));
+    __m128i c2 = _mm_loadu_si128((const __m128i *)(in +  32)), c3 = _mm_loadu_si128((const __m128i *)(in +  48));
+    __m128i c4 = _mm_loadu_si128((const __m128i *)(in +  64)), c5 = _mm_loadu_si128((const __m128i *)(in +  80));
+    __m128i c6 = _mm_loadu_si128((const __m128i *)(in +  96)), c7 = _mm_loadu_si128((const __m128i *)(in + 112));
+    __m128i s0 = _mm_xor_si128(c0, k0), s1 = _mm_xor_si128(c1, k0), s2 = _mm_xor_si128(c2, k0), s3 = _mm_xor_si128(c3, k0);
+    __m128i s4 = _mm_xor_si128(c4, k0), s5 = _mm_xor_si128(c5, k0), s6 = _mm_xor_si128(c6, k0), s7 = _mm_xor_si128(c7, k0);
+    __m128i k; int r;
+    for (r = 1; r < Nr; r++) {
+      k = _mm_loadu_si128((const __m128i *)(dk + 16 * r));
+      s0 = _mm_aesdec_si128(s0, k); s1 = _mm_aesdec_si128(s1, k);
+      s2 = _mm_aesdec_si128(s2, k); s3 = _mm_aesdec_si128(s3, k);
+      s4 = _mm_aesdec_si128(s4, k); s5 = _mm_aesdec_si128(s5, k);
+      s6 = _mm_aesdec_si128(s6, k); s7 = _mm_aesdec_si128(s7, k);
+    }
+    _mm_storeu_si128((__m128i *)(out +   0), _mm_xor_si128(_mm_aesdeclast_si128(s0, klast), prev));
+    _mm_storeu_si128((__m128i *)(out +  16), _mm_xor_si128(_mm_aesdeclast_si128(s1, klast), c0));
+    _mm_storeu_si128((__m128i *)(out +  32), _mm_xor_si128(_mm_aesdeclast_si128(s2, klast), c1));
+    _mm_storeu_si128((__m128i *)(out +  48), _mm_xor_si128(_mm_aesdeclast_si128(s3, klast), c2));
+    _mm_storeu_si128((__m128i *)(out +  64), _mm_xor_si128(_mm_aesdeclast_si128(s4, klast), c3));
+    _mm_storeu_si128((__m128i *)(out +  80), _mm_xor_si128(_mm_aesdeclast_si128(s5, klast), c4));
+    _mm_storeu_si128((__m128i *)(out +  96), _mm_xor_si128(_mm_aesdeclast_si128(s6, klast), c5));
+    _mm_storeu_si128((__m128i *)(out + 112), _mm_xor_si128(_mm_aesdeclast_si128(s7, klast), c6));
+    prev = c7;
+    in += 128; out += 128; len -= 128;
+  }
+  while (len >= 16) {
+    __m128i c = _mm_loadu_si128((const __m128i *)in);
+    _mm_storeu_si128((__m128i *)out, _mm_xor_si128(x86_aes_dec1(c, dk, Nr), prev));
+    prev = c;
+    in += 16; out += 16; len -= 16;
+  }
+}
+
 /* ===================== GHASH (PCLMULQDQ) ===================== */
 /* Carryless 128x128 multiply and GF(2^128) reduction (the classic Intel
    "Carry-Less Multiplication and GCM" sequence). Operands are in the
    byte-reversed internal representation; the shift-by-one folded into the
    reduction absorbs GCM's bit convention, so no bit-reversal is needed. */
+/* 128x128 carry-less product as a 256-bit value (lo:hi), not yet reduced. */
 __attribute__((target("pclmul,sse4.1,ssse3")))
-static __m128i gcm_gfmul(__m128i a, __m128i b)
+static inline void gcm_mul_raw(__m128i a, __m128i b, __m128i *lo, __m128i *hi)
 {
-  __m128i t2, t3, t4, t5, t6, t7, t8, t9;
+  __m128i t3, t4, t5, t6;
   t3 = _mm_clmulepi64_si128(a, b, 0x00);
   t4 = _mm_clmulepi64_si128(a, b, 0x10);
   t5 = _mm_clmulepi64_si128(a, b, 0x01);
@@ -67,8 +368,17 @@ static __m128i gcm_gfmul(__m128i a, __m128i b)
   t4 = _mm_xor_si128(t4, t5);
   t5 = _mm_slli_si128(t4, 8);
   t4 = _mm_srli_si128(t4, 8);
-  t3 = _mm_xor_si128(t3, t5);
-  t6 = _mm_xor_si128(t6, t4);
+  *lo = _mm_xor_si128(t3, t5);
+  *hi = _mm_xor_si128(t6, t4);
+}
+
+/* Reduce a 256-bit product modulo the GCM polynomial (the classic Intel
+   shift-by-one then fold sequence). Linear in its input, so several raw
+   products may be XORed together before a single reduction. */
+__attribute__((target("pclmul,sse4.1,ssse3")))
+static inline __m128i gcm_reduce(__m128i t3, __m128i t6)
+{
+  __m128i t2, t4, t5, t7, t8, t9;
   t7 = _mm_srli_epi32(t3, 31);
   t8 = _mm_srli_epi32(t6, 31);
   t3 = _mm_slli_epi32(t3, 1);
@@ -98,6 +408,14 @@ static __m128i gcm_gfmul(__m128i a, __m128i b)
   return t6;
 }
 
+__attribute__((target("pclmul,sse4.1,ssse3")))
+static inline __m128i gcm_gfmul(__m128i a, __m128i b)
+{
+  __m128i lo, hi;
+  gcm_mul_raw(a, b, &lo, &hi);
+  return gcm_reduce(lo, hi);
+}
+
 /* Full GHASH: s = GHASH_H(aad || 0* || ct || 0* || len(aad)||len(ct)). */
 __attribute__((target("pclmul,sse4.1,ssse3")))
 void rktcrypto_ghash_x86(const uint64_t h[2],
@@ -107,14 +425,51 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
 {
   const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
   unsigned char hb[16], blk[16];
-  __m128i H, acc;
+  __m128i H, H2, H3, H4, acc;
   int i;
   for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
   H   = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
+  H2  = gcm_gfmul(H, H); H3 = gcm_gfmul(H2, H); H4 = gcm_gfmul(H3, H);
   acc = _mm_setzero_si128();
+#if defined(__x86_64__) && defined(__ELF__)
+  /* VPCLMULQDQ kernel for regions of 256 bytes and more: H^16..H^1 are computed once per
+     call (15 multiplications), the kernel takes the 64-byte multiple prefix of the region. */
+  { const int use_vpclmul = rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512);
+    unsigned char htab[256] __attribute__((aligned(64))), accb[16]; int htab_ready = 0;
+#define GCM_X86_VPCLMUL(DATA, LEN) do {                                     \
+    if (use_vpclmul && (LEN) >= 256) {                                     \
+      intptr_t _n = (LEN) & ~(intptr_t)63;                                 \
+      if (!htab_ready) {                                                   \
+        __m128i _p = H; int _k;                                            \
+        for (_k = 15; _k >= 0; _k--) { _mm_storeu_si128((__m128i *)(htab + 16 * _k), _p); _p = gcm_gfmul(_p, H); } \
+        htab_ready = 1;                                                    \
+      }                                                                    \
+      _mm_storeu_si128((__m128i *)accb, acc);                              \
+      rktcrypto_ghash_vpclmul(htab, accb, (DATA), _n);                     \
+      acc = _mm_loadu_si128((const __m128i *)accb);                        \
+      (DATA) += _n; (LEN) -= _n;                                           \
+    } } while (0)
+#else
+#define GCM_X86_VPCLMUL(DATA, LEN) do { } while (0)
+  {
+#endif
 
 #define GCM_X86_REGION(DATA, LEN) do {                                      \
     intptr_t _l = (LEN); const unsigned char *_d = (DATA); __m128i _x;      \
+    GCM_X86_VPCLMUL(_d, _l);                                                \
+    while (_l >= 64) {                                                      \
+      __m128i _c0, _c1, _c2, _c3, _lo, _hi, _l2, _h2;                       \
+      _c0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)_d), bswap);  \
+      _c1 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(_d + 16)), bswap); \
+      _c2 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(_d + 32)), bswap); \
+      _c3 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(_d + 48)), bswap); \
+      gcm_mul_raw(_mm_xor_si128(acc, _c0), H4, &_lo, &_hi);                 \
+      gcm_mul_raw(_c1, H3, &_l2, &_h2); _lo = _mm_xor_si128(_lo, _l2); _hi = _mm_xor_si128(_hi, _h2); \
+      gcm_mul_raw(_c2, H2, &_l2, &_h2); _lo = _mm_xor_si128(_lo, _l2); _hi = _mm_xor_si128(_hi, _h2); \
+      gcm_mul_raw(_c3, H,  &_l2, &_h2); _lo = _mm_xor_si128(_lo, _l2); _hi = _mm_xor_si128(_hi, _h2); \
+      acc = gcm_reduce(_lo, _hi);                                           \
+      _d += 64; _l -= 64;                                                   \
+    }                                                                      \
     while (_l >= 16) {                                                      \
       _x = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)_d), bswap);   \
       acc = gcm_gfmul(_mm_xor_si128(acc, _x), H);                          \
@@ -131,6 +486,8 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
   GCM_X86_REGION(aad, aad_len);
   GCM_X86_REGION(ct, ct_len);
 #undef GCM_X86_REGION
+#undef GCM_X86_VPCLMUL
+  }
 
   { uint64_t abits = (uint64_t)aad_len << 3, cbits = (uint64_t)ct_len << 3;
     for (i = 0; i < 8; i++) blk[i]     = (unsigned char)(abits >> (56 - 8*i));
@@ -139,6 +496,101 @@ void rktcrypto_ghash_x86(const uint64_t h[2],
     acc = gcm_gfmul(_mm_xor_si128(acc, x), H); }
 
   _mm_storeu_si128((__m128i *)s, _mm_shuffle_epi8(acc, bswap));
+}
+
+/* H^32..H^1 for the VPCLMULQDQ kernels, descending so that table row j (64 bytes) lines up
+   with data register j; row 7 = [H^4 H^3 H^2 H] and the multipliers H^4, H^8, H^16 are computed
+   here (five serial multiplications), the other rows by the vectorised kernel (seven lane-wise
+   multiplications in three dependent levels) or, without the kernel, serially. */
+/* Multiply a byte-reversed (bit-reflected) field element by x^-1 in place. The fused kernel's
+   table rows carry this factor: the carry-less product of two reflected operands is the reflected
+   256-bit product of the field elements times x, so with H^k * x^-1 in the table the raw sums
+   reduce with the modular fold alone (no one-bit shift). Dividing by x shifts the reflected value
+   left by one; a set x^0 coefficient (bit 127) adds x^-1 = x^127 + x^6 + x + 1 (bits 0, 121, 126, 127). */
+static void gcm_scale_xinv(unsigned char *e)
+{
+  uint64_t lo, hi, top;
+  memcpy(&lo, e, 8); memcpy(&hi, e + 8, 8);
+  top = hi >> 63; hi = (hi << 1) | (lo >> 63); lo <<= 1;
+  if (top) { lo ^= 1; hi ^= 0xC200000000000000ULL; }
+  memcpy(e, &lo, 8); memcpy(e + 8, &hi, 8);
+}
+
+__attribute__((target("pclmul,sse4.1,ssse3")))
+void rktcrypto_gcm_vaes_setup(const uint64_t h[2], unsigned char htab[1280])
+{
+  unsigned char hb[16]; int i;
+  for (i = 0; i < 8; i++) { hb[i] = (unsigned char)(h[0] >> (56 - 8*i)); hb[8+i] = (unsigned char)(h[1] >> (56 - 8*i)); }
+#if defined(__x86_64__) && defined(__ELF__)
+  /* the table kernel is AVX-512 + VPCLMULQDQ code; the AES-NI and SSE tiers reach this setup on
+     CPUs without either (an unconditional call was an illegal instruction there) */
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ)) {
+    rktcrypto_gcm_htab_vaes(htab, hb);                    /* the whole table in one kernel pass */
+    return;
+  }
+#endif
+  { const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+    __m128i H, p; int k;
+    H = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)hb), bswap);
+    _mm_storeu_si128((__m128i *)(htab + 496), H);
+    p = H;
+    for (k = 30; k >= 0; k--) { p = gcm_gfmul(p, H); _mm_storeu_si128((__m128i *)(htab + 16 * k), p); }
+    memcpy(htab + 1024, htab + 256, 256);                 /* plain H^16..H^1 for the region helper */
+    for (i = 0; i < 32; i++) {
+      uint64_t lo, hi, kk;
+      gcm_scale_xinv(htab + 16 * i);                        /* the kernel's rows carry x^-1 */
+      memcpy(&lo, htab + 16 * i, 8); memcpy(&hi, htab + 16 * i + 8, 8);
+      kk = lo ^ hi;                                         /* Karatsuba rows: lo ^ hi in both halves */
+      memcpy(htab + 512 + 16 * i, &kk, 8); memcpy(htab + 512 + 16 * i + 8, &kk, 8);
+    } }
+}
+
+/* GHASH of one region into the byte-reversed accumulator: kernel prefix (>= 256 bytes), then
+   the four-block aggregation, single blocks, and a zero-padded partial block on the intrinsics. */
+__attribute__((target("pclmul,sse4.1,ssse3")))
+void rktcrypto_ghash_region_x86(const unsigned char htab[256], unsigned char acc16[16],
+                                const unsigned char *data, intptr_t len)
+{
+  const __m128i bswap = _mm_set_epi8(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15);
+  const __m128i H  = _mm_loadu_si128((const __m128i *)(htab + 240));
+  const __m128i H2 = _mm_loadu_si128((const __m128i *)(htab + 224));
+  const __m128i H3 = _mm_loadu_si128((const __m128i *)(htab + 208));
+  const __m128i H4 = _mm_loadu_si128((const __m128i *)(htab + 192));
+  __m128i acc, x;
+  unsigned char blk[16]; intptr_t i;
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 256 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VPCLMULQDQ) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t n = len & ~(intptr_t)63;
+    rktcrypto_ghash_vpclmul(htab, acc16, data, n);
+    data += n; len -= n;
+  }
+#endif
+  acc = _mm_loadu_si128((const __m128i *)acc16);
+  while (len >= 64) {
+    __m128i c0, c1, c2, c3, lo, hi, l2, h2;
+    c0 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)data), bswap);
+    c1 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 16)), bswap);
+    c2 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 32)), bswap);
+    c3 = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)(data + 48)), bswap);
+    gcm_mul_raw(_mm_xor_si128(acc, c0), H4, &lo, &hi);
+    gcm_mul_raw(c1, H3, &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    gcm_mul_raw(c2, H2, &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    gcm_mul_raw(c3, H,  &l2, &h2); lo = _mm_xor_si128(lo, l2); hi = _mm_xor_si128(hi, h2);
+    acc = gcm_reduce(lo, hi);
+    data += 64; len -= 64;
+  }
+  while (len >= 16) {
+    x = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)data), bswap);
+    acc = gcm_gfmul(_mm_xor_si128(acc, x), H);
+    data += 16; len -= 16;
+  }
+  if (len > 0) {
+    memset(blk, 0, 16);
+    for (i = 0; i < len; i++) blk[i] = data[i];
+    x = _mm_shuffle_epi8(_mm_loadu_si128((const __m128i *)blk), bswap);
+    acc = gcm_gfmul(_mm_xor_si128(acc, x), H);
+  }
+  _mm_storeu_si128((__m128i *)acc16, acc);
 }
 
 /* ===================== SHA-256 block (SHA-NI) ===================== */
@@ -204,6 +656,20 @@ void rktcrypto_sha256_block_shani(uint32_t state[8], const unsigned char *data)
 
   _mm_storeu_si128((__m128i *)&state[0], STATE0);
   _mm_storeu_si128((__m128i *)&state[4], STATE1);
+}
+
+void rktcrypto_aes_ctr_x86(const unsigned char *rk, int Nr, unsigned char ctr[16],
+                           const unsigned char *in, unsigned char *out, intptr_t len, int inc32)
+{
+#if defined(__x86_64__) && defined(__ELF__)
+  if (len >= 64 && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_VAES) && rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) {
+    intptr_t head = len & ~(intptr_t)63;
+    rktcrypto_aes_ctr_vaes(rk, Nr | (inc32 ? 0x100 : 0), ctr, in, out, head);
+    in += head; out += head; len -= head;
+    if (len == 0) return;
+  }
+#endif
+  rktcrypto_aes_ctr_aesni(rk, Nr, ctr, in, out, len, inc32);
 }
 
 #endif  /* x86 */

@@ -112,6 +112,7 @@
            ps-add-stx
            ps-add-unbox
            ps-add-unvector
+           ps-add-unpvector
            ps-add-unpstruct
            ps-add-opaque
            ps-add-post
@@ -209,6 +210,8 @@
   (define (ps-add-unbox parent)
     (ps-add-car parent))
   (define (ps-add-unvector parent)
+    (ps-add-car parent))
+  (define (ps-add-unpvector parent)
     (ps-add-car parent))
   (define (ps-add-unpstruct parent)
     (ps-add-car parent))
@@ -419,7 +422,8 @@
 
 (module 3d-stx racket/base
   (require (only-in '#%flfxnum flvector? fxvector?)
-           (only-in '#%extfl extflonum? extflvector?))
+           (only-in '#%extfl extflonum? extflvector?)
+           (only-in '#%kernel core-pvector? core-pvector->list))
   (provide 2d-stx?)
 
   ;; Checks for 3D syntax (syntax that contains unwritable values, etc)
@@ -566,6 +570,9 @@
              [(box? x)
               (with-mutable-check (not (immutable? x))
                 (loop (unbox x) (sub1 fuel)))]
+             [(core-pvector? x)
+              (for/fold ([fuel fuel]) ([e (in-list (core-pvector->list x))] #:break (not fuel))
+                (loop e fuel))]
              [(prefab-struct-key x)
               => (lambda (key)
                    (cond [(and no-mutable-hash/prefab? (mutable-prefab-key? key))

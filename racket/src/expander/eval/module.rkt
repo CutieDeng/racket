@@ -51,9 +51,11 @@
          (make-syntax-literal-data-instance-from-compiled-in-memory c)
          (let ([l (hash-ref h 'stx-data #f)])
            (cond
-            [l (instantiate-linklet (eval-linklet* l)
-                                    (list deserialize-instance
-                                          data-instance))]
+            [l (if (eager-syntax-literals-data?)
+                   (instantiate-linklet (eval-linklet* l)
+                                        (list deserialize-instance
+                                              data-instance))
+                   (make-lazy-syntax-literals-data-instance l data-instance))]
             [(eq? (hash-ref h 'module->namespace #f) 'empty)
              empty-syntax-literals-instance/empty-namespace]
             [else
@@ -335,6 +337,52 @@
                                                 ns phase-shift original-self self))))]))
 
 ;; ----------------------------------------
+
+;; The `stx-data` linklet carries a module's serialized syntax literals
+;; as code constants; materializing it costs several times the .zo
+;; bytes in allocation. A proxy instance with the same two exports
+;; defers that work until some syntax literal is actually demanded
+;; (through `deserialize-syntax`), which for most modules in a session
+;; never happens. PLT_EAGER_STX_DATA restores the eager behavior.
+;; A function rather than a module-level value, since the flattener
+;; disallows initialized-once global state in the expander:
+(define (eager-syntax-literals-data?)
+  (and (environment-variables-ref (current-environment-variables) #"PLT_EAGER_STX_DATA") #t))
+
+(define (make-lazy-syntax-literals-data-instance l data-instance)
+  (define vec-box (box #f))
+  (define real-instance #f)
+  (define (force-real-instance!)
+    (or real-instance
+        (let ([i (instantiate-linklet (eval-linklet* l)
+                                      (list deserialize-instance
+                                            data-instance))])
+          (set! real-instance i)
+          i)))
+  ;; the proxy refers to itself only through this box, which keeps the
+  ;; definition free of a self-referential `letrec` for the flattener
+  (define proxy-box (box #f))
+  (define proxy
+    (make-instance 'syntax-literals-data #f #f
+                   deserialized-syntax-vector-id vec-box
+                   deserialize-syntax-id
+                   (lambda (bulk-binding-registry)
+                     (define i (force-real-instance!))
+                     (define deserialize-syntax (instance-variable-value i deserialize-syntax-id))
+                     (when deserialize-syntax
+                       (deserialize-syntax bulk-binding-registry))
+                     (define vec (unbox (instance-variable-value i deserialized-syntax-vector-id)))
+                     ;; Publish the way the real linklet does: a CAS can fail
+                     ;; spuriously, and the box must not be left empty
+                     (let loop ()
+                       (unless (or (box-cas! vec-box #f vec)
+                                   (unbox vec-box))
+                         (loop)))
+                     ;; Like the real linklet, drop the procedure once deserialization is done
+                     (instance-set-variable-value! (unbox proxy-box) deserialize-syntax-id #f)
+                     (unbox vec-box))))
+  (set-box! proxy-box proxy)
+  proxy)
 
 (define (force-syntax-deserialize syntax-literals-data-instance bulk-binding-registry)
   (unless (or (eq? syntax-literals-data-instance empty-syntax-literals-data-instance)

@@ -254,6 +254,7 @@
       [(? pat:or?) #f]
       [(? pat:not?) #t]
       [(pat:vector sp) (loop sp)]
+      [(pat:pvector sp) (loop sp)]
       [(pat:box sp) (loop sp)]
       [(pat:pstruct key sp) (loop sp)]
       [(pat:describe sp _ _ _) (loop sp)]
@@ -329,6 +330,8 @@
        (and (pattern-equal? ahead bhead)
             (pattern-equal? atail btail))]
       [[(pat:vector ap) (pat:vector bp)]
+       (pattern-equal? ap bp)]
+      [[(pat:pvector ap) (pat:pvector bp)]
        (pattern-equal? ap bp)]
       [[(pat:box ap) (pat:box bp)]
        (pattern-equal? ap bp)]

@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/list
+         (only-in '#%kernel core-pvector? core-pvector->list)
          racket/format
          syntax/stx
          racket/struct
@@ -273,6 +274,8 @@ ie (ps->stx+index ps1) = (ps->stx+index ps2).
          (cond [(pair? d) (car d)]
                [(vector? d)
                 (if top? x (vector->list d))]
+               [(core-pvector? d)
+                (if top? x (core-pvector->list d))]
                [(box? d) (unbox d)]
                [(prefab-struct-key d)
                 (if top? x (struct->list d))]
@@ -308,6 +311,7 @@ ie (ps->stx+index ps1) = (ps->stx+index ps2).
          (define d (syntax-e within-stx))
          (define stx*
            (cond [(vector? d) (vector->list d)]
+                 [(core-pvector? d) (core-pvector->list d)]
                  [(prefab-struct-key d) (struct->list d)]
                  [else within-stx]))
          (define at-stx*

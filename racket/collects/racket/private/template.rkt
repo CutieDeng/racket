@@ -29,6 +29,7 @@
 ;;   - (... T)          -- escapes inner ..., ~?, ~@
 ;;   - (~? T T)
 ;;   - #(T*)            -- actually, vector->list interpreted as T
+;;   - #pvector(T*)     -- likewise, pvector->list interpreted as T
 ;;   - #s(prefab-struct-key T*) -- likewise
 
 ;; A HeadTemplate (H) is one of:
@@ -140,6 +141,9 @@
   (define (vector-guide? x) (guide-is? x 't-vector))
   (define (vector-guide-v x) (cadr x))
 
+  (define (pvector-guide? x) (guide-is? x 't-pvector))
+  (define (pvector-guide-v x) (cadr x))
+
   (define (box-guide? x) (guide-is? x 't-box))
   (define (box-guide-v x) (cadr x))
 
@@ -162,6 +166,7 @@
           [(list*-guide? x) (andmap const-stx-guide? (list*-guide-vs x))]
           [(struct-guide? x) (const-stx-guide? (struct-guide-v x))]
           [(vector-guide? x) (const-stx-guide? (vector-guide-v x))]
+          [(pvector-guide? x) (const-stx-guide? (pvector-guide-v x))]
           [(box-guide? x) (const-stx-guide? (box-guide-v x))]
           [else #f]))
   (define (const-stx-guide-v x)
@@ -172,6 +177,7 @@
           [(struct-guide? x)
            (apply make-prefab-struct (struct-guide-key x) (const-stx-guide-v (struct-guide-v x)))]
           [(vector-guide? x) (list->vector (const-stx-guide-v (vector-guide-v x)))]
+          [(pvector-guide? x) (core-list->pvector (const-stx-guide-v (pvector-guide-v x)))]
           [(box-guide? x) (box (const-stx-guide-v (box-guide-v x)))]
           [else (error 'const-stx-guide-v "bad guide: ~e" x)]))
 
@@ -318,6 +324,9 @@
             [(vector? td)
              (define guide (parse-t (vector->list td) depth esc?))
              (resyntax t `(t-vector ,guide))]
+            [(core-pvector? td)
+             (define guide (parse-t (core-pvector->list td) depth esc?))
+             (resyntax t `(t-pvector ,guide))]
             [(prefab-struct-key td)
              => (lambda (key)
                   (define elems (cdr (vector->list (struct->vector td))))
@@ -671,6 +680,7 @@
            (rename '#%kernel t-list*    list*)
            (rename '#%kernel t-escaped  #%expression)
            (rename '#%kernel t-vector   list->vector)
+           (rename '#%kernel t-pvector  core-list->pvector)
            (rename '#%kernel t-box      box-immutable)
            (rename '#%kernel h-t        list))
 

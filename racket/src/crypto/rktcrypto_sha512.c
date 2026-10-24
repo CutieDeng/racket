@@ -7,6 +7,11 @@
    behind the dispatch layer without changing this reference path. */
 
 #include "rktcrypto_digest.h"
+#include <string.h>
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_cpu.h"
+# include "rktcrypto_x86.h"
+#endif
 
 /* Initial hash values, FIPS 180-4 sections 5.3.3-5.3.6 */
 const uint64_t rktcrypto_sha512_iv[8] = {
@@ -134,10 +139,25 @@ static void sha512_transform_hw(rktcrypto_sha512_ctx_t *ctx, const unsigned char
 }
 #endif
 
+#if defined(__x86_64__) && defined(__ELF__)
+/* rktasm/x86 kernels: the vector-schedule one needs AVX-512VL on top of BMI2 */
+static void sha512_blocks_x86(uint64_t *h, const unsigned char *data, intptr_t nblocks)
+{
+  uint64_t hw[24];
+  memcpy(hw, h, 64);
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) rktcrypto_sha512_blocks_avx512_x86(hw, data, nblocks);
+  else rktcrypto_sha512_blocks_x86(hw, data, nblocks);
+  memcpy(h, hw, 64);
+}
+#endif
+
 static void sha512_transform(rktcrypto_sha512_ctx_t *ctx, const unsigned char *p)
 {
 #if defined(__ARM_FEATURE_SHA512)
   sha512_transform_hw(ctx, p);
+#elif defined(__x86_64__) && defined(__ELF__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) sha512_blocks_x86(ctx->h, p, 1);
+  else sha512_transform_portable(ctx, p);
 #else
   sha512_transform_portable(ctx, p);
 #endif
@@ -158,6 +178,12 @@ void rktcrypto_sha512_core_update(rktcrypto_sha512_ctx_t *ctx,
       ctx->len_lo += add;
       if (ctx->len_lo < old) ctx->len_hi++;
       ctx->len_hi += (uint64_t)nbytes >> 61;
+#if defined(__x86_64__) && defined(__ELF__)
+      if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) {
+        sha512_blocks_x86(ctx->h, data, nblocks);   /* state resident across blocks */
+        data += nbytes; b = nblocks;
+      } else
+#endif
       for (b = 0; b < nblocks; b++) { sha512_transform(ctx, data); data += 128; }
       len -= nbytes;
       continue;

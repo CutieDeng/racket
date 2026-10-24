@@ -163,9 +163,8 @@
      (define opaque (hash-ref top 'opaque
                               (lambda ()
                                 (error 'zo-marshal "missing 'opaque for chez-scheme virtual-machine format"))))
-     (define bstr (opaque-bstr opaque))
-     (write-bytes (integer->integer-bytes (bytes-length bstr) 4 #f #f) outp)
-     (write-bytes bstr outp)]))
+     ;; the opaque content includes its lengths; see "zo-parse.rkt"
+     (write-bytes (opaque-bstr opaque) outp)]))
 
 (define (zo-marshal-racket-bundle-to top outp) 
   ; (obj -> (or pos #f)) output-port -> number

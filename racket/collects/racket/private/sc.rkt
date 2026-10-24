@@ -363,6 +363,58 @@
                                               #f)))
                                    did-var?
                                    #f)))))]
+                     [(stx-pvector? p #f)
+                      (let ([l (core-pvector->list (syntax-e p))])
+                        ;; If no top-level ellipses, match one by one:
+                        (if (and (not just-vars?)
+                                 (or (not use-ellipses?)
+                                     (andmap (lambda (x) (not (...? x))) l)))
+                            ;; Match one-by-one:
+                            ;; Do tail first to find out if it has variables.
+                            (let ([len (core-pvector-length (syntax-e p))])
+                              (let loop ([pos len][did-var? (not last?)][body null])
+                                (if (zero? pos)
+                                    (values 
+                                     (if interp-box
+                                         (vector 'pvector len body)
+                                         `(lambda (e)
+                                            (if ,(if s-exp?
+                                                     `(and (core-pvector? e) (= ,len (core-pvector-length e)))
+                                                     `(stx-pvector? e ,len))
+                                                ,body
+                                                #f)))
+                                     did-var?
+                                     #f)
+                                    (let-values ([(match-elem elem-did-var? <false>) 
+                                                  (let ([e (core-pvector-ref (syntax-e p) (sub1 pos))])
+                                                    (m&e e e use-ellipses? (not did-var?) #f))])
+                                      (loop (sub1 pos)
+                                            (or did-var? elem-did-var?)
+                                            (if interp-box
+                                                (cons (cons match-elem elem-did-var?) body)
+                                                (let ([app-elem (app match-elem `(,(if s-exp? 'core-pvector-ref 'stx-pvector-ref)
+                                                                                  e 
+                                                                                  ,(sub1 pos)))])
+                                                  (if (null? body)
+                                                      app-elem
+                                                      (if elem-did-var?
+                                                          (app-append app-elem body)
+                                                          `(if ,app-elem ,body #f))))))))))
+                            ;; Match as a list:
+                            (let-values ([(match-content did-var? <false>) (m&e l p use-ellipses? last? #f)])
+                              (if just-vars?
+                                  (values match-content #f #f)
+                                  (values
+                                   (if interp-box
+                                       (vector 'pveclist match-content)
+                                       `(lambda (e)
+                                          (if ,(if s-exp?
+                                                   '(core-pvector? e)
+                                                   '(stx-pvector? e #f))
+                                              ,(app match-content `(core-pvector->list ,(if s-exp? 'e '(syntax-e e))))
+                                              #f)))
+                                   did-var?
+                                   #f)))))]
                      [(stx-box? p)
                       (let*-values ([(content) (unbox (syntax-e p))]
                                     [(match-content did-var? <false>) (m&e content content use-ellipses? last? #f)])
@@ -535,6 +587,8 @@
                      (list p))]
                 [(stx-vector? p #f)
                  (sub (vector->list (syntax-e p)) use-ellipses?)]
+                [(stx-pvector? p #f)
+                 (sub (core-pvector->list (syntax-e p)) use-ellipses?)]
                 [(stx-box? p)
                  (sub (unbox (syntax-e p)) use-ellipses?)]
                 [(and (syntax? p)

@@ -128,7 +128,8 @@
   且失去边界审计与 sanitizer 工具链）。C 的定性从「待清理的历史层」改为
   「验证基础设施 + 平台覆盖」，原则内部不再有张力。
 - **平台路线**：非 Apple aarch64（ELF）为近期目标（Phase E）；**x86-64 asmp
-  后端暂非目标**——x86 由可移植 C + 既有 intrinsics 兜底（重议条件见 §3）。
+  后端暂非目标**——x86 由可移植 C + 既有 intrinsics 兜底（重议条件见 §3；
+  2026-10-20 已重议为目标，规划见 `rktasm/docs/x86-64-backend-plan.md`）。
   C intrinsics 热点（chacha20/gcm/aes/sha 系）依 Q2 结论继续不纳入 asmp 管辖。
 
 ---
@@ -574,6 +575,8 @@ P0 (护栏) ──► A (真源统一) ──► B (语义化) ──► C (产�
 - **不**为语义化接受性能回退（±2% 门禁硬性）。
 - **不**重启已被实测否决的路线：point-op 手工调度 ABI 群（asmp
   `config/abi.rktd:75-163` 的实验遗留）、宽乱序核上的取数前移。
+- **（2026-10-20 重议：本条的重议条件已触发——lan-11（AMD Zen 5）成为开发/部署机；
+  x86-64 后端的规划见 `rktasm/docs/x86-64-backend-plan.md`，本条保留为历史记录。）**
 - **不**做 asmp x86-64 后端与 x86-64 汇编内核（2026-08-05 重申并展开）：
   x86-64 暂非性能目标场景，该平台由**可移植 C 兜底** + 既有
   `rktcrypto_x86.c` intrinsics（AES-NI/PCLMUL/SHA-NI，运行时 dispatch）维持。

@@ -8,6 +8,9 @@
 
 #include "rktcrypto_digest.h"
 #include "rktcrypto_cpu.h"
+#if defined(__x86_64__) && defined(__ELF__)
+# include "rktcrypto_x86.h"
+#endif
 
 #define ROTL64(x, n) (((x) << (n)) | ((x) >> (64 - (n))))
 
@@ -128,6 +131,12 @@ static void keccak_f(uint64_t s[25])
 {
 #if defined(__ARM_FEATURE_SHA3)
   keccak_f_sha3(s);
+#elif defined(__x86_64__) && defined(__ELF__)
+  /* a single stream is faster on the integer unit (the AVX-512 kernel is bound by its 512-bit
+     shuffles); the vector kernel serves the two-state entry below */
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_BMI2ADX)) keccak_f1600_scalar_x86(s);   /* rktasm/x86 kernel */
+  else if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x86(s);
+  else keccak_f_portable(s);
 #else
   keccak_f_portable(s);
 #endif
@@ -164,6 +173,9 @@ void rktcrypto_keccak_f1600_x2(uint64_t sA[25], uint64_t sB[25])
     a[0] = veorq_u64(a[0], vdupq_n_u64(RC[round]));
   }
   for (i = 0; i < 25; i++) { sA[i]=vgetq_lane_u64(a[i],0); sB[i]=vgetq_lane_u64(a[i],1); }
+#elif defined(__x86_64__) && defined(__ELF__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_AVX512)) keccak_f1600_x2_x86(sA, sB);   /* rktasm/x86: two chains in flight */
+  else { keccak_f(sA); keccak_f(sB); }
 #else
   keccak_f(sA); keccak_f(sB);
 #endif

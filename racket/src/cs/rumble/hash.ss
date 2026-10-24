@@ -365,6 +365,13 @@
     (lock-release (mutable-hash-lock ht))
     new-ht))
 
+;; Immutable tables built in one pass from parallel key/value vectors;
+;; the expander's deserializer uses these for a module's provides
+(define (unsafe-hasheq-from-vectors keys vals)
+  (intmap-build HAMT-EQTYPE-EQ keys vals))
+(define (unsafe-hasheqv-from-vectors keys vals)
+  (intmap-build HAMT-EQTYPE-EQV keys vals))
+
 (define (hash-set ht k v)
   (cond
    [(intmap? ht) (intmap-set ht k v)]

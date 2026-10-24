@@ -12,6 +12,11 @@
   (#{record  striprur0zx3-10} maybe-uid size nflds rtd pad-ty* fld*) ; maybe-uid => rtd
   (#{rtd-ref striprur0zx3-11} uid) ; field info not recorded
   (#{closure striprur0zx3-12} offset c)
+  ;; fasl2: a runtime closure with free variables (fasl-type-closure-freevars,
+  ;; 47) -- n free-var values plus the code.  Enables vfasl-to-static of
+  ;; runtime closures (the language-layer state), which the plain `closure`
+  ;; (zero free vars) does not cover.
+  (#{closure-freevars striprur0zx3-cfv} n c fv*)
   (#{flonum striprur0zx3-13} high low)
   (#{small-integer striprur0zx3-14} iptr)
   (#{large-integer striprur0zx3-15} sign vuptr)

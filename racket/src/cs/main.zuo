@@ -380,6 +380,19 @@
               ,(lambda (token)
                  (process/wait scheme "--script" "strip.ss" main-deps racket.so))]
 
+     ;; fasl2 fourth-segment producer (build.zuo integration): runs the
+     ;; segment generator against the built scheme, writing seg4.vfasl +
+     ;; seg4.locators into the build dir.  Command-style (`zuo . seg4`)
+     ;; because the segment is consumed by the main.sps PLT_SEG4 loader,
+     ;; not linked into racket.boot (fourth segment = conditional, separate).
+     [:target seg4 ()
+              ,(lambda (token . args)
+                 (process/wait scheme "--script"
+                               (at-source "../../../experiments/fasl2/gen-seg4.ss")
+                               (at-dir ".")
+                               args))
+              :command]
+
      ,(demo-target 'expander-demo expander.so expander-deps "expander.ss" rktio.so)
      ,(demo-target 'linklet-demo linklet.so linklet-deps "linklet.ss" rktio.so)
      ,(demo-target 'regexp-demo regexp.so regexp-deps "regexp.ss" rktio.so)

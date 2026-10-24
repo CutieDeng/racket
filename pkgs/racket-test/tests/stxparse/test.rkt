@@ -187,6 +187,10 @@
      (and (bound (x 0) (y 0) (z 0)) (s= x 'a) (s= y 'b)))
 (tok #(1 2 3 4 5) #(a b ~rest c)
      (s= c '(3 4 5)))
+(tok #pvector(a b c) #pvector(x y z)
+     (and (bound (x 0) (y 0) (z 0)) (s= x 'a) (s= y 'b)))
+(tok #pvector(1 2 3 4 5) #pvector(a b ~rest c)
+     (s= c '(3 4 5)))
 (tok #&1 #&x
      (and (bound (x 0)) (s= x 1)))
 
@@ -1003,6 +1007,9 @@
       #rx"expected more terms starting with any term")
 (terx #(1 2)
       #(a b c)
+      #rx"expected more terms starting with any term")
+(terx #pvector(1 2)
+      #pvector(a b c)
       #rx"expected more terms starting with any term")
 (terx #s(point 1)
       #s(point a b)

@@ -1,6 +1,14 @@
 #lang racket/base
 (require '#%extfl
+         (only-in '#%kernel
+                  core-pvector?
+                  core-pvector-length
+                  core-pvector-empty
+                  core-make-single-pvector
+                  core-unsafe-pvector-first
+                  core-fresh-vector->pvector)
          racket/linklet
+         (only-in '#%linklet primitive-table)
          racket/unsafe/undefined
          racket/fixnum
          racket/flonum
@@ -106,6 +114,9 @@
   (fasl-fxvector-type 43)
   (fasl-flvector-type 44)
 
+  (fasl-pvector-type 45)
+  (fasl-pvector-node-type 46)
+
   ;; Unallocated numbers here are for future extensions
 
   ;; 100 to 255 is used for small integers:
@@ -121,6 +132,63 @@
   (fasl-hash-equal-variant 1)
   (fasl-hash-eqv-variant   2)
   (fasl-hash-equal-always-variant 3))
+
+;; ----------------------------------------
+
+;; The structural primitives come from a primitive table that the
+;; runtime registers when its pvector representation can be taken
+;; apart and rebuilt node by node.  Without the table, a pvector cannot
+;; be written, and a structural encoding is decoded by flattening it
+;; into its elements.
+(define pvector-structure (primitive-table '#%pvector-structure))
+(define (pvector-structure-ref key)
+  (and pvector-structure (hash-ref pvector-structure key #f)))
+(define pvector-deep-middle (pvector-structure-ref 'pvector-deep-middle))
+(define pvector-deep-edge-length (pvector-structure-ref 'pvector-deep-edge-length))
+(define pvector-deep-edge-ref (pvector-structure-ref 'pvector-deep-edge-ref))
+(define pvector-node? (or (pvector-structure-ref 'pvector-node?) (lambda (v) #f)))
+(define pvector-node-kind (pvector-structure-ref 'pvector-node-kind))
+(define pvector-node-children (pvector-structure-ref 'pvector-node-children))
+(define make-pvector-leaf-node (pvector-structure-ref 'make-pvector-leaf-node))
+(define make-pvector-link-node (pvector-structure-ref 'make-pvector-link-node))
+(define make-pvector-deep (pvector-structure-ref 'make-pvector-deep))
+(define pvector-structure-available? (and make-pvector-deep #t))
+
+(define (vector-concat vecs)
+  (define out (make-vector (for/sum ([v (in-list vecs)]) (vector-length v))))
+  (for/fold ([pos 0]) ([v (in-list vecs)])
+    (vector-copy! out pos v)
+    (+ pos (vector-length v)))
+  out)
+
+;; A pvector is encoded structurally: a single's element, or a deep
+;; pvector's edge digits and middle node tree, where a node is encoded
+;; by its arity and a leaf node holds elements.  A decoded pvector has
+;; the node tree of the original, and an interior subtree shared among
+;; pvectors (as after `pvector-take` or `pvector-append`) is written
+;; once within a stream through the graph-definition mechanism.  Nodes are internal
+;; objects that never appear as values: the writer reaches them only
+;; through this traversal, and the reader accepts them only as a
+;; middle or as a node's child.
+
+(define (pvector-node-for-each-child v proc)
+  (call-with-values (lambda () (pvector-node-children v))
+                    (case-lambda
+                      [(a b) (proc a) (proc b)]
+                      [(a b c) (proc a) (proc b) (proc c)])))
+
+(define (pvector-for-each-part v on-element on-node)
+  (define len (core-pvector-length v))
+  (cond
+    [(eqv? len 0) (void)]
+    [(eqv? len 1) (on-element (core-unsafe-pvector-first v))]
+    [else
+     (for ([j (in-range (pvector-deep-edge-length v #t))])
+       (on-element (pvector-deep-edge-ref v #t j)))
+     (define middle (pvector-deep-middle v))
+     (when middle (on-node middle))
+     (for ([j (in-range (pvector-deep-edge-length v #f))])
+       (on-element (pvector-deep-edge-ref v #f j)))]))
 
 ;; ----------------------------------------
 
@@ -145,7 +213,23 @@
   (define shared-counter 0)
   ;; Find shared symbols and similar for compactness. We don't try to
   ;; save general graph structure, leaving that to `serialize`.
-  (let loop ([v v])
+  ;; A pvector or interior node is counted so that a shared subtree is
+  ;; written once, and traversed only on the first visit, since a
+  ;; subtree can be shared many times over.  A leaf node is written
+  ;; inline without counting: a leaf shared by two parents is
+  ;; duplicated, which is bounded by the spines involved.  Nodes are
+  ;; internal objects, visited here and never offered to
+  ;; `external-lift?`.
+  (define (pre-visit-node v)
+    (cond
+      [(fx>= (pvector-node-kind v) 4)
+       (pvector-node-for-each-child v pre-visit)]
+      [else
+       (define c (hash-ref shared v 0))
+       (hash-set! shared v (add1 c))
+       (when (zero? c)
+         (pvector-node-for-each-child v pre-visit-node))]))
+  (define (pre-visit v)
     (cond
       [(and external-lift
             (hash-ref external-lift v #f))
@@ -164,38 +248,44 @@
            (path? v))
        (hash-update! shared v add1 0)]
       [(pair? v)
-       (loop (car v))
-       (loop (cdr v))]
+       (pre-visit (car v))
+       (pre-visit (cdr v))]
       [(vector? v)
        (for ([e (in-vector v)])
-         (loop e))]
+         (pre-visit e))]
+      [(and pvector-structure-available? (core-pvector? v))
+       (define c (hash-ref shared v 0))
+       (hash-set! shared v (add1 c))
+       (when (zero? c)
+         (pvector-for-each-part v pre-visit pre-visit-node))]
       [(hash? v)
        (hash-for-each v
                       (lambda (k v)
-                        (loop k)
-                        (loop v))
+                        (pre-visit k)
+                        (pre-visit v))
                       #t)]
       [(box? v)
-       (loop (unbox v))]
+       (pre-visit (unbox v))]
       [(prefab-struct-key v)
        => (lambda (k)
-            (loop k)
+            (pre-visit k)
             (for ([e (in-vector (struct->vector v) 1)])
-              (loop e)))]      
+              (pre-visit e)))]      
       [(srcloc? v)
-       (loop (srcloc-source v))]
+       (pre-visit (srcloc-source v))]
       [(correlated? v)
-       (loop (correlated-e v))
-       (loop (correlated-source v))
+       (pre-visit (correlated-e v))
+       (pre-visit (correlated-source v))
        (for ([k (in-list (correlated-property-symbol-keys v))])
-         (loop k)
-         (loop (correlated-property v k)))]
+         (pre-visit k)
+         (pre-visit (correlated-property v k)))]
       [(and (struct-type? v)
             (prefab-struct-type-key+field-count v))
        => (lambda (k+c)
-            (loop (car k+c))
-            (loop (cdr k+c)))]
+            (pre-visit (car k+c))
+            (pre-visit (cdr k+c)))]
       [else (void)]))
+  (pre-visit v)
   (define (treat-immutable? v) (or (not keep-mutable?) (immutable? v)))
   (define path->relative-path-elements (make-path->relative-path-elements))
   ;; The fasl formal prefix:
@@ -353,6 +443,35 @@
            (write-fasl-integer (fxvector-length v) o)
            (for ([e (in-fxvector v)])
              (write-fasl-integer e o))]
+          [(and pvector-structure-available? (core-pvector? v))
+           ;; the length, then for a deep pvector a shape byte (edge
+           ;; digit lengths, and whether there is a middle), the prefix
+           ;; elements, the middle node, and the suffix elements
+           (write-byte fasl-pvector-type o)
+           (define len (core-pvector-length v))
+           (write-fasl-integer len o)
+           (cond
+             [(eqv? len 0) (void)]
+             [(eqv? len 1) (loop (core-unsafe-pvector-first v))]
+             [else
+              (define prefix-len (pvector-deep-edge-length v #t))
+              (define suffix-len (pvector-deep-edge-length v #f))
+              (define middle (pvector-deep-middle v))
+              (write-byte (bitwise-ior (if middle 16 0)
+                                       (arithmetic-shift (sub1 prefix-len) 2)
+                                       (sub1 suffix-len))
+                          o)
+              (for ([j (in-range prefix-len)])
+                (loop (pvector-deep-edge-ref v #t j)))
+              (when middle (loop middle))
+              (for ([j (in-range suffix-len)])
+                (loop (pvector-deep-edge-ref v #f j)))])]
+          [(pvector-node? v)
+           ;; the kind byte is the arity, plus 4 for a leaf node whose
+           ;; children are elements rather than nodes
+           (write-byte fasl-pvector-node-type o)
+           (write-byte (pvector-node-kind v) o)
+           (pvector-node-for-each-child v loop)]
           [(box? v)
            (write-byte (if (treat-immutable? v) fasl-immutable-box-type fasl-box-type) o)
            (loop (unbox v))]
@@ -433,6 +552,9 @@
       (read-error "unrecognized prefix")))
   (define shared-count (read-fasl-integer* init-i))
   (define shared (make-vector shared-count))
+  ;; positions in `shared` that hold pvector nodes, which are valid
+  ;; only inside a pvector; allocated at the first node definition
+  (define node-position? #f)
 
   (unless (and (vector? external-lifts)
                ((vector-length external-lifts) . <= . shared-count))
@@ -449,7 +571,7 @@
                   (mcons bstr 0))))
 
   (define (intern v) (if intern? (datum-intern-literal v) v))
-  (let loop ()
+  (define (loop)
     (define type (read-byte/no-eof i))
     (constant-case
      type
@@ -464,6 +586,8 @@
       (define pos (read-fasl-integer i))
       (unless (pos . < . shared-count)
         (read-error "bad graph index"))
+      (when (and node-position? (vector-ref node-position? pos))
+        (read-error "pvector node outside a pvector"))
       (vector-ref shared pos)]
      [(fasl-false-type) #f]
      [(fasl-true-type) #t]
@@ -529,6 +653,35 @@
       (define len (read-fasl-integer i))
       (for/fxvector #:length len ([j (in-range len)])
         (read-fasl-integer i))]
+     [(fasl-pvector-type)
+      (define len (read-fasl-integer i))
+      (cond
+        [(eqv? len 0) (core-pvector-empty)]
+        [(eqv? len 1) (core-make-single-pvector (loop))]
+        [else
+         (define shape (read-byte/no-eof i))
+         (unless (shape . < . 32)
+           (read-error "bad pvector shape"))
+         (define prefix-len (add1 (bitwise-and (arithmetic-shift shape -2) 3)))
+         (define suffix-len (add1 (bitwise-and shape 3)))
+         (define prefix (for/vector #:length prefix-len ([j (in-range prefix-len)])
+                          (loop)))
+         (define middle (and (bitwise-bit-set? shape 4) (read-node)))
+         (define suffix (for/vector #:length suffix-len ([j (in-range suffix-len)])
+                          (loop)))
+         (define pv
+           (if pvector-structure-available?
+               (make-pvector-deep prefix middle suffix)
+               ;; flattening fallback: a node stands for its elements
+               (core-fresh-vector->pvector
+                (vector-concat (if middle
+                                   (list prefix middle suffix)
+                                   (list prefix suffix))))))
+         (unless (eqv? len (core-pvector-length pv))
+           (read-error "pvector length mismatch"))
+         pv])]
+     [(fasl-pvector-node-type)
+      (read-error "pvector node outside a pvector")]
      [(fasl-box-type) (box (loop))]
      [(fasl-immutable-box-type) (box-immutable (loop))]
      [(fasl-prefab-type)
@@ -580,7 +733,52 @@
         [(type . >= . fasl-small-integer-start)
          (+ (- type fasl-small-integer-start) fasl-lowest-small-integer)]
         [else
-         (read-error "unrecognized fasl tag" "tag" type)])])))
+         (read-error "unrecognized fasl tag" "tag" type)])]))
+  ;; A node is valid only as a pvector's middle or as a node's child,
+  ;; so it is read through this function, which also accepts the
+  ;; graph wrappers for a shared node
+  (define (read-node)
+    (define type (read-byte/no-eof i))
+    (constant-case
+     type
+     [(fasl-graph-def-type)
+      (define pos (read-fasl-integer i))
+      (define v (read-node))
+      (unless (pos . < . shared-count)
+        (read-error "bad graph index"))
+      (vector-set! shared pos v)
+      (unless node-position?
+        (set! node-position? (make-vector shared-count #f)))
+      (vector-set! node-position? pos #t)
+      v]
+     [(fasl-graph-ref-type)
+      (define pos (read-fasl-integer i))
+      (unless (pos . < . shared-count)
+        (read-error "bad graph index"))
+      (unless (and node-position? (vector-ref node-position? pos))
+        (read-error "expected a pvector node"))
+      (vector-ref shared pos)]
+     [(fasl-pvector-node-type)
+      (define kind (read-byte/no-eof i))
+      (cond
+        [pvector-structure-available?
+         (case kind
+           [(6) (make-pvector-leaf-node (loop) (loop))]
+           [(7) (make-pvector-leaf-node (loop) (loop) (loop))]
+           [(2) (make-pvector-link-node (read-node) (read-node))]
+           [(3) (make-pvector-link-node (read-node) (read-node) (read-node))]
+           [else (read-error "bad pvector node kind" "kind" kind)])]
+        [else
+         ;; flattening fallback: a node stands for its elements
+         (case kind
+           [(6) (vector (loop) (loop))]
+           [(7) (vector (loop) (loop) (loop))]
+           [(2) (vector-concat (list (read-node) (read-node)))]
+           [(3) (vector-concat (list (read-node) (read-node) (read-node)))]
+           [else (read-error "bad pvector node kind" "kind" kind)])])]
+     [else
+      (read-error "expected a pvector node" "tag" type)]))
+  (loop))
 
 ;; ----------------------------------------
 

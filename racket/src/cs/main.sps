@@ -97,6 +97,31 @@
      (apply startup-warning fmt args)
      (exit 1))
 
+   ;; fasl2 fourth-segment conditional load (PLT_SEG4=<vfasl-file>): at
+   ;; startup, before the language layer would be instantiated, load a
+   ;; pre-built state image straight into the STATIC generation (boot-mode
+   ;; load), so it never enters gen-0 and never triggers a promotion GC.
+   ;; This is the main.sps integration point for the zero-alloc/zero-GC
+   ;; boot-runtime loader; the externals-resolution + namespace install are
+   ;; supplied by the fasl2 domain layer (here a bare load + to-static check).
+   (define (maybe-load-seg4)
+     (let ([f (getenv-bytes "PLT_SEG4")])
+       (when f
+         (let* ([path (utf8->string f)]
+                [set-bm (foreign-procedure "(cs)s_set_vfasl_boot_mode" (iptr) void)]
+                [bv (call-with-port (open-file-input-port path) get-bytevector-all)]
+                [t0 (current-time 'time-monotonic)])
+           (set-bm 1)
+           (let ([v (fasl-read (open-bytevector-input-port bv) (quote load) (vector))])
+             (set-bm 0)
+             (let* ([t1 (current-time 'time-monotonic)]
+                    [d (time-difference t1 t0)]
+                    [ms (+ (* 1000.0 (time-second d)) (/ (time-nanosecond d) 1e6))])
+               (startup-warning "[seg4] ~a bytes -> static gen ~a in ~a ms"
+                                (bytevector-length bv)
+                                (($primitive $generation) v)
+                                ms)))))))
+
    (define builtin-argc 11)
    (seq
     (unless (>= (length the-command-line-arguments) builtin-argc)
@@ -107,7 +132,8 @@
 		      " `wm-is-gracket-or-x11-arg-count`, and `gracket-guid-or-x11-args`"
 		      " to start")))
     (set-exec-file! (->path (list-ref the-command-line-arguments/maybe-bytes 1)))
-    (set-run-file! (->path (list-ref the-command-line-arguments/maybe-bytes 2))))
+    (set-run-file! (->path (list-ref the-command-line-arguments/maybe-bytes 2)))
+    (maybe-load-seg4))
    (define embedded-interactive-mode? (string=? "true" (list-ref the-command-line-arguments 0)))
    (define-values (init-collects-dir collects-pre-extra)
      (let ([s (list-ref the-command-line-arguments/maybe-bytes 3)])
@@ -170,6 +196,31 @@
                                       (machine-type)))
    (define compiled-roots-path-list-string (getenv "PLTCOMPILEDROOTS"))
    (define embedded-load-in-places '())
+
+   ;; Startup GC window: default on for the text REPL (boot to prompt);
+   ;; PLT_STARTUP_GC_MODE=off disables it, =all applies it to any run
+   (define (startup-gc-mode-enabled?)
+     (let ([v (getenv "PLT_STARTUP_GC_MODE")])
+       (cond
+         [(not v) (and repl? text-repl?)]
+         [(equal? v "off") #f]
+         [(equal? v "all") #t]
+         [(equal? v "repl") (and repl? text-repl?)]
+         [else (startup-error "unrecognized value for PLT_STARTUP_GC_MODE: ~a" v)])))
+
+   (define startup-gc-window? #f) ; set when the window is opened
+
+   ;; How the window closes: PLT_STARTUP_GC_FINISH=none|major|static;
+   ;; the default promotes the whole startup state to the static
+   ;; generation in one collection, so it is never copied again
+   (define (startup-gc-finish-mode)
+     (let ([v (getenv "PLT_STARTUP_GC_FINISH")])
+       (cond
+         [(not v) 'static]
+         [(equal? v "none") 'none]
+         [(equal? v "major") 'major]
+         [(equal? v "static") 'static]
+         [else (startup-error "unrecognized value for PLT_STARTUP_GC_FINISH: ~a" v)])))
 
    (define init-compiled-file-check (let ([s (getenv "PLT_COMPILED_FILE_CHECK")])
                                       (cond
@@ -968,6 +1019,10 @@
             (|#%app| (dynamic-require 'compiler/private/cm-minimal
                                       'make-compilation-manager-load/use-compiled-handler))))
 
+         (set! startup-gc-window? (startup-gc-mode-enabled?))
+         (when startup-gc-window?
+           (set-startup-gc-mode! #t))
+
          (when init-library
            (namespace-require+ init-library))
 
@@ -985,7 +1040,10 @@
             ;; Let the actual default handler report an arity mismatch, etc.
             (call-with-continuation-prompt
              (lambda () (abort-current-continuation (default-continuation-prompt-tag) proc)))))
-         
+
+         (when (and startup-gc-window? (not repl?))
+           (set-startup-gc-mode! #f))
+
          (when repl?
            (set! exit-value 0)
            (when repl-init?
@@ -995,6 +1053,9 @@
                   (lambda () (dynamic-require m 0))
                   (default-continuation-prompt-tag)
                   (lambda args (set! exit-value 1))))))
+           ;; End of the startup window: loading is done, the REPL takes over
+           (when startup-gc-window?
+             (set-startup-gc-mode! #f (startup-gc-finish-mode)))
            (|#%app| (if text-repl?
                         (dynamic-require 'racket/base 'read-eval-print-loop)
                         (dynamic-require 'racket/gui/init 'graphical-read-eval-print-loop)))

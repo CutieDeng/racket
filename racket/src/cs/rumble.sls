@@ -294,6 +294,7 @@
           object-name
 
           eq-hash-code
+          set-eq-hash-code! ; fasl2 boot-time eq-hash seeding
           eqv-hash-code
           equal-hash-code
           equal-hash-code/recur
@@ -327,6 +328,8 @@
           unsafe-hash-seal!    ; not exported to racket
           unsafe-make-hasheq   ; not exported to racket
           unsafe-make-weak-hasheq   ; not exported to racket
+          unsafe-hasheq-from-vectors
+          unsafe-hasheqv-from-vectors
 
           hash? hash-eq? hash-equal? hash-eqv? hash-equal-always? hash-strong? hash-weak? hash-ephemeron?
           immutable-hash?
@@ -466,6 +469,7 @@
           core-pvector-install-struct-property!
           core-pvector-literal-emit!
           core-pvector-literal->pvector
+          core-pvector-structure-table
 
           ;; ordered integer map runtime candidate
           core-intmap?
@@ -667,6 +671,10 @@
           set-custodian-memory-use-proc!          ; not exported to Racket
           set-immediate-allocation-check-proc!    ; not exported to Racket
           set-incremental-collection-enabled!     ; not exported to Racket
+          set-startup-gc-mode!                    ; not exported to Racket
+          startup-fasl-generation                 ; not exported to Racket
+          set-fasl-generation!                    ; not exported to Racket
+          startup-fasl-mask                       ; not exported to Racket
           unsafe-add-collect-callbacks
           unsafe-remove-collect-callbacks
 

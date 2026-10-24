@@ -65,6 +65,11 @@
 (define fasl-type-uncompressed 44)
 (define fasl-type-gzip         45)
 (define fasl-type-lz4          46)
+;; arm64 PIC boot alignment pad (see "strip.ss" and "vfasl.c"): a
+;; top-level gap entry keeping the next entry's vfasl image data on a
+;; 4096-aligned file offset so the loader can map the code+got vspaces
+;; straight from the boot file
+(define fasl-type-padding      48)
 
 (define (read-byte/not-eof in)
   (define b (read-byte in))
@@ -113,7 +118,20 @@
       [else
        (let ([situation (read-byte in)])
          (unless (eof-object? situation)
-           (let ([size (- (read-uptr in) 2)] ; size in fasl includes compression + kind
+           (cond
+             [(eqv? situation fasl-type-padding)
+              ;; copy the pad through verbatim, keeping its two-byte length
+              ;; encoding so the entry's total size is unchanged (compressing
+              ;; runs change other entries' sizes and lose the alignment, but
+              ;; the loader checks it at run time and just copies then)
+              (define n (read-uptr in))
+              (write-byte situation out)
+              (write-byte (bitwise-ior #x80 (arithmetic-shift n -7)) out)
+              (write-byte (bitwise-and n #x7F) out)
+              (write-bytes (read-bytes n in) out)
+              (loop #t)]
+             [else
+              (let ([size (- (read-uptr in) 2)] ; size in fasl includes compression + kind
                  [compression (read-byte/not-eof in)]
                  [kind (read-byte/not-eof in)])
              (define-values (bstr compressed dest-size)
@@ -170,7 +188,7 @@
                 (write-byte kind out)
                 (write-uptr d-size out)
                 (write-bytes c-bstr out)]))
-           (loop #t)))]))
+              (loop #t)])))]))
   (get-output-bytes out))
        
 (module+ main

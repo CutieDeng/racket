@@ -44,10 +44,19 @@
           (mutable rtds)       ; intern rtds (same reason)
           (mutable strings)    ; intern certain strings (for code names)
 
+          got-enabled?         ; arm64 PIC: relocate pool quads into the GOT vspace?  Only
+                               ; sound for boot-mode static loads (the loader aborts otherwise),
+                               ; so the boot converter turns it on and everyone else -- e.g.
+                               ; vfasl .zo code loaded into generation 0, whose GC replays
+                               ; reloc tables against in-object quads -- keeps it off.
+          (mutable got-dedup)  ; arm64 PIC: per-image (elem . addend) -> GOT offset, reset per pass
+          (mutable got-spare)  ; arm64 PIC: second half of the last 16-byte GOT find-room, or #f
+          (mutable dirty-pages) ; arm64 PIC: eq table of data-relative 4K page indexes relink will write
+
           (mutable installs-library-entry?)) ; to determine whether vfasls can be combined
   (nongenerative))
 
-(define (new-vfasl-info)
+(define (new-vfasl-info got-enabled?)
   (make-vfasl-info #f
 
                    0
@@ -76,18 +85,37 @@
                    (make-eq-hashtable)
                    (make-hashtable string-hash string=?)
 
+                   got-enabled?
+                   #f ; got-dedup
+                   #f ; got-spare
+                   #f ; dirty-pages
+
                    #f)) ; installs-library-entry?
 
 ;; Creates a vfasl image for the fasl content `v` (as read by "strip.ss").
-;; The target endianness must be statically known.
-(define (to-vfasl v)
+;; The target endianness must be statically known.  `got?` opts into the
+;; arm64 PIC GOT relocation, which is only loadable boot-mode-static;
+;; images for ordinary (generation-0) loads must leave it off.
+(define (to-vfasl v got?)
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
   (let ([v (ensure-reference v)]
-        [vfi (new-vfasl-info)])
+        [vfi (new-vfasl-info got?)])
     ;; First pass: determine sizes
     (copy v vfi)
+
+    ;; arm64 PIC (P3): reserve room at the reloc vspace's tail for the
+    ;; dirty-page bitmap and its trailing length word (16-byte aligned
+    ;; so the following ref tables keep their alignment)
+    (constant-case architecture
+      [(arm64)
+       (let ([bmbytes (dirty-bitmap-bytes vfi)])
+         (when bmbytes
+           (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-reloc))])
+             (vfasl-chunk-alloc-set! vc (fx+ (vfasl-chunk-alloc vc)
+                                             (c-alloc-align (fx+ bmbytes (constant ptr-bytes))))))))]
+      [else (void)])
 
     ;; Setup for second pass: allocate to contiguous bytes
     (let* ([data-size (let loop ([i 0])
@@ -152,6 +180,11 @@
           (vfasl-info-singletonref-count-set! vfi 0)
           (vfasl-info-graph-set! vfi (make-eq-hashtable))
           (vfasl-info-base-rtd-set! vfi #f)
+          ;; arm64 PIC: the second pass must replay the same GOT slot
+          ;; assignments from offset 0
+          (vfasl-info-got-dedup-set! vfi #f)
+          (vfasl-info-got-spare-set! vfi #f)
+          (vfasl-info-dirty-pages-set! vfi #f)
 
           ;; Write data
           (let ([v (copy v vfi)])
@@ -174,6 +207,16 @@
             (sort-offsets! bv (vfasl-info-rtdrefs vfi) (vfasl-info-rtdref-count vfi))
             (sort-offsets! bv (vfasl-info-singletonrefs vfi) (vfasl-info-singletonref-count vfi))
 
+            ;; arm64 PIC (P3): dirty-page bitmap at the reloc vspace tail
+            (constant-case architecture
+              [(arm64) (emit-dirty-bitmap! vfi bv)]
+              [else (void)])
+
+            (when got-stats-on?
+              (fprintf (console-error-port)
+                       ";; vfasl got-stats uses=~s orphans=~s slots=~s\n"
+                       got-stat-uses got-stat-orphans got-stat-slots))
+
             bv))))))
 
 ;; If compiled code uses `$install-library-entry`, then it can't be
@@ -190,7 +233,7 @@
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
-  (let ([vfi (new-vfasl-info)])
+  (let ([vfi (new-vfasl-info #f)])
     ;; Run a "first pass"
     (copy v vfi)
     (not (vfasl-info-installs-library-entry? vfi))))
@@ -501,9 +544,12 @@
 (define (unpack-symbol v)
   (or (fasl-case* v
         [(string ty string)
-         (if (eq? ty (constant fasl-type-symbol))
-             (string->symbol string)
-             #f)]
+         ;; A `fasl-type-symbol` string is a symbol uid.  fasl2: any other
+         ;; string type is a plain-string uid -- some runtime rtds carry a
+         ;; non-symbol uid -- so intern it too.  unpack-symbol only produces
+         ;; the key for the rtd-dedup table (the rtd itself is copied), and an
+         ;; interned symbol is a stable eq? key for either spelling.
+         (string->symbol string)]
         [(gensym pname uname) (gensym pname uname)]
         [else #f])
       (error 'vfasl "expected a symbol: ~s" v)))
@@ -523,6 +569,20 @@
 (define (copy v vfi)
   (or (eq-hashtable-ref (vfasl-info-graph vfi) v #f)
       (do-copy v vfi)))
+
+;; fasl2 externalref: encode external index j as the fixnum marker
+;; #x40000000+j (must match VFASL_EXTERNAL_BASE in "vfasl.c"), which rides the
+;; singletonref table.  The base only fits a fixnum on a >= 32-bit-fixnum
+;; target (61-bit on 64-bit builds); on a smaller target it is a bignum and the
+;; feature is unavailable.  meta-cond selects the encoding at compile time, so
+;; a 64-bit build expands to exactly the fx+ and is byte-identical, while a
+;; 32-bit build compiles (no bignum in fx+) and fails with a clear message only
+;; if an external is actually emitted -- the normal boot path emits none.
+(define-syntax vfasl-external-marker
+  (syntax-rules ()
+    [(_ j) (meta-cond
+            [(<= #x40000000 (constant most-positive-fixnum)) (fx+ #x40000000 j)]
+            [else (begin j ($oops 'vfasl "fasl2 externalref requires a 64-bit target"))])]))
 
 (define (do-copy v vfi)
   (fasl-case* v
@@ -766,12 +826,21 @@
                                     (let ([parent (vector-ref vec (fx- (vector-length vec)
                                                                        (constant ancestry-parent-offset)))])
                                       (copy parent vfi))]
-                                   [(indirect g i) (loop (vector-ref g i))]
+                                   ;; externalref (fasl2): a negative index is an
+                                   ;; external (boot) parent rtd -- resolved at load,
+                                   ;; not copied, so no ordering to enforce here.
+                                   [(indirect g i) (unless (fx< i 0) (loop (vector-ref g i)))]
                                    [else ($oops 'vfasl "parent type not recognized ~s" elem)]))]
                           [else (safe-assert (not 'ptr)) (void)])))
           (let* ([vspc (cond
                          [maybe-uid
                           (constant vspace-rtd)]
+                         ;; externalref (fasl2): an external (boot) rtd copies to a
+                         ;; vsingleton, not a vptr -- its mpm cannot be read here.
+                         ;; Default to the impure record space (correct for any
+                         ;; record; the rtd is resolved from externals at load).
+                         [(vsingleton? rtd-p)
+                          (constant vspace-impure-record)]
                          [(eqv? 0 (let-values ([(bv offset) (vptr->bytevector+offset rtd-p vfi)])
                                     (ref-uptr bv (fx+ offset (constant record-type-mpm-disp)))))
                           (constant vspace-pure-typed)]
@@ -813,8 +882,48 @@
        (graph! v new-p vfi)
        (set-ptr!/no-record new-p (constant closure-code-disp) (vptr+ c-v offset) vfi)
        new-p)]
+    [(closure-freevars n c fv*)
+     ;; fasl2: a runtime closure with n free vars.  Mirrors the C reader's
+     ;; fasl_type_closure_freevars: allocate n free-var slots, point the code
+     ;; entry at code + code-data-disp, and fill the free-var slots.
+     ;; externalref extension: when the code `c` is an external (a
+     ;; negative-index indirect -- the language-layer case where a runtime
+     ;; closure's code is a boot-world code object), store a raw marker
+     ;; (>= #x40000000) in the entry slot instead of a code-vspace offset; the
+     ;; closure phase in "vfasl.c" resolves it to externals[j] via SETCLOSCODE
+     ;; (which adds code-data-disp).  Copying the code here would fail: `copy`
+     ;; turns the external into a vsingleton, and `vptr+` of a vsingleton is
+     ;; not a pointer.
+     (let* ([ext-idx (fasl-case* c
+                       [(indirect g i) (and (fx< i 0) (fx- -1 i))]
+                       [else #f])]
+            [c-v (and (not ext-idx) (copy c vfi))]
+            [new-p (find-room 'closure vfi
+                              (constant vspace-closure)
+                              (fx+ (constant header-size-closure)
+                                   (fx* n (constant ptr-bytes)))
+                              (constant type-closure))])
+       (graph! v new-p vfi)
+       (set-ptr!/no-record new-p (constant closure-code-disp)
+                           (if ext-idx
+                               (vfasl-external-marker ext-idx)
+                               (vptr+ c-v (constant code-data-disp)))
+                           vfi)
+       (let loop ([i 0])
+         (unless (fx= i n)
+           (set-ptr! new-p (fx+ (constant closure-data-disp)
+                                (fx* i (constant ptr-bytes)))
+                     (copy (vector-ref fv* i) vfi) vfi)
+           (loop (fx+ i 1))))
+       new-p)]
     [(code flags free name arity-mask info pinfo* bytes m vreloc)
-     (let* ([len (bytevector-length bytes)]
+     (let* ([got-info (got-code-info m vreloc flags bytes vfi)]
+            ;; arm64 PIC (P2.2c): the pool quads are relocated into the
+            ;; GOT vspace, so the copied code object drops the trailing
+            ;; quads entirely
+            [len (if got-info
+                     (fx- (bytevector-length bytes) (fx* (vector-ref got-info 0) 8))
+                     (bytevector-length bytes))]
             [new-p (find-room 'code vfi
                               (constant vspace-code)
                               (fx+ (constant header-size-code) len)
@@ -841,7 +950,7 @@
        (set-ptr! new-p (constant code-pinfo*-disp) (copy pinfo* vfi) vfi)
        (copy-u8s! new-p (constant code-data-disp) bytes 0 len vfi)
        ;; must be after code is copied into place:
-       (set-ptr!/no-record new-p (constant code-reloc-disp) (copy-reloc m vreloc new-p vfi) vfi)
+       (set-ptr!/no-record new-p (constant code-reloc-disp) (copy-reloc m vreloc new-p bytes got-info vfi) vfi)
        new-p)]
     [(symbol-hashtable mutable? minlen subtype veclen vpfasl)
      (let* ([flds (rtd-flds $symbol-ht-rtd)]
@@ -903,7 +1012,77 @@
                        vfi)
              (loop (fx+ i 1)))))
        new-p)]
-    [(indirect g i) (copy (vector-ref g i) vfi)]
+    [(eq-hashtable mutable? subtype minlen veclen vpfasl)
+     ;; fasl2 eq-hashtable imaging.  eq-hash is address-based (segment.h), so
+     ;; buckets computed here (build addresses) are stale at load; we image
+     ;; every entry's TLC into ONE bucket (index 0) and rely on a post-load
+     ;; rehash (driven by the loader over the loaded state) to re-bucket by
+     ;; load-time eq-hash before the table is used.
+     ;;
+     ;; A weak/ephemeron table's entries ride weak/ephemeron pairs, which vfasl
+     ;; cannot image.  We image it as a `normal` table instead: the live
+     ;; entries captured at build time become strong TLCs, so the imaged table
+     ;; keeps exactly the snapshot's contents (correctness-safe).  It loses the
+     ;; weak/ephemeron collectability -- acceptable for a startup snapshot, and
+     ;; the alternative (externalize + rebuild empty) would lose the entries.
+     (let* ([flds (rtd-flds $eq-ht-rtd)]
+            [len (fx* (length flds) (constant ptr-bytes))]
+            [new-p (find-room 'eq-ht vfi
+                              (constant vspace-impure)
+                              (fx+ (constant header-size-record) len)
+                              (constant type-typed-object))]
+            [vec-p (find-room 'eq-ht-vector vfi
+                              (constant vspace-impure)
+                              (fx+ (constant header-size-vector) (fx* veclen (constant ptr-bytes)))
+                              (constant type-typed-object))])
+       (define (field-offset name)
+         (let loop ([flds flds] [addr (constant record-data-disp)])
+           (cond
+             [(null? flds) ($oops 'vfasl "could not find eq hash table field ~s" name)]
+             [(eq? (fld-name (car flds)) name) addr]
+             [else (loop (cdr flds) (fx+ addr (constant ptr-bytes)))])))
+       (graph! v new-p vfi)
+       (set-ptr! new-p (constant record-type-disp) (make-vsingleton (constant singleton-eq-ht-rtd)) vfi)
+       (set-ptr! new-p (field-offset 'type) (make-vsingleton (constant singleton-eq-symbol)) vfi)
+       (set-ptr! new-p (field-offset 'mutable?) (if mutable? (constant strue) (constant sfalse)) vfi)
+       ;; always image as a normal (strong) table -- see the weak/ephemeron note above
+       (set-ptr! new-p (field-offset 'subtype) (fix (constant eq-hashtable-subtype-normal)) vfi)
+       (set-ptr! new-p (field-offset 'minlen) (fix minlen) vfi)
+       (set-ptr! new-p (field-offset 'vec) vec-p vfi)
+       (set-ptr! new-p (field-offset 'size) (fix (vector-length vpfasl)) vfi)
+       (set-uptr! vec-p (constant vector-type-disp)
+                  (bitwise-ior (bitwise-arithmetic-shift-left veclen (constant vector-length-offset))
+                               (constant type-vector))
+                  vfi)
+       ;; every bucket empty (terminal sentinel FIX(i)); then thread all TLCs
+       ;; into bucket 0's chain, terminated by FIX(0).
+       (let loop ([i 0])
+         (unless (fx= i veclen)
+           (set-ptr! vec-p (fx+ (constant vector-data-disp) (fx* i (constant ptr-bytes))) (fix i) vfi)
+           (loop (fx+ i 1))))
+       (let loop ([i 0] [next (fix 0)])
+         (if (fx= i (vector-length vpfasl))
+             (set-ptr! vec-p (constant vector-data-disp) next vfi)
+             (let* ([p (vector-ref vpfasl i)]
+                    [kv (pair-copy (copy (car p) vfi) (copy (cdr p) vfi) vfi)]
+                    [tlc-p (find-room 'tlc vfi (constant vspace-impure)
+                                      (constant size-tlc) (constant type-typed-object))])
+               (set-uptr! tlc-p (constant tlc-type-disp) (constant type-tlc) vfi)
+               (set-ptr! tlc-p (constant tlc-keyval-disp) kv vfi)
+               (set-ptr! tlc-p (constant tlc-ht-disp) new-p vfi)
+               (set-ptr! tlc-p (constant tlc-next-disp) next vfi)
+               (loop (fx+ i 1) tlc-p))))
+       new-p)]
+    [(indirect g i)
+     ;; externalref extension (fasl2): a negative index (-1-j) marks an
+     ;; external literal in a DATA position.  Encode it as a marked
+     ;; "singleton" (index >= VFASL_EXTERNAL_BASE = #x40000000, matching
+     ;; "vfasl.c"): it rides the singletonref table and is resolved at load
+     ;; from the externals vector.  Code-reloc externals become an
+     ;; externalref reloc (see copy-reloc).
+     (if (fx< i 0)
+         (make-vsingleton (vfasl-external-marker (fx- -1 i)))
+         (copy (vector-ref g i) vfi))]
     [else
      ($oops 'vfasl "unsupported ~s" v)]))
 
@@ -1019,7 +1198,9 @@
 (define (refers-back-to-self? v rtd)
   (or (eq? v rtd)
       (fasl-case* rtd
-        [(indirect g i) (refers-back-to-self? v (vector-ref g i))]
+        ;; externalref (fasl2): a negative index is an external (boot) rtd --
+        ;; it is not this record, so it never refers back to self.
+        [(indirect g i) (and (fx>= i 0) (refers-back-to-self? v (vector-ref g i)))]
         [else #f])))
 
 (define (reloc-addr n)
@@ -1033,73 +1214,452 @@
 (define (build-vfasl-reloc tag pos)
   (fix (bitwise-ior tag (bitwise-arithmetic-shift-left pos (constant vfasl-reloc-tag-bits)))))
 
-(define (copy-reloc m vreloc code-p vfi)
-  (let* ([new-p (find-room 'reloc vfi
+;; arm64 PIC (P2.2b): a code object's literal-pool quads (tagged
+;; reloc-arm64-got by "cpnanopass.ss") are relocated out of the code into
+;; the GOT vspace, so relink writes only GOT pages and the code pages stay
+;; byte-identical to the image.  Layout contract with the loader
+;; ("vfasl.c"): the code vspace is placed 4096-aligned and the GOT vspace
+;; at code start + (code vspace size rounded up to 4096), which makes the
+;; adrp page delta and the ldr lo12 baked here load-address-invariant.
+;; Slots are DEDUPED per image (see got-slot!) -- the codegen-level pool
+;; is one-slot-per-use for host-independent output, but at vfasl time the
+;; key is the resolved (elem identity . addend), a deterministic function
+;; of the input fasl, so merging is safe and shrinks the GOT ~5x.
+;; A template code object opts out and keeps its pool in-object:
+;; S_instantiate_code_object replays its retained reloc table against the
+;; in-object quads.
+
+;; PLT_VFASL_GOT_STATS (attribution aid): cumulative GOT accounting across
+;; all to-vfasl calls in this process -- live pool uses, orphan uses
+;; (dropped with their quads), and slots actually allocated after dedup.
+(define got-stats-on? (and (getenv "PLT_VFASL_GOT_STATS") #t))
+(define got-stat-uses 0)
+(define got-stat-orphans 0)
+(define got-stat-slots 0)
+
+(define got-entry-type?
+  (constant-case architecture
+    [(arm64) (lambda (type) (fx= type (constant reloc-arm64-got)))]
+    [else (lambda (type) #f)]))
+
+;; Pre-scan a code object's relocs for its pool suffix (P2.2c): returns
+;; #f when there are no reloc-arm64-got entries or the object opts out
+;; (template), else (vector ngot orphan-words adr-alist) where ngot
+;; counts pool quads, orphan-words counts the reloc-table words of
+;; entries whose quad no adr addresses (their emission is dropped), and
+;; adr-alist maps each quad's reloc offset `a` to the byte offsets of
+;; the adr instructions addressing it ('() for an orphan).  The pool
+;; chunk trails the code object, so pool relocs are the table's SUFFIX
+;; and the quads are exactly the last ngot*8 code bytes -- both enforced
+;; here, and both load-bearing: the writer truncates the quads away and
+;; re-targets the surviving entries at the GOT without disturbing the
+;; preceding entries' code-offset chain.
+(define (got-code-info m vreloc flags bytes vfi)
+  (constant-case architecture
+    [(arm64)
+     (and (vfasl-info-got-enabled? vfi)
+          (not (fxlogtest flags (constant code-flag-template)))
+          (let scan ([n 0] [a 0] [i 0] [ra* '()] [rw* '()])
+            (if (fx= n m)
+                (and (pair? ra*)
+                     (got-decode-adrs (reverse ra*) (reverse rw*) bytes))
+                (fasl-case* (vector-ref vreloc i)
+                  [(reloc type-etc code-offset item-offset elem)
+                   (let* ([w (if (fxlogtest type-etc 1) 3 1)]
+                          [n (fx+ n w)]
+                          [a (fx+ a code-offset)]
+                          [got? (fx= (fxsra type-etc 2) (constant reloc-arm64-got))])
+                     (when (and (pair? ra*) (not got?))
+                       ($oops 'vfasl "pool reloc not in trailing position"))
+                     (scan n a (fx+ i 1)
+                           (if got? (cons a ra*) ra*)
+                           (if got? (cons w rw*) rw*)))]
+                  [else ($oops 'vfasl "expected a relocation")]))))]
+    [else #f]))
+
+(define (got-decode-adrs a* w* bytes)
+  (let* ([ngot (length a*)]
+         [len (fx- (bytevector-length bytes) (fx* ngot 8))]
+         [alist (map (lambda (a) (cons a '())) a*)])
+    (unless (and (fx= (fx- (car a*) (constant code-data-disp)) len)
+                 (fx= (fx- (car (last-pair a*)) (constant code-data-disp))
+                      (fx- (bytevector-length bytes) 8)))
+      ($oops 'vfasl "pool quads are not the trailing code bytes"))
+    ;; find each adr addressing a quad; instructions all sit below the
+    ;; pool, so scanning [0, len) cannot miss one, and pool bytes (which
+    ;; could alias instructions) are never scanned
+    (let scan ([o 0])
+      (when (fx<= (fx+ o 8) len)
+        (let ([w (bytevector-u32-ref bytes o (constant native-endianness))])
+          (when (fx= (fxlogand w #x9F000000) #x10000000) ; adr
+            (let* ([imm (fxlogor (fxsll (fxlogand (fxsra w 5) #x7FFFF) 2)
+                                 (fxlogand (fxsra w 29) #b11))]
+                   [imm (if (fx>= imm (fxsll 1 20)) (fx- imm (fxsll 1 21)) imm)]
+                   [cell (assv (fx+ o imm (constant code-data-disp)) alist)])
+              (when cell
+                (set-cdr! cell (cons o (cdr cell))))))
+          (scan (fx+ o 4)))))
+    (vector ngot
+            (fold-left (lambda (k c w) (if (null? (cdr c)) (fx+ k w) k)) 0 alist w*)
+            alist)))
+
+;; second-pass discriminator and the adrp/ldr bake bases: the code and
+;; GOT vspaces' offsets relative to the image DATA start (the coordinate
+;; system of the loader's vspace_offsets).  The baked page deltas and
+;; lo12 values are valid wherever the loader keeps code+got at their
+;; image-relative distance AND congruent to their image offsets mod 4096
+;; -- which zero-copy gets for free once the boot converter pads the
+;; image data start to a 4096-aligned file offset, and the copying path
+;; reproduces with a congruent base.  #f in the sizing pass.
+(define (got-bake-bases vfi)
+  (let ([code-vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
+    (and (vfasl-chunk-limit code-vc)
+         (let ([got-vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-got))])
+           (cons (fx- (vfasl-chunk-offset code-vc) (vfasl-info-base-addr vfi))
+                 (fx- (vfasl-chunk-offset got-vc) (vfasl-info-base-addr vfi)))))))
+
+;; a GOT slot carries its vfasl marker until relink resolves it in place
+(define (got-slot-set! off marker vfi)
+  (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-got))])
+    (set-iptr! (vfasl-chunk-bv vc) (fx+ (vfasl-chunk-offset vc) off) marker)))
+
+;; Rewrite one pool `adr Xt,quad; ldr Xt,[Xt,#0]` pair (at byte offset o)
+;; into `adrp Xt,page; ldr Xt,[Xt,#lo12]` addressing GOT slot `got-off`,
+;; with positions taken data-relative via `bases` (see got-bake-bases);
+;; the mandatory ldr pairing is enforced.  Second pass only.
+(define (bake-pool-adr! code-p bytes o bases got-off vfi)
+  (define (put-u32! o w)
+    (set-int32! code-p (fx+ (constant code-data-disp) o)
+                (if (fx>= w #x80000000) (fx- w #x100000000) w)
+                vfi))
+  (let* ([w (bytevector-u32-ref bytes o (constant native-endianness))]
+         [rd (fxlogand w 31)]
+         [slot (fx+ (cdr bases) got-off)]
+         [pc (fx+ (car bases) (vptr-v code-p) (constant code-data-disp) o)]
+         [pd (fx- (fxsra slot 12) (fxsra pc 12))])
+    (unless (fx= (bytevector-u32-ref bytes (fx+ o 4) (constant native-endianness))
+                 (fxlogor #xF9400000 (fxsll rd 5) rd))
+      ($oops 'vfasl "pool adr at offset ~s is not followed by its ldr" o))
+    (unless (fx<= 0 pd #x0FFFFF)
+      ($oops 'vfasl "GOT page delta ~s out of adrp range" pd))
+    (put-u32! o (fxlogor #x90000000
+                         (fxsll (fxlogand pd #b11) 29)
+                         (fxsll (fxlogand (fxsra pd 2) #x7FFFF) 5)
+                         rd))
+    (put-u32! (fx+ o 4)
+              (fxlogor #xF9400000
+                       (fxsll (fxsra (fxlogand slot #xFFF) 3) 10)
+                       (fxsll rd 5)
+                       rd))))
+
+;; Allocate or reuse the GOT slot for a pool quad, deduped per image by
+;; (resolved elem identity . addend): multiple pool loads of the same
+;; final pointer share one slot (several adrp/ldr pairs address it, and
+;; relink's per-entry writes are idempotent -- same key resolves to the
+;; same value).  The key must be pass-invariant so both passes replay the
+;; same allocation stream: reloc markers are (fixnums), but a raw image
+;; offset is NOT (the first pass has no base/vspace prefixes and distinct
+;; vspaces would collide at low offsets), so address-branch callers pass
+;; (vspace . vptr-v) instead.  find-room rounds 8 up to 16
+;; (c-alloc-align), so slots are taken in 16-byte blocks with the spare
+;; half kept for the next key, keeping the GOT dense.
+(define (got-slot! key item-offset vfi)
+  ;; -> (values got-off fresh?); fresh? distinguishes the allocating use,
+  ;; which is the ONLY one that emits a reloc entry: the slot carries its
+  ;; marker until relink resolves it in place, so a second entry for the
+  ;; same slot would decode the already-resolved pointer as a marker.
+  ;; The other uses only get their adrp/ldr pairs baked at the shared slot.
+  (let ([ht (or (vfasl-info-got-dedup vfi)
+                (let ([ht (make-hashtable equal-hash equal?)])
+                  (vfasl-info-got-dedup-set! vfi ht)
+                  ht))]
+        [full-key (cons key item-offset)])
+    (cond
+      [(hashtable-ref ht full-key #f) =>
+       (lambda (off) (values off #f))]
+      [else
+       (let ([off (cond
+                    [(vfasl-info-got-spare vfi) =>
+                     (lambda (spare)
+                       (vfasl-info-got-spare-set! vfi #f)
+                       spare)]
+                    [else
+                     (let* ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-got))]
+                            [base (vfasl-chunk-alloc vc)])
+                       (find-room 'got vfi (constant vspace-got) 16 (constant type-untyped))
+                       (vfasl-info-got-spare-set! vfi (fx+ base 8))
+                       base)])])
+         (when (and got-stats-on?
+                    ;; second pass only (chunks have limits there); the
+                    ;; first pass replays the same stream
+                    (vfasl-chunk-limit (vector-ref (vfasl-info-spaces vfi) (constant vspace-got))))
+           (set! got-stat-slots (fx+ got-stat-slots 1)))
+         (hashtable-set! ht full-key off)
+         (values off #t))])))
+
+;; arm64 PIC (P3): record the data-relative byte range [pos, pos+len) as
+;; load-time-written.  The final stage turns these ranges (plus the
+;; pointer bitmap's code-range bits and the whole GOT) into a dirty-page
+;; bitmap appended to the reloc vspace; the zero-copy loader backs those
+;; pages with copied anonymous memory up front instead of paying a COW
+;; fault per page while the pointer sweep and relink write them.  The
+;; set is a prediction, not a proof: a missed page just COWs.
+(define (mark-dirty-range! vfi pos len)
+  (let ([ht (or (vfasl-info-dirty-pages vfi)
+                (let ([ht (make-eq-hashtable)])
+                  (vfasl-info-dirty-pages-set! vfi ht)
+                  ht))])
+    (let loop ([p (fxsra pos 12)])
+      (eq-hashtable-set! ht p #t)
+      (when (fx< p (fxsra (fx+ pos len -1) 12))
+        (loop (fx+ p 1))))))
+
+;; Size of the dirty-page bitmap: one bit per 4K page over the
+;; 4096-aligned envelope of [code vspace start, got vspace end),
+;; computed from the first-pass chunk sizes (identical in both passes);
+;; #f when the image carries no GOT (nothing zero-copies it).
+(define (dirty-bitmap-bytes vfi)
+  (let* ([spaces (vfasl-info-spaces vfi)]
+         [got-alloc (vfasl-chunk-alloc (vector-ref spaces (constant vspace-got)))])
+    (and (fx> got-alloc 0)
+         (let* ([code-off (let loop ([i 0] [off 0])
+                            (if (fx= i (constant vspace-code))
+                                off
+                                (loop (fx+ i 1)
+                                      (fx+ off (vfasl-chunk-alloc (vector-ref spaces i))))))]
+                [end-off (fx+ code-off
+                              (vfasl-chunk-alloc (vector-ref spaces (constant vspace-code)))
+                              got-alloc)]
+                [pages (fxsra (fx+ (fx- end-off (fxlogand code-off (fxlognot 4095))) 4095) 12)])
+           (fxsra (fx+ pages 7) 3)))))
+
+;; Emit the dirty-page bitmap at the reloc vspace's tail (bitmap, then a
+;; trailing uptr holding its byte length at the vspace's very end).
+;; Dirty = pages the loader will write: the pointer bitmap's bits in the
+;; code range (header fixups by the pointer sweep), the ranges collected
+;; by mark-dirty-range! (relink patch sites and header reloc fields),
+;; and the whole GOT (relink resolves every slot).  Second pass only.
+(define (emit-dirty-bitmap! vfi bv)
+  (let ([bmbytes (dirty-bitmap-bytes vfi)])
+    (when bmbytes
+      (let* ([spaces (vfasl-info-spaces vfi)]
+             [base-addr (vfasl-info-base-addr vfi)]
+             [code-vc (vector-ref spaces (constant vspace-code))]
+             [got-vc (vector-ref spaces (constant vspace-got))]
+             [reloc-vc (vector-ref spaces (constant vspace-reloc))]
+             [code-off (fx- (vfasl-chunk-offset code-vc) base-addr)]
+             [got-off (fx- (vfasl-chunk-offset got-vc) base-addr)]
+             [got-len (vfasl-chunk-limit got-vc)]
+             [base-page (fxsra code-off 12)]
+             [bm-pos (fx- (fx+ (vfasl-chunk-offset reloc-vc) (vfasl-chunk-limit reloc-vc))
+                          (constant ptr-bytes) bmbytes)])
+        (define (set-page! p)
+          (let ([i (fx- p base-page)])
+            (when (and (fx>= i 0) (fx< i (fx* bmbytes 8)))
+              (let ([b (fx+ bm-pos (fxsra i 3))])
+                (bytevector-u8-set! bv b (fxlogor (bytevector-u8-ref bv b)
+                                                  (fxsll 1 (fxand i 7))))))))
+        ;; pointer-sweep writes: bitmap bits within the code range
+        (let ([pbm (vfasl-info-ptr-bitmap vfi)])
+          (let loop ([j (fxsra code-off 6)]) ; bitmap byte covers 8 words = 64 data bytes
+            (when (fx< j (fxsra (fx+ got-off 63) 6))
+              (let ([byte (bytevector-u8-ref bv (fx+ pbm j))])
+                (unless (fx= byte 0)
+                  (let bit ([k 0])
+                    (when (fx< k 8)
+                      (when (fxlogtest byte (fxsll 1 k))
+                        (set-page! (fxsra (fx* (fx+ (fx* j 8) k) 8) 12)))
+                      (bit (fx+ k 1))))))
+              (loop (fx+ j 1)))))
+        ;; relink patch sites and header reloc fields
+        (let ([ht (vfasl-info-dirty-pages vfi)])
+          (when ht
+            (vector-for-each set-page! (hashtable-keys ht))))
+        ;; the whole GOT
+        (let loop ([p (fxsra got-off 12)])
+          (when (fx<= p (fxsra (fx+ got-off got-len -1) 12))
+            (set-page! p)
+            (loop (fx+ p 1))))
+        ;; trailing length word locates the bitmap for the loader
+        (set-uptr! bv (fx+ bm-pos bmbytes) bmbytes)))))
+
+(define (copy-reloc m vreloc code-p bytes got-info vfi)
+  ;; out-m is an UPPER bound on the emitted table words (dup pool uses
+  ;; sharing an already-entered slot are dropped during the walk, and
+  ;; dup-ness is only known once the elem identity is computed); the
+  ;; actual count lands in the size field after the walk, and the slack
+  ;; words -- identical in both passes -- stay zero and unread.
+  (let* ([out-m (if got-info (fx- m (vector-ref got-info 1)) m)]
+         [new-p (find-room 'reloc vfi
                            (constant vspace-reloc)
-                           (fx+ (constant header-size-reloc-table) (fx* m (constant ptr-bytes)))
-                           (constant type-untyped))])
-    (set-uptr! new-p (constant reloc-table-size-disp) m vfi)
+                           (fx+ (constant header-size-reloc-table) (fx* out-m (constant ptr-bytes)))
+                           (constant type-untyped))]
+         [adr-alist (and got-info (vector-ref got-info 2))]
+         [got-base (and got-info (got-bake-bases vfi))] ; #f in the sizing pass
+         [dirty-base (constant-case architecture
+                       [(arm64)
+                        (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
+                          (and (vfasl-info-got-enabled? vfi) ; bitmap only serves the boot mapping
+                               (vfasl-chunk-limit vc)
+                               (fx- (vfasl-chunk-offset vc) (vfasl-info-base-addr vfi))))]
+                       [else #f])])
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
-    (let loop ([n 0] [a 0] [i 0])
-      (unless (fx= n m)
-        (fasl-case* (vector-ref vreloc i)
+    (when dirty-base
+      ;; relink writes the header's reloc field (cleared, or the retained copy)
+      (mark-dirty-range! vfi (fx+ dirty-base (vptr-v code-p) (constant code-reloc-disp))
+                         (constant ptr-bytes)))
+    (let ([end-nout
+           (let loop ([n 0] [nout 0] [a 0] [i 0])
+             (if (fx= n m)
+                 nout
+                 (fasl-case* (vector-ref vreloc i)
           [(reloc type-etc code-offset item-offset elem)
            (let* ([type (fxsra type-etc 2)]
-                  [n (cond
-                       [(fxlogtest type-etc 1)
-                        (set-uptr! new-p (reloc-addr n)
-                                   (bitwise-ior (fxsll type (constant reloc-type-offset))
-                                                (constant reloc-extended-format))
-                                   vfi)
-                        (set-uptr! new-p (reloc-addr (fx+ n 1)) item-offset vfi)
-                        (set-uptr! new-p (reloc-addr (fx+ n 2)) code-offset vfi)
-                        (fx+ n 3)]
-                       [else
-                        (set-uptr! new-p (reloc-addr n)
-                                   (make-short-reloc type code-offset item-offset)
-                                   vfi)
-                        (fx+ n 1)])]
+                  [n (fx+ n (if (fxlogtest type-etc 1) 3 1))]
                   [a (fx+ a code-offset)]
-                  [new-elem (or (fasl-case* elem
-                                  [(atom ty uptr)
-                                   (constant-case* ty
-                                     [(fasl-type-entry)
-                                      (when (eqv? uptr (lookup-c-entry install-library-entry))
-                                        (vfasl-info-installs-library-entry?-set! vfi #t))
-                                      (build-vfasl-reloc (constant vfasl-reloc-c-entry-tag) uptr)]
-                                     [(fasl-type-library)
-                                      (build-vfasl-reloc (constant vfasl-reloc-library-entry-tag) uptr)]
-                                     [(fasl-type-library-code)
-                                      (build-vfasl-reloc (constant vfasl-reloc-library-entry-code-tag) uptr)]
-                                     [else #f])]
-                                  [else #f])
-                                (let ([elem-addr (copy elem vfi)])
-                                  (cond
-                                    [(vsingleton? elem-addr)
-                                     (build-vfasl-reloc (constant vfasl-reloc-singleton-tag)
-                                                        (vsingleton-index elem-addr))]
-                                    [(vptr? elem-addr)
-                                     (cond
-                                       [(eqv? (vptr-vspace elem-addr) (constant vspace-symbol))
-                                        (build-vfasl-reloc (constant vfasl-reloc-symbol-tag)
-                                                           (symbol-vptr->index elem-addr vfi))]
-                                       [else
-                                        (let-values ([(bv offset) (vptr->bytevector+offset elem-addr vfi)])
-                                          (safe-assert (not (fixed? offset)))
-                                          (fx- offset (vfasl-info-base-addr vfi)))])]
+                  [got-cell (and adr-alist (got-entry-type? type) (assv a adr-alist))])
+             (when (and got-cell (null? (cdr got-cell)))
+               ;; orphan pool entry (P2.2c): its quad is truncated away
+               ;; with the pool and no adr addresses it -- drop the entry
+               ;; and skip copying its target (deterministically in both
+               ;; passes)
+               (when (and got-base got-stats-on?)
+                 (set! got-stat-orphans (fx+ got-stat-orphans 1))))
+             (if (and got-cell (null? (cdr got-cell)))
+                 (loop n nout a (fx+ i 1))
+                 (let* ([new-elem+key
+                   ;; car: the value stored at the reloc site, as always.
+                   ;; cdr: a pass-invariant identity for GOT dedup -- the
+                   ;; marker itself, except in the raw-address branch,
+                   ;; whose image offset differs between the two passes
+                   ;; (the first has no base/vspace prefixes, so distinct
+                   ;; vspaces would collide at low offsets); there the
+                   ;; identity is (vspace . vptr-v) instead.
+                   (let ([marker (fasl-case* elem
+                                   [(atom ty uptr)
+                                    (constant-case* ty
+                                      [(fasl-type-entry)
+                                       (when (eqv? uptr (lookup-c-entry install-library-entry))
+                                         (vfasl-info-installs-library-entry?-set! vfi #t))
+                                       (build-vfasl-reloc (constant vfasl-reloc-c-entry-tag) uptr)]
+                                      [(fasl-type-library)
+                                       (build-vfasl-reloc (constant vfasl-reloc-library-entry-tag) uptr)]
+                                      [(fasl-type-library-code)
+                                       (build-vfasl-reloc (constant vfasl-reloc-library-entry-code-tag) uptr)]
+                                      [else #f])]
+                                   ;; externalref extension (fasl2): a
+                                   ;; negative-index indirect is an external
+                                   ;; literal referenced from CODE -> emit an
+                                   ;; externalref reloc, resolved at load from
+                                   ;; externals[j] (j = -1-i).
+                                   [(indirect g i)
+                                    (and (fx< i 0)
+                                         (build-vfasl-reloc (constant vfasl-reloc-external-tag)
+                                                            (fx- -1 i)))]
+                                   [else #f])])
+                     (if marker
+                         (cons marker marker)
+                         (let ([elem-addr (copy elem vfi)])
+                           (cond
+                             [(vsingleton? elem-addr)
+                              (let ([m (build-vfasl-reloc (constant vfasl-reloc-singleton-tag)
+                                                          (vsingleton-index elem-addr))])
+                                (cons m m))]
+                             [(vptr? elem-addr)
+                              (cond
+                                [(eqv? (vptr-vspace elem-addr) (constant vspace-symbol))
+                                 (let ([m (build-vfasl-reloc (constant vfasl-reloc-symbol-tag)
+                                                             (symbol-vptr->index elem-addr vfi))])
+                                   (cons m m))]
+                                [else
+                                 (let-values ([(bv offset) (vptr->bytevector+offset elem-addr vfi)])
+                                   (safe-assert (not (fixed? offset)))
+                                   (cons (fx- offset (vfasl-info-base-addr vfi))
+                                         (cons (vptr-vspace elem-addr) (vptr-v elem-addr))))])]
+                             [else
+                              ;; an immediate value; for fixnums, we can only allow 0
+                              (unless (or (eqv? elem-addr 0)
+                                          (not (fixed? elem-addr)))
+                                ($oops 'vfasl "unexpected fixnum in relocation ~s" elem-addr))
+                              (cons elem-addr elem-addr)]))))]
+                        [new-elem (car new-elem+key)])
+                   (cond
+                     [got-cell
+                      ;; live pool entry (P2.2c): the quad is truncated away;
+                      ;; the (deduped) GOT slot carries the marker instead,
+                      ;; and ONE reloc entry per slot -- from its allocating
+                      ;; use -- carries the slot's absolute GOT byte offset
+                      ;; in its code-offset field (pool entries are the
+                      ;; table's suffix, so hijacking the offset chain here
+                      ;; disturbs no later entry).  relink resolves the slot
+                      ;; in place exactly once and never touches the code
+                      ;; page; every use still gets its adrp/ldr pair baked
+                      ;; at the shared slot.
+                      (let-values ([(got-off fresh?) (got-slot! (cdr new-elem+key) item-offset vfi)])
+                        (when fresh?
+                          (got-slot-set! got-off new-elem vfi))
+                        (when got-base
+                          (when got-stats-on?
+                            (set! got-stat-uses (fx+ got-stat-uses 1)))
+                          (for-each (lambda (o)
+                                      (bake-pool-adr! code-p bytes o got-base got-off vfi))
+                                    (cdr got-cell)))
+                        (if (not fresh?)
+                            (loop n nout a (fx+ i 1))
+                            (let ([nout (cond
+                                          [(fxlogtest type-etc 1)
+                                           (set-uptr! new-p (reloc-addr nout)
+                                                      (bitwise-ior (fxsll type (constant reloc-type-offset))
+                                                                   (constant reloc-extended-format))
+                                                      vfi)
+                                           (set-uptr! new-p (reloc-addr (fx+ nout 1)) item-offset vfi)
+                                           (set-uptr! new-p (reloc-addr (fx+ nout 2)) got-off vfi)
+                                           (fx+ nout 3)]
+                                          [else
+                                           (unless (fx<= got-off (constant reloc-code-offset-mask))
+                                             ($oops 'vfasl "GOT offset ~s exceeds short reloc field" got-off))
+                                           (set-uptr! new-p (reloc-addr nout)
+                                                      (make-short-reloc type got-off item-offset)
+                                                      vfi)
+                                           (fx+ nout 1)])])
+                              (loop n nout a (fx+ i 1)))))]
+                     [else
+                      ;; ordinary entry: pass through unchanged (pool entries
+                      ;; are the suffix, so the preceding code-offset delta
+                      ;; chain is undisturbed)
+                      (let ([nout (cond
+                                    [(fxlogtest type-etc 1)
+                                     (set-uptr! new-p (reloc-addr nout)
+                                                (bitwise-ior (fxsll type (constant reloc-type-offset))
+                                                             (constant reloc-extended-format))
+                                                vfi)
+                                     (set-uptr! new-p (reloc-addr (fx+ nout 1)) item-offset vfi)
+                                     (set-uptr! new-p (reloc-addr (fx+ nout 2)) code-offset vfi)
+                                     (fx+ nout 3)]
                                     [else
-                                     ;; an immediate value; for fixnums, we can only allow 0
-                                     (unless (or (eqv? elem-addr 0)
-                                                 (not (fixed? elem-addr)))
-                                       ($oops 'vfasl "unexpected fixnum in relocation ~s" elem-addr))
-                                     elem-addr])))])
-             ;; overwrites constant-loading instructions in the code, so the
-             ;; linking protocol needs to be able to deal with that, possibly using
-             ;; later instructions to infer the right repair:
-             (set-int32! code-p a new-elem vfi)
-             (loop n a (fx+ i 1)))]
-          [else ($oops 'vfasl "expected a relocation")])))
+                                     (set-uptr! new-p (reloc-addr nout)
+                                                (make-short-reloc type code-offset item-offset)
+                                                vfi)
+                                     (fx+ nout 1)])])
+                        ;; overwrites constant-loading instructions in the code,
+                        ;; so the linking protocol needs to be able to deal with
+                        ;; that, possibly using later instructions to infer the
+                        ;; right repair:
+                        (set-int32! code-p a new-elem vfi)
+                        ;; relink patches at this site (abs quad, movz/movk
+                        ;; run, or a template's in-object pool quad); 24
+                        ;; bytes covers every arm64 patch shape
+                        (when dirty-base
+                          (mark-dirty-range! vfi (fx+ dirty-base (vptr-v code-p) a) 24))
+                        (loop n nout a (fx+ i 1)))]))))]
+                   [else ($oops 'vfasl "expected a relocation")])))])
+      (unless (fx<= end-nout out-m)
+        ($oops 'vfasl "reloc table size overrun: ~s vs ~s" end-nout out-m))
+      (set-uptr! new-p (constant reloc-table-size-disp) end-nout vfi))
     new-p))
 
-(set! $fasl-to-vfasl to-vfasl)
+(set! $fasl-to-vfasl
+  (case-lambda
+   [(v) (to-vfasl v #f)]
+   [(v got?) (to-vfasl v got?)]))
 (set! $fasl-can-combine? fasl-can-combine?))

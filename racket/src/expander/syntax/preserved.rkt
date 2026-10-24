@@ -1,6 +1,7 @@
 #lang racket/base
 (require "datum-map.rkt"
-         "../common/prefab.rkt")
+         "../common/prefab.rkt"
+         (only-in '#%kernel core-pvector?))
 
 (provide preserved-property-value?
          preserved-property-value
@@ -24,6 +25,7 @@
                 (char? v) (string? v) (bytes? v) (regexp? v)
                 (syntax? v)
                 (pair? v) (vector? v) (box? v) (hash? v)
+                (core-pvector? v)
                 (immutable-prefab-struct-key v))
       (raise-arguments-error 'write
                              "disallowed value in preserved syntax property"

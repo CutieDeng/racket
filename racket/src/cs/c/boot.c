@@ -153,6 +153,14 @@ void racket_boot(racket_boot_arguments_t *ba)
 
   Sscheme_init(NULL);
 
+  /* Keep relocation tables for static-generation code objects, so
+     boot-library code remains introspectable (heap-walk naming for the
+     pre-instantiated namespace segment needs to reach codes referenced
+     only through other codes' constant pools). Gated by an environment
+     variable while the fourth-boot-segment work is experimental. */
+  if (getenv("RACKET_RETAIN_STATIC_RELOC") != NULL)
+    Sretain_static_relocation();
+
 #ifdef PBCHUNK_REGISTER
   register_pbchunks();
 #endif
@@ -223,6 +231,28 @@ void racket_boot(racket_boot_arguments_t *ba)
   }
 
   Sbuild_heap(NULL, init_foreign);
+
+  /* fasl2 fourth-segment C-level boot hook (PLT_SEG4_BOOT=<vfasl-file>):
+     after the heap is built and before the language layer runs, load a
+     pre-built state image straight into the static generation, so it never
+     enters gen-0 and never triggers a promotion GC.  This is the C-level
+     counterpart to the main.sps PLT_SEG4 loader; the load-to-static logic
+     lives in the Chez layer (S_load_seg4_to_static). */
+  {
+    const char *seg4 = getenv("PLT_SEG4_BOOT");
+    if (seg4 != NULL) {
+      extern ptr S_load_seg4_to_static(int fd);
+      int fd = boot_open(seg4, O_RDONLY | BOOT_O_BINARY);
+      if (fd >= 0) {
+        ptr v = S_load_seg4_to_static(fd);
+        close(fd);
+        fprintf(stderr, "[seg4-boot] fourth segment %s (C-level boot hook, path=%s)\n",
+                (v != Sfalse) ? "loaded to static" : "load FAILED", seg4);
+      } else {
+        fprintf(stderr, "[seg4-boot] could not open %s\n", seg4);
+      }
+    }
+  }
 
   if (cross_server) {
     /* Don't run Racket as usual. Instead, load the patch

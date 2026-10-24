@@ -10,6 +10,16 @@
 ;; OpenSSL-class for the software paths, faster where the ARMv8 crypto
 ;; extensions kick in (SHA-256, AES).
 ;;
+;; Methodology (keep it comparable with `openssl speed -evp`): throughput
+;; rows time the primitive on a fixed 1 MiB input, the AEAD rows through
+;; crypto-aead-seal! into a preallocated output buffer with a preallocated
+;; nonce, so no per-iteration allocation is measured (the one-shot
+;; aead-encrypt, which allocates its output, is reported as its own row
+;; and labelled as such). Every call still includes the key setup (the
+;; AES key schedule, the GHASH table): the API is one-shot, whereas
+;; openssl speed reuses its context, so its small-block rows carry no
+;; setup. MB/s is decimal (1e6 bytes), the same unit as openssl speed.
+;;
 ;; Performance-regression mode (the tripwire that guards the OpenSSL
 ;; removal from silent throughput loss):
 ;;   ... crypto-benchmark.rkt --update-baseline   ; record current numbers
@@ -20,6 +30,7 @@
 ;; fresh run to it, so run --update-baseline once per machine/build.
 
 (require racket/crypto
+         (only-in '#%kernel crypto-aead-seal!)
          racket/format
          racket/runtime-path
          racket/list)
@@ -58,8 +69,8 @@
         (loop (* iters 2))
         (/ (/ dt 1000.0) iters))))
 
-(define (mb/s bytes-per-op s/op)
-  (/ (/ bytes-per-op 1048576.0) s/op))
+(define (mb/s bytes-per-op s/op)   ; decimal MB/s, as openssl speed reports
+  (/ (/ bytes-per-op 1e6) s/op))
 
 (define (row label rhs) (when (eq? mode 'report) (printf "  ~a~a\n" (~a label #:min-width 34) rhs)))
 
@@ -93,18 +104,30 @@
   (bench-throughput (~a alg) SIZE (lambda () (digest-bytes alg data))))
 
 (printf "\n[MAC]\n")
-(let ([key (make-bytes 32 1)])
+(let ([key (make-bytes 32 1)] [k16 (make-bytes 16 2)])
   (bench-throughput "hmac-sha256" SIZE (lambda () (hmac-bytes 'sha256 key data)))
-  (bench-throughput "siphash-2-4" SIZE (lambda () (siphash-2-4 (make-bytes 16 2) data))))
+  (bench-throughput "siphash-2-4" SIZE (lambda () (siphash-2-4 k16 data))))
 
-(printf "\n[AEAD, seal 1 MiB]\n")
-(let ([k32 (make-bytes 32 3)])
+(printf "\n[AEAD, seal 1 MiB into a preallocated buffer]\n")
+(let ([k32 (make-bytes 32 3)] [n12 (make-bytes 12 0)] [n24 (make-bytes 24 0)]
+      [out (make-bytes (+ SIZE 16))] [aad #""])
   (bench-throughput "chacha20-poly1305"
-                    SIZE (lambda () (aead-encrypt 'chacha20-poly1305 k32 (make-bytes 12 0) data)))
+                    SIZE (lambda () (crypto-aead-seal! 'chacha20-poly1305 k32 n12 aad data out)))
   (bench-throughput "xchacha20-poly1305"
-                    SIZE (lambda () (aead-encrypt 'xchacha20-poly1305 k32 (make-bytes 24 0) data)))
+                    SIZE (lambda () (crypto-aead-seal! 'xchacha20-poly1305 k32 n24 aad data out)))
   (bench-throughput "aes-256-gcm"
-                    SIZE (lambda () (aead-encrypt 'aes-256-gcm k32 (make-bytes 12 0) data))))
+                    SIZE (lambda () (crypto-aead-seal! 'aes-256-gcm k32 n12 aad data out)))
+  ;; an expanded key carries the key schedule and the GHASH table: the per-call setup is gone
+  (let ([xk (aead-expand-key 'aes-256-gcm k32)] [data16k (make-bytes 16384 97)] [out16k (make-bytes (+ 16384 16))])
+    (bench-throughput "aes-256-gcm (expanded key)"
+                      SIZE (lambda () (crypto-aead-seal! 'aes-256-gcm xk n12 aad data out)))
+    (bench-throughput "aes-256-gcm 16 KB"
+                      16384 (lambda () (crypto-aead-seal! 'aes-256-gcm k32 n12 aad data16k out16k)))
+    (bench-throughput "aes-256-gcm 16 KB (expanded key)"
+                      16384 (lambda () (crypto-aead-seal! 'aes-256-gcm xk n12 aad data16k out16k))))
+  ;; the one-shot API allocates and zero-fills its output: an API cost, not a cipher cost
+  (bench-throughput "aes-256-gcm one-shot (allocates)"
+                    SIZE (lambda () (aead-encrypt 'aes-256-gcm k32 n12 data))))
 
 (printf "\n[KDF]\n")
 (bench-latency "pbkdf2-hmac-sha256 (10k iters)"
@@ -121,6 +144,8 @@
 (let* ([sk (ed25519-generate-private-key)] [pk (ed25519-public-key sk)]
        [sig (ed25519-sign sk small)])
   (bench-ops "ed25519 sign" (lambda () (ed25519-sign sk small)))
+  (let ([xk (ed25519-expand-private-key sk)])
+    (bench-ops "ed25519 sign (expanded key)" (lambda () (ed25519-sign xk small))))
   (bench-ops "ed25519 verify" (lambda () (ed25519-verify pk small sig))))
 (let* ([sk (p256-generate-private-key)] [pk (p256-public-key sk)]
        [sig (p256-ecdsa-sign sk small)] [B (p256-public-key (p256-generate-private-key))])

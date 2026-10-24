@@ -127,8 +127,16 @@ static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, int
 #endif
 }
 #else
+#if defined(__x86_64__) || defined(__i386__)
+# include "rktcrypto_x86.h"
+#endif
 static void sha1_compress(rktcrypto_sha1_ctx_t *ctx, const unsigned char *p, intptr_t nblk)
-{ while (nblk-- > 0) { sha1_block(ctx, p); p += 64; } }
+{
+#if defined(__x86_64__) || defined(__i386__)
+  if (rktcrypto_cpu_has(RKTCRYPTO_CPU_X86_SHA)) { rktcrypto_sha1_blocks_shani(ctx->h, p, nblk); return; }
+#endif
+  while (nblk-- > 0) { sha1_block(ctx, p); p += 64; }
+}
 #endif
 
 void rktcrypto_sha1_core_update(rktcrypto_sha1_ctx_t *ctx,

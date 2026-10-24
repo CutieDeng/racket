@@ -806,11 +806,14 @@
 ;; this engine does not do).
 (define (tls-conn-request-client-auth! c require? anchors)
   (define p (tls-conn-pha c))
-  (unless (and p (eq? (pha-role p) 'server) (pha-request p))
-    (raise (tls-error (if (eq? (tls-conn-protocol c) 'tls13)
-                          "post-handshake authentication is only available to the server side"
-                          "verification cannot be changed on an established TLS 1.2 connection (renegotiation is not supported); set it on the context before the handshake"))))
-  ((pha-request p) require? anchors))
+  (cond
+    [(procedure? p) (p require? anchors)]              ; TLS 1.2 server: renegotiation (rktcrypto-tls12.rkt)
+    [else
+     (unless (and p (eq? (pha-role p) 'server) (pha-request p))
+       (raise (tls-error (if (eq? (tls-conn-protocol c) 'tls13)
+                             "post-handshake authentication is only available to the server side"
+                             "verification cannot be changed on an established TLS 1.2 connection from the client side"))))
+     ((pha-request p) require? anchors)]))
 
 ;; Post-handshake KeyUpdate: advance our send key and ask the peer to update its
 ;; keys too (RFC 8446 §4.6.3). No-op on a connection without key-update support.
@@ -1191,7 +1194,29 @@
                                    'keylog (hash-ref opts 'keylog #f)
                                    'client-key (hash-ref opts 'client-key #f)          ; A4 (1.2)
                                    'client-cert-ders (hash-ref opts 'client-cert-ders '())
-                                   'ticket12-box ticket12-box))])])))                  ; A2 (1.2) SessionTicket
+                                   'ticket12-box ticket12-box                          ; A2 (1.2) SessionTicket
+                                   ;; the ClientHello of a renegotiation this connection may be
+                                   ;; asked for later (RFC 5746 3.5): TLS 1.2 only, the same
+                                   ;; suites, groups and signature schemes, renegotiation_info
+                                   ;; carrying our previous Finished, no ticket
+                                   'reneg-client-hello
+                                   (lambda (random cvd)
+                                     (define exts
+                                       (bytes-append
+                                        (ext #x000a (vec 2 (apply bytes-append (map u16 advertised-groups))))
+                                        (ext #x000b (vec 1 (bytes 0)))
+                                        (ext #x000d (vec 2 (apply bytes-append (map u16 sig-schemes))))
+                                        (ext #x0017 #"")
+                                        (ext #xff01 (vec 1 cvd))
+                                        (ext #x0016 #"")
+                                        (if host (ext #x0000 (vec 2 (bytes-append (u8 0) (vec 2 (string->bytes/latin-1 host))))) #"")
+                                        (if (pair? alpn)
+                                            (ext #x0010 (vec 2 (apply bytes-append (map (lambda (p) (vec 1 p)) alpn))))
+                                            #"")))
+                                     (define body (bytes-append (u16 #x0303) random (vec 1 #"")
+                                                                (vec 2 (apply bytes-append (map u16 eff-12)))
+                                                                (vec 1 (bytes 0)) (vec 2 exts)))
+                                     (bytes-append (u8 1) (u24 (bytes-length body)) body))))])])))
 
 ;; After a (possibly retried) ServerHello whose suite/exts we've parsed.
 (define (finish-client-handshake r hs tr sh want-group privs verify? verify-hostname? host anchors alpn want-ocsp? client-auth [resume-box #f])
