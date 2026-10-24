@@ -37,7 +37,7 @@
 | 项 | 做法 | 验证 |
 |---|---|---|
 | DHE 客户端策略 | `rktcrypto_dh_keygen/derive`(任意素数);白名单 = RFC 7919 ffdhe2048/3072/4096 + RFC 3526 MODP 14/15/16(g=2),素数由公式计算并与 C 常量/OpenSSL 内置群逐字节核对;其余仍发 insufficient_security | OpenSSL 3.6.3 默认 auto-DH(MODP-2048)与 LibreSSL 3.3.6:9 组套件双向 18/18 通过 |
-| 端口上 `ssl-set-verify!`/`ssl-try-verify!` | TLS 1.3 post-handshake auth(RFC 8446 §4.6.2):客户端通告 post_handshake_auth,服务端发 CertificateRequest 并同步等待 Certificate/CertificateVerify/Finished,期间到达的应用数据排队;TLS 1.2 仍报错 | `test-post-handshake-auth.rkt` 14 项;`peer-verif.rkt` 强制 'tls12,其 `#:later` 3 用例仍失败 |
+| 端口上 `ssl-set-verify!`/`ssl-try-verify!` | TLS 1.3 post-handshake auth(RFC 8446 §4.6.2):客户端通告 post_handshake_auth,服务端发 CertificateRequest 并同步等待 Certificate/CertificateVerify/Finished,期间到达的应用数据排队;TLS 1.2 安全重协商(RFC 5746):服务端发 HelloRequest,在受保护流上跑完整握手(renegotiation_info 带上一次的 verify_data,新密钥于双方 CCS 后接管,期间应用数据排队),客户端读到 HelloRequest 时以同样方式应答;客户端主动的重协商请求以 no_renegotiation 警告拒绝 | `test-post-handshake-auth.rkt` 14 项;`peer-verif.rkt` 8 用例(含 `#:later` 3 用例)全过;与 OpenSSL s_client(被动应答)/s_server(`R` 命令)双向互通 |
 | CBC 时序 | 双方协商 encrypt_then_mac(RFC 7366):MAC 覆盖公开长度的密文,先验 MAC 再看填充,无 Lucky 13 信号;会话票记录该框架,不一致则全握手。MtE 保留给无扩展的对端,填充检查改为 256 字节固定窗口掩码扫描,HMAC 压缩块数定值(§1.1) | `test-suites.rkt` 42 项(我方两端协商 EtM);OpenSSL/LibreSSL 对拍 |
 | ECDSA 套件自互通 | 新增 P-256 服务端证书 `server_ec_{key,crt}.pem`(`generate-certs.sh`) | `test-suites.rkt` 7 个 ECDHE-ECDSA 套件 × 管道 10/4096 |
 
@@ -84,7 +84,7 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 | 自有身份密钥 | `pem->private-key` 识别 SEC1/PKCS#8 的 P-256/P-384/P-521(曲线取自参数)与 Ed25519(RFC 8410);`server-sign` 统一签名(RSA PSS/PKCS#1 ×3 摘要、ECDSA 三曲线、Ed25519),TLS 1.2/1.3 服务端与客户端 CertificateVerify 均按对端 signature_algorithms 选方案 | test-key-types 40 项(5 种密钥 × 1.3/1.2 × 服务端身份/客户端身份) |
 | 附带修复 | TLS 1.2 的 ECDSA 方案 id 只定哈希、曲线取自密钥(此前按 1.3 的曲线配对解析,P-384 服务端用 ecdsa+SHA-256 签名时报 "INTEGER exceeds field size");1.3 仍强制配对;ECDSA DER 编码 SEQUENCE 长度超 127 时用长格式(P-521 签名此前为畸形 DER);客户端 supported_groups 增加 P-384/P-521(libssl 要求证书曲线在客户端列表内,否则 TLS 1.2 下 handshake_failure);P-521 ECDHE 密钥交换(C 原语 p521_pubkey/ecdh);1.2 CertificateRequest 的 sigalgs 列表补全 | test-openssl-client 23 项(s_client 对每种密钥 1.3/1.2 验证通过);我方客户端对 OpenSSL s_server 各密钥 1.3/1.2 全通过;LibreSSL s_server 不支持 Ed25519 证书(其自身限制) |
 
-仍未对标(设计如此):TLS 1.0/1.1、重协商、RSA 密钥交换。
+仍未对标(设计如此):TLS 1.0/1.1、RSA 密钥交换、客户端主动重协商(以 no_renegotiation 拒绝)。
 
 ### 1.2.2 subagent 评审后的修复(第六轮)
 
@@ -106,7 +106,7 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 
 ### 1.3 仍存在的差异
 
-1. `peer-verif.rkt` 的三个 `#:later` 用例:强制 'tls12,需重协商;TLS 1.3 下同样的调用已可用(见上表)。
+1. (已解决)`peer-verif.rkt` 的三个 `#:later` 用例曾因无 TLS 1.2 重协商失败;现服务端主动的安全重协商已实现(见上表)。
 2. `bn_modexp`(C)的固定窗口幂在窗口值为 0 时跳过乘法(`if(d) bn_montmul`),对私钥指数非严格常数时间;命名群路径
    原本即用此函数,本轮未改。
 3. `ssl-try-verify!` 文档已改为与实现一致(出示但验证失败的证书被拒绝)。
@@ -125,7 +125,7 @@ HMAC 内层哈希压缩块数 = 1 + ⌈(13 + frag-len + 1 + L)/B⌉(B = 64/128,L
 ## 3. 运行方法
 
 ```sh
-# 全部 openssl 测试(peer-verif.rkt 的 #:later 用例会失败并等待超时,见第 1 节)
+# 全部 openssl 测试
 racket/bin/raco test --timeout 120 pkgs/racket-test/tests/openssl
 # 演示脚本(不是测试)
 racket/bin/racket pkgs/racket-test/tests/openssl/compat/repro/record-plaintext-after-keys.rkt

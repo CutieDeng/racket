@@ -91,7 +91,16 @@
     (check-regexp-match #rx"ssl-try-verify!: failed" (cadr (cadr report)))
     (check-false (caddr report))
     (check-regexp-match #rx"unknown_ca" (cadr line)))
-  ;; TLS 1.2: not available on an established connection
+  ;; TLS 1.2: the server renegotiates (RFC 5746) and gets the client's certificate
   (let-values ([(report line) (run ssl-set-verify! (client-ctx 'tls12 #:key client-key #:cert client-crt))])
-    (check-regexp-match #rx"ssl-set-verify!: failed .*TLS 1.2" (cadr (cadr report)))
-    (check-equal? line "after")))
+    (check-equal? report (list "before" 'ok #t client-subject) "TLS 1.2 renegotiation, trusted client certificate")
+    (check-equal? line "after"))
+  ;; TLS 1.2 try-verify without a client certificate: the renegotiation proceeds, not verified
+  (let-values ([(report line) (run ssl-try-verify! (client-ctx 'tls12))])
+    (check-equal? report (list "before" 'ok #f #f) "TLS 1.2 renegotiation, no client certificate")
+    (check-equal? line "after"))
+  ;; TLS 1.2 set-verify without a client certificate: the renegotiation fails on the server
+  (let-values ([(report line) (run ssl-set-verify! (client-ctx 'tls12))])
+    (check-equal? (car report) "before")
+    (check-regexp-match #rx"ssl-set-verify!: failed .*certificate required" (cadr (cadr report)))
+    (check-false (caddr report))))

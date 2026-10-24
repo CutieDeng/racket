@@ -907,11 +907,16 @@ context or listener, certification verification happens on each
 subsequent connection using the context or listener.
 
 Asking an established connection for a certificate is possible only on
-the server side of a TLS 1.3 connection (post-handshake authentication,
-RFC 8446 section 4.6.2; the client must have been made by this library
-or another one that offers it). On a TLS 1.2 connection, where this used
-to be done by renegotiation, an exception is raised instead, and the
-context shared with the port's listener is left unchanged.
+the server side. On a TLS 1.3 connection it is post-handshake
+authentication (RFC 8446 section 4.6.2; the client must have been made by
+this library or another one that offers it). On a TLS 1.2 connection the
+server renegotiates (RFC 5746 secure renegotiation): it sends a
+@tt{HelloRequest} and runs a new handshake inside the protected
+connection, asking for the client's certificate; clients made by this
+library answer it, as do OpenSSL clients. In both cases the call returns
+once the client has answered, and the context shared with the port's
+listener is left unchanged. A renegotiation that the client asks for is
+declined with a @tt{no_renegotiation} warning.
 
 A certificate that the peer presents must verify; with
 @racket[ssl-set-verify!] a peer that presents none is rejected as well.

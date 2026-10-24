@@ -223,12 +223,12 @@
 (define (set-verify-mode! who c/l mode)
   (cond
     [(or (input-port? c/l) (output-port? c/l))
-     ;; On an established connection, libssl renegotiated (TLS 1.2). Here a
-     ;; TLS 1.3 server asks the client to authenticate now (post-handshake
-     ;; authentication, RFC 8446 4.6.2) and waits for the answer, so
-     ;; `ssl-peer-verified?` reflects it on return; a TLS 1.2 connection
-     ;; cannot do it. The ports' context is left alone: it is shared with
-     ;; the listener, so changing it would affect every later connection.
+     ;; On an established connection a TLS 1.3 server asks the client to
+     ;; authenticate now (post-handshake authentication, RFC 8446 4.6.2) and a
+     ;; TLS 1.2 server renegotiates (RFC 5746, what libssl did); both wait for
+     ;; the answer, so `ssl-peer-verified?` reflects it on return. The ports'
+     ;; context is left alone: it is shared with the listener, so changing it
+     ;; would affect every later connection.
      (unless (eq? mode 'none)
        (define obj (port-obj c/l))
        (with-handlers ([exn:fail? (lambda (e) (error who "failed (~a)" (exn-message e)))])
