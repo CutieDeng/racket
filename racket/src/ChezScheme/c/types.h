@@ -312,6 +312,12 @@ typedef struct _bucket_pointer_list {
 #define FIXRANGE(x) (Sfixnum_value(Sfixnum(x)) == x)
 */
 
+/* Symbol-name hash, shared by the symbol table (intern.c) and the fasl
+   reader, which computes it while decoding a symbol's characters. */
+#define SYM_HASH_INIT(n) ((uptr)(n) + 401887359)
+#define SYM_HASH_MIX(hc) (hc += (hc << 10), hc ^= (hc >> 6))
+
+
 #define DIRTYSET(lhs,rhs) S_dirty_set(lhs, rhs);
 
 typedef struct _dirtycardinfo {
@@ -408,11 +414,6 @@ typedef struct {
     S_tc_mutex_depth -= 1;                      \
     S_mutex_release(&S_tc_mutex);               \
   } while (0);
-
-/* Symbol-name hash, shared by the symbol table (intern.c) and the fasl
-   reader, which computes it while decoding a symbol's characters. */
-#define SYM_HASH_INIT(n) ((uptr)(n) + 401887359)
-#define SYM_HASH_MIX(hc) (hc += (hc << 10), hc ^= (hc >> 6))
 
 /* Allocation mutex is ordered after tc mutex */
 #define alloc_mutex_acquire() do {              \
