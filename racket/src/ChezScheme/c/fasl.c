@@ -255,7 +255,7 @@ static void fasl_gen_log(ptr tc, ptr p) {
 static void fasl_gen_finish(ptr tc) {
   thread_gc *tgc = THREAD_GC(tc);
   if (tgc->fasl_log_n > 0)
-    S_young_ref_add(tgc->fasl_log, tgc->fasl_log_n);
+    S_young_ref_add(tgc->fasl_log, tgc->fasl_log_n, tgc->fasl_gen);
   tgc->fasl_log_n = 0;
 }
 

@@ -98,9 +98,10 @@ EXTERN struct S_G_struct {
      until that is no longer so. Dirty cards would not do: they skip
      immutable record fields and closure code pointers, and code
      segments have none. */
-    ptr *young_ref;
+    young_ref_entry *young_ref;
     iptr young_ref_n;
     iptr young_ref_cap;
+    IGEN young_ref_max_gen; /* oldest generation of any entry's object */
 
   /* foreign.c */
     ptr foreign_static;

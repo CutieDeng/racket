@@ -78,14 +78,16 @@
 ;; that generation in one pass instead of one generation per major.
 (define startup-finish-target #f)
 ;; Generation that `fasl-read` creates objects in during the window:
-;; code and literal data loaded then are kept, and creating them in
-;; generation 1 spares the window's gen-0 collections from copying
-;; them (see "fasl.c" for how their references to younger objects are
-;; tracked). PLT_STARTUP_FASL_GEN=0 turns this off.
+;; code and literal data loaded then are kept and promoted to the
+;; static generation when the window closes, so create them there
+;; directly: the window's collections never copy them, and the closing
+;; collection has that much less to move (see "fasl.c" for how their
+;; references to younger objects are tracked). PLT_STARTUP_FASL_GEN
+;; selects another generation; 0 turns this off.
 (define startup-fasl-gen
   (let ([s (getenv "PLT_STARTUP_FASL_GEN")])
     (let ([n (and s (string->number s))])
-      (if (and (fixnum? n) (fx<= 0 n 7)) n 1))))
+      (if (and (fixnum? n) (fx<= 0 n 7)) n 7))))
 ;; PLT_STARTUP_FASL_MASK selects kinds of object (bits, see "fasl.c"); for experiments
 (define startup-fasl-mask
   (let ([s (getenv "PLT_STARTUP_FASL_MASK")])

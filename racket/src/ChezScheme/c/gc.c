@@ -892,9 +892,47 @@ typedef struct count_root_t {
   IBOOL weak;
 } count_root_t;
 
+/* youngest generation among the objects a code object refers to,
+   for the young-reference root table; called right after the code
+   object was swept, so every reference is already updated */
+static IGEN young_ref_code_youngest(ptr p) {
+  IGEN y = static_generation;
+  ptr t = CODERELOC(p);
+#define YOUNG_REF_CHECK(obj) do {                                  \
+    ptr o_ = (obj);                                                \
+    if (!FIXMEDIATE(o_)) {                                         \
+      seginfo *si_ = MaybeSegInfo(ptr_get_segment(o_));            \
+      if ((si_ != NULL) && (si_->generation < y)) y = si_->generation; \
+    }                                                              \
+  } while (0)
+  YOUNG_REF_CHECK(CODENAME(p));
+  YOUNG_REF_CHECK(CODEARITYMASK(p));
+  YOUNG_REF_CHECK(CODEINFO(p));
+  YOUNG_REF_CHECK(CODEPINFOS(p));
+  if (t != (ptr)0) {
+    iptr m = RELOCSIZE(t), n = 0, a = 0;
+    while (n < m) {
+      uptr entry = RELOCIT(t, n), item_off, code_off;
+      n += 1;
+      if (RELOC_EXTENDED_FORMAT(entry)) {
+        item_off = RELOCIT(t, n); n += 1;
+        code_off = RELOCIT(t, n); n += 1;
+      } else {
+        item_off = RELOC_ITEM_OFFSET(entry);
+        code_off = RELOC_CODE_OFFSET(entry);
+      }
+      a += code_off;
+      YOUNG_REF_CHECK(S_get_code_obj(RELOC_TYPE(entry), p, a, item_off));
+    }
+  }
+#undef YOUNG_REF_CHECK
+  return y;
+}
+
 ptr GCENTRY(ptr tc, ptr count_roots_ls) {
     thread_gc *tgc = THREAD_GC(tc);
     IGEN g; ISPC s;
+    IGEN cw_maxg; /* generation bound for enabling code writes during this collection */
     seginfo *oldspacesegments, *oldweakspacesegments, *si, *nextsi;
     ptr ls;
     bucket_pointer_list *buckets_to_rebuild;
@@ -907,7 +945,11 @@ ptr GCENTRY(ptr tc, ptr count_roots_ls) {
 
     GET_REAL_TIME(astart);
 
-    S_thread_start_code_write(tc, MAX_TG, 0, NULL, 0);
+    /* code objects that "fasl.c" allocated into an older generation are
+       swept as roots below and may be written to; W^X protection is per
+       generation, so cover theirs too */
+    cw_maxg = (S_G.young_ref_max_gen > MAX_TG) ? S_G.young_ref_max_gen : MAX_TG;
+    S_thread_start_code_write(tc, cw_maxg, 0, NULL, 0);
 
    /* flush instruction cache: effectively clear_code_mod but safer */
     for (ls = S_threads; ls != Snil; ls = Scdr(ls)) {
@@ -1328,19 +1370,43 @@ ptr GCENTRY(ptr tc, ptr count_roots_ls) {
     {
       iptr i, j = 0;
       for (i = 0; i < S_G.young_ref_n; i++) {
-        ptr p = S_G.young_ref[i];
+        young_ref_entry e = S_G.young_ref[i];
+        ptr p = e.obj;
         seginfo *p_si = SegInfo(ptr_get_segment(p));
         if (!p_si->old_space) {
           IGEN pg = p_si->generation;
-          if (Scodep(p))
-            sweep_code_object(tgc, p, pg);
-          else
-            sweep(tgc, p, pg);
-          if (pg > MAX_TG)
-            S_G.young_ref[j++] = p;
+          /* sweep only when something it refers to may be collected
+             now; afterwards everything it refers to is in MIN_TG or
+             older, so remember that and skip collections that do not
+             reach MIN_TG. The entry is done once nothing it refers to
+             is younger than the object itself: ordinary dirty tracking
+             covers later mutations. */
+          if (e.youngest <= MAX_CG) {
+            if (Scodep(p)) {
+              /* sweeping a static code object normally drops its
+                 relocation table, since static code is assumed to be
+                 final; this one still refers to younger objects and
+                 will be swept again, so keep the table until nothing
+                 it refers to is younger than the code itself */
+              IBOOL retain = S_G.retain_static_relocation;
+              S_G.retain_static_relocation = 1;
+              sweep_code_object(tgc, p, pg);
+              S_G.retain_static_relocation = retain;
+              e.youngest = young_ref_code_youngest(p);
+              if ((e.youngest >= pg) && (pg == static_generation) && !retain
+                  && !(CODETYPE(p) & (code_flag_template << code_flags_offset)))
+                CODERELOC(p) = (ptr)0;
+            } else {
+              sweep(tgc, p, pg);
+              e.youngest = MIN_TG;
+            }
+          }
+          if (e.youngest < pg)
+            S_G.young_ref[j++] = e;
         }
       }
       S_G.young_ref_n = j;
+      if (j == 0) S_G.young_ref_max_gen = 0;
     }
 
   /* prepare to sweep areas marked dirty by assignments into older generations */
@@ -1744,7 +1810,7 @@ ptr GCENTRY(ptr tc, ptr count_roots_ls) {
     if (MAX_CG >= S_G.min_free_gen) S_free_chunks();
 
     S_flush_instruction_cache(tc);
-    S_thread_end_code_write(tc, MAX_TG, 0, NULL, 0);
+    S_thread_end_code_write(tc, cw_maxg, 0, NULL, 0);
 
 #ifndef NO_DIRTY_NEWSPACE_POINTERS
     /* mark dirty those newspace cards to which we've added wrong-way pointers */
