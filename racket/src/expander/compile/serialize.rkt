@@ -97,6 +97,112 @@
          serialize-module-uses
          serialize-phase-to-link-module-uses)
 
+
+;; ----------------------------------------
+;; Byte-stream encoding of serialized data
+;;
+;; Each of the four streams produced by `generate-deserialize` is a
+;; bytevector. An element starts with one byte that gives its class:
+;;
+;;   #x00 ..          an opcode (a `#:` tag below, by position);
+;;   #x40 .. #xB7     a small integer 0..119 (value = byte - #x40);
+;;   #xB8 / #xB9 / #xBA  #f / #t / '();
+;;   #xBB             an exact integer: zigzag LEB128 follows;
+;;   #xBC             a literal: LEB128 index into the literals vector;
+;;   #xBD .. #xFF     a literal with index 0..66 (index = byte - #xBD).
+;;
+;; Symbols, keywords, strings, characters, and anything else that is
+;; not an integer or a tag live in one literals vector per
+;; serialization, so a stream contains no objects of its own, and
+;; interning a repeated symbol happens once instead of per use.
+;;
+;; The streams are mutable byte strings on purpose: schemify keeps a
+;; mutable byte string in the code's own fasl stream (see
+;; `register-literal-serialization` in schemify's "literal.rkt"),
+;; while an immutable one would count as a reader literal to intern
+;; and would be lifted into the `racket/fasl` literals. The
+;; previous encoding was a vector per stream whose every element was a
+;; separate object (tags and repeated symbols as fasl graph
+;; references); reading those vectors dominated the cost of loading a
+;; module's declaration and syntax-literal data.
+
+(begin-for-syntax
+  (define opcode-list
+    '(#:ref #:inspector #:bulk-binding-registry #:syntax #:datum->syntax
+      #:syntax+props #:srcloc #:quote #:mpi #:box #:cons #:list #:vector
+      #:pvector #:hash #:hasheq #:hasheqv #:hasheqv/phase+space #:set
+      #:seteq #:seteqv #:prefab #:scope #:scope+kind #:interned-scope
+      #:multi-scope #:shifted-multi-scope #:table-with-bulk-bindings
+      #:bulk-binding-at #:representative-scope #:module-binding
+      #:simple-module-binding #:local-binding #:bulk-binding
+      #:like-ambiguous-binding #:bulk-binding+provides #:provided
+      #:set-box! #:set-vector! #:set-hash! #:scope-fill!
+      #:representative-scope-fill!))
+  (define (opcode-of kw)
+    (let loop ([l opcode-list] [i 0])
+      (cond
+        [(null? l) (raise-syntax-error 'case-op "unknown opcode" kw)]
+        [(eq? (car l) kw) i]
+        [else (loop (cdr l) (add1 i))]))))
+
+;; `(make-opcode-table)` => hasheq from tag to opcode number; built
+;; from individual keyword literals, because the expander's flattener
+;; cannot lift a keyword out of a quoted vector
+(define-syntax (make-opcode-table stx)
+  (syntax-case stx ()
+    [(_) (with-syntax ([((kw i) ...) (for/list ([kw (in-list opcode-list)] [i (in-naturals)])
+                                       (list kw i))])
+           #'(hasheq-from-pairs (list (cons (quote kw) i) ...)))]))
+
+;; `(op-code #:tag)` => the opcode number
+(define-syntax (op-code stx)
+  (syntax-case stx ()
+    [(_ kw) (datum->syntax stx (opcode-of (syntax-e #'kw)))]))
+
+;; `(case-op b [(#:tag ...) body ...] ... [else body ...])`
+(define-syntax (case-op stx)
+  (syntax-case stx (else)
+    [(_ e [(kw ...) body ...] ... [else ebody ...])
+     (with-syntax ([((n ...) ...)
+                    (map (lambda (kws) (map (lambda (k) (opcode-of (syntax-e k))) (syntax->list kws)))
+                         (syntax->list #'((kw ...) ...)))])
+       #'(case e [(n ...) body ...] ... [else ebody ...]))]))
+
+(define (hasheq-from-pairs l)
+  (for/hasheq ([p (in-list l)]) (values (car p) (cdr p))))
+(define opcode-table (make-opcode-table))
+
+;; A tag in the not-yet-encoded stream
+(struct tag-elem (kw) #:authentic)
+
+(define SMALL-BASE #x40)
+(define SMALL-LIMIT 120)
+(define FALSE-BYTE #xB8)
+(define TRUE-BYTE #xB9)
+(define NULL-BYTE #xBA)
+(define INT-BYTE #xBB)
+(define LIT-BYTE #xBC)
+(define LIT-BASE #xBD)
+(define LIT-LIMIT 67)
+
+(define (write-uint n out)
+  (let loop ([n n])
+    (cond
+      [(< n #x80) (write-byte n out)]
+      [else
+       (write-byte (bitwise-ior #x80 (bitwise-and n #x7F)) out)
+       (loop (arithmetic-shift n -7))])))
+
+(define (zigzag n)
+  (if (< n 0)
+      (- -1 (* 2 n))
+      (* 2 n)))
+
+(define (unzigzag n)
+  (if (odd? n)
+      (- -1 (arithmetic-shift n -1))
+      (arithmetic-shift n -1)))
+
 ;; ----------------------------------------
 ;; Module path index serialization
 
@@ -438,18 +544,73 @@
   
   (define (quoted? pos)
     (define v (list-ref stream (- stream-size (add1 pos))))
-    (or (not (keyword? v))
-        (eq? '#:quote v)))
+    (or (not (tag-elem? v))
+        (eq? '#:quote (tag-elem-kw v))))
   
   (define (ser-reset! pos)
     (set! stream (list-tail stream (- stream-size pos)))
     (set! stream-size pos))
-  
-  (define (reap-stream!)
+
+  ;; Literals shared by all streams of this serialization
+  (define lit-table (make-hash))
+  (define rev-lits null)
+  (define lit-count 0)
+  (define (lit-index! v)
+    (define key (and (or (symbol? v) (keyword? v) (char? v) (number? v)
+                         (and (string? v) (immutable? v))
+                         (and (bytes? v) (immutable? v)))
+                     v))
+    (cond
+      [(and key (hash-ref lit-table key #f))
+       => (lambda (i) i)]
+      [else
+       (define i lit-count)
+       (when key (hash-set! lit-table key i))
+       (set! rev-lits (cons v rev-lits))
+       (set! lit-count (add1 lit-count))
+       i]))
+  (define (reap-lits!)
     (begin0
-     (list->vector (reverse stream))
-     (set! stream null)
-     (set! stream-size 0)))
+     (list->vector (reverse rev-lits))
+     (set! rev-lits null)
+     (set! lit-count 0)
+     (set! lit-table (make-hash))))
+
+  ;; Encode the accumulated elements into a bytevector
+  (define (reap-stream!)
+    (define out (open-output-bytes))
+    (for ([e (in-list (reverse stream))])
+      (cond
+        [(tag-elem? e)
+         (define kw (tag-elem-kw e))
+         (cond
+           [(not kw)
+            ;; a `#f` tag is the "nothing to fill" marker
+            (write-byte FALSE-BYTE out)]
+           [else
+            (write-byte (hash-ref opcode-table kw
+                                  (lambda () (error 'serialize "unknown tag: ~s" kw)))
+                        out)])]
+        [(eq? e #f) (write-byte FALSE-BYTE out)]
+        [(eq? e #t) (write-byte TRUE-BYTE out)]
+        [(null? e) (write-byte NULL-BYTE out)]
+        [(fixnum? e)
+         (cond
+           [(and (e . >= . 0) (e . < . SMALL-LIMIT))
+            (write-byte (+ SMALL-BASE e) out)]
+           [else
+            (write-byte INT-BYTE out)
+            (write-uint (zigzag e) out)])]
+        [else
+         (define i (lit-index! e))
+         (cond
+           [(i . < . LIT-LIMIT) (write-byte (+ LIT-BASE i) out)]
+           [else
+            (write-byte LIT-BYTE out)
+            (write-uint i out)])]))
+    (set! stream null)
+    (set! stream-size 0)
+    (get-output-bytes out #t))
 
   ;; Handle a reference to an object that may be shared
   ;; or mutable
@@ -472,7 +633,7 @@
           (set! stream (cons v stream))
           (set! stream-size (add1 stream-size))]
          [(tag)
-          (ser-push! 'exact v)]
+          (ser-push! 'exact (tag-elem v))]
          [(reference)
           (cond
            [(hash-ref shares v #f)
@@ -703,6 +864,9 @@
     (begin
       (ser-push! v)
       (reap-stream!)))
+
+  ;; The literals that the four streams refer to:
+  (define lits (reap-lits!))
   
   ;; Put it all together:
   (cond
@@ -712,9 +876,10 @@
              (hash-count shares)
              shared-bindings
              mutable-fills
-             result)]
+             result
+             lits)]
     [else
-     (define (finish mutable-shell-bindings-expr shared-bindings-expr  mutable-fills-expr result-expr)
+     (define (finish mutable-shell-bindings-expr shared-bindings-expr  mutable-fills-expr result-expr lits-expr)
        `(deserialize
          ,mpi-vector-id
          ,(if syntax-support? inspector-id #f)
@@ -724,7 +889,8 @@
          ',(hash-count shares)
          ,shared-bindings-expr
          ,mutable-fills-expr
-         ,result-expr))
+         ,result-expr
+         ,lits-expr))
 
      ;; Putting the quoted-data construction into one vector makes
      ;; it easy to specialize in some back ends to a more compact
@@ -732,11 +898,13 @@
      `(let-values ([(data) ',(vector mutable-shell-bindings
                                      shared-bindings
                                      mutable-fills
-                                     result)])
+                                     result
+                                     lits)])
         ,(finish '(unsafe-vector*-ref data 0)
                  '(unsafe-vector*-ref data 1)
                  '(unsafe-vector*-ref data 2)
-                 '(unsafe-vector*-ref data 3)))]))
+                 '(unsafe-vector*-ref data 3)
+                 '(unsafe-vector*-ref data 4)))]))
 
 (define (sorted-hash-keys ht)
   (define ks (hash-keys ht))
@@ -766,32 +934,18 @@
                      num-mutables mutable-vec 
                      num-shared shared-vec
                      mutable-fill-vec
-                     result-vec)
-  (define shared (make-vector (+ num-mutables num-shared) 'uninit))
-  ;; Make mutable shells
-  (for/fold ([pos 0]) ([i (in-range num-mutables)])
-    (define-values (d next-pos)
-      (decode-shell mutable-vec pos mpis inspector bulk-binding-registry shared))
-    (vector-set! shared i d)
-    next-pos)
-  ;; Construct shared values; note that later constructions can refer
-  ;; to earlier ones
-  (for/fold ([pos 0]) ([i (in-range num-mutables (+ num-mutables num-shared))])
-    (define-values (d next-pos)
-      (decode shared-vec pos mpis inspector bulk-binding-registry shared))
-    (vector-set! shared i d)
-    next-pos)
-  ;; Fill in mutable shells
-  (for/fold ([pos 0]) ([i (in-range num-mutables)]
-                       [v (in-vector shared)])
-    (decode-fill! v mutable-fill-vec pos mpis inspector bulk-binding-registry shared))
-  ;; Construct the final result
-  (define-values (result done-pos)
-    (decode result-vec 0 mpis inspector bulk-binding-registry shared))
-  result)
+                     result-vec
+                     [lits #f])
+  (cond
+    [(bytes? mutable-vec)
+     (deserialize/b mpis inspector bulk-binding-registry
+                    num-mutables mutable-vec num-shared shared-vec mutable-fill-vec result-vec lits)]
+    [else
+     (deserialize/v mpis inspector bulk-binding-registry
+                    num-mutables mutable-vec num-shared shared-vec mutable-fill-vec result-vec)]))
 
 (define (deserialize-data mpis inspector bulk-binding-registry data)
-  (unless (and (vector? data) (= 6 (vector-length data)))
+  (unless (and (vector? data) (or (= 7 (vector-length data)) (= 6 (vector-length data))))
     (error 'syntax-deserialize "ill-formed serialization"))
   (deserialize mpis inspector bulk-binding-registry
                (vector-ref data 0)
@@ -799,20 +953,337 @@
                (vector-ref data 2)
                (vector-ref data 3)
                (vector-ref data 4)
-               (vector-ref data 5)))
+               (vector-ref data 5)
+               (and (= 7 (vector-length data)) (vector-ref data 6))))
+
+(define (deserialize/b mpis inspector bulk-binding-registry
+                       num-mutables mutable-bv
+                       num-shared shared-bv
+                       mutable-fill-bv
+                       result-bv
+                       lits)
+  (define shared (make-vector (+ num-mutables num-shared) 'uninit))
+  ;; Make mutable shells
+  (for/fold ([pos 0]) ([i (in-range num-mutables)])
+    (define-values (d next-pos)
+      (decode-shell mutable-bv pos mpis inspector bulk-binding-registry shared lits))
+    (vector-set! shared i d)
+    next-pos)
+  ;; Construct shared values; note that later constructions can refer
+  ;; to earlier ones
+  (for/fold ([pos 0]) ([i (in-range num-mutables (+ num-mutables num-shared))])
+    (define-values (d next-pos)
+      (decode shared-bv pos mpis inspector bulk-binding-registry shared lits))
+    (vector-set! shared i d)
+    next-pos)
+  ;; Fill in mutable shells
+  (for/fold ([pos 0]) ([i (in-range num-mutables)]
+                       [v (in-vector shared)])
+    (decode-fill! v mutable-fill-bv pos mpis inspector bulk-binding-registry shared lits))
+  ;; Construct the final result
+  (define-values (result done-pos)
+    (decode result-bv 0 mpis inspector bulk-binding-registry shared lits))
+  result)
+
+;; Read a LEB128 unsigned integer at `pos`
+(define (read-uint bv pos)
+  (let loop ([pos pos] [shift 0] [n 0])
+    (define b (bytes-ref bv pos))
+    (define n2 (bitwise-ior n (arithmetic-shift (bitwise-and b #x7F) shift)))
+    (if (< b #x80)
+        (values n2 (+ pos 1))
+        (loop (+ pos 1) (+ shift 7) n2))))
+
+;; An element at `pos` whose class byte is `b` and that is known not
+;; to be an opcode: returns the value
+(define (decode-value b bv pos lits)
+  (cond
+    [(< b FALSE-BYTE) (values (- b SMALL-BASE) (+ pos 1))]
+    [(= b FALSE-BYTE) (values #f (+ pos 1))]
+    [(= b TRUE-BYTE) (values #t (+ pos 1))]
+    [(= b NULL-BYTE) (values null (+ pos 1))]
+    [(= b INT-BYTE)
+     (define-values (n next-pos) (read-uint bv (+ pos 1)))
+     (values (unzigzag n) next-pos)]
+    [(= b LIT-BYTE)
+     (define-values (i next-pos) (read-uint bv (+ pos 1)))
+     (values (vector*-ref lits i) next-pos)]
+    [else (values (vector*-ref lits (- b LIT-BASE)) (+ pos 1))]))
+
+;; An integer element (small or zigzag) at `pos`
+(define (decode-int bv pos)
+  (define b (bytes-ref bv pos))
+  (cond
+    [(< b FALSE-BYTE) (values (- b SMALL-BASE) (+ pos 1))]
+    [else
+     (define-values (n next-pos) (read-uint bv (+ pos 1)))
+     (values (unzigzag n) next-pos)]))
+
+(define (int-class? b)
+  (or (and (>= b SMALL-BASE) (< b FALSE-BYTE))
+      (= b INT-BYTE)))
 
 ;; Decode the construction of a mutable variable
-(define (decode-shell vec pos mpis inspector bulk-binding-registry shared)
+(define (decode-shell bv pos mpis inspector bulk-binding-registry shared lits)
+  (define b (bytes-ref bv pos))
+  (case-op b
+    [(#:box) (values (box #f) (+ pos 1))]
+    [(#:vector)
+     (define-values (len next-pos) (decode-int bv (+ pos 1)))
+     (values (make-vector len) next-pos)]
+    [(#:hash) (values (make-hasheq) (+ pos 1))]
+    [(#:hasheq) (values (make-hasheq) (+ pos 1))]
+    [(#:hasheqv) (values (make-hasheqv) (+ pos 1))]
+    [else (decode bv pos mpis inspector bulk-binding-registry shared lits)]))
+
+;; The decoder that is used for most purposes
+(define (decode bv pos mpis inspector bulk-binding-registry shared lits)
+  (define-syntax decodes
+    (syntax-rules ()
+      [(_ (id ...) rhs) (decodes #:pos (+ pos 1) (id ...) rhs)]
+      [(_ #:pos pos () rhs) (values rhs pos)]
+      [(_ #:pos pos ([#:ref id0] id ...) rhs)
+       (let-values ([(id0 next-pos) (let ([b (bytes-ref bv pos)])
+                                      (if (int-class? b)
+                                          (let-values ([(i next-pos) (decode-int bv pos)])
+                                            (values (vector*-ref shared i) next-pos))
+                                          (decode bv pos mpis inspector bulk-binding-registry shared lits)))])
+         (decodes #:pos next-pos (id ...) rhs))]
+      [(_ #:pos pos (id0 id ...) rhs)
+       (let-values ([(id0 next-pos) (decode bv pos mpis inspector bulk-binding-registry shared lits)])
+         (decodes #:pos next-pos (id ...) rhs))]))
+  (define-syntax-rule (decode* (deser id ...))
+    (decodes (id ...) (deser id ...)))
+  (define b (bytes-ref bv pos))
+  (cond
+    [(>= b SMALL-BASE)
+     (decode-value b bv pos lits)]
+    [else
+     (case-op b
+       [(#:ref)
+        (define-values (i next-pos) (decode-int bv (+ pos 1)))
+        (values (vector*-ref shared i) next-pos)]
+       [(#:inspector) (values inspector (+ pos 1))]
+       [(#:bulk-binding-registry) (values bulk-binding-registry (+ pos 1))]
+       [(#:syntax)
+        (decodes
+         (content [#:ref context] [#:ref srcloc])
+         (deserialize-syntax content
+                             context
+                             srcloc
+                             #f
+                             #f
+                             inspector))]
+       [(#:datum->syntax)
+        (decodes
+         (content [#:ref context] [#:ref srcloc])
+         (deserialize-datum->syntax content
+                                    context
+                                    srcloc
+                                    inspector))]
+       [(#:syntax+props)
+        (decodes
+         (content [#:ref context] [#:ref srcloc] props tamper)
+         (deserialize-syntax content
+                             context
+                             srcloc
+                             props
+                             tamper
+                             inspector))]
+       [(#:srcloc)
+        (decode* (srcloc source line column position span))]
+       [(#:quote)
+        (define q-pos (+ pos 1))
+        (decode-value (bytes-ref bv q-pos) bv q-pos lits)]
+       [(#:mpi)
+        (define-values (i next-pos) (decode-int bv (+ pos 1)))
+        (values (vector*-ref mpis i) next-pos)]
+       [(#:box)
+        (decode* (box-immutable v))]
+       [(#:cons)
+        (decode* (cons a d))]
+       [(#:list #:vector #:pvector)
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (define r (make-vector len))
+        (define next-pos
+          (for/fold ([pos start-pos]) ([i (in-range len)])
+            (define-values (v next-pos) (decodes #:pos pos (v) v))
+            (vector-set! r i v)
+            next-pos))
+        (values (cond
+                  [(= b (op-code #:list)) (vector->list r)]
+                  [(= b (op-code #:pvector)) (core-fresh-vector->pvector r)]
+                  [else (vector->immutable-vector r)])
+                next-pos)]
+       [(#:hash)
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (for/fold ([ht (hash)] [pos start-pos]) ([i (in-range len)])
+          (decodes #:pos pos (k v) (hash-set ht k v)))]
+       [(#:hasheq #:hasheqv #:hasheqv/phase+space)
+        ;; Decode the entries into vectors and build the table from them in
+        ;; one pass: adding entries one at a time path-copies the trie, which
+        ;; allocates several times the table's size, and a module's provides
+        ;; tables run to thousands of entries
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (define phase+space? (= b (op-code #:hasheqv/phase+space)))
+        (define keys (make-vector len #f))
+        (define vals (make-vector len #f))
+        (define next-pos
+          (for/fold ([pos start-pos]) ([i (in-range len)])
+            (define-values (k k-pos) (decodes #:pos pos (k) k))
+            (define-values (v v-pos) (decodes #:pos k-pos (v) v))
+            (vector-set! keys i (if phase+space? (intern-phase+space k) k))
+            (vector-set! vals i v)
+            v-pos))
+        (values (if (= b (op-code #:hasheq))
+                    (unsafe-hasheq-from-vectors keys vals)
+                    (unsafe-hasheqv-from-vectors keys vals))
+                next-pos)]
+       [(#:set #:seteq #:seteqv)
+        (define s (cond
+                    [(= b (op-code #:set)) (set)]
+                    [(= b (op-code #:seteq)) (seteq)]
+                    [else (seteqv)]))
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (for/fold ([s s] [pos start-pos]) ([i (in-range len)])
+          (decodes #:pos pos (k) (set-add s k)))]
+       [(#:prefab)
+        (define-values (key next-pos) (decodes #:pos (+ pos 1) (k) k))
+        (define-values (len start-pos) (decode-int bv next-pos))
+        (define-values (r done-pos)
+          (for/fold ([r null] [pos start-pos]) ([i (in-range len)])
+            (decodes #:pos pos (v) (cons v r))))
+        (values (apply make-prefab-struct key (reverse r))
+                done-pos)]
+       [(#:scope)
+        (decode* (deserialize-scope))]
+       [(#:scope+kind)
+        (decode* (deserialize-scope kind))]
+       [(#:interned-scope)
+        (decode* (make-interned-scope id))]
+       [(#:multi-scope)
+        (decode* (deserialize-multi-scope name scopes))]
+       [(#:shifted-multi-scope)
+        (decode* (deserialize-shifted-multi-scope phase multi-scope))]
+       [(#:table-with-bulk-bindings)
+        (decode* (deserialize-table-with-bulk-bindings syms bulk-bindings))]
+       [(#:bulk-binding-at)
+        (decode* (deserialize-bulk-binding-at scopes bulk))]
+       [(#:representative-scope)
+        (decode* (deserialize-representative-scope kind phase))]
+       [(#:module-binding)
+        (decode* (deserialize-full-module-binding
+                  module sym phase
+                  nominal-module
+                  nominal-phase
+                  nominal-sym
+                  nominal-require-phase
+                  free=id
+                  extra-inspector
+                  extra-nominal-bindings))]
+       [(#:simple-module-binding)
+        (decode* (deserialize-simple-module-binding module sym phase nominal-module))]
+       [(#:local-binding)
+        (decode* (deserialize-full-local-binding key free=id))]
+       [(#:bulk-binding)
+        (decode* (deserialize-bulk-binding prefix excepts mpi provide-phase-level phase-shift bulk-binding-registry))]
+       [(#:like-ambiguous-binding)
+        (decode* (like-ambiguous-binding))]
+       [(#:bulk-binding+provides)
+        (decode* (deserialize-bulk-binding+provides provides self prefix excepts mpi provide-phase-level phase-shift bulk-binding-registry))]
+       [(#:provided)
+        (decode* (deserialize-provided binding protected? syntax?))]
+       [else
+        (error 'deserialize "bad encoding: ~v" b)])]))
+
+;; Decode the filling of mutable values, which has its own encoding
+;; variant
+(define (decode-fill! v bv pos mpis inspector bulk-binding-registry shared lits)
+  (define b (bytes-ref bv pos))
+  (cond
+    [(= b FALSE-BYTE) (+ pos 1)]
+    [else
+     (case-op b
+       [(#:set-box!)
+        (define-values (c next-pos)
+          (decode bv (+ pos 1) mpis inspector bulk-binding-registry shared lits))
+        (set-box! v c)
+        next-pos]
+       [(#:set-vector!)
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (for/fold ([pos start-pos]) ([i (in-range len)])
+          (define-values (c next-pos)
+            (decode bv pos mpis inspector bulk-binding-registry shared lits))
+          (vector-set! v i c)
+          next-pos)]
+       [(#:set-hash!)
+        (define-values (len start-pos) (decode-int bv (+ pos 1)))
+        (for/fold ([pos start-pos]) ([i (in-range len)])
+          (define-values (key next-pos)
+            (decode bv pos mpis inspector bulk-binding-registry shared lits))
+          (define-values (val done-pos)
+            (decode bv next-pos mpis inspector bulk-binding-registry shared lits))
+          (hash-set! v key val)
+          done-pos)]
+       [(#:scope-fill!)
+        (define-values (c next-pos)
+          (decode bv (+ pos 1) mpis inspector bulk-binding-registry shared lits))
+        (deserialize-scope-fill! v c)
+        next-pos]
+       [(#:representative-scope-fill!)
+        (define-values (a next-pos)
+          (decode bv (+ pos 1) mpis inspector bulk-binding-registry shared lits))
+        (define-values (d done-pos)
+          (decode bv next-pos mpis inspector bulk-binding-registry shared lits))
+        (deserialize-representative-scope-fill! v a d)
+        done-pos]
+       [else
+        (error 'deserialize "bad fill encoding: ~v" b)])]))
+
+;; ----------------------------------------
+;; Deserialization of the previous vector-stream encoding, kept so
+;; that already-compiled modules load until they are recompiled
+
+(define (deserialize/v mpis inspector bulk-binding-registry
+                     num-mutables mutable-vec 
+                     num-shared shared-vec
+                     mutable-fill-vec
+                     result-vec)
+  (define shared (make-vector (+ num-mutables num-shared) 'uninit))
+  ;; Make mutable shells
+  (for/fold ([pos 0]) ([i (in-range num-mutables)])
+    (define-values (d next-pos)
+      (decode-shell/v mutable-vec pos mpis inspector bulk-binding-registry shared))
+    (vector-set! shared i d)
+    next-pos)
+  ;; Construct shared values; note that later constructions can refer
+  ;; to earlier ones
+  (for/fold ([pos 0]) ([i (in-range num-mutables (+ num-mutables num-shared))])
+    (define-values (d next-pos)
+      (decode/v shared-vec pos mpis inspector bulk-binding-registry shared))
+    (vector-set! shared i d)
+    next-pos)
+  ;; Fill in mutable shells
+  (for/fold ([pos 0]) ([i (in-range num-mutables)]
+                       [v (in-vector shared)])
+    (decode-fill!/v v mutable-fill-vec pos mpis inspector bulk-binding-registry shared))
+  ;; Construct the final result
+  (define-values (result done-pos)
+    (decode/v result-vec 0 mpis inspector bulk-binding-registry shared))
+  result)
+
+;; Decode the construction of a mutable variable
+(define (decode-shell/v vec pos mpis inspector bulk-binding-registry shared)
   (case (vector*-ref vec pos)
     [(#:box) (values (box #f) (add1 pos))]
     [(#:vector) (values (make-vector (vector*-ref vec (add1 pos))) (+ pos 2))]
     [(#:hash) (values (make-hasheq) (add1 pos))]
     [(#:hasheq) (values (make-hasheq) (add1 pos))]
     [(#:hasheqv) (values (make-hasheqv) (add1 pos))]
-    [else (decode vec pos mpis inspector bulk-binding-registry shared)]))
+    [else (decode/v vec pos mpis inspector bulk-binding-registry shared)]))
 
 ;; The decoder that is used for most purposes
-(define (decode vec pos mpis inspector bulk-binding-registry shared)
+(define (decode/v vec pos mpis inspector bulk-binding-registry shared)
   (define-syntax decodes
     (syntax-rules ()
       [(_ (id ...) rhs) (decodes #:pos (add1 pos) (id ...) rhs)]
@@ -821,10 +1292,10 @@
        (let-values ([(id0 next-pos) (let ([i (vector*-ref vec pos)])
                                       (if (exact-integer? i)
                                           (values (vector*-ref shared i) (add1 pos))
-                                          (decode vec pos mpis inspector bulk-binding-registry shared)))])
+                                          (decode/v vec pos mpis inspector bulk-binding-registry shared)))])
          (decodes #:pos next-pos (id ...) rhs))]
       [(_ #:pos pos (id0 id ...) rhs)
-       (let-values ([(id0 next-pos) (decode vec pos mpis inspector bulk-binding-registry shared)])
+       (let-values ([(id0 next-pos) (decode/v vec pos mpis inspector bulk-binding-registry shared)])
          (decodes #:pos next-pos (id ...) rhs))]))
   (define-syntax-rule (decode* (deser id ...))
     (decodes (id ...) (deser id ...)))
@@ -966,40 +1437,40 @@
 
 ;; Decode the filling of mutable values, which has its own encoding
 ;; variant
-(define (decode-fill! v vec pos mpis inspector bulk-binding-registry shared)
+(define (decode-fill!/v v vec pos mpis inspector bulk-binding-registry shared)
   (case (vector*-ref vec pos)
     [(#f) (add1 pos)]
     [(#:set-box!)
      (define-values (c next-pos)
-       (decode vec (add1 pos) mpis inspector bulk-binding-registry shared))
+       (decode/v vec (add1 pos) mpis inspector bulk-binding-registry shared))
      (set-box! v c)
      next-pos]
     [(#:set-vector!)
      (define len (vector*-ref vec (add1 pos)))
      (for/fold ([pos (+ pos 2)]) ([i (in-range len)])
        (define-values (c next-pos)
-         (decode vec pos mpis inspector bulk-binding-registry shared))
+         (decode/v vec pos mpis inspector bulk-binding-registry shared))
        (vector-set! v i c)
        next-pos)]
     [(#:set-hash!)
      (define len (vector*-ref vec (add1 pos)))
      (for/fold ([pos (+ pos 2)]) ([i (in-range len)])
        (define-values (key next-pos)
-         (decode vec pos mpis inspector bulk-binding-registry shared))
+         (decode/v vec pos mpis inspector bulk-binding-registry shared))
        (define-values (val done-pos)
-         (decode vec next-pos mpis inspector bulk-binding-registry shared))
+         (decode/v vec next-pos mpis inspector bulk-binding-registry shared))
        (hash-set! v key val)
        done-pos)]
     [(#:scope-fill!)
      (define-values (c next-pos)
-       (decode vec (add1 pos) mpis inspector bulk-binding-registry shared))
+       (decode/v vec (add1 pos) mpis inspector bulk-binding-registry shared))
      (deserialize-scope-fill! v c)
      next-pos]
     [(#:representative-scope-fill!)
      (define-values (a next-pos)
-       (decode vec (add1 pos) mpis inspector bulk-binding-registry shared))
+       (decode/v vec (add1 pos) mpis inspector bulk-binding-registry shared))
      (define-values (d done-pos)
-       (decode vec next-pos mpis inspector bulk-binding-registry shared))
+       (decode/v vec next-pos mpis inspector bulk-binding-registry shared))
      (deserialize-representative-scope-fill! v a d)
      done-pos]
     [else

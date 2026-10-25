@@ -85,9 +85,16 @@
            (void? q)
            (eq? q unsafe-undefined))
        (void)]
-      [(or (string? q)
-           (bytes? q))
+      [(string? q)
        (when datum-intern?
+         (register! q))]
+      [(bytes? q)
+       ;; Interning is for reader literals, which are immutable. A
+       ;; mutable byte string in a `quote` is program-constructed data
+       ;; -- the expander's serialized module data is the main case --
+       ;; and stays with the code's own fasl stream instead of being
+       ;; lifted into the `racket/fasl` literals and re-interned on load
+       (when (and datum-intern? (immutable? q))
          (register! q))]
       [(pair? q)
        (check-cycle
