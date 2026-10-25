@@ -18448,14 +18448,24 @@
                                                                               (module-instantiate-phase
                                                                                m_1)))
                                                                          (begin
-                                                                           (|#%app|
-                                                                            prep_0
-                                                                            data-box_0
-                                                                            p-ns_0
-                                                                            instance-phase_0
-                                                                            mpi_0
-                                                                            bulk-binding-registry_0
-                                                                            insp_0)
+                                                                           (if log-performance?
+                                                                             (start-performance-region
+                                                                              'eval
+                                                                              'instantiate
+                                                                              'prep)
+                                                                             (void))
+                                                                           (begin0
+                                                                             (|#%app|
+                                                                              prep_0
+                                                                              data-box_0
+                                                                              p-ns_0
+                                                                              instance-phase_0
+                                                                              mpi_0
+                                                                              bulk-binding-registry_0
+                                                                              insp_0)
+                                                                             (if log-performance?
+                                                                               (end-performance-region)
+                                                                               (void)))
                                                                            (|#%app|
                                                                             go_0
                                                                             data-box_0
@@ -48100,186 +48110,219 @@
                                                                                                                                   phase-level_0)))
                                                                                                                             (call-with-values
                                                                                                                              (lambda ()
-                                                                                                                               (call-with-values
-                                                                                                                                (lambda ()
-                                                                                                                                  (letrec*
-                                                                                                                                   ((for-loop_0
-                                                                                                                                     (|#%name|
-                                                                                                                                      for-loop
-                                                                                                                                      (lambda (mis_0
-                                                                                                                                               is_0
-                                                                                                                                               lst_0)
-                                                                                                                                        (if (pair?
-                                                                                                                                             lst_0)
-                                                                                                                                          (let ((mu_0
-                                                                                                                                                 (unsafe-car
-                                                                                                                                                  lst_0)))
-                                                                                                                                            (let ((rest_0
-                                                                                                                                                   (unsafe-cdr
-                                                                                                                                                    lst_0)))
-                                                                                                                                              (call-with-values
-                                                                                                                                               (lambda ()
-                                                                                                                                                 (call-with-values
-                                                                                                                                                  (lambda ()
-                                                                                                                                                    (call-with-values
-                                                                                                                                                     (lambda ()
-                                                                                                                                                       (let ((temp53_0
-                                                                                                                                                              (phase+
-                                                                                                                                                               (phase-
-                                                                                                                                                                phase-level_0
-                                                                                                                                                                (module-use-phase
-                                                                                                                                                                 mu_0))
-                                                                                                                                                               phase-shift_0)))
-                                                                                                                                                         (namespace-module-use->module+linklet-instances.1
-                                                                                                                                                          temp53_0
-                                                                                                                                                          module-use-resolution-cache_0
-                                                                                                                                                          original-self_0
-                                                                                                                                                          self_0
-                                                                                                                                                          ns_2
-                                                                                                                                                          mu_0)))
-                                                                                                                                                     (lambda (mis47_0
-                                                                                                                                                              is48_0)
-                                                                                                                                                       (values
-                                                                                                                                                        (cons
-                                                                                                                                                         mis47_0
-                                                                                                                                                         mis_0)
-                                                                                                                                                        (cons
-                                                                                                                                                         is48_0
-                                                                                                                                                         is_0)))))
-                                                                                                                                                  (lambda (mis_1
-                                                                                                                                                           is_1)
-                                                                                                                                                    (values
-                                                                                                                                                     mis_1
-                                                                                                                                                     is_1))))
-                                                                                                                                               (lambda (mis_1
-                                                                                                                                                        is_1)
-                                                                                                                                                 (for-loop_0
-                                                                                                                                                  mis_1
-                                                                                                                                                  is_1
-                                                                                                                                                  rest_0)))))
-                                                                                                                                          (values
-                                                                                                                                           mis_0
-                                                                                                                                           is_0))))))
-                                                                                                                                   (for-loop_0
-                                                                                                                                    null
-                                                                                                                                    null
-                                                                                                                                    module-uses_0)))
-                                                                                                                                (lambda (mis_0
-                                                                                                                                         is_0)
-                                                                                                                                  (let ((app_0
+                                                                                                                               (begin
+                                                                                                                                 (if log-performance?
+                                                                                                                                   (start-performance-region
+                                                                                                                                    'eval
+                                                                                                                                    'instantiate
+                                                                                                                                    'link)
+                                                                                                                                   (void))
+                                                                                                                                 (begin0
+                                                                                                                                   (call-with-values
+                                                                                                                                    (lambda ()
+                                                                                                                                      (letrec*
+                                                                                                                                       ((for-loop_0
+                                                                                                                                         (|#%name|
+                                                                                                                                          for-loop
+                                                                                                                                          (lambda (mis_0
+                                                                                                                                                   is_0
+                                                                                                                                                   lst_0)
+                                                                                                                                            (if (pair?
+                                                                                                                                                 lst_0)
+                                                                                                                                              (let ((mu_0
+                                                                                                                                                     (unsafe-car
+                                                                                                                                                      lst_0)))
+                                                                                                                                                (let ((rest_0
+                                                                                                                                                       (unsafe-cdr
+                                                                                                                                                        lst_0)))
+                                                                                                                                                  (call-with-values
+                                                                                                                                                   (lambda ()
+                                                                                                                                                     (call-with-values
+                                                                                                                                                      (lambda ()
+                                                                                                                                                        (call-with-values
+                                                                                                                                                         (lambda ()
+                                                                                                                                                           (let ((temp46_0
+                                                                                                                                                                  (phase+
+                                                                                                                                                                   (phase-
+                                                                                                                                                                    phase-level_0
+                                                                                                                                                                    (module-use-phase
+                                                                                                                                                                     mu_0))
+                                                                                                                                                                   phase-shift_0)))
+                                                                                                                                                             (namespace-module-use->module+linklet-instances.1
+                                                                                                                                                              temp46_0
+                                                                                                                                                              module-use-resolution-cache_0
+                                                                                                                                                              original-self_0
+                                                                                                                                                              self_0
+                                                                                                                                                              ns_2
+                                                                                                                                                              mu_0)))
+                                                                                                                                                         (lambda (mis40_0
+                                                                                                                                                                  is41_0)
+                                                                                                                                                           (values
+                                                                                                                                                            (cons
+                                                                                                                                                             mis40_0
+                                                                                                                                                             mis_0)
+                                                                                                                                                            (cons
+                                                                                                                                                             is41_0
+                                                                                                                                                             is_0)))))
+                                                                                                                                                      (lambda (mis_1
+                                                                                                                                                               is_1)
+                                                                                                                                                        (values
+                                                                                                                                                         mis_1
+                                                                                                                                                         is_1))))
+                                                                                                                                                   (lambda (mis_1
+                                                                                                                                                            is_1)
+                                                                                                                                                     (for-loop_0
+                                                                                                                                                      mis_1
+                                                                                                                                                      is_1
+                                                                                                                                                      rest_0)))))
+                                                                                                                                              (values
+                                                                                                                                               mis_0
+                                                                                                                                               is_0))))))
+                                                                                                                                       (for-loop_0
+                                                                                                                                        null
+                                                                                                                                        null
+                                                                                                                                        module-uses_0)))
+                                                                                                                                    (lambda (mis_0
+                                                                                                                                             is_0)
+                                                                                                                                      (let ((app_0
+                                                                                                                                             (reverse$1
+                                                                                                                                              mis_0)))
+                                                                                                                                        (values
+                                                                                                                                         app_0
                                                                                                                                          (reverse$1
-                                                                                                                                          mis_0)))
-                                                                                                                                    (values
-                                                                                                                                     app_0
-                                                                                                                                     (reverse$1
-                                                                                                                                      is_0))))))
+                                                                                                                                          is_0)))))
+                                                                                                                                   (if log-performance?
+                                                                                                                                     (end-performance-region)
+                                                                                                                                     (void)))))
                                                                                                                              (lambda (import-module-instances_0
                                                                                                                                       import-instances_0)
                                                                                                                                (begin
-                                                                                                                                 (let ((temp46_0
-                                                                                                                                        (hash-ref
-                                                                                                                                         phase-to-link-extra-inspectorsss_0
-                                                                                                                                         phase-level_0
-                                                                                                                                         #f)))
-                                                                                                                                   (check-require-access.1
-                                                                                                                                    2
-                                                                                                                                    phase-linklet_0
-                                                                                                                                    module-uses_0
-                                                                                                                                    import-module-instances_0
-                                                                                                                                    insp_0
-                                                                                                                                    extra-inspector_0
-                                                                                                                                    temp46_0))
-                                                                                                                                 (let ((temp55_0
-                                                                                                                                        (if (eq?
+                                                                                                                                 (if log-performance?
+                                                                                                                                   (start-performance-region
+                                                                                                                                    'eval
+                                                                                                                                    'instantiate
+                                                                                                                                    'access)
+                                                                                                                                   (void))
+                                                                                                                                 (begin
+                                                                                                                                   (begin0
+                                                                                                                                     (let ((temp54_0
+                                                                                                                                            (hash-ref
+                                                                                                                                             phase-to-link-extra-inspectorsss_0
                                                                                                                                              phase-level_0
-                                                                                                                                             0)
-                                                                                                                                          (|#%name|
-                                                                                                                                           temp55
-                                                                                                                                           (lambda (name_0
-                                                                                                                                                    val_0)
-                                                                                                                                             (error
-                                                                                                                                              'define-syntax
-                                                                                                                                              "should not happen at phase level 0")))
-                                                                                                                                          (|#%name|
-                                                                                                                                           temp55
-                                                                                                                                           (lambda (name_0
-                                                                                                                                                    val_0)
-                                                                                                                                             (namespace-set-transformer!
-                                                                                                                                              ns_2
-                                                                                                                                              (sub1
-                                                                                                                                               phase-level_0)
-                                                                                                                                              name_0
-                                                                                                                                              val_0))))))
-                                                                                                                                   (let ((module-body-instance-instance_0
-                                                                                                                                          (make-module-body-instance-instance.1
-                                                                                                                                           temp55_0)))
-                                                                                                                                     (let ((instantiate-body_0
+                                                                                                                                             #f)))
+                                                                                                                                       (check-require-access.1
+                                                                                                                                        2
+                                                                                                                                        phase-linklet_0
+                                                                                                                                        module-uses_0
+                                                                                                                                        import-module-instances_0
+                                                                                                                                        insp_0
+                                                                                                                                        extra-inspector_0
+                                                                                                                                        temp54_0))
+                                                                                                                                     (if log-performance?
+                                                                                                                                       (end-performance-region)
+                                                                                                                                       (void)))
+                                                                                                                                   (let ((temp55_0
+                                                                                                                                          (if (eq?
+                                                                                                                                               phase-level_0
+                                                                                                                                               0)
                                                                                                                                             (|#%name|
-                                                                                                                                             instantiate-body
-                                                                                                                                             (lambda ()
-                                                                                                                                               (let ((app_0
-                                                                                                                                                      (list*
-                                                                                                                                                       syntax-literals-instance_0
-                                                                                                                                                       module-body-instance-instance_0
-                                                                                                                                                       import-instances_0)))
-                                                                                                                                                 (instantiate-linklet
-                                                                                                                                                  phase-linklet_0
-                                                                                                                                                  app_0
-                                                                                                                                                  (definitions-variables
-                                                                                                                                                   (namespace->definitions
-                                                                                                                                                    ns_2
-                                                                                                                                                    phase-level_0))))))))
-                                                                                                                                       (if (eq?
-                                                                                                                                            phase-level_0
-                                                                                                                                            0)
+                                                                                                                                             temp55
+                                                                                                                                             (lambda (name_0
+                                                                                                                                                      val_0)
+                                                                                                                                               (error
+                                                                                                                                                'define-syntax
+                                                                                                                                                "should not happen at phase level 0")))
+                                                                                                                                            (|#%name|
+                                                                                                                                             temp55
+                                                                                                                                             (lambda (name_0
+                                                                                                                                                      val_0)
+                                                                                                                                               (namespace-set-transformer!
+                                                                                                                                                ns_2
+                                                                                                                                                (sub1
+                                                                                                                                                 phase-level_0)
+                                                                                                                                                name_0
+                                                                                                                                                val_0))))))
+                                                                                                                                     (let ((module-body-instance-instance_0
+                                                                                                                                            (make-module-body-instance-instance.1
+                                                                                                                                             temp55_0)))
+                                                                                                                                       (let ((instantiate-body_0
+                                                                                                                                              (|#%name|
+                                                                                                                                               instantiate-body
+                                                                                                                                               (lambda ()
+                                                                                                                                                 (begin
+                                                                                                                                                   (if log-performance?
+                                                                                                                                                     (start-performance-region
+                                                                                                                                                      'eval
+                                                                                                                                                      'instantiate
+                                                                                                                                                      'body)
+                                                                                                                                                     (void))
+                                                                                                                                                   (begin0
+                                                                                                                                                     (let ((app_0
+                                                                                                                                                            (list*
+                                                                                                                                                             syntax-literals-instance_0
+                                                                                                                                                             module-body-instance-instance_0
+                                                                                                                                                             import-instances_0)))
+                                                                                                                                                       (instantiate-linklet
+                                                                                                                                                        phase-linklet_0
+                                                                                                                                                        app_0
+                                                                                                                                                        (definitions-variables
+                                                                                                                                                         (namespace->definitions
+                                                                                                                                                          ns_2
+                                                                                                                                                          phase-level_0))))
+                                                                                                                                                     (if log-performance?
+                                                                                                                                                       (end-performance-region)
+                                                                                                                                                       (void))))))))
                                                                                                                                          (if (eq?
-                                                                                                                                              phase-shift_0
+                                                                                                                                              phase-level_0
                                                                                                                                               0)
-                                                                                                                                           (instantiate-body_0)
-                                                                                                                                           (with-continuation-mark*
-                                                                                                                                            push-authentic
-                                                                                                                                            parameterization-key
-                                                                                                                                            (extend-parameterization
-                                                                                                                                             (continuation-mark-set-first
-                                                                                                                                              #f
-                                                                                                                                              parameterization-key)
-                                                                                                                                             1/current-namespace
-                                                                                                                                             ns_2)
-                                                                                                                                            (instantiate-body_0)))
-                                                                                                                                         (let ((ns-1_0
-                                                                                                                                                (namespace->namespace-at-phase
-                                                                                                                                                 ns_2
-                                                                                                                                                 (phase+
-                                                                                                                                                  phase-shift_0
-                                                                                                                                                  (sub1
-                                                                                                                                                   phase-level_0)))))
-                                                                                                                                           (with-continuation-mark*
-                                                                                                                                            push-authentic
-                                                                                                                                            parameterization-key
-                                                                                                                                            (extend-parameterization
-                                                                                                                                             (continuation-mark-set-first
-                                                                                                                                              #f
-                                                                                                                                              parameterization-key)
-                                                                                                                                             1/current-namespace
-                                                                                                                                             ns_2)
-                                                                                                                                            (with-continuation-mark*
-                                                                                                                                             authentic
-                                                                                                                                             current-expand-context
-                                                                                                                                             (promise1.1
-                                                                                                                                              (lambda ()
-                                                                                                                                                (make-expand-context.1
-                                                                                                                                                 #f
-                                                                                                                                                 #f
-                                                                                                                                                 #t
-                                                                                                                                                 #f
-                                                                                                                                                 #f
-                                                                                                                                                 ns-1_0))
-                                                                                                                                              #f)
+                                                                                                                                           (if (eq?
+                                                                                                                                                phase-shift_0
+                                                                                                                                                0)
+                                                                                                                                             (instantiate-body_0)
                                                                                                                                              (with-continuation-mark*
-                                                                                                                                              authentic
-                                                                                                                                              current-module-code-inspector
-                                                                                                                                              insp_0
-                                                                                                                                              (instantiate-body_0)))))))))))))
+                                                                                                                                              push-authentic
+                                                                                                                                              parameterization-key
+                                                                                                                                              (extend-parameterization
+                                                                                                                                               (continuation-mark-set-first
+                                                                                                                                                #f
+                                                                                                                                                parameterization-key)
+                                                                                                                                               1/current-namespace
+                                                                                                                                               ns_2)
+                                                                                                                                              (instantiate-body_0)))
+                                                                                                                                           (let ((ns-1_0
+                                                                                                                                                  (namespace->namespace-at-phase
+                                                                                                                                                   ns_2
+                                                                                                                                                   (phase+
+                                                                                                                                                    phase-shift_0
+                                                                                                                                                    (sub1
+                                                                                                                                                     phase-level_0)))))
+                                                                                                                                             (with-continuation-mark*
+                                                                                                                                              push-authentic
+                                                                                                                                              parameterization-key
+                                                                                                                                              (extend-parameterization
+                                                                                                                                               (continuation-mark-set-first
+                                                                                                                                                #f
+                                                                                                                                                parameterization-key)
+                                                                                                                                               1/current-namespace
+                                                                                                                                               ns_2)
+                                                                                                                                              (with-continuation-mark*
+                                                                                                                                               authentic
+                                                                                                                                               current-expand-context
+                                                                                                                                               (promise1.1
+                                                                                                                                                (lambda ()
+                                                                                                                                                  (make-expand-context.1
+                                                                                                                                                   #f
+                                                                                                                                                   #f
+                                                                                                                                                   #t
+                                                                                                                                                   #f
+                                                                                                                                                   #f
+                                                                                                                                                   ns-1_0))
+                                                                                                                                                #f)
+                                                                                                                                               (with-continuation-mark*
+                                                                                                                                                authentic
+                                                                                                                                                current-module-code-inspector
+                                                                                                                                                insp_0
+                                                                                                                                                (instantiate-body_0))))))))))))))
                                                                                                                           (void))))))
                                                                                                                 (if log-performance?
                                                                                                                   (end-performance-region)
