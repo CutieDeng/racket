@@ -137,7 +137,7 @@
       #:simple-module-binding #:local-binding #:bulk-binding
       #:like-ambiguous-binding #:bulk-binding+provides #:provided
       #:set-box! #:set-vector! #:set-hash! #:scope-fill!
-      #:representative-scope-fill!))
+      #:representative-scope-fill! #:srcloc/source))
   (define (opcode-of kw)
     (let loop ([l opcode-list] [i 0])
       (cond
@@ -551,6 +551,14 @@
     (set! stream (list-tail stream (- stream-size pos)))
     (set! stream-size pos))
 
+  ;; One source-holder srcloc per distinct source path
+  (define source-holders (make-hash))
+  (define (source-holder path)
+    (or (hash-ref source-holders path #f)
+        (let ([h (srcloc path #f #f #f #f)])
+          (hash-set! source-holders path h)
+          h)))
+
   ;; Literals shared by all streams of this serialization
   (define lit-table (make-hash))
   (define rev-lits null)
@@ -558,7 +566,8 @@
   (define (lit-index! v)
     (define key (and (or (symbol? v) (keyword? v) (char? v) (number? v)
                          (and (string? v) (immutable? v))
-                         (and (bytes? v) (immutable? v)))
+                         (and (bytes? v) (immutable? v))
+                         (srcloc? v))
                      v))
     (cond
       [(and key (hash-ref lit-table key #f))
@@ -774,10 +783,18 @@
      [(srcloc? v)
       (cond
         [(path? (srcloc-source v))
-         ;; Let core printer handle it --- and truncate the path if it
-         ;; can't be made relative on serialize
-         (ser-push-optional-quote!)
-         (ser-push! 'exact v)]
+         ;; A module's syntax literals carry thousands of srclocs that
+         ;; share one source path. Serialize them as the four location
+         ;; integers in the stream plus one shared "source holder"
+         ;; literal per source: a srcloc with only the source, so that
+         ;; `racket/fasl` still makes the path relative or truncates it
+         ;; exactly as it did when every srcloc was a literal
+         (ser-push! 'tag '#:srcloc/source)
+         (ser-push! 'exact (source-holder (srcloc-source v)))
+         (ser-push! (srcloc-line v))
+         (ser-push! (srcloc-column v))
+         (ser-push! (srcloc-position v))
+         (ser-push! (srcloc-span v))]
         [else
          (ser-push! 'tag '#:srcloc)
          (ser-push! (srcloc-source v))
@@ -1092,6 +1109,10 @@
                              inspector))]
        [(#:srcloc)
         (decode* (srcloc source line column position span))]
+       [(#:srcloc/source)
+        (decodes
+         (holder line column position span)
+         (srcloc (srcloc-source holder) line column position span))]
        [(#:quote)
         (define q-pos (+ pos 1))
         (decode-value (bytes-ref bv q-pos) bv q-pos lits)]

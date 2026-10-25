@@ -61,7 +61,7 @@
      #:simple-module-binding #:local-binding #:bulk-binding
      #:like-ambiguous-binding #:bulk-binding+provides #:provided
      #:set-box! #:set-vector! #:set-hash! #:scope-fill!
-     #:representative-scope-fill!))
+     #:representative-scope-fill! #:srcloc/source))
 
 (define (stream->elements v lits)
   (cond

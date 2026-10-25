@@ -136,6 +136,7 @@
 (define kw2531 (string->keyword "set-box!"))
 (define kw3046 (string->keyword "set-vector!"))
 (define kw2194 (string->keyword "set-hash!"))
+(define kw2578 (string->keyword "srcloc/source"))
 (define hash1768
   (hasheq
    kw2525
@@ -24996,7 +24997,8 @@
     (cons kw3046 38)
     (cons kw2194 39)
     (cons kw2576 40)
-    (cons kw2073 41))))
+    (cons kw2073 41)
+    (cons kw2578 42))))
 (define finish_2267
   (make-struct-type-install-properties
    '(tag-elem)
@@ -26341,442 +26343,418 @@
                                                                pos_0))))
                                                          (set! stream-size_0
                                                            pos_0))))))
-                                               (let ((lit-table_0 (make-hash)))
-                                                 (let ((rev-lits_0 null))
-                                                   (let ((lit-count_0 0))
-                                                     (let ((lit-index!_0
-                                                            (|#%name|
-                                                             lit-index!
-                                                             (lambda (v_0)
-                                                               (let ((key_0
-                                                                      (if (let ((or-part_0
-                                                                                 (symbol?
-                                                                                  v_0)))
-                                                                            (if or-part_0
-                                                                              or-part_0
-                                                                              (let ((or-part_1
-                                                                                     (keyword?
-                                                                                      v_0)))
-                                                                                (if or-part_1
-                                                                                  or-part_1
-                                                                                  (let ((or-part_2
-                                                                                         (char?
-                                                                                          v_0)))
-                                                                                    (if or-part_2
-                                                                                      or-part_2
-                                                                                      (let ((or-part_3
-                                                                                             (number?
-                                                                                              v_0)))
-                                                                                        (if or-part_3
-                                                                                          or-part_3
-                                                                                          (let ((or-part_4
-                                                                                                 (if (string?
-                                                                                                      v_0)
-                                                                                                   (immutable?
-                                                                                                    v_0)
-                                                                                                   #f)))
-                                                                                            (if or-part_4
-                                                                                              or-part_4
-                                                                                              (if (bytes?
-                                                                                                   v_0)
-                                                                                                (immutable?
-                                                                                                 v_0)
-                                                                                                #f)))))))))))
-                                                                        v_0
-                                                                        #f)))
-                                                                 (let ((cond-val_0
-                                                                        (if key_0
-                                                                          (hash-ref
-                                                                           lit-table_0
-                                                                           key_0
-                                                                           #f)
-                                                                          #f)))
-                                                                   (if cond-val_0
-                                                                     cond-val_0
-                                                                     (let ((i_0
-                                                                            lit-count_0))
-                                                                       (begin
-                                                                         (if key_0
-                                                                           (hash-set!
-                                                                            lit-table_0
-                                                                            key_0
-                                                                            i_0)
-                                                                           (void))
-                                                                         (set! rev-lits_0
-                                                                           (cons
-                                                                            v_0
-                                                                            rev-lits_0))
-                                                                         (set! lit-count_0
-                                                                           (add1
-                                                                            lit-count_0))
-                                                                         i_0)))))))))
-                                                       (let ((reap-lits!_0
-                                                              (|#%name|
-                                                               reap-lits!
-                                                               (lambda ()
-                                                                 (begin0
-                                                                   (list->vector
-                                                                    (reverse$1
-                                                                     rev-lits_0))
-                                                                   (set! rev-lits_0
-                                                                     null)
-                                                                   (set! lit-count_0
-                                                                     0)
-                                                                   (set! lit-table_0
-                                                                     (make-hash)))))))
-                                                         (let ((reap-stream!_0
+                                               (let ((source-holders_0
+                                                      (make-hash)))
+                                                 (let ((source-holder_0
+                                                        (|#%name|
+                                                         source-holder
+                                                         (lambda (path_0)
+                                                           (let ((or-part_0
+                                                                  (hash-ref
+                                                                   source-holders_0
+                                                                   path_0
+                                                                   #f)))
+                                                             (if or-part_0
+                                                               or-part_0
+                                                               (let ((h_0
+                                                                      (unsafe-make-srcloc
+                                                                       path_0
+                                                                       #f
+                                                                       #f
+                                                                       #f
+                                                                       #f)))
+                                                                 (begin
+                                                                   (hash-set!
+                                                                    source-holders_0
+                                                                    path_0
+                                                                    h_0)
+                                                                   h_0))))))))
+                                                   (let ((lit-table_0
+                                                          (make-hash)))
+                                                     (let ((rev-lits_0 null))
+                                                       (let ((lit-count_0 0))
+                                                         (let ((lit-index!_0
                                                                 (|#%name|
-                                                                 reap-stream!
-                                                                 (lambda ()
-                                                                   (let ((out_0
-                                                                          (open-output-bytes)))
-                                                                     (begin
-                                                                       (let ((lst_0
-                                                                              (reverse$1
-                                                                               stream_0)))
-                                                                         (letrec*
-                                                                          ((for-loop_0
-                                                                            (|#%name|
-                                                                             for-loop
-                                                                             (lambda (lst_1)
-                                                                               (if (pair?
-                                                                                    lst_1)
-                                                                                 (let ((e_0
-                                                                                        (unsafe-car
-                                                                                         lst_1)))
-                                                                                   (let ((rest_0
-                                                                                          (unsafe-cdr
-                                                                                           lst_1)))
-                                                                                     (begin
-                                                                                       (if (tag-elem?
-                                                                                            e_0)
-                                                                                         (let ((kw_0
-                                                                                                (tag-elem-kw
-                                                                                                 e_0)))
-                                                                                           (if (not
-                                                                                                kw_0)
-                                                                                             (write-byte
-                                                                                              184
-                                                                                              out_0)
-                                                                                             (write-byte
-                                                                                              (hash-ref
-                                                                                               opcode-table
-                                                                                               kw_0
-                                                                                               (lambda ()
-                                                                                                 (error
-                                                                                                  'serialize
-                                                                                                  "unknown tag: ~s"
-                                                                                                  kw_0)))
-                                                                                              out_0)))
-                                                                                         (if (eq?
-                                                                                              e_0
-                                                                                              #f)
-                                                                                           (write-byte
-                                                                                            184
-                                                                                            out_0)
-                                                                                           (if (eq?
-                                                                                                e_0
-                                                                                                #t)
-                                                                                             (write-byte
-                                                                                              185
-                                                                                              out_0)
-                                                                                             (if (null?
-                                                                                                  e_0)
-                                                                                               (write-byte
-                                                                                                186
-                                                                                                out_0)
-                                                                                               (if (fixnum?
-                                                                                                    e_0)
-                                                                                                 (if (if (>=
-                                                                                                          e_0
-                                                                                                          0)
-                                                                                                       (<
-                                                                                                        e_0
-                                                                                                        120)
-                                                                                                       #f)
-                                                                                                   (write-byte
-                                                                                                    (+
-                                                                                                     64
-                                                                                                     e_0)
-                                                                                                    out_0)
-                                                                                                   (begin
-                                                                                                     (write-byte
-                                                                                                      187
-                                                                                                      out_0)
-                                                                                                     (write-uint
-                                                                                                      (zigzag
-                                                                                                       e_0)
-                                                                                                      out_0)))
-                                                                                                 (let ((i_0
-                                                                                                        (lit-index!_0
-                                                                                                         e_0)))
-                                                                                                   (if (<
-                                                                                                        i_0
-                                                                                                        67)
-                                                                                                     (write-byte
-                                                                                                      (+
-                                                                                                       189
-                                                                                                       i_0)
-                                                                                                      out_0)
-                                                                                                     (begin
-                                                                                                       (write-byte
-                                                                                                        188
-                                                                                                        out_0)
-                                                                                                       (write-uint
-                                                                                                        i_0
-                                                                                                        out_0)))))))))
-                                                                                       (for-loop_0
-                                                                                        rest_0))))
-                                                                                 (values))))))
-                                                                          (for-loop_0
-                                                                           lst_0)))
-                                                                       (void)
-                                                                       (set! stream_0
-                                                                         null)
-                                                                       (set! stream-size_0
-                                                                         0)
-                                                                       (get-output-bytes
-                                                                        out_0
-                                                                        #t)))))))
-                                                           (letrec*
-                                                            ((ser-push!_0
-                                                              (|#%name|
-                                                               ser-push!
-                                                               (case-lambda
-                                                                ((v_0)
-                                                                 (if (hash-ref
-                                                                      shares_0
-                                                                      v_0
-                                                                      #f)
-                                                                   (let ((n_0
-                                                                          (hash-ref
-                                                                           share-step-positions_0
-                                                                           (hash-ref
-                                                                            objs_0
-                                                                            v_0))))
-                                                                     (begin
-                                                                       (ser-push!_0
-                                                                        'tag
-                                                                        kw2603)
-                                                                       (ser-push!_0
-                                                                        'exact
-                                                                        n_0)))
-                                                                   (let ((cond-val_0
-                                                                          (hash-ref
-                                                                           mutables_0
-                                                                           v_0
-                                                                           #f)))
-                                                                     (if cond-val_0
-                                                                       (begin
-                                                                         (ser-push!_0
-                                                                          'tag
-                                                                          kw2603)
-                                                                         (ser-push!_0
-                                                                          'exact
-                                                                          cond-val_0))
-                                                                       (ser-push-encoded!_0
-                                                                        v_0)))))
-                                                                ((kind_0 v_0)
-                                                                 (if (eq?
-                                                                      kind_0
-                                                                      'exact)
-                                                                   (begin
-                                                                     (set! stream_0
-                                                                       (cons
-                                                                        v_0
-                                                                        stream_0))
-                                                                     (set! stream-size_0
-                                                                       (add1
-                                                                        stream-size_0)))
-                                                                   (if (eq?
-                                                                        kind_0
-                                                                        'tag)
-                                                                     (ser-push!_0
-                                                                      'exact
-                                                                      (tag-elem1.1
-                                                                       v_0))
-                                                                     (if (eq?
-                                                                          kind_0
-                                                                          'reference)
-                                                                       (if (hash-ref
-                                                                            shares_0
+                                                                 lit-index!
+                                                                 (lambda (v_0)
+                                                                   (let ((key_0
+                                                                          (if (let ((or-part_0
+                                                                                     (symbol?
+                                                                                      v_0)))
+                                                                                (if or-part_0
+                                                                                  or-part_0
+                                                                                  (let ((or-part_1
+                                                                                         (keyword?
+                                                                                          v_0)))
+                                                                                    (if or-part_1
+                                                                                      or-part_1
+                                                                                      (let ((or-part_2
+                                                                                             (char?
+                                                                                              v_0)))
+                                                                                        (if or-part_2
+                                                                                          or-part_2
+                                                                                          (let ((or-part_3
+                                                                                                 (number?
+                                                                                                  v_0)))
+                                                                                            (if or-part_3
+                                                                                              or-part_3
+                                                                                              (let ((or-part_4
+                                                                                                     (if (string?
+                                                                                                          v_0)
+                                                                                                       (immutable?
+                                                                                                        v_0)
+                                                                                                       #f)))
+                                                                                                (if or-part_4
+                                                                                                  or-part_4
+                                                                                                  (let ((or-part_5
+                                                                                                         (if (bytes?
+                                                                                                              v_0)
+                                                                                                           (immutable?
+                                                                                                            v_0)
+                                                                                                           #f)))
+                                                                                                    (if or-part_5
+                                                                                                      or-part_5
+                                                                                                      (srcloc?
+                                                                                                       v_0)))))))))))))
                                                                             v_0
-                                                                            #f)
-                                                                         (let ((n_0
-                                                                                (hash-ref
-                                                                                 share-step-positions_0
-                                                                                 (hash-ref
-                                                                                  objs_0
-                                                                                  v_0))))
-                                                                           (ser-push!_0
-                                                                            'exact
-                                                                            n_0))
-                                                                         (let ((cond-val_0
-                                                                                (hash-ref
-                                                                                 mutables_0
-                                                                                 v_0
-                                                                                 #f)))
-                                                                           (if cond-val_0
-                                                                             (ser-push!_0
-                                                                              'exact
-                                                                              cond-val_0)
-                                                                             (ser-push!_0
-                                                                              v_0))))
-                                                                       (ser-push!_0
-                                                                        v_0))))))))
-                                                             (ser-push-encoded!_0
-                                                              (|#%name|
-                                                               ser-push-encoded!
-                                                               (lambda (v_0)
-                                                                 (let ((cond-val_0
-                                                                        (serialize-maybe-intern_0
-                                                                         v_0)))
-                                                                   (if cond-val_0
-                                                                     (ser-push!_0
-                                                                      cond-val_0)
-                                                                     (if (keyword?
-                                                                          v_0)
-                                                                       (begin
-                                                                         (ser-push!_0
-                                                                          'tag
-                                                                          kw2626)
-                                                                         (ser-push!_0
-                                                                          'exact
-                                                                          v_0))
-                                                                       (if (1/module-path-index?
-                                                                            v_0)
+                                                                            #f)))
+                                                                     (let ((cond-val_0
+                                                                            (if key_0
+                                                                              (hash-ref
+                                                                               lit-table_0
+                                                                               key_0
+                                                                               #f)
+                                                                              #f)))
+                                                                       (if cond-val_0
+                                                                         cond-val_0
+                                                                         (let ((i_0
+                                                                                lit-count_0))
+                                                                           (begin
+                                                                             (if key_0
+                                                                               (hash-set!
+                                                                                lit-table_0
+                                                                                key_0
+                                                                                i_0)
+                                                                               (void))
+                                                                             (set! rev-lits_0
+                                                                               (cons
+                                                                                v_0
+                                                                                rev-lits_0))
+                                                                             (set! lit-count_0
+                                                                               (add1
+                                                                                lit-count_0))
+                                                                             i_0)))))))))
+                                                           (let ((reap-lits!_0
+                                                                  (|#%name|
+                                                                   reap-lits!
+                                                                   (lambda ()
+                                                                     (begin0
+                                                                       (list->vector
+                                                                        (reverse$1
+                                                                         rev-lits_0))
+                                                                       (set! rev-lits_0
+                                                                         null)
+                                                                       (set! lit-count_0
+                                                                         0)
+                                                                       (set! lit-table_0
+                                                                         (make-hash)))))))
+                                                             (let ((reap-stream!_0
+                                                                    (|#%name|
+                                                                     reap-stream!
+                                                                     (lambda ()
+                                                                       (let ((out_0
+                                                                              (open-output-bytes)))
+                                                                         (begin
+                                                                           (let ((lst_0
+                                                                                  (reverse$1
+                                                                                   stream_0)))
+                                                                             (letrec*
+                                                                              ((for-loop_0
+                                                                                (|#%name|
+                                                                                 for-loop
+                                                                                 (lambda (lst_1)
+                                                                                   (if (pair?
+                                                                                        lst_1)
+                                                                                     (let ((e_0
+                                                                                            (unsafe-car
+                                                                                             lst_1)))
+                                                                                       (let ((rest_0
+                                                                                              (unsafe-cdr
+                                                                                               lst_1)))
+                                                                                         (begin
+                                                                                           (if (tag-elem?
+                                                                                                e_0)
+                                                                                             (let ((kw_0
+                                                                                                    (tag-elem-kw
+                                                                                                     e_0)))
+                                                                                               (if (not
+                                                                                                    kw_0)
+                                                                                                 (write-byte
+                                                                                                  184
+                                                                                                  out_0)
+                                                                                                 (write-byte
+                                                                                                  (hash-ref
+                                                                                                   opcode-table
+                                                                                                   kw_0
+                                                                                                   (lambda ()
+                                                                                                     (error
+                                                                                                      'serialize
+                                                                                                      "unknown tag: ~s"
+                                                                                                      kw_0)))
+                                                                                                  out_0)))
+                                                                                             (if (eq?
+                                                                                                  e_0
+                                                                                                  #f)
+                                                                                               (write-byte
+                                                                                                184
+                                                                                                out_0)
+                                                                                               (if (eq?
+                                                                                                    e_0
+                                                                                                    #t)
+                                                                                                 (write-byte
+                                                                                                  185
+                                                                                                  out_0)
+                                                                                                 (if (null?
+                                                                                                      e_0)
+                                                                                                   (write-byte
+                                                                                                    186
+                                                                                                    out_0)
+                                                                                                   (if (fixnum?
+                                                                                                        e_0)
+                                                                                                     (if (if (>=
+                                                                                                              e_0
+                                                                                                              0)
+                                                                                                           (<
+                                                                                                            e_0
+                                                                                                            120)
+                                                                                                           #f)
+                                                                                                       (write-byte
+                                                                                                        (+
+                                                                                                         64
+                                                                                                         e_0)
+                                                                                                        out_0)
+                                                                                                       (begin
+                                                                                                         (write-byte
+                                                                                                          187
+                                                                                                          out_0)
+                                                                                                         (write-uint
+                                                                                                          (zigzag
+                                                                                                           e_0)
+                                                                                                          out_0)))
+                                                                                                     (let ((i_0
+                                                                                                            (lit-index!_0
+                                                                                                             e_0)))
+                                                                                                       (if (<
+                                                                                                            i_0
+                                                                                                            67)
+                                                                                                         (write-byte
+                                                                                                          (+
+                                                                                                           189
+                                                                                                           i_0)
+                                                                                                          out_0)
+                                                                                                         (begin
+                                                                                                           (write-byte
+                                                                                                            188
+                                                                                                            out_0)
+                                                                                                           (write-uint
+                                                                                                            i_0
+                                                                                                            out_0)))))))))
+                                                                                           (for-loop_0
+                                                                                            rest_0))))
+                                                                                     (values))))))
+                                                                              (for-loop_0
+                                                                               lst_0)))
+                                                                           (void)
+                                                                           (set! stream_0
+                                                                             null)
+                                                                           (set! stream-size_0
+                                                                             0)
+                                                                           (get-output-bytes
+                                                                            out_0
+                                                                            #t)))))))
+                                                               (letrec*
+                                                                ((ser-push!_0
+                                                                  (|#%name|
+                                                                   ser-push!
+                                                                   (case-lambda
+                                                                    ((v_0)
+                                                                     (if (hash-ref
+                                                                          shares_0
+                                                                          v_0
+                                                                          #f)
+                                                                       (let ((n_0
+                                                                              (hash-ref
+                                                                               share-step-positions_0
+                                                                               (hash-ref
+                                                                                objs_0
+                                                                                v_0))))
                                                                          (begin
                                                                            (ser-push!_0
                                                                             'tag
-                                                                            kw3163)
+                                                                            kw2603)
                                                                            (ser-push!_0
                                                                             'exact
-                                                                            (add-module-path-index!/pos
-                                                                             mpis7_0
-                                                                             (|#%app|
-                                                                              map-mpi_0
-                                                                              v_0))))
-                                                                         (if (serialize?
-                                                                              v_0)
-                                                                           (|#%app|
-                                                                            (serialize-ref
-                                                                             v_0)
+                                                                            n_0)))
+                                                                       (let ((cond-val_0
+                                                                              (hash-ref
+                                                                               mutables_0
+                                                                               v_0
+                                                                               #f)))
+                                                                         (if cond-val_0
+                                                                           (begin
+                                                                             (ser-push!_0
+                                                                              'tag
+                                                                              kw2603)
+                                                                             (ser-push!_0
+                                                                              'exact
+                                                                              cond-val_0))
+                                                                           (ser-push-encoded!_0
+                                                                            v_0)))))
+                                                                    ((kind_0
+                                                                      v_0)
+                                                                     (if (eq?
+                                                                          kind_0
+                                                                          'exact)
+                                                                       (begin
+                                                                         (set! stream_0
+                                                                           (cons
                                                                             v_0
-                                                                            ser-push!_0
-                                                                            state_0)
-                                                                           (if (if (list?
-                                                                                    v_0)
-                                                                                 (if (pair?
-                                                                                      v_0)
-                                                                                   (pair?
-                                                                                    (cdr
-                                                                                     v_0))
-                                                                                   #f)
-                                                                                 #f)
-                                                                             (let ((start-pos_0
-                                                                                    stream-size_0))
-                                                                               (begin
+                                                                            stream_0))
+                                                                         (set! stream-size_0
+                                                                           (add1
+                                                                            stream-size_0)))
+                                                                       (if (eq?
+                                                                            kind_0
+                                                                            'tag)
+                                                                         (ser-push!_0
+                                                                          'exact
+                                                                          (tag-elem1.1
+                                                                           v_0))
+                                                                         (if (eq?
+                                                                              kind_0
+                                                                              'reference)
+                                                                           (if (hash-ref
+                                                                                shares_0
+                                                                                v_0
+                                                                                #f)
+                                                                             (let ((n_0
+                                                                                    (hash-ref
+                                                                                     share-step-positions_0
+                                                                                     (hash-ref
+                                                                                      objs_0
+                                                                                      v_0))))
+                                                                               (ser-push!_0
+                                                                                'exact
+                                                                                n_0))
+                                                                             (let ((cond-val_0
+                                                                                    (hash-ref
+                                                                                     mutables_0
+                                                                                     v_0
+                                                                                     #f)))
+                                                                               (if cond-val_0
                                                                                  (ser-push!_0
-                                                                                  'tag
-                                                                                  kw2802)
-                                                                                 (begin
-                                                                                   (ser-push!_0
-                                                                                    'exact
-                                                                                    (length
-                                                                                     v_0))
-                                                                                   (let ((all-quoted?_0
-                                                                                          (letrec*
-                                                                                           ((for-loop_0
-                                                                                             (|#%name|
-                                                                                              for-loop
-                                                                                              (lambda (all-quoted?_0
-                                                                                                       lst_0)
-                                                                                                (if (pair?
-                                                                                                     lst_0)
-                                                                                                  (let ((i_0
-                                                                                                         (unsafe-car
-                                                                                                          lst_0)))
-                                                                                                    (let ((rest_0
-                                                                                                           (unsafe-cdr
-                                                                                                            lst_0)))
-                                                                                                      (let ((all-quoted?_1
-                                                                                                             (let ((all-quoted?_1
-                                                                                                                    (let ((i-pos_0
-                                                                                                                           stream-size_0))
-                                                                                                                      (begin
-                                                                                                                        (ser-push!_0
-                                                                                                                         i_0)
-                                                                                                                        (if all-quoted?_0
-                                                                                                                          (quoted?_0
-                                                                                                                           i-pos_0)
-                                                                                                                          #f)))))
-                                                                                                               (values
-                                                                                                                all-quoted?_1))))
-                                                                                                        (for-loop_0
-                                                                                                         all-quoted?_1
-                                                                                                         rest_0))))
-                                                                                                  all-quoted?_0)))))
-                                                                                           (for-loop_0
-                                                                                            #t
-                                                                                            v_0))))
-                                                                                     (if all-quoted?_0
-                                                                                       (begin
-                                                                                         (ser-reset!_0
-                                                                                          start-pos_0)
-                                                                                         (ser-push-optional-quote!_0)
-                                                                                         (ser-push!_0
-                                                                                          'exact
-                                                                                          v_0))
-                                                                                       (void))))))
-                                                                             (if (pair?
+                                                                                  'exact
+                                                                                  cond-val_0)
+                                                                                 (ser-push!_0
+                                                                                  v_0))))
+                                                                           (ser-push!_0
+                                                                            v_0))))))))
+                                                                 (ser-push-encoded!_0
+                                                                  (|#%name|
+                                                                   ser-push-encoded!
+                                                                   (lambda (v_0)
+                                                                     (let ((cond-val_0
+                                                                            (serialize-maybe-intern_0
+                                                                             v_0)))
+                                                                       (if cond-val_0
+                                                                         (ser-push!_0
+                                                                          cond-val_0)
+                                                                         (if (keyword?
+                                                                              v_0)
+                                                                           (begin
+                                                                             (ser-push!_0
+                                                                              'tag
+                                                                              kw2626)
+                                                                             (ser-push!_0
+                                                                              'exact
+                                                                              v_0))
+                                                                           (if (1/module-path-index?
+                                                                                v_0)
+                                                                             (begin
+                                                                               (ser-push!_0
+                                                                                'tag
+                                                                                kw3163)
+                                                                               (ser-push!_0
+                                                                                'exact
+                                                                                (add-module-path-index!/pos
+                                                                                 mpis7_0
+                                                                                 (|#%app|
+                                                                                  map-mpi_0
+                                                                                  v_0))))
+                                                                             (if (serialize?
                                                                                   v_0)
-                                                                               (let ((start-pos_0
-                                                                                      stream-size_0))
-                                                                                 (begin
-                                                                                   (ser-push!_0
-                                                                                    'tag
-                                                                                    kw2821)
-                                                                                   (let ((a-pos_0
-                                                                                          stream-size_0))
-                                                                                     (begin
-                                                                                       (ser-push!_0
-                                                                                        (car
+                                                                               (|#%app|
+                                                                                (serialize-ref
+                                                                                 v_0)
+                                                                                v_0
+                                                                                ser-push!_0
+                                                                                state_0)
+                                                                               (if (if (list?
+                                                                                        v_0)
+                                                                                     (if (pair?
+                                                                                          v_0)
+                                                                                       (pair?
+                                                                                        (cdr
                                                                                          v_0))
-                                                                                       (let ((d-pos_0
-                                                                                              stream-size_0))
-                                                                                         (begin
-                                                                                           (ser-push!_0
-                                                                                            (cdr
-                                                                                             v_0))
-                                                                                           (if (if (quoted?_0
-                                                                                                    a-pos_0)
-                                                                                                 (quoted?_0
-                                                                                                  d-pos_0)
-                                                                                                 #f)
-                                                                                             (begin
-                                                                                               (ser-reset!_0
-                                                                                                start-pos_0)
-                                                                                               (ser-push-optional-quote!_0)
-                                                                                               (ser-push!_0
-                                                                                                'exact
-                                                                                                v_0))
-                                                                                             (void))))))))
-                                                                               (if (box?
-                                                                                    v_0)
+                                                                                       #f)
+                                                                                     #f)
                                                                                  (let ((start-pos_0
                                                                                         stream-size_0))
                                                                                    (begin
                                                                                      (ser-push!_0
                                                                                       'tag
-                                                                                      kw2525)
-                                                                                     (let ((v-pos_0
-                                                                                            stream-size_0))
-                                                                                       (begin
-                                                                                         (ser-push!_0
-                                                                                          (unbox
-                                                                                           v_0))
-                                                                                         (if (quoted?_0
-                                                                                              v-pos_0)
+                                                                                      kw2802)
+                                                                                     (begin
+                                                                                       (ser-push!_0
+                                                                                        'exact
+                                                                                        (length
+                                                                                         v_0))
+                                                                                       (let ((all-quoted?_0
+                                                                                              (letrec*
+                                                                                               ((for-loop_0
+                                                                                                 (|#%name|
+                                                                                                  for-loop
+                                                                                                  (lambda (all-quoted?_0
+                                                                                                           lst_0)
+                                                                                                    (if (pair?
+                                                                                                         lst_0)
+                                                                                                      (let ((i_0
+                                                                                                             (unsafe-car
+                                                                                                              lst_0)))
+                                                                                                        (let ((rest_0
+                                                                                                               (unsafe-cdr
+                                                                                                                lst_0)))
+                                                                                                          (let ((all-quoted?_1
+                                                                                                                 (let ((all-quoted?_1
+                                                                                                                        (let ((i-pos_0
+                                                                                                                               stream-size_0))
+                                                                                                                          (begin
+                                                                                                                            (ser-push!_0
+                                                                                                                             i_0)
+                                                                                                                            (if all-quoted?_0
+                                                                                                                              (quoted?_0
+                                                                                                                               i-pos_0)
+                                                                                                                              #f)))))
+                                                                                                                   (values
+                                                                                                                    all-quoted?_1))))
+                                                                                                            (for-loop_0
+                                                                                                             all-quoted?_1
+                                                                                                             rest_0))))
+                                                                                                      all-quoted?_0)))))
+                                                                                               (for-loop_0
+                                                                                                #t
+                                                                                                v_0))))
+                                                                                         (if all-quoted?_0
                                                                                            (begin
                                                                                              (ser-reset!_0
                                                                                               start-pos_0)
@@ -26785,101 +26763,120 @@
                                                                                               'exact
                                                                                               v_0))
                                                                                            (void))))))
-                                                                                 (if (vector?
+                                                                                 (if (pair?
                                                                                       v_0)
                                                                                    (let ((start-pos_0
                                                                                           stream-size_0))
                                                                                      (begin
                                                                                        (ser-push!_0
                                                                                         'tag
-                                                                                        kw2967)
-                                                                                       (begin
-                                                                                         (ser-push!_0
-                                                                                          'exact
-                                                                                          (vector-length
-                                                                                           v_0))
-                                                                                         (let ((all-quoted?_0
-                                                                                                (call-with-values
-                                                                                                 (lambda ()
-                                                                                                   (values
-                                                                                                    v_0
-                                                                                                    (unsafe-vector-length
-                                                                                                     v_0)))
-                                                                                                 (lambda (vec_0
-                                                                                                          len_0)
-                                                                                                   (letrec*
-                                                                                                    ((for-loop_0
-                                                                                                      (|#%name|
-                                                                                                       for-loop
-                                                                                                       (lambda (all-quoted?_0
-                                                                                                                pos_0)
-                                                                                                         (if (unsafe-fx<
-                                                                                                              pos_0
-                                                                                                              len_0)
-                                                                                                           (let ((i_0
-                                                                                                                  (unsafe-vector-ref
-                                                                                                                   vec_0
-                                                                                                                   pos_0)))
-                                                                                                             (let ((all-quoted?_1
-                                                                                                                    (let ((all-quoted?_1
-                                                                                                                           (let ((i-pos_0
-                                                                                                                                  stream-size_0))
-                                                                                                                             (begin
-                                                                                                                               (ser-push!_0
-                                                                                                                                i_0)
-                                                                                                                               (if all-quoted?_0
-                                                                                                                                 (quoted?_0
-                                                                                                                                  i-pos_0)
-                                                                                                                                 #f)))))
-                                                                                                                      (values
-                                                                                                                       all-quoted?_1))))
-                                                                                                               (for-loop_0
-                                                                                                                all-quoted?_1
-                                                                                                                (unsafe-fx+
-                                                                                                                 1
-                                                                                                                 pos_0))))
-                                                                                                           all-quoted?_0)))))
-                                                                                                    (for-loop_0
-                                                                                                     #t
-                                                                                                     0))))))
-                                                                                           (if all-quoted?_0
+                                                                                        kw2821)
+                                                                                       (let ((a-pos_0
+                                                                                              stream-size_0))
+                                                                                         (begin
+                                                                                           (ser-push!_0
+                                                                                            (car
+                                                                                             v_0))
+                                                                                           (let ((d-pos_0
+                                                                                                  stream-size_0))
                                                                                              (begin
-                                                                                               (ser-reset!_0
-                                                                                                start-pos_0)
-                                                                                               (ser-push-optional-quote!_0)
                                                                                                (ser-push!_0
-                                                                                                'exact
-                                                                                                v_0))
-                                                                                             (void))))))
-                                                                                   (if (core-pvector?
+                                                                                                (cdr
+                                                                                                 v_0))
+                                                                                               (if (if (quoted?_0
+                                                                                                        a-pos_0)
+                                                                                                     (quoted?_0
+                                                                                                      d-pos_0)
+                                                                                                     #f)
+                                                                                                 (begin
+                                                                                                   (ser-reset!_0
+                                                                                                    start-pos_0)
+                                                                                                   (ser-push-optional-quote!_0)
+                                                                                                   (ser-push!_0
+                                                                                                    'exact
+                                                                                                    v_0))
+                                                                                                 (void))))))))
+                                                                                   (if (box?
                                                                                         v_0)
                                                                                      (let ((start-pos_0
                                                                                             stream-size_0))
                                                                                        (begin
                                                                                          (ser-push!_0
                                                                                           'tag
-                                                                                          kw2853)
+                                                                                          kw2525)
+                                                                                         (let ((v-pos_0
+                                                                                                stream-size_0))
+                                                                                           (begin
+                                                                                             (ser-push!_0
+                                                                                              (unbox
+                                                                                               v_0))
+                                                                                             (if (quoted?_0
+                                                                                                  v-pos_0)
+                                                                                               (begin
+                                                                                                 (ser-reset!_0
+                                                                                                  start-pos_0)
+                                                                                                 (ser-push-optional-quote!_0)
+                                                                                                 (ser-push!_0
+                                                                                                  'exact
+                                                                                                  v_0))
+                                                                                               (void))))))
+                                                                                     (if (vector?
+                                                                                          v_0)
+                                                                                       (let ((start-pos_0
+                                                                                              stream-size_0))
                                                                                          (begin
                                                                                            (ser-push!_0
-                                                                                            'exact
-                                                                                            (core-pvector-length
-                                                                                             v_0))
-                                                                                           (let ((all-quoted?_0
-                                                                                                  #t))
-                                                                                             (begin
-                                                                                               (core-pvector-for-each
-                                                                                                v_0
-                                                                                                (lambda (i_0)
-                                                                                                  (let ((i-pos_0
-                                                                                                         stream-size_0))
-                                                                                                    (begin
-                                                                                                      (ser-push!_0
-                                                                                                       i_0)
-                                                                                                      (if (quoted?_0
-                                                                                                           i-pos_0)
-                                                                                                        (void)
-                                                                                                        (set! all-quoted?_0
-                                                                                                          #f))))))
+                                                                                            'tag
+                                                                                            kw2967)
+                                                                                           (begin
+                                                                                             (ser-push!_0
+                                                                                              'exact
+                                                                                              (vector-length
+                                                                                               v_0))
+                                                                                             (let ((all-quoted?_0
+                                                                                                    (call-with-values
+                                                                                                     (lambda ()
+                                                                                                       (values
+                                                                                                        v_0
+                                                                                                        (unsafe-vector-length
+                                                                                                         v_0)))
+                                                                                                     (lambda (vec_0
+                                                                                                              len_0)
+                                                                                                       (letrec*
+                                                                                                        ((for-loop_0
+                                                                                                          (|#%name|
+                                                                                                           for-loop
+                                                                                                           (lambda (all-quoted?_0
+                                                                                                                    pos_0)
+                                                                                                             (if (unsafe-fx<
+                                                                                                                  pos_0
+                                                                                                                  len_0)
+                                                                                                               (let ((i_0
+                                                                                                                      (unsafe-vector-ref
+                                                                                                                       vec_0
+                                                                                                                       pos_0)))
+                                                                                                                 (let ((all-quoted?_1
+                                                                                                                        (let ((all-quoted?_1
+                                                                                                                               (let ((i-pos_0
+                                                                                                                                      stream-size_0))
+                                                                                                                                 (begin
+                                                                                                                                   (ser-push!_0
+                                                                                                                                    i_0)
+                                                                                                                                   (if all-quoted?_0
+                                                                                                                                     (quoted?_0
+                                                                                                                                      i-pos_0)
+                                                                                                                                     #f)))))
+                                                                                                                          (values
+                                                                                                                           all-quoted?_1))))
+                                                                                                                   (for-loop_0
+                                                                                                                    all-quoted?_1
+                                                                                                                    (unsafe-fx+
+                                                                                                                     1
+                                                                                                                     pos_0))))
+                                                                                                               all-quoted?_0)))))
+                                                                                                        (for-loop_0
+                                                                                                         #t
+                                                                                                         0))))))
                                                                                                (if all-quoted?_0
                                                                                                  (begin
                                                                                                    (ser-reset!_0
@@ -26888,128 +26885,36 @@
                                                                                                    (ser-push!_0
                                                                                                     'exact
                                                                                                     v_0))
-                                                                                                 (void)))))))
-                                                                                     (if (hash?
-                                                                                          v_0)
-                                                                                       (let ((start-pos_0
-                                                                                              stream-size_0))
-                                                                                         (let ((as-set?_0
-                                                                                                (letrec*
-                                                                                                 ((for-loop_0
-                                                                                                   (|#%name|
-                                                                                                    for-loop
-                                                                                                    (lambda (result_0
-                                                                                                             i_0)
-                                                                                                      (if i_0
-                                                                                                        (let ((val_0
-                                                                                                               (hash-iterate-value
-                                                                                                                v_0
-                                                                                                                i_0)))
-                                                                                                          (let ((result_1
-                                                                                                                 (eq?
-                                                                                                                  val_0
-                                                                                                                  #t)))
-                                                                                                            (let ((result_2
-                                                                                                                   (values
-                                                                                                                    result_1)))
-                                                                                                              (if (if (not
-                                                                                                                       (let ((x_0
-                                                                                                                              (list
-                                                                                                                               val_0)))
-                                                                                                                         (not
-                                                                                                                          result_2)))
-                                                                                                                    #t
-                                                                                                                    #f)
-                                                                                                                (for-loop_0
-                                                                                                                 result_2
-                                                                                                                 (hash-iterate-next
-                                                                                                                  v_0
-                                                                                                                  i_0))
-                                                                                                                result_2))))
-                                                                                                        result_0)))))
-                                                                                                 (for-loop_0
-                                                                                                  #t
-                                                                                                  (hash-iterate-first
-                                                                                                   v_0)))))
+                                                                                                 (void))))))
+                                                                                       (if (core-pvector?
+                                                                                            v_0)
+                                                                                         (let ((start-pos_0
+                                                                                                stream-size_0))
                                                                                            (begin
                                                                                              (ser-push!_0
                                                                                               'tag
-                                                                                              (if as-set?_0
-                                                                                                (if (hash-eq?
-                                                                                                     v_0)
-                                                                                                  kw3357
-                                                                                                  (if (hash-eqv?
-                                                                                                       v_0)
-                                                                                                    kw2333
-                                                                                                    kw2473))
-                                                                                                (if (hash-eq?
-                                                                                                     v_0)
-                                                                                                  kw2796
-                                                                                                  (if (hash-eqv?
-                                                                                                       v_0)
-                                                                                                    (if (eq?
-                                                                                                         v_0
-                                                                                                         phase+space-hasheqv12_0)
-                                                                                                      kw2406
-                                                                                                      kw3245)
-                                                                                                    kw2582))))
+                                                                                              kw2853)
                                                                                              (begin
                                                                                                (ser-push!_0
                                                                                                 'exact
-                                                                                                (hash-count
+                                                                                                (core-pvector-length
                                                                                                  v_0))
-                                                                                               (let ((ks_0
-                                                                                                      (sorted-hash-keys
-                                                                                                       v_0)))
-                                                                                                 (let ((all-quoted?_0
-                                                                                                        (letrec*
-                                                                                                         ((for-loop_0
-                                                                                                           (|#%name|
-                                                                                                            for-loop
-                                                                                                            (lambda (all-quoted?_0
-                                                                                                                     lst_0)
-                                                                                                              (if (pair?
-                                                                                                                   lst_0)
-                                                                                                                (let ((k_0
-                                                                                                                       (unsafe-car
-                                                                                                                        lst_0)))
-                                                                                                                  (let ((rest_0
-                                                                                                                         (unsafe-cdr
-                                                                                                                          lst_0)))
-                                                                                                                    (let ((all-quoted?_1
-                                                                                                                           (let ((all-quoted?_1
-                                                                                                                                  (let ((k-pos_0
-                                                                                                                                         stream-size_0))
-                                                                                                                                    (begin
-                                                                                                                                      (ser-push!_0
-                                                                                                                                       k_0)
-                                                                                                                                      (let ((v-pos_0
-                                                                                                                                             stream-size_0))
-                                                                                                                                        (begin
-                                                                                                                                          (if as-set?_0
-                                                                                                                                            (void)
-                                                                                                                                            (ser-push!_0
-                                                                                                                                             (hash-ref
-                                                                                                                                              v_0
-                                                                                                                                              k_0)))
-                                                                                                                                          (if all-quoted?_0
-                                                                                                                                            (if (quoted?_0
-                                                                                                                                                 k-pos_0)
-                                                                                                                                              (if as-set?_0
-                                                                                                                                                as-set?_0
-                                                                                                                                                (quoted?_0
-                                                                                                                                                 v-pos_0))
-                                                                                                                                              #f)
-                                                                                                                                            #f)))))))
-                                                                                                                             (values
-                                                                                                                              all-quoted?_1))))
-                                                                                                                      (for-loop_0
-                                                                                                                       all-quoted?_1
-                                                                                                                       rest_0))))
-                                                                                                                all-quoted?_0)))))
-                                                                                                         (for-loop_0
-                                                                                                          #t
-                                                                                                          ks_0))))
+                                                                                               (let ((all-quoted?_0
+                                                                                                      #t))
+                                                                                                 (begin
+                                                                                                   (core-pvector-for-each
+                                                                                                    v_0
+                                                                                                    (lambda (i_0)
+                                                                                                      (let ((i-pos_0
+                                                                                                             stream-size_0))
+                                                                                                        (begin
+                                                                                                          (ser-push!_0
+                                                                                                           i_0)
+                                                                                                          (if (quoted?_0
+                                                                                                               i-pos_0)
+                                                                                                            (void)
+                                                                                                            (set! all-quoted?_0
+                                                                                                              #f))))))
                                                                                                    (if all-quoted?_0
                                                                                                      (begin
                                                                                                        (ser-reset!_0
@@ -27018,78 +26923,128 @@
                                                                                                        (ser-push!_0
                                                                                                         'exact
                                                                                                         v_0))
-                                                                                                     (void))))))))
-                                                                                       (let ((cond-val_1
-                                                                                              (prefab-struct-key
-                                                                                               v_0)))
-                                                                                         (if cond-val_1
-                                                                                           (let ((vec_0
-                                                                                                  (struct->vector
-                                                                                                   v_0)))
-                                                                                             (let ((start-pos_0
-                                                                                                    stream-size_0))
+                                                                                                     (void)))))))
+                                                                                         (if (hash?
+                                                                                              v_0)
+                                                                                           (let ((start-pos_0
+                                                                                                  stream-size_0))
+                                                                                             (let ((as-set?_0
+                                                                                                    (letrec*
+                                                                                                     ((for-loop_0
+                                                                                                       (|#%name|
+                                                                                                        for-loop
+                                                                                                        (lambda (result_0
+                                                                                                                 i_0)
+                                                                                                          (if i_0
+                                                                                                            (let ((val_0
+                                                                                                                   (hash-iterate-value
+                                                                                                                    v_0
+                                                                                                                    i_0)))
+                                                                                                              (let ((result_1
+                                                                                                                     (eq?
+                                                                                                                      val_0
+                                                                                                                      #t)))
+                                                                                                                (let ((result_2
+                                                                                                                       (values
+                                                                                                                        result_1)))
+                                                                                                                  (if (if (not
+                                                                                                                           (let ((x_0
+                                                                                                                                  (list
+                                                                                                                                   val_0)))
+                                                                                                                             (not
+                                                                                                                              result_2)))
+                                                                                                                        #t
+                                                                                                                        #f)
+                                                                                                                    (for-loop_0
+                                                                                                                     result_2
+                                                                                                                     (hash-iterate-next
+                                                                                                                      v_0
+                                                                                                                      i_0))
+                                                                                                                    result_2))))
+                                                                                                            result_0)))))
+                                                                                                     (for-loop_0
+                                                                                                      #t
+                                                                                                      (hash-iterate-first
+                                                                                                       v_0)))))
                                                                                                (begin
                                                                                                  (ser-push!_0
                                                                                                   'tag
-                                                                                                  kw2931)
+                                                                                                  (if as-set?_0
+                                                                                                    (if (hash-eq?
+                                                                                                         v_0)
+                                                                                                      kw3357
+                                                                                                      (if (hash-eqv?
+                                                                                                           v_0)
+                                                                                                        kw2333
+                                                                                                        kw2473))
+                                                                                                    (if (hash-eq?
+                                                                                                         v_0)
+                                                                                                      kw2796
+                                                                                                      (if (hash-eqv?
+                                                                                                           v_0)
+                                                                                                        (if (eq?
+                                                                                                             v_0
+                                                                                                             phase+space-hasheqv12_0)
+                                                                                                          kw2406
+                                                                                                          kw3245)
+                                                                                                        kw2582))))
                                                                                                  (begin
                                                                                                    (ser-push!_0
                                                                                                     'exact
-                                                                                                    cond-val_1)
-                                                                                                   (begin
-                                                                                                     (ser-push!_0
-                                                                                                      'exact
-                                                                                                      (sub1
-                                                                                                       (vector-length
-                                                                                                        vec_0)))
+                                                                                                    (hash-count
+                                                                                                     v_0))
+                                                                                                   (let ((ks_0
+                                                                                                          (sorted-hash-keys
+                                                                                                           v_0)))
                                                                                                      (let ((all-quoted?_0
-                                                                                                            (call-with-values
-                                                                                                             (lambda ()
-                                                                                                               (unsafe-normalise-inputs
-                                                                                                                unsafe-vector-length
-                                                                                                                vec_0
-                                                                                                                1
-                                                                                                                #f
-                                                                                                                1))
-                                                                                                             (lambda (v*_0
-                                                                                                                      start*_0
-                                                                                                                      stop*_0
-                                                                                                                      step*_0)
-                                                                                                               (letrec*
-                                                                                                                ((for-loop_0
-                                                                                                                  (|#%name|
-                                                                                                                   for-loop
-                                                                                                                   (lambda (all-quoted?_0
-                                                                                                                            idx_0)
-                                                                                                                     (if (unsafe-fx<
-                                                                                                                          idx_0
-                                                                                                                          stop*_0)
-                                                                                                                       (let ((i_0
-                                                                                                                              (unsafe-vector-ref
-                                                                                                                               v*_0
-                                                                                                                               idx_0)))
-                                                                                                                         (let ((all-quoted?_1
-                                                                                                                                (let ((all-quoted?_1
-                                                                                                                                       (let ((i-pos_0
-                                                                                                                                              stream-size_0))
-                                                                                                                                         (begin
-                                                                                                                                           (ser-push!_0
-                                                                                                                                            i_0)
-                                                                                                                                           (if all-quoted?_0
-                                                                                                                                             (quoted?_0
-                                                                                                                                              i-pos_0)
-                                                                                                                                             #f)))))
-                                                                                                                                  (values
-                                                                                                                                   all-quoted?_1))))
-                                                                                                                           (for-loop_0
-                                                                                                                            all-quoted?_1
-                                                                                                                            (unsafe-fx+
-                                                                                                                             idx_0
-                                                                                                                             1))))
-                                                                                                                       all-quoted?_0)))))
-                                                                                                                (for-loop_0
-                                                                                                                 #t
-                                                                                                                 start*_0))))))
+                                                                                                            (letrec*
+                                                                                                             ((for-loop_0
+                                                                                                               (|#%name|
+                                                                                                                for-loop
+                                                                                                                (lambda (all-quoted?_0
+                                                                                                                         lst_0)
+                                                                                                                  (if (pair?
+                                                                                                                       lst_0)
+                                                                                                                    (let ((k_0
+                                                                                                                           (unsafe-car
+                                                                                                                            lst_0)))
+                                                                                                                      (let ((rest_0
+                                                                                                                             (unsafe-cdr
+                                                                                                                              lst_0)))
+                                                                                                                        (let ((all-quoted?_1
+                                                                                                                               (let ((all-quoted?_1
+                                                                                                                                      (let ((k-pos_0
+                                                                                                                                             stream-size_0))
+                                                                                                                                        (begin
+                                                                                                                                          (ser-push!_0
+                                                                                                                                           k_0)
+                                                                                                                                          (let ((v-pos_0
+                                                                                                                                                 stream-size_0))
+                                                                                                                                            (begin
+                                                                                                                                              (if as-set?_0
+                                                                                                                                                (void)
+                                                                                                                                                (ser-push!_0
+                                                                                                                                                 (hash-ref
+                                                                                                                                                  v_0
+                                                                                                                                                  k_0)))
+                                                                                                                                              (if all-quoted?_0
+                                                                                                                                                (if (quoted?_0
+                                                                                                                                                     k-pos_0)
+                                                                                                                                                  (if as-set?_0
+                                                                                                                                                    as-set?_0
+                                                                                                                                                    (quoted?_0
+                                                                                                                                                     v-pos_0))
+                                                                                                                                                  #f)
+                                                                                                                                                #f)))))))
+                                                                                                                                 (values
+                                                                                                                                  all-quoted?_1))))
+                                                                                                                          (for-loop_0
+                                                                                                                           all-quoted?_1
+                                                                                                                           rest_0))))
+                                                                                                                    all-quoted?_0)))))
+                                                                                                             (for-loop_0
+                                                                                                              #t
+                                                                                                              ks_0))))
                                                                                                        (if all-quoted?_0
                                                                                                          (begin
                                                                                                            (ser-reset!_0
@@ -27099,453 +27054,549 @@
                                                                                                             'exact
                                                                                                             v_0))
                                                                                                          (void))))))))
-                                                                                           (if (srcloc?
-                                                                                                v_0)
-                                                                                             (if (path?
-                                                                                                  (srcloc-source
-                                                                                                   v_0))
-                                                                                               (begin
-                                                                                                 (ser-push-optional-quote!_0)
-                                                                                                 (ser-push!_0
-                                                                                                  'exact
-                                                                                                  v_0))
-                                                                                               (begin
-                                                                                                 (ser-push!_0
-                                                                                                  'tag
-                                                                                                  kw2496)
-                                                                                                 (ser-push!_0
-                                                                                                  (srcloc-source
-                                                                                                   v_0))
-                                                                                                 (ser-push!_0
-                                                                                                  (srcloc-line
-                                                                                                   v_0))
-                                                                                                 (ser-push!_0
-                                                                                                  (srcloc-column
-                                                                                                   v_0))
-                                                                                                 (ser-push!_0
-                                                                                                  (srcloc-position
-                                                                                                   v_0))
-                                                                                                 (ser-push!_0
-                                                                                                  (srcloc-span
-                                                                                                   v_0))))
-                                                                                             (begin
-                                                                                               (ser-push-optional-quote!_0)
-                                                                                               (ser-push!_0
-                                                                                                'exact
-                                                                                                v_0)))))))))))))))))))
-                                                             (ser-push-optional-quote!_0
-                                                              (|#%name|
-                                                               ser-push-optional-quote!
-                                                               (lambda ()
-                                                                 (void)))))
-                                                            (let ((ser-shell!_0
-                                                                   (|#%name|
-                                                                    ser-shell!
-                                                                    (lambda (v_0)
-                                                                      (if (serialize-fill!?
-                                                                           v_0)
-                                                                        (|#%app|
-                                                                         (serialize-ref
-                                                                          v_0)
-                                                                         v_0
-                                                                         ser-push!_0
-                                                                         state_0)
-                                                                        (if (box?
-                                                                             v_0)
-                                                                          (ser-push!_0
-                                                                           'tag
-                                                                           kw2525)
-                                                                          (if (vector?
+                                                                                           (let ((cond-val_1
+                                                                                                  (prefab-struct-key
+                                                                                                   v_0)))
+                                                                                             (if cond-val_1
+                                                                                               (let ((vec_0
+                                                                                                      (struct->vector
+                                                                                                       v_0)))
+                                                                                                 (let ((start-pos_0
+                                                                                                        stream-size_0))
+                                                                                                   (begin
+                                                                                                     (ser-push!_0
+                                                                                                      'tag
+                                                                                                      kw2931)
+                                                                                                     (begin
+                                                                                                       (ser-push!_0
+                                                                                                        'exact
+                                                                                                        cond-val_1)
+                                                                                                       (begin
+                                                                                                         (ser-push!_0
+                                                                                                          'exact
+                                                                                                          (sub1
+                                                                                                           (vector-length
+                                                                                                            vec_0)))
+                                                                                                         (let ((all-quoted?_0
+                                                                                                                (call-with-values
+                                                                                                                 (lambda ()
+                                                                                                                   (unsafe-normalise-inputs
+                                                                                                                    unsafe-vector-length
+                                                                                                                    vec_0
+                                                                                                                    1
+                                                                                                                    #f
+                                                                                                                    1))
+                                                                                                                 (lambda (v*_0
+                                                                                                                          start*_0
+                                                                                                                          stop*_0
+                                                                                                                          step*_0)
+                                                                                                                   (letrec*
+                                                                                                                    ((for-loop_0
+                                                                                                                      (|#%name|
+                                                                                                                       for-loop
+                                                                                                                       (lambda (all-quoted?_0
+                                                                                                                                idx_0)
+                                                                                                                         (if (unsafe-fx<
+                                                                                                                              idx_0
+                                                                                                                              stop*_0)
+                                                                                                                           (let ((i_0
+                                                                                                                                  (unsafe-vector-ref
+                                                                                                                                   v*_0
+                                                                                                                                   idx_0)))
+                                                                                                                             (let ((all-quoted?_1
+                                                                                                                                    (let ((all-quoted?_1
+                                                                                                                                           (let ((i-pos_0
+                                                                                                                                                  stream-size_0))
+                                                                                                                                             (begin
+                                                                                                                                               (ser-push!_0
+                                                                                                                                                i_0)
+                                                                                                                                               (if all-quoted?_0
+                                                                                                                                                 (quoted?_0
+                                                                                                                                                  i-pos_0)
+                                                                                                                                                 #f)))))
+                                                                                                                                      (values
+                                                                                                                                       all-quoted?_1))))
+                                                                                                                               (for-loop_0
+                                                                                                                                all-quoted?_1
+                                                                                                                                (unsafe-fx+
+                                                                                                                                 idx_0
+                                                                                                                                 1))))
+                                                                                                                           all-quoted?_0)))))
+                                                                                                                    (for-loop_0
+                                                                                                                     #t
+                                                                                                                     start*_0))))))
+                                                                                                           (if all-quoted?_0
+                                                                                                             (begin
+                                                                                                               (ser-reset!_0
+                                                                                                                start-pos_0)
+                                                                                                               (ser-push-optional-quote!_0)
+                                                                                                               (ser-push!_0
+                                                                                                                'exact
+                                                                                                                v_0))
+                                                                                                             (void))))))))
+                                                                                               (if (srcloc?
+                                                                                                    v_0)
+                                                                                                 (if (path?
+                                                                                                      (srcloc-source
+                                                                                                       v_0))
+                                                                                                   (begin
+                                                                                                     (ser-push!_0
+                                                                                                      'tag
+                                                                                                      kw2578)
+                                                                                                     (ser-push!_0
+                                                                                                      'exact
+                                                                                                      (source-holder_0
+                                                                                                       (srcloc-source
+                                                                                                        v_0)))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-line
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-column
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-position
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-span
+                                                                                                       v_0)))
+                                                                                                   (begin
+                                                                                                     (ser-push!_0
+                                                                                                      'tag
+                                                                                                      kw2496)
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-source
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-line
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-column
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-position
+                                                                                                       v_0))
+                                                                                                     (ser-push!_0
+                                                                                                      (srcloc-span
+                                                                                                       v_0))))
+                                                                                                 (begin
+                                                                                                   (ser-push-optional-quote!_0)
+                                                                                                   (ser-push!_0
+                                                                                                    'exact
+                                                                                                    v_0)))))))))))))))))))
+                                                                 (ser-push-optional-quote!_0
+                                                                  (|#%name|
+                                                                   ser-push-optional-quote!
+                                                                   (lambda ()
+                                                                     (void)))))
+                                                                (let ((ser-shell!_0
+                                                                       (|#%name|
+                                                                        ser-shell!
+                                                                        (lambda (v_0)
+                                                                          (if (serialize-fill!?
                                                                                v_0)
-                                                                            (begin
-                                                                              (ser-push!_0
-                                                                               'tag
-                                                                               kw2967)
-                                                                              (ser-push!_0
-                                                                               'exact
-                                                                               (vector-length
-                                                                                v_0)))
-                                                                            (if (hash?
+                                                                            (|#%app|
+                                                                             (serialize-ref
+                                                                              v_0)
+                                                                             v_0
+                                                                             ser-push!_0
+                                                                             state_0)
+                                                                            (if (box?
                                                                                  v_0)
                                                                               (ser-push!_0
                                                                                'tag
-                                                                               (if (hash-eq?
-                                                                                    v_0)
-                                                                                 kw2796
-                                                                                 (if (hash-eqv?
-                                                                                      v_0)
-                                                                                   kw3245
-                                                                                   kw2582)))
-                                                                              (error
-                                                                               'ser-shell
-                                                                               "unknown mutable: ~e"
-                                                                               v_0)))))))))
-                                                              (let ((ser-shell-fill!_0
-                                                                     (|#%name|
-                                                                      ser-shell-fill!
-                                                                      (lambda (v_0)
-                                                                        (if (serialize-fill!?
-                                                                             v_0)
-                                                                          (|#%app|
-                                                                           (serialize-fill!-ref
-                                                                            v_0)
-                                                                           v_0
-                                                                           ser-push!_0
-                                                                           state_0)
-                                                                          (if (box?
-                                                                               v_0)
-                                                                            (begin
-                                                                              (ser-push!_0
-                                                                               'tag
-                                                                               kw2531)
-                                                                              (ser-push!_0
-                                                                               (unbox
-                                                                                v_0)))
-                                                                            (if (vector?
-                                                                                 v_0)
-                                                                              (begin
-                                                                                (ser-push!_0
-                                                                                 'tag
-                                                                                 kw3046)
-                                                                                (ser-push!_0
-                                                                                 'exact
-                                                                                 (vector-length
-                                                                                  v_0))
-                                                                                (call-with-values
-                                                                                 (lambda ()
-                                                                                   (values
-                                                                                    v_0
-                                                                                    (unsafe-vector-length
-                                                                                     v_0)))
-                                                                                 (lambda (vec_0
-                                                                                          len_0)
-                                                                                   (letrec*
-                                                                                    ((for-loop_0
-                                                                                      (|#%name|
-                                                                                       for-loop
-                                                                                       (lambda (pos_0)
-                                                                                         (if (unsafe-fx<
-                                                                                              pos_0
-                                                                                              len_0)
-                                                                                           (let ((v_1
-                                                                                                  (unsafe-vector-ref
-                                                                                                   vec_0
-                                                                                                   pos_0)))
-                                                                                             (begin
-                                                                                               (ser-push!_0
-                                                                                                v_1)
-                                                                                               (for-loop_0
-                                                                                                (unsafe-fx+
-                                                                                                 1
-                                                                                                 pos_0))))
-                                                                                           (values))))))
-                                                                                    (for-loop_0
-                                                                                     0))))
-                                                                                (void))
-                                                                              (if (hash?
+                                                                               kw2525)
+                                                                              (if (vector?
                                                                                    v_0)
                                                                                 (begin
                                                                                   (ser-push!_0
                                                                                    'tag
-                                                                                   kw2194)
+                                                                                   kw2967)
+                                                                                  (ser-push!_0
+                                                                                   'exact
+                                                                                   (vector-length
+                                                                                    v_0)))
+                                                                                (if (hash?
+                                                                                     v_0)
+                                                                                  (ser-push!_0
+                                                                                   'tag
+                                                                                   (if (hash-eq?
+                                                                                        v_0)
+                                                                                     kw2796
+                                                                                     (if (hash-eqv?
+                                                                                          v_0)
+                                                                                       kw3245
+                                                                                       kw2582)))
+                                                                                  (error
+                                                                                   'ser-shell
+                                                                                   "unknown mutable: ~e"
+                                                                                   v_0)))))))))
+                                                                  (let ((ser-shell-fill!_0
+                                                                         (|#%name|
+                                                                          ser-shell-fill!
+                                                                          (lambda (v_0)
+                                                                            (if (serialize-fill!?
+                                                                                 v_0)
+                                                                              (|#%app|
+                                                                               (serialize-fill!-ref
+                                                                                v_0)
+                                                                               v_0
+                                                                               ser-push!_0
+                                                                               state_0)
+                                                                              (if (box?
+                                                                                   v_0)
+                                                                                (begin
+                                                                                  (ser-push!_0
+                                                                                   'tag
+                                                                                   kw2531)
+                                                                                  (ser-push!_0
+                                                                                   (unbox
+                                                                                    v_0)))
+                                                                                (if (vector?
+                                                                                     v_0)
                                                                                   (begin
                                                                                     (ser-push!_0
+                                                                                     'tag
+                                                                                     kw3046)
+                                                                                    (ser-push!_0
                                                                                      'exact
-                                                                                     (hash-count
+                                                                                     (vector-length
                                                                                       v_0))
-                                                                                    (let ((ks_0
-                                                                                           (sorted-hash-keys
-                                                                                            v_0)))
-                                                                                      (begin
-                                                                                        (letrec*
-                                                                                         ((for-loop_0
-                                                                                           (|#%name|
-                                                                                            for-loop
-                                                                                            (lambda (lst_0)
-                                                                                              (if (pair?
-                                                                                                   lst_0)
-                                                                                                (let ((k_0
-                                                                                                       (unsafe-car
-                                                                                                        lst_0)))
-                                                                                                  (let ((rest_0
-                                                                                                         (unsafe-cdr
-                                                                                                          lst_0)))
-                                                                                                    (begin
-                                                                                                      (begin
-                                                                                                        (ser-push!_0
-                                                                                                         k_0)
-                                                                                                        (ser-push!_0
-                                                                                                         (hash-ref
-                                                                                                          v_0
-                                                                                                          k_0)))
-                                                                                                      (for-loop_0
-                                                                                                       rest_0))))
-                                                                                                (values))))))
-                                                                                         (for-loop_0
-                                                                                          ks_0))
-                                                                                        (void)))))
-                                                                                (error
-                                                                                 'ser-shell-fill
-                                                                                 "unknown mutable: ~e"
-                                                                                 v_0)))))))))
-                                                                (let ((table_0
-                                                                       hash2589))
-                                                                  (let ((rev-mutables_0
-                                                                         (let ((table_1
-                                                                                table_0))
-                                                                           (letrec*
-                                                                            ((for-loop_0
-                                                                              (|#%name|
-                                                                               for-loop
-                                                                               (lambda (table_2
-                                                                                        i_0)
-                                                                                 (if i_0
-                                                                                   (call-with-values
-                                                                                    (lambda ()
-                                                                                      (hash-iterate-key+value
-                                                                                       mutables_0
-                                                                                       i_0))
-                                                                                    (lambda (k_0
-                                                                                             v_0)
-                                                                                      (let ((table_3
-                                                                                             (let ((table_3
-                                                                                                    (call-with-values
-                                                                                                     (lambda ()
-                                                                                                       (values
-                                                                                                        v_0
-                                                                                                        k_0))
-                                                                                                     (lambda (key_0
-                                                                                                              val_0)
-                                                                                                       (hash-set
-                                                                                                        table_2
-                                                                                                        key_0
-                                                                                                        val_0)))))
-                                                                                               (values
-                                                                                                table_3))))
-                                                                                        (for-loop_0
-                                                                                         table_3
-                                                                                         (hash-iterate-next
-                                                                                          mutables_0
-                                                                                          i_0)))))
-                                                                                   table_2)))))
-                                                                            (for-loop_0
-                                                                             table_1
-                                                                             (hash-iterate-first
-                                                                              mutables_0))))))
-                                                                    (let ((mutable-shell-bindings_0
-                                                                           (begin
-                                                                             (begin
-                                                                               (let ((end_0
-                                                                                      (hash-count
-                                                                                       mutables_0)))
-                                                                                 (letrec*
-                                                                                  ((for-loop_0
-                                                                                    (|#%name|
-                                                                                     for-loop
-                                                                                     (lambda (pos_0)
-                                                                                       (if (<
-                                                                                            pos_0
-                                                                                            end_0)
-                                                                                         (begin
-                                                                                           (ser-shell!_0
-                                                                                            (hash-ref
-                                                                                             rev-mutables_0
-                                                                                             pos_0))
-                                                                                           (for-loop_0
-                                                                                            (+
-                                                                                             pos_0
-                                                                                             1)))
-                                                                                         (values))))))
-                                                                                  (for-loop_0
-                                                                                   0)))
-                                                                               (void))
-                                                                             (reap-stream!_0))))
-                                                                      (let ((table_1
-                                                                             hash2589))
-                                                                        (let ((rev-shares_0
-                                                                               (let ((table_2
-                                                                                      table_1))
-                                                                                 (letrec*
-                                                                                  ((for-loop_0
-                                                                                    (|#%name|
-                                                                                     for-loop
-                                                                                     (lambda (table_3
-                                                                                              i_0)
-                                                                                       (if i_0
-                                                                                         (let ((obj_0
-                                                                                                (hash-iterate-key
-                                                                                                 shares_0
-                                                                                                 i_0)))
-                                                                                           (let ((table_4
-                                                                                                  (let ((table_4
-                                                                                                         (call-with-values
-                                                                                                          (lambda ()
-                                                                                                            (values
-                                                                                                             (hash-ref
-                                                                                                              share-step-positions_0
-                                                                                                              (hash-ref
-                                                                                                               objs_0
-                                                                                                               obj_0))
-                                                                                                             obj_0))
-                                                                                                          (lambda (key_0
-                                                                                                                   val_0)
-                                                                                                            (hash-set
-                                                                                                             table_3
-                                                                                                             key_0
-                                                                                                             val_0)))))
-                                                                                                    (values
-                                                                                                     table_4))))
-                                                                                             (for-loop_0
-                                                                                              table_4
-                                                                                              (hash-iterate-next
-                                                                                               shares_0
-                                                                                               i_0))))
-                                                                                         table_3)))))
-                                                                                  (for-loop_0
-                                                                                   table_2
-                                                                                   (hash-iterate-first
-                                                                                    shares_0))))))
-                                                                          (let ((shared-bindings_0
-                                                                                 (begin
-                                                                                   (begin
-                                                                                     (let ((end_0
-                                                                                            (+
-                                                                                             num-mutables_0
-                                                                                             (hash-count
-                                                                                              shares_0))))
+                                                                                    (call-with-values
+                                                                                     (lambda ()
+                                                                                       (values
+                                                                                        v_0
+                                                                                        (unsafe-vector-length
+                                                                                         v_0)))
+                                                                                     (lambda (vec_0
+                                                                                              len_0)
                                                                                        (letrec*
                                                                                         ((for-loop_0
                                                                                           (|#%name|
                                                                                            for-loop
                                                                                            (lambda (pos_0)
-                                                                                             (if (<
+                                                                                             (if (unsafe-fx<
                                                                                                   pos_0
-                                                                                                  end_0)
-                                                                                               (begin
-                                                                                                 (ser-push-encoded!_0
-                                                                                                  (hash-ref
-                                                                                                   rev-shares_0
-                                                                                                   pos_0))
-                                                                                                 (for-loop_0
-                                                                                                  (+
-                                                                                                   pos_0
-                                                                                                   1)))
+                                                                                                  len_0)
+                                                                                               (let ((v_1
+                                                                                                      (unsafe-vector-ref
+                                                                                                       vec_0
+                                                                                                       pos_0)))
+                                                                                                 (begin
+                                                                                                   (ser-push!_0
+                                                                                                    v_1)
+                                                                                                   (for-loop_0
+                                                                                                    (unsafe-fx+
+                                                                                                     1
+                                                                                                     pos_0))))
                                                                                                (values))))))
                                                                                         (for-loop_0
-                                                                                         num-mutables_0)))
-                                                                                     (void))
-                                                                                   (reap-stream!_0))))
-                                                                            (let ((mutable-fills_0
-                                                                                   (begin
+                                                                                         0))))
+                                                                                    (void))
+                                                                                  (if (hash?
+                                                                                       v_0)
+                                                                                    (begin
+                                                                                      (ser-push!_0
+                                                                                       'tag
+                                                                                       kw2194)
+                                                                                      (begin
+                                                                                        (ser-push!_0
+                                                                                         'exact
+                                                                                         (hash-count
+                                                                                          v_0))
+                                                                                        (let ((ks_0
+                                                                                               (sorted-hash-keys
+                                                                                                v_0)))
+                                                                                          (begin
+                                                                                            (letrec*
+                                                                                             ((for-loop_0
+                                                                                               (|#%name|
+                                                                                                for-loop
+                                                                                                (lambda (lst_0)
+                                                                                                  (if (pair?
+                                                                                                       lst_0)
+                                                                                                    (let ((k_0
+                                                                                                           (unsafe-car
+                                                                                                            lst_0)))
+                                                                                                      (let ((rest_0
+                                                                                                             (unsafe-cdr
+                                                                                                              lst_0)))
+                                                                                                        (begin
+                                                                                                          (begin
+                                                                                                            (ser-push!_0
+                                                                                                             k_0)
+                                                                                                            (ser-push!_0
+                                                                                                             (hash-ref
+                                                                                                              v_0
+                                                                                                              k_0)))
+                                                                                                          (for-loop_0
+                                                                                                           rest_0))))
+                                                                                                    (values))))))
+                                                                                             (for-loop_0
+                                                                                              ks_0))
+                                                                                            (void)))))
+                                                                                    (error
+                                                                                     'ser-shell-fill
+                                                                                     "unknown mutable: ~e"
+                                                                                     v_0)))))))))
+                                                                    (let ((table_0
+                                                                           hash2589))
+                                                                      (let ((rev-mutables_0
+                                                                             (let ((table_1
+                                                                                    table_0))
+                                                                               (letrec*
+                                                                                ((for-loop_0
+                                                                                  (|#%name|
+                                                                                   for-loop
+                                                                                   (lambda (table_2
+                                                                                            i_0)
+                                                                                     (if i_0
+                                                                                       (call-with-values
+                                                                                        (lambda ()
+                                                                                          (hash-iterate-key+value
+                                                                                           mutables_0
+                                                                                           i_0))
+                                                                                        (lambda (k_0
+                                                                                                 v_0)
+                                                                                          (let ((table_3
+                                                                                                 (let ((table_3
+                                                                                                        (call-with-values
+                                                                                                         (lambda ()
+                                                                                                           (values
+                                                                                                            v_0
+                                                                                                            k_0))
+                                                                                                         (lambda (key_0
+                                                                                                                  val_0)
+                                                                                                           (hash-set
+                                                                                                            table_2
+                                                                                                            key_0
+                                                                                                            val_0)))))
+                                                                                                   (values
+                                                                                                    table_3))))
+                                                                                            (for-loop_0
+                                                                                             table_3
+                                                                                             (hash-iterate-next
+                                                                                              mutables_0
+                                                                                              i_0)))))
+                                                                                       table_2)))))
+                                                                                (for-loop_0
+                                                                                 table_1
+                                                                                 (hash-iterate-first
+                                                                                  mutables_0))))))
+                                                                        (let ((mutable-shell-bindings_0
+                                                                               (begin
+                                                                                 (begin
+                                                                                   (let ((end_0
+                                                                                          (hash-count
+                                                                                           mutables_0)))
+                                                                                     (letrec*
+                                                                                      ((for-loop_0
+                                                                                        (|#%name|
+                                                                                         for-loop
+                                                                                         (lambda (pos_0)
+                                                                                           (if (<
+                                                                                                pos_0
+                                                                                                end_0)
+                                                                                             (begin
+                                                                                               (ser-shell!_0
+                                                                                                (hash-ref
+                                                                                                 rev-mutables_0
+                                                                                                 pos_0))
+                                                                                               (for-loop_0
+                                                                                                (+
+                                                                                                 pos_0
+                                                                                                 1)))
+                                                                                             (values))))))
+                                                                                      (for-loop_0
+                                                                                       0)))
+                                                                                   (void))
+                                                                                 (reap-stream!_0))))
+                                                                          (let ((table_1
+                                                                                 hash2589))
+                                                                            (let ((rev-shares_0
+                                                                                   (let ((table_2
+                                                                                          table_1))
+                                                                                     (letrec*
+                                                                                      ((for-loop_0
+                                                                                        (|#%name|
+                                                                                         for-loop
+                                                                                         (lambda (table_3
+                                                                                                  i_0)
+                                                                                           (if i_0
+                                                                                             (let ((obj_0
+                                                                                                    (hash-iterate-key
+                                                                                                     shares_0
+                                                                                                     i_0)))
+                                                                                               (let ((table_4
+                                                                                                      (let ((table_4
+                                                                                                             (call-with-values
+                                                                                                              (lambda ()
+                                                                                                                (values
+                                                                                                                 (hash-ref
+                                                                                                                  share-step-positions_0
+                                                                                                                  (hash-ref
+                                                                                                                   objs_0
+                                                                                                                   obj_0))
+                                                                                                                 obj_0))
+                                                                                                              (lambda (key_0
+                                                                                                                       val_0)
+                                                                                                                (hash-set
+                                                                                                                 table_3
+                                                                                                                 key_0
+                                                                                                                 val_0)))))
+                                                                                                        (values
+                                                                                                         table_4))))
+                                                                                                 (for-loop_0
+                                                                                                  table_4
+                                                                                                  (hash-iterate-next
+                                                                                                   shares_0
+                                                                                                   i_0))))
+                                                                                             table_3)))))
+                                                                                      (for-loop_0
+                                                                                       table_2
+                                                                                       (hash-iterate-first
+                                                                                        shares_0))))))
+                                                                              (let ((shared-bindings_0
                                                                                      (begin
-                                                                                       (let ((end_0
-                                                                                              (hash-count
-                                                                                               mutables_0)))
-                                                                                         (letrec*
-                                                                                          ((for-loop_0
-                                                                                            (|#%name|
-                                                                                             for-loop
-                                                                                             (lambda (pos_0)
-                                                                                               (if (<
-                                                                                                    pos_0
-                                                                                                    end_0)
-                                                                                                 (begin
-                                                                                                   (ser-shell-fill!_0
-                                                                                                    (hash-ref
-                                                                                                     rev-mutables_0
-                                                                                                     pos_0))
-                                                                                                   (for-loop_0
-                                                                                                    (+
-                                                                                                     pos_0
-                                                                                                     1)))
-                                                                                                 (values))))))
-                                                                                          (for-loop_0
-                                                                                           0)))
-                                                                                       (void))
-                                                                                     (reap-stream!_0))))
-                                                                              (let ((result_0
-                                                                                     (begin
-                                                                                       (ser-push!_0
-                                                                                        v25_0)
+                                                                                       (begin
+                                                                                         (let ((end_0
+                                                                                                (+
+                                                                                                 num-mutables_0
+                                                                                                 (hash-count
+                                                                                                  shares_0))))
+                                                                                           (letrec*
+                                                                                            ((for-loop_0
+                                                                                              (|#%name|
+                                                                                               for-loop
+                                                                                               (lambda (pos_0)
+                                                                                                 (if (<
+                                                                                                      pos_0
+                                                                                                      end_0)
+                                                                                                   (begin
+                                                                                                     (ser-push-encoded!_0
+                                                                                                      (hash-ref
+                                                                                                       rev-shares_0
+                                                                                                       pos_0))
+                                                                                                     (for-loop_0
+                                                                                                      (+
+                                                                                                       pos_0
+                                                                                                       1)))
+                                                                                                   (values))))))
+                                                                                            (for-loop_0
+                                                                                             num-mutables_0)))
+                                                                                         (void))
                                                                                        (reap-stream!_0))))
-                                                                                (let ((lits_0
-                                                                                       (reap-lits!_0)))
-                                                                                  (if as-data?8_0
-                                                                                    (let ((app_0
+                                                                                (let ((mutable-fills_0
+                                                                                       (begin
+                                                                                         (begin
+                                                                                           (let ((end_0
+                                                                                                  (hash-count
+                                                                                                   mutables_0)))
+                                                                                             (letrec*
+                                                                                              ((for-loop_0
+                                                                                                (|#%name|
+                                                                                                 for-loop
+                                                                                                 (lambda (pos_0)
+                                                                                                   (if (<
+                                                                                                        pos_0
+                                                                                                        end_0)
+                                                                                                     (begin
+                                                                                                       (ser-shell-fill!_0
+                                                                                                        (hash-ref
+                                                                                                         rev-mutables_0
+                                                                                                         pos_0))
+                                                                                                       (for-loop_0
+                                                                                                        (+
+                                                                                                         pos_0
+                                                                                                         1)))
+                                                                                                     (values))))))
+                                                                                              (for-loop_0
+                                                                                               0)))
+                                                                                           (void))
+                                                                                         (reap-stream!_0))))
+                                                                                  (let ((result_0
+                                                                                         (begin
+                                                                                           (ser-push!_0
+                                                                                            v25_0)
+                                                                                           (reap-stream!_0))))
+                                                                                    (let ((lits_0
+                                                                                           (reap-lits!_0)))
+                                                                                      (if as-data?8_0
+                                                                                        (let ((app_0
+                                                                                               (hash-count
+                                                                                                mutables_0)))
+                                                                                          (vector
+                                                                                           app_0
+                                                                                           mutable-shell-bindings_0
                                                                                            (hash-count
-                                                                                            mutables_0)))
-                                                                                      (vector
-                                                                                       app_0
-                                                                                       mutable-shell-bindings_0
-                                                                                       (hash-count
-                                                                                        shares_0)
-                                                                                       shared-bindings_0
-                                                                                       mutable-fills_0
-                                                                                       result_0
-                                                                                       lits_0))
-                                                                                    (let ((finish_0
-                                                                                           (|#%name|
-                                                                                            finish
-                                                                                            (lambda (mutable-shell-bindings-expr_0
-                                                                                                     shared-bindings-expr_0
-                                                                                                     mutable-fills-expr_0
-                                                                                                     result-expr_0
-                                                                                                     lits-expr_0)
-                                                                                              (let ((app_0
+                                                                                            shares_0)
+                                                                                           shared-bindings_0
+                                                                                           mutable-fills_0
+                                                                                           result_0
+                                                                                           lits_0))
+                                                                                        (let ((finish_0
+                                                                                               (|#%name|
+                                                                                                finish
+                                                                                                (lambda (mutable-shell-bindings-expr_0
+                                                                                                         shared-bindings-expr_0
+                                                                                                         mutable-fills-expr_0
+                                                                                                         result-expr_0
+                                                                                                         lits-expr_0)
+                                                                                                  (let ((app_0
+                                                                                                         (list
+                                                                                                          'quote
+                                                                                                          (hash-count
+                                                                                                           mutables_0))))
+                                                                                                    (list
+                                                                                                     'deserialize
+                                                                                                     mpi-vector-id
+                                                                                                     (if syntax-support?9_0
+                                                                                                       inspector-id
+                                                                                                       #f)
+                                                                                                     (if syntax-support?9_0
+                                                                                                       bulk-binding-registry-id
+                                                                                                       #f)
+                                                                                                     app_0
+                                                                                                     mutable-shell-bindings-expr_0
                                                                                                      (list
                                                                                                       'quote
                                                                                                       (hash-count
-                                                                                                       mutables_0))))
-                                                                                                (list
-                                                                                                 'deserialize
-                                                                                                 mpi-vector-id
-                                                                                                 (if syntax-support?9_0
-                                                                                                   inspector-id
-                                                                                                   #f)
-                                                                                                 (if syntax-support?9_0
-                                                                                                   bulk-binding-registry-id
-                                                                                                   #f)
-                                                                                                 app_0
-                                                                                                 mutable-shell-bindings-expr_0
+                                                                                                       shares_0))
+                                                                                                     shared-bindings-expr_0
+                                                                                                     mutable-fills-expr_0
+                                                                                                     result-expr_0
+                                                                                                     lits-expr_0))))))
+                                                                                          (let ((app_0
                                                                                                  (list
-                                                                                                  'quote
-                                                                                                  (hash-count
-                                                                                                   shares_0))
-                                                                                                 shared-bindings-expr_0
-                                                                                                 mutable-fills-expr_0
-                                                                                                 result-expr_0
-                                                                                                 lits-expr_0))))))
-                                                                                      (let ((app_0
-                                                                                             (list
-                                                                                              (list
-                                                                                               '(data)
-                                                                                               (list
-                                                                                                'quote
-                                                                                                (vector
-                                                                                                 mutable-shell-bindings_0
-                                                                                                 shared-bindings_0
-                                                                                                 mutable-fills_0
-                                                                                                 result_0
-                                                                                                 lits_0))))))
-                                                                                        (list
-                                                                                         'let-values
-                                                                                         app_0
-                                                                                         (finish_0
-                                                                                          '(unsafe-vector*-ref
-                                                                                            data
-                                                                                            0)
-                                                                                          '(unsafe-vector*-ref
-                                                                                            data
-                                                                                            1)
-                                                                                          '(unsafe-vector*-ref
-                                                                                            data
-                                                                                            2)
-                                                                                          '(unsafe-vector*-ref
-                                                                                            data
-                                                                                            3)
-                                                                                          '(unsafe-vector*-ref
-                                                                                            data
-                                                                                            4)))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                  (list
+                                                                                                   '(data)
+                                                                                                   (list
+                                                                                                    'quote
+                                                                                                    (vector
+                                                                                                     mutable-shell-bindings_0
+                                                                                                     shared-bindings_0
+                                                                                                     mutable-fills_0
+                                                                                                     result_0
+                                                                                                     lits_0))))))
+                                                                                            (list
+                                                                                             'let-values
+                                                                                             app_0
+                                                                                             (finish_0
+                                                                                              '(unsafe-vector*-ref
+                                                                                                data
+                                                                                                0)
+                                                                                              '(unsafe-vector*-ref
+                                                                                                data
+                                                                                                1)
+                                                                                              '(unsafe-vector*-ref
+                                                                                                data
+                                                                                                2)
+                                                                                              '(unsafe-vector*-ref
+                                                                                                data
+                                                                                                3)
+                                                                                              '(unsafe-vector*-ref
+                                                                                                data
+                                                                                                4)))))))))))))))))))))))))))))))))))))))))))))))))))
 (define sorted-hash-keys
   (lambda (ht_0)
     (let ((ks_0 (hash-keys ht_0)))
@@ -27875,7 +27926,7 @@
         (decode-value b_0 bv_0 pos_0 lits_0)
         (let ((index_0
                (if (fixnum? b_0)
-                 (if (if (unsafe-fx>= b_0 0) (unsafe-fx< b_0 37) #f)
+                 (if (if (unsafe-fx>= b_0 0) (unsafe-fx< b_0 43) #f)
                    (let ((tbl_0
                           '#(1
                              2
@@ -27884,20 +27935,19 @@
                              5
                              6
                              7
-                             8
                              9
                              10
                              11
                              12
-                             12
-                             12
+                             13
+                             13
                              13
                              14
-                             14
-                             14
                              15
                              15
                              15
+                             16
+                             16
                              16
                              17
                              18
@@ -27913,11 +27963,18 @@
                              28
                              29
                              30
-                             31)))
+                             31
+                             32
+                             0
+                             0
+                             0
+                             0
+                             0
+                             8)))
                      (unsafe-vector*-ref tbl_0 (unsafe-fx- b_0 0)))
                    0)
                  0)))
-          (if (unsafe-fx< index_0 15)
+          (if (unsafe-fx< index_0 16)
             (if (unsafe-fx< index_0 7)
               (if (unsafe-fx< index_0 3)
                 (if (unsafe-fx< index_0 1)
@@ -28126,7 +28183,7 @@
                                        tamper_0
                                        inspector_0)
                                       next-pos_4)))))))))))))))
-              (if (unsafe-fx< index_0 10)
+              (if (unsafe-fx< index_0 11)
                 (if (unsafe-fx< index_0 8)
                   (call-with-values
                    (lambda ()
@@ -28192,18 +28249,84 @@
                                    span_0)
                                   next-pos_4)))))))))))
                   (if (unsafe-fx< index_0 9)
-                    (let ((q-pos_0 (+ pos_0 1)))
-                      (decode-value
-                       (unsafe-bytes-ref bv_0 q-pos_0)
-                       bv_0
-                       q-pos_0
-                       lits_0))
                     (call-with-values
-                     (lambda () (decode-int bv_0 (+ pos_0 1)))
-                     (lambda (i_0 next-pos_0)
-                       (values (unsafe-vector*-ref mpis_0 i_0) next-pos_0)))))
-                (if (unsafe-fx< index_0 12)
-                  (if (unsafe-fx< index_0 11)
+                     (lambda ()
+                       (decode
+                        bv_0
+                        (+ pos_0 1)
+                        mpis_0
+                        inspector_0
+                        bulk-binding-registry_0
+                        shared_0
+                        lits_0))
+                     (lambda (holder_0 next-pos_0)
+                       (call-with-values
+                        (lambda ()
+                          (decode
+                           bv_0
+                           next-pos_0
+                           mpis_0
+                           inspector_0
+                           bulk-binding-registry_0
+                           shared_0
+                           lits_0))
+                        (lambda (line_0 next-pos_1)
+                          (call-with-values
+                           (lambda ()
+                             (decode
+                              bv_0
+                              next-pos_1
+                              mpis_0
+                              inspector_0
+                              bulk-binding-registry_0
+                              shared_0
+                              lits_0))
+                           (lambda (column_0 next-pos_2)
+                             (call-with-values
+                              (lambda ()
+                                (decode
+                                 bv_0
+                                 next-pos_2
+                                 mpis_0
+                                 inspector_0
+                                 bulk-binding-registry_0
+                                 shared_0
+                                 lits_0))
+                              (lambda (position_0 next-pos_3)
+                                (call-with-values
+                                 (lambda ()
+                                   (decode
+                                    bv_0
+                                    next-pos_3
+                                    mpis_0
+                                    inspector_0
+                                    bulk-binding-registry_0
+                                    shared_0
+                                    lits_0))
+                                 (lambda (span_0 next-pos_4)
+                                   (values
+                                    (unsafe-make-srcloc
+                                     (srcloc-source holder_0)
+                                     line_0
+                                     column_0
+                                     position_0
+                                     span_0)
+                                    next-pos_4)))))))))))
+                    (if (unsafe-fx< index_0 10)
+                      (let ((q-pos_0 (+ pos_0 1)))
+                        (decode-value
+                         (unsafe-bytes-ref bv_0 q-pos_0)
+                         bv_0
+                         q-pos_0
+                         lits_0))
+                      (call-with-values
+                       (lambda () (decode-int bv_0 (+ pos_0 1)))
+                       (lambda (i_0 next-pos_0)
+                         (values
+                          (unsafe-vector*-ref mpis_0 i_0)
+                          next-pos_0))))))
+                (if (unsafe-fx< index_0 13)
+                  (if (unsafe-fx< index_0 12)
                     (call-with-values
                      (lambda ()
                        (decode
@@ -28239,7 +28362,7 @@
                            lits_0))
                         (lambda (d_0 next-pos_1)
                           (values (cons a_0 d_0) next-pos_1))))))
-                  (if (unsafe-fx< index_0 13)
+                  (if (unsafe-fx< index_0 14)
                     (call-with-values
                      (lambda () (decode-int bv_0 (+ pos_0 1)))
                      (lambda (len_0 start-pos_0)
@@ -28288,7 +28411,7 @@
                                 (core-fresh-vector->pvector r_0)
                                 (vector->immutable-vector r_0)))
                             next-pos_0)))))
-                    (if (unsafe-fx< index_0 14)
+                    (if (unsafe-fx< index_0 15)
                       (call-with-values
                        (lambda () (decode-int bv_0 (+ pos_0 1)))
                        (lambda (len_0 start-pos_0)
@@ -28411,9 +28534,9 @@
                                      keys_0
                                      vals_0))
                                   next-pos_0))))))))))))
-            (if (unsafe-fx< index_0 23)
-              (if (unsafe-fx< index_0 18)
-                (if (unsafe-fx< index_0 16)
+            (if (unsafe-fx< index_0 24)
+              (if (unsafe-fx< index_0 19)
+                (if (unsafe-fx< index_0 17)
                   (let ((s_0
                          (if (= b_0 18)
                            (set)
@@ -28450,7 +28573,7 @@
                                   (for-loop_0 s_2 pos_3 (+ pos_2 1))))
                                (values s_1 pos_1))))))
                         (for-loop_0 s_0 start-pos_0 0)))))
-                  (if (unsafe-fx< index_0 17)
+                  (if (unsafe-fx< index_0 18)
                     (call-with-values
                      (lambda ()
                        (call-with-values
@@ -28505,8 +28628,8 @@
                               (apply make-prefab-struct key_0 (reverse$1 r_0))
                               done-pos_0)))))))
                     (values top-level-common-scope (+ pos_0 1))))
-                (if (unsafe-fx< index_0 20)
-                  (if (unsafe-fx< index_0 19)
+                (if (unsafe-fx< index_0 21)
+                  (if (unsafe-fx< index_0 20)
                     (call-with-values
                      (lambda ()
                        (decode
@@ -28536,7 +28659,7 @@
                         lits_0))
                      (lambda (id_0 next-pos_0)
                        (values (make-interned-scope id_0) next-pos_0))))
-                  (if (unsafe-fx< index_0 21)
+                  (if (unsafe-fx< index_0 22)
                     (call-with-values
                      (lambda ()
                        (decode
@@ -28562,7 +28685,7 @@
                           (values
                            (deserialize-multi-scope name_0 scopes_0)
                            next-pos_1)))))
-                    (if (unsafe-fx< index_0 22)
+                    (if (unsafe-fx< index_0 23)
                       (call-with-values
                        (lambda ()
                          (decode
@@ -28616,8 +28739,8 @@
                               syms_0
                               bulk-bindings_0)
                              next-pos_1)))))))))
-              (if (unsafe-fx< index_0 27)
-                (if (unsafe-fx< index_0 24)
+              (if (unsafe-fx< index_0 28)
+                (if (unsafe-fx< index_0 25)
                   (call-with-values
                    (lambda ()
                      (decode
@@ -28643,7 +28766,7 @@
                         (values
                          (bulk-binding-at2.1 scopes_0 bulk_0)
                          next-pos_1)))))
-                  (if (unsafe-fx< index_0 25)
+                  (if (unsafe-fx< index_0 26)
                     (call-with-values
                      (lambda ()
                        (decode
@@ -28669,7 +28792,7 @@
                           (values
                            (deserialize-representative-scope kind_0 phase_0)
                            next-pos_1)))))
-                    (if (unsafe-fx< index_0 26)
+                    (if (unsafe-fx< index_0 27)
                       (call-with-values
                        (lambda ()
                          (decode
@@ -28847,8 +28970,8 @@
                                     sym_0
                                     nominal-module_0)
                                    next-pos_3))))))))))))
-                (if (unsafe-fx< index_0 29)
-                  (if (unsafe-fx< index_0 28)
+                (if (unsafe-fx< index_0 30)
+                  (if (unsafe-fx< index_0 29)
                     (call-with-values
                      (lambda ()
                        (decode
@@ -28953,10 +29076,10 @@
                                         phase-shift_0
                                         bulk-binding-registry_1)
                                        next-pos_5))))))))))))))
-                  (if (unsafe-fx< index_0 30)
+                  (if (unsafe-fx< index_0 31)
                     (let ((app_0 (like-ambiguous-binding1.1)))
                       (values app_0 (+ pos_0 1)))
-                    (if (unsafe-fx< index_0 31)
+                    (if (unsafe-fx< index_0 32)
                       (call-with-values
                        (lambda ()
                          (decode
