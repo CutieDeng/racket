@@ -11,6 +11,7 @@
          "../namespace/api.rkt"
          "../eval/module-read.rkt"
          "../eval/module-cache.rkt"
+         "../compile/read-linklet.rkt"
          "startup-pack.rkt"
          "../eval/reflect.rkt"
          "../read/api.rkt"
@@ -39,10 +40,8 @@
      [expected-mod
       ((call-with-input-module-file
         path
-        ;; `base` is the file's offset within the port: 0 for a file of
-        ;; its own, the member's offset when read from the startup pack;
-        ;; `end` is the member's end offset, #f for a file of its own
-        (lambda (i base end)
+        expected-mod
+        (lambda (i)
           (maybe-count-lines! i)
           (with-module-reading-parameterization+delay-source
               path
@@ -51,10 +50,10 @@
                  [(linklet-directory-start i)
                   => (lambda (pos)
                        ;; Find and load individual submodule
-                       (define b-pos (search-directory i pos base (encode-symbols expected-mod)))
+                       (define b-pos (search-directory i pos (encode-symbols expected-mod)))
                        (cond
                         [b-pos
-                         (file-position i (+ base b-pos))
+                         (file-position i b-pos)
                          (or (cached-bundle i)
                              (let ([v (read i)])
                                (if (compiled-module-expression? v)
@@ -87,9 +86,7 @@
                                           "  in: ~e")
                            (object-name i)))
                   (define m-s (check-module-form s path))
-                  ;; a pack member is followed by the next member, not
-                  ;; by EOF; its content was checked when the pack was built
-                  (define s2 (if end eof (read-syntax (object-name i) i)))
+                  (define s2 (read-syntax (object-name i) i))
                   (unless (eof-object? s2)
                     (error 'default-load-handler
                            (string-append "expected a `module' declaration;\n"
@@ -147,11 +144,11 @@
                (arithmetic-shift (read-byte/not-eof i) 16)
                (arithmetic-shift (read-byte/not-eof i) 24)))
 
-(define (search-directory i pos base bstr)
+(define (search-directory i pos bstr)
   (cond
    [(zero? pos) #f]
    [else
-    (file-position i (+ base pos))
+    (file-position i pos)
     (define name-len (read-number i))
     (define v (read-bytes name-len i))
     (unless (and (bytes? v) (= (bytes-length v) name-len))
@@ -170,12 +167,12 @@
      [(bytes<? bstr v)
       (read-number i)
       (read-number i)
-      (search-directory i (read-number i) base bstr)]
+      (search-directory i (read-number i) bstr)]
      [else
       (read-number i)
       (read-number i)
       (read-number i)
-      (search-directory i (read-number i) base bstr)])]))
+      (search-directory i (read-number i) bstr)])]))
 
 (define (encode-symbols expected-mod)
   (cond
@@ -196,16 +193,69 @@
         (with-module-reading-parameterization thunk))
       (with-module-reading-parameterization thunk)))
 
-(define (call-with-input-module-file path proc)
-  ;; startup pack: a compiled file that the pack carries is read in
-  ;; place from the pack's port; `proc` gets the member's offset so that
-  ;; positions inside the file (the submodule directory) are translated
-  (define pack-result (and (pack-enabled?) (call-with-pack-member path proc)))
+(define (call-with-input-module-file path expected-mod proc)
+  ;; startup pack: a compiled file that the pack carries is loaded by
+  ;; `load-pack-member`, which has the file's bundle table from the
+  ;; index and so does without the header scans, the submodule search
+  ;; and the reader dispatch that `proc` performs on a file
+  (define pack-result (and (pack-enabled?)
+                           (call-with-pack-member path (lambda (i base directory? table)
+                                                         (load-pack-member i base directory? table path expected-mod)))))
   (cond
     [pack-result (unbox pack-result)]
     [else
      (define i #f)
      (dynamic-wind
       (lambda () (set! i (open-input-file path #:for-module? #t)))
-      (lambda () (proc i 0 #f))
+      (lambda () (proc i))
       (lambda () (close-input-port i)))]))
+
+;; The pack counterpart of the compiled-module branches of
+;; `default-load-handler`'s `proc`: same decisions, same results, same
+;; parameters in effect, but with the bundle's position and hash code
+;; taken from the pack's table. `i` is the pack's port, positioned at
+;; `base` (the member's start). Returns the thunk that declares the module.
+(define (load-pack-member i base directory? table path expected-mod)
+  (define name (encode-symbols expected-mod))
+  (define e (let loop ([table table])
+              (cond
+                [(null? table) #f]
+                [(bytes=? (vector-ref (car table) 0) name) (car table)]
+                [else (loop (cdr table))])))
+  (cond
+    [(and (not e) directory?)
+     (cond
+       [(pair? expected-mod)
+        ;; Cannot load submodule, so do nothing
+        void]
+       [else
+        (error 'default-load-handler
+               (string-append "could not find main module\n"
+                              "  in: ~e")
+               path)])]
+    [(and (not e) (pair? expected-mod) (not (car expected-mod)))
+     ;; a bundle has no submodules; cannot load one independently
+     void]
+    [else
+     ;; a bundle asked for `(sym sub ...)` loads the root, as from a file
+     (define bundle (or e (car table)))
+     (define cache-key (make-module-cache-key (vector-ref bundle 3)))
+     (define declare-module (and cache-key (module-cache-ref cache-key)))
+     (cond
+       [declare-module
+        (lambda () (declare-module (current-namespace)))]
+       [else
+        ;; position after the bundle's `#~`, as the reader expects
+        (file-position i (+ base (vector-ref bundle 1) 2))
+        (define v
+          (with-module-reading-parameterization+delay-source
+           path
+           (lambda () (read-linklet-bundle-or-directory i))))
+        (if (compiled-module-expression? v)
+            (lambda () ((current-eval) v))
+            (error 'default-load-handler
+                   (string-append "expected a compiled module\n"
+                                  "  in: ~e\n"
+                                  "  found: ~e")
+                   path
+                   v))])]))

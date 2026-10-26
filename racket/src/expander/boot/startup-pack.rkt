@@ -26,7 +26,7 @@
          pack-zo-for-source
          call-with-pack-member)
 
-(define MAGIC #"RKTPK2\n")
+(define MAGIC #"RKTPK3\n")
 
 (define-place-local pack-on? #f)
 (define-place-local pack-port #f)
@@ -34,7 +34,7 @@
 (define-place-local pack-guard #f)
 (define-place-local pack-by-key #f)  ; key bytes "col/sub/file" -> (mcons source-path-bytes checked?)
 (define-place-local pack-by-src #f)  ; source path bytes -> compiled path bytes
-(define-place-local pack-by-zo #f)   ; compiled path bytes -> (cons offset length)
+(define-place-local pack-by-zo #f)   ; compiled path bytes -> (vector offset length table-bytes parsed-table)
 (define-place-local pack-candidates #f) ; collection -> candidate directories, for key checks
 
 (define (startup-pack-place-init!)
@@ -153,8 +153,20 @@
                      (let* ([off (read-u32 index-port)]
                             [len (read-u32 index-port)])
                        (read-bytes 20 index-port) ; sha1, for `--verify`
-                       (hash-set! by-src src zo)
-                       (hash-set! by-zo zo (cons off len))))
+                       ;; the bundle table is kept as bytes and parsed
+                       ;; when the member is first loaded
+                       (let* ([kind (read-byte index-port)]
+                              [start (file-position index-port)])
+                         (let tloop ([j (read-u16 index-port)])
+                           (when (> j 0)
+                             (read-bytes (read-u16 index-port) index-port)
+                             (read-bytes 28 index-port)
+                             (tloop (sub1 j))))
+                         (let ([tend (file-position index-port)])
+                           (file-position index-port start)
+                           (let ([tbytes (read-bytes (- tend start) index-port)])
+                             (hash-set! by-src src zo)
+                             (hash-set! by-zo zo (vector off len kind tbytes #f)))))))
                    (loop (add1 i))))
                (set! pack-by-key by-key)
                (set! pack-by-src by-src)
@@ -251,9 +263,35 @@
          [zo (and b (hash-ref pack-by-src b #f))])
     (and zo (bytes->path zo))))
 
-;; compiled path -> its bytes from the pack, or #f
-;; Read a member in place: `proc` receives the pack's port positioned at
-;; the member, the member's offset in the pack and its end, and reads the compiled
+;; A member's bundle table: list of (vector name-bytes offset length hash-code),
+;; `offset` relative to the member, `hash-code` 20 bytes or #f. Parsed
+;; from the index bytes on first use and cached in the member's entry.
+(define (member-table e)
+  (or (vector-ref e 4)
+      (let* ([in (open-input-bytes (vector-ref e 3))]
+             [n (read-u16 in)]
+             [table (let loop ([i 0])
+                      (if (= i n)
+                          '()
+                          (let* ([name (read-bytes (read-u16 in) in)]
+                                 [off (read-u32 in)]
+                                 [len (read-u32 in)]
+                                 [sha (read-bytes 20 in)])
+                            (cons (vector name off len (and (nonzero-bytes? sha) sha))
+                                  (loop (add1 i))))))])
+        (vector-set! e 4 table)
+        table)))
+
+(define (nonzero-bytes? bstr)
+  (let loop ([i 0])
+    (cond
+      [(= i (bytes-length bstr)) #f]
+      [(eq? 0 (bytes-ref bstr i)) (loop (add1 i))]
+      [else #t])))
+
+;; Load a member in place: `proc` receives the pack's port, the member's
+;; offset in the pack, whether the member is a linklet directory, and
+;; its bundle table; it seeks within the member and reads the compiled
 ;; code straight from the file (one copy, into the bundle's byte string,
 ;; exactly as from a .zo file). The port is shared by the place, so the
 ;; semaphore is held for the whole span; the span is reading only, the
@@ -268,6 +306,5 @@
           (dynamic-wind
            void
            (lambda ()
-             (file-position pack-port (car e))
-             (box (proc pack-port (car e) (+ (car e) (cdr e)))))
+             (box (proc pack-port (vector-ref e 0) (eqv? (vector-ref e 2) 68) (member-table e))))
            (lambda () (semaphore-post pack-sema)))))))

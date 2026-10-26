@@ -6,13 +6,19 @@
 ;; it (`raco setup`) and keeps it honest (the compilation manager marks
 ;; it stale when it rewrites a member).
 ;;
-;; Format v2:
-;;   #"RKTPK2\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
+;; Format v3:
+;;   #"RKTPK3\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
 ;;   header = (version "..." vm "..." library-subpath "..." modes "..."
 ;;            build-time N members N)
 ;;   index  = <u32 count> then per member:
 ;;            <u16 n><src path bytes> <u16 n><zo path bytes>
 ;;            <u8 k> k * (<u16 n><key bytes>) <u32 offset> <u32 length> <20 bytes sha1>
+;;            <u8 kind> <u16 m> m * (<u16 n><bundle name> <u32 offset in member> <u32 length> <20 bytes sha1>)
+;;   kind is `B` for a file that is one linklet bundle or `D` for a
+;;   linklet directory; the bundle table lists the bundles of the file
+;;   with the names as the directory encodes them (the root module is
+;;   #""), so that the load handler finds a submodule's bundle and its
+;;   hash code without scanning the file.
 ;; The index is binary so that decoding it costs a fraction of a
 ;; millisecond at every startup (an s-expression index took 2-3 ms to
 ;; read and 7 ms to turn into tables).
@@ -27,7 +33,7 @@
          mark-startup-pack-stale!
          clear-startup-pack-stale!)
 
-(define MAGIC #"RKTPK2\n")
+(define MAGIC #"RKTPK3\n")
 
 (define (startup-pack-path)
   (define share (find-share-dir))
@@ -153,8 +159,58 @@
     (write-bytes (u32 off) o)
     (write-bytes (u32 (bytes-length d)) o)
     (write-bytes (sha1-bytes (open-input-bytes d)) o)
+    (define-values (kind table) (bundle-table d (cadr m)))
+    (write-bytes (bytes (char->integer kind)) o)
+    (write-bytes (u16 (length table)) o)
+    (for ([e table])
+      (write-bytes (u16 (bytes-length (car e)))  o) (write-bytes (car e) o)
+      (write-bytes (u32 (cadr e)) o)
+      (write-bytes (u32 (caddr e)) o)
+      (write-bytes (cadddr e) o))
     (+ off (bytes-length d)))
   (get-output-bytes o))
+
+;; Parse a compiled file's header: -> (values tag header-length sha1)
+;; where sha1 is 20 bytes (all zero when the bundle has no hash code)
+(define (bundle-header d at)
+  (define (bad) (error 'build-startup-pack "not a compiled module file at ~a" at))
+  (unless (and (<= (+ at 2) (bytes-length d))
+               (= (bytes-ref d at) (char->integer #\#))
+               (= (bytes-ref d (add1 at)) (char->integer #\~)))
+    (bad))
+  (define vers-len (bytes-ref d (+ at 2)))
+  (define vm-len (bytes-ref d (+ at 3 vers-len)))
+  (define tag-at (+ at 4 vers-len vm-len))
+  (define tag (integer->char (bytes-ref d tag-at)))
+  (values tag
+          (- (add1 tag-at) at)
+          (if (eqv? tag #\B)
+              (subbytes d (add1 tag-at) (+ tag-at 21))
+              (make-bytes 20 0))))
+
+;; -> (values kind (listof (list name-bytes offset length sha1)))
+(define (bundle-table d zo)
+  (define-values (tag hlen sha1) (bundle-header d 0))
+  (define (u32-at i) (integer-bytes->integer d #f #f i (+ i 4)))
+  (case tag
+    [(#\B) (values #\B (list (list #"" 0 (bytes-length d) sha1)))]
+    [(#\D)
+     (define count (u32-at hlen))
+     (define-values (entries _)
+       (for/fold ([acc null] [i (+ hlen 4)]) ([k count])
+         (define name-len (u32-at i))
+         (define name (subbytes d (+ i 4) (+ i 4 name-len)))
+         (define off (u32-at (+ i 4 name-len)))
+         (define len (u32-at (+ i 8 name-len)))
+         ;; left and right are the directory's search tree; not needed
+         (define sha1
+           (if (and (positive? len)
+                    (= (bytes-ref d off) (char->integer #\#)))
+               (let-values ([(t h s) (bundle-header d off)]) s)
+               (make-bytes 20 0)))
+         (values (cons (list name off len sha1) acc) (+ i 20 name-len))))
+     (values #\D (reverse entries))]
+    [else (error 'build-startup-pack "unknown compiled-file tag ~s in ~a" tag zo)]))
 
 ;; -> (values member-count skipped-roots)
 (define (build-startup-pack out roots)
@@ -210,6 +266,9 @@
       (define off (read-u32 ip))
       (define len (read-u32 ip))
       (define sha (read-bytes 20 ip))
+      (read-byte ip) ; kind
+      (for ([j (read-u16 ip)])
+        (read-bytes (read-u16 ip) ip) (read-bytes 28 ip))
       (vector src zo keys off len sha)))
   (values header index))
 
