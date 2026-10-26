@@ -3,7 +3,8 @@
 
 #lang racket/base
 
-(require racket/path
+(require setup/private/startup-pack
+         racket/path
 	 racket/promise
          racket/file
          racket/port
@@ -894,6 +895,13 @@
 
   (define (clean-step)
     (setup-printf #f (add-time "--- cleaning collections ---"))
+    ;; the startup pack describes compiled files that are about to go
+    (when no-specific-collections?
+      (define pack (startup-pack-path))
+      (when (and pack (file-exists? pack))
+        (setup-printf #f "deleting startup pack")
+        (delete-file pack))
+      (clear-startup-pack-stale!))
     (define dependencies (make-hash))
     ;; Main deletion:
     (for ([cc ccs-to-compile]) (clean-collection cc dependencies))
@@ -1234,6 +1242,20 @@
   ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
   ;;               Info-Domain Cache               ;;
   ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+  (define (make-startup-pack-step)
+    ;; The startup pack (see setup/private/startup-pack.rkt): the compiled
+    ;; forms of the default REPL's modules in one indexed file, rebuilt
+    ;; after everything else so that it reflects the installed ".zo" files
+    (define pack (startup-pack-path))
+    (when pack
+      (setup-printf #f (add-time "--- building startup pack ---"))
+      (with-handlers ([exn:fail? (lambda (exn)
+                                   (setup-printf #f " startup pack not built: ~a" (exn-message exn)))])
+        (define-values (n skipped) (build-startup-pack pack (startup-pack-roots)))
+        (clear-startup-pack-stale! pack)
+        (setup-printf #f " wrote ~a (~a modules~a)" pack n
+                      (if (null? skipped) "" (format "; roots not installed: ~a" skipped))))))
 
   (define (make-info-domain-step)
     (setup-printf #f (add-time "--- updating info-domain tables ---"))
@@ -2276,6 +2298,8 @@
   
   (do-install-part 'general)
   (do-install-part 'post)
+
+  (when (make-zo) (make-startup-pack-step))
 
   (when (and (check-dependencies)
              (or no-specific-collections?
