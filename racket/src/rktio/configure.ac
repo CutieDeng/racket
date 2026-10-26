@@ -441,8 +441,7 @@ else
      LIBSFX="dylib"
      AR="${RKTLINKER} --shared -o"
      ARFLAGS=""
-     LIBS="${LIBS} -framework CoreFoundation"
-     ICP_LIB=cp
+      ICP_LIB=cp
   fi
 fi
 
