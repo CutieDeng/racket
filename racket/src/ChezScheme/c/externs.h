@@ -202,6 +202,7 @@ extern ptr S_count_size_increments(ptr ls, IGEN generation);
 /* intern.c */
 extern void S_intern_init(void);
 extern void S_resize_oblist(void);
+extern void S_resize_oblist_for(iptr count);
 extern ptr S_intern(const unsigned char *s);
 extern ptr S_intern_sc(const string_char *s, iptr n, ptr name_str);
 extern ptr S_intern_sc_hc(const string_char *s, iptr n, iptr hc, ptr name_str);

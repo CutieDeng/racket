@@ -735,6 +735,10 @@ ptr S_vfasl(ptr bv, faslFile stream, iptr offset, iptr input_len, ptr externals)
     if (sym != end_syms) {
       tc_mutex_acquire();
 
+      /* size the symbol table for this image's symbols up front (an
+         upper bound: the space may include segment padding) */
+      S_resize_oblist_for(VSPACE_LENGTH(vspace_symbol) / size_symbol);
+
       while (sym < end_syms) {
         ptr isym;
         IBOOL uninterned;
