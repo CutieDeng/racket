@@ -299,3 +299,7 @@ lan-11（Linux x86-64 Zen 5，最小安装，无 xrepl/expeditor，plain REPL；
 alloc 114.3 → 111.5 MB，major 0/0；核心测试 basic/syntax/macro/read/fasl/struct 过（module.rktl 尾部 #f 预先存在）、`--verify` 0 mismatch、子模块 `dynamic-require` 正常。Linux 收益比 macOS 小（文件系统 stat/open 更便宜，且该安装的 REPL 闭包更小）。
 
 未测：冷缓存（需 `sudo purge`）。
+
+### 15.1 融合装载路径（4eafcbfc30，2026-10-27）
+
+设计与扫描见 dev 文档 §5–§6。同机头对头（参考构建 e956ad95fb，交错 41 对，已验证）：`-l racket -e` −1.4 ms（35/41）、`-l racket -l racket/contract` −1.6（37/41）、`-l racket/base` −0.2（17/41）。区域：`-l racket -e` 的 pack+read 12.8 → 9.3 ms。lan-11 pack 开/关：`-l racket -e` −2.2 → −3.5（21/21）、REPL −3.7 → −6.1（14/15）。预解析 requires 经扫描否决（上界 ≤1 ms；之前的 2.5 µs/次是基准伪影）。

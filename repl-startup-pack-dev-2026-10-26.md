@@ -64,3 +64,32 @@ header 仍是 s-exp（≈300 B，`read` 0.4 ms）；索引改为定宽二进制�
 - 2026-10-26 深夜（续）：就地读第一次构建失败于 `make base` 的 `raco setup`："expected a `module' declaration; found an extra form, in: …/share/startup.pack"。原因：bundle（非目录）路径走 `read-syntax` 后再读一次以确认 EOF（"found an extra form" 检查），包端口在成员之后是下一个成员而非 EOF。改法：proc 多收 `end`（成员终点，独立文件为 #f），`end` 非 #f 时跳过该检查（成员内容在构建时逐字节验证）。重建中。
 - 2026-10-26 夜：就地读重建通过并提交 **e956ad95fb**（索引 v2 + 惰性键 + 就地读 + experiments 构建器改为 setup 库前端）。**已验证**（本机，`make base` 自产 310 成员包）：默认 REPL −10.0（15/15）、`-q` −8.5（15/15）、`-l racket -e` −6.6（20/21）、`-l racket/base -e` −1.5（21/21）、`-n` +0.4（4/15，残余固定成本）；alloc 114.7 → 112.4 MB、major 0/0；正确性矩阵全过。数字汇总在估算报告 §15。S4 完成，S6 完成（提交），剩 lan-11 复测与 DOCS 提交。
 - 2026-10-26 夜（终）：lan-11 复测 e956ad95fb 通过（REPL −3.7 14/15、`-l racket -e` −2.2 21/21、`-l racket/base` −0.4 21/21、`-n` +0.3、无 major、测试过）。S1–S6 全部完成；DOCS 提交随后。
+
+## 5. L2（预解析 requires）扫描结论（2026-10-27，已验证，未开工）
+
+工具：scratchpad/res-classify.rkt（`'#%kernel` 模块在装任何库前包裹 `current-module-name-resolver`，分类 3269 次四参调用）、load-excl.rkt / load-excl-mem.rkt（resolver → load/use-compiled → load → eval 四层**独占**时间/分配）、/tmp/res-stage.rkt、/tmp/res-miss.rkt、/tmp/load-steps.rkt（单步微基准）。覆盖 racket/init + racket/interactive + racket-lexer + xrepl（不含 expeditor/xrepl 初始化，REPL 实际 5834 次）。
+
+1. 之前"已声明模块每次解析 2.5 µs"是测量伪影：基准列表里 `(lib "racket/base/lang/reader.rkt")` 在该进程里未声明，每次触发装载尝试 11.9 µs，拉高平均。真实值：symbol/lib 命中路径缓存 0.14–0.19 µs，mpi join+resolve 0.21 µs，`module-declared?` 0.04 µs。
+2. 调用构成：56% 是相对字符串、noload、relto、已声明（1824 次，合计 0.85 ms，单次 0.46 µs）；真正触发装载 375 次；`(submod "." x)` 带装载 17 次 2.7 ms 是真实子模块装载（lazy-require 等），非负探测。
+3. 四层独占时间（3 次运行）：load 16–23 ms（含 bundle fasl 读 ≈10）、eval 11–17（decl/data）、resolver 6.3–6.6、load/use-compiled 2.8。`PLT_EXPANDER_TIMES` 的 resolver 区域 10.5 ms = 解析自身 + load/use-compiled + load handler 非 read 部分（三者都没有自己的区域）。
+4. 单次装载固定步骤实测：21 参数 `with-module-reading-parameterization` 0.87 µs、`maybe-count-lines!` 的 `regexp-match?` 1.1 µs、头部两次扫描（directory-start + hash-code）≈1.3 µs、`read` 分派再解析一次头部 ≈1 µs、path-cache HAMT 插入 ≈1 µs、split-path/string->symbol/make-resolved ≈0.8 µs。可去除的 ≈7–9 µs × 375 ≈ **2.5–3.2 ms**。
+5. 分配：load 层独占 28.7 MB（bundle 字节 12.7 + fasl 产物）、eval 15 MB、resolver 6 MB（1.9 KB/次）。plain REPL 全程 GC 32 ms = 9 次 minor（各 1–2 ms，存活率 >50%）+ 关窗 major。
+
+**结论**：预解析 requires 上界 ≤1 ms，不做。按装载的固定开销可做"包成员融合装载路径"（索引预存 directory 表与 hash、跳过 regexp/21 参数 parameterize/双重头解析/`read` 分派，守卫 `current-load`/`current-eval` 为默认）≈ −3 ms（推断）。更大的只剩 L4（fasl 9.4 + body0 的一部分 + GC 存活量）与 L3（decl/data 10）。
+
+## 6. 融合装载路径（2026-10-27 定案）
+
+扫描依据：§5 + choose-file-to-load.rkt 的 `linklet-directory-start`/`linklet-bundle-hash-code`（纯 peek，相对当前位置）、compile/read-linklet.rkt 的 `read-linklet-bundle-or-directory`（`#~` 已消费；`start-pos = file-position − 2`，目录内偏移相对 start-pos，故对包成员自动正确；initial? #t 时剥 pre/post）、load-handler.rkt `default-load-handler` 的全部分支、eval/module.rkt 的 cache-key（用 `current-load-relative-directory`）、cs/linklet/read.ss 的 `read-on-demand-source`（决定 linklet 'faslable 还是 'faslable-strict，**必须保留**）。包里 310 成员 = 62 bundle + 248 directory。
+
+现状每次成员装载：`maybe-count-lines!` regexp 1.1 µs → 21 参数 parameterize 0.87 → `linklet-directory-start` 7 次 peek → `search-directory` 二叉查找（每步 `file-position` 0.6 µs + 读名）→ `file-position` 到 bundle → `cached-bundle` 再 7 次 peek + 20 字节 → `(read i)`（建 read-config、字符分派、再解析一次版本/vm 头）→ thunk。可去除 ≈ 7–10 µs/次。
+
+定案：
+1. 索引 v3（magic `RKTPK3`）每成员追加 bundle 表：`<u8 kind B|D> <u16 count> count×(<u16 n><编码名字节> <u32 成员内偏移> <u32 长度> <20B sha1>)`。名字 = .zo 目录里存的 `encode-symbols` 形式（根模块 = `#""`）；B 成员表 = 单项 `#""`，偏移 0；sha1 全零表示无 hash（与 `linklet-bundle-hash-code` 一致）。生成时解析每个成员与目录里每个 bundle 的头部取 sha1。
+2. expander 侧 by-zo 表值 = `(vector offset length table-bytes parsed)`，bundle 表首次装载时解析并缓存（lazy）。`call-with-pack-member` 把 `(port base table)` 交给包专用过程。
+3. load-handler.rkt 新增 `load-pack-member`：按 `expected-mod` 查表（symbol → `#""`；`(#f . subs)`/`(sym . subs)` → 编码 subs）；查不到：D 成员且 pair → `void`，symbol → "could not find main module"；B 成员且 `(sym . subs)` → 装根（与原 B 分支一致），`(#f . subs)` → `void`。命中：用表里 sha1 建 cache key 查 `module-cache-ref`（命中 → 返回 declare thunk）；否则 `file-position` 到 `base+off+2`（跳过 `#~`），`(load-on-demand-enabled)` 时 parameterize `read-on-demand-source`，直接调 `read-linklet-bundle-or-directory`，检查 `compiled-module-expression?`，返回 `(lambda () ((current-eval) v))`。文件路径（非包）的 `proc` 恢复上游原形（去掉 `base`/`end` 参数）。
+4. 不变：resolver、`default-load/use-compiled`（H2、`register-zo-path`、`current-module-declare-source`/`current-load-relative-directory`）、`(current-eval)`、module cache 键语义、错误类型。
+5. 验收：§3 的三类进程 A/B + `debug@GC`；正确性矩阵；`racket -l racket -e` 的 resolver 区域应降 ≈ 2–3 ms（推断 −3 ms 总体）。
+- 2026-10-27：§6 融合装载路径落地并提交 **4eafcbfc30**（索引 v3 bundle 表、`load-pack-member`、文件分支恢复上游原形）。构建一次通过；正确性矩阵全过（核心测试、子模块程序、place、`dynamic-require` 子模块、`(submod … configure-runtime)` 探测、pty REPL、300 次装载 0 失败、`--verify` 0）。**区域（已验证）**：`-l racket -e` 包开 eval+read 61.3 → 58.3 ms（关 67.5）；默认 REPL eval+read 74.5 → 71.6；fasl 读现在计入 pack 区域（直接调 bundle 读取器，绕过 `read` 区域）。到退出 A/B 本轮机器负载高（关侧中位数漂移 119→105、REPL off min 126.9），pack 开/关差值 −8.6(19/21)/−1.7/−0.3(`-n`)、REPL −8.9(13/15)、`-q` −6.4(13/15)，与上一版同量级、无法从中分离本步贡献 → 另起 worktree 构建 e956ad95fb 做同机头对头（ab-two.py / ab-two-ttp.py）。
+- 2026-10-27：lan-11 复测 4eafcbfc30（已验证，pack 开/关）：`-l racket -e` −3.5（21/21，上一版 −2.2）、`-l racket/base` −0.4（20/21）、`-n` +0.4（0/15，上一版 +0.3：索引多了 bundle 表 ≈28 KB，解码成本略升）、REPL ttp −6.1（14/15，上一版 −3.7）；alloc 114.3 → 109.9 MB，major 0/0；测试过。
+- 2026-10-27：**同机头对头（已验证）**，A = e956ad95fb 参考构建（worktree racket-ref-v3，仅核心，无 pkgs）、B = 4eafcbfc30，交错 41 对，load 5.5–6.3：`-l racket -e` **−1.4 ms（35/41）**、`-l racket -l racket/contract` −1.6（37/41）、`-l racket/base` −0.2（17/41，略差）、`-n` ±0.2。ttp 不可比（参考构建没装 xrepl/expeditor）。§6 的 −3 推断偏高，实际 ≈ −1.5；racket/base 级进程持平略负的原因 = 索引多了 bundle 表、解码时逐表按条目读。跟进：索引 v4 给每张表加 `u16 table-len` 前缀，解码一次 `read-bytes`（magic RKTPK4），重建中。
+- 2026-10-27：索引 v4（表长前缀）重建通过并提交；正确性全过；头对头 vs e956ad95fb：`-l racket -e` −1.4（34/41）复现，`-n` −0.3（8/41）、`-l racket/base` −0.3（17/41）——小进程差异在 ±0.3 ms 内且两套安装不止包代码不同（主树装了 pkgs），无法再分辨；包开/关的 `-n` 固定成本两版都 ≈0.3 ms，由打开包 + 读 header/索引主导。融合装载路径收尾：**本机 `-l racket -e` −1.4 ms（已验证）、lan-11 REPL 开/关 −3.7 → −6.1**。
