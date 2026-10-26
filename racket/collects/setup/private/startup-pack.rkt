@@ -127,12 +127,32 @@
 
 (define (u32 n) (integer->integer-bytes n 4 #f #f))
 
+(define (normalize-dir p)
+  (path->string (path->directory-path (simplify-path (path->complete-path p) #f))))
+(define (normalize-file p)
+  (path->string (simplify-path (path->complete-path p) #f)))
+
+;; exactly as the expander reproduces them at startup (see
+;; racket/src/expander/boot/startup-pack.rkt)
+(define (user-specific? p)
+  (define addon (find-system-path 'addon-dir))
+  (and (path? p) (complete-path? addon)
+       (let ([a (path->string (path->directory-path (simplify-path addon #f)))]
+             [s (path->string (simplify-path (path->complete-path p) #f))])
+         (and (>= (string-length s) (string-length a))
+              (string=? a (substring s 0 (string-length a)))))))
+
+;; installation entries only, user-specific ones left out
 (define (header-string)
   (list 'version (version)
         'vm (symbol->string (system-type 'vm))
         'library-subpath (path->string (system-library-subpath #f))
-        'links (format "~s" (map (lambda (p) (and p (path->string p))) (current-library-collection-links)))
-        'paths (format "~s" (map path->string (current-library-collection-paths)))
+        'links (format "~s" (for/list ([p (current-library-collection-links)]
+                                      #:unless (and p (user-specific? p)))
+                              (and p (normalize-file p))))
+        'paths (format "~s" (for/list ([p (current-library-collection-paths)]
+                                      #:unless (user-specific? p))
+                              (normalize-dir p)))
         'modes (format "~s" (map path->string (use-compiled-file-paths)))))
 
 ;; -> (values member-count skipped-roots)

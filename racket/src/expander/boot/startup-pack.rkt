@@ -61,12 +61,41 @@
        (complete-path? share-dir)
        (build-path share-dir "startup.pack")))
 
+(define (normalize-dir p)
+  (path->string (path->directory-path (simplify-path (path->complete-path p) #f))))
+(define (normalize-file p)
+  (path->string (simplify-path (path->complete-path p) #f)))
+
+;; User-specific search entries (under the addon directory) are left
+;; out of the comparison: a build's `raco setup --no-user` does not see
+;; them, and they cannot shadow a pack member unless the user scope
+;; actually provides one of the pack's collections, which
+;; `startup-pack-init!` checks separately.
+(define (user-specific? p)
+  (let ([addon (find-system-path 'addon-dir)])
+    (and (path? p)
+         (complete-path? addon)
+         (let ([a (path->string (path->directory-path (simplify-path addon #f)))]
+               [s (path->string (simplify-path (path->complete-path p) #f))])
+           (and (>= (string-length s) (string-length a))
+                (string=? a (substring s 0 (string-length a))))))))
+
 ;; The configuration strings must be produced exactly as the pack
-;; builder produces them:
+;; builder produces them: complete, syntactically simplified, with
+;; directories in directory form, installation entries only
 (define (links-string)
-  (format "~s" (map (lambda (p) (and p (path->string p))) (current-library-collection-links))))
+  (format "~s" (let loop ([l (current-library-collection-links)])
+                 (cond
+                   [(null? l) '()]
+                   [(not (car l)) (cons #f (loop (cdr l)))]
+                   [(user-specific? (car l)) (loop (cdr l))]
+                   [else (cons (normalize-file (car l)) (loop (cdr l)))]))))
 (define (paths-string)
-  (format "~s" (map path->string (current-library-collection-paths))))
+  (format "~s" (let loop ([l (current-library-collection-paths)])
+                 (cond
+                   [(null? l) '()]
+                   [(user-specific? (car l)) (loop (cdr l))]
+                   [else (cons (normalize-dir (car l)) (loop (cdr l)))]))))
 (define (modes-string)
   (format "~s" (map path->string (use-compiled-file-paths))))
 
@@ -96,7 +125,7 @@
       (write-string (apply format fmt args) e)
       (newline e))))
 
-(define (startup-pack-init! share-dir)
+(define (startup-pack-init! share-dir user-collection-dirs)
   (startup-pack-place-init!)
   (let* ([env (getenv-bytes #"PLT_STARTUP_PACK")]
          [pack-path (cond
@@ -147,6 +176,29 @@
                      (hash-set! by-src (path->bytes src) zo)
                      (hash-set! by-zo (path->bytes zo) (cons (vector-ref e 3) (vector-ref e 4))))
                    (loop (add1 i))))
+               ;; a user-scope file with a key's path shadows the member:
+               ;; the resolver would find it first, so drop the key (the
+               ;; module then resolves and loads as it does without a pack)
+               (let ([split (lambda (k)
+                              (let loop ([i 0] [start 0] [acc '()])
+                                (cond
+                                  [(= i (string-length k)) (reverse (cons (substring k start i) acc))]
+                                  [(char=? (string-ref k i) #\/) (loop (add1 i) (add1 i) (cons (substring k start i) acc))]
+                                  [else (loop (add1 i) start acc)])))])
+                 (for-each
+                  (lambda (k)
+                    (let* ([parts (split k)]
+                           [col (car parts)])
+                      (for-each
+                       (lambda (e)
+                         (when (and (string=? (vector-ref e 0) col)
+                                    (hash-ref by-key k #f)
+                                    (file-exists? (apply build-path (vector-ref e 1)
+                                                         (if (vector-ref e 2) (cdr parts) parts))))
+                           (pack-debug "startup-pack: key ~s shadowed in user scope; dropped" k)
+                           (hash-remove! by-key k)))
+                       user-collection-dirs)))
+                  (hash-keys by-key)))
                (set! pack-by-key by-key)
                (set! pack-by-src by-src)
                (set! pack-by-zo by-zo)
@@ -154,7 +206,7 @@
                (set! pack-sema (make-semaphore 1))
                (set! pack-guard (current-security-guard))
                (set! pack-on? #t)
-               (pack-debug "startup-pack: enabled, ~a members" (vector-length index)))]
+               (pack-debug "startup-pack: enabled, ~a members, ~a keys" (vector-length index) (hash-count by-key)))]
             [else
              (close-input-port in)]))))))
 
