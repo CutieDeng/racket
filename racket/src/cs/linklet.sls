@@ -130,15 +130,6 @@
                 will-try-execute)
           (regexp)
           (schemify))
-  ;; TEMP-STAMPS
-  (define boot-stamp-linklet
-    (and (#%getenv "PLT_BOOT_STAMPS")
-         (let ([t (#%current-time 'time-monotonic)])
-           (#%fprintf (#%current-error-port) "STAMP layer-linklet ~a ~a 0\n"
-                      (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
-                      (#%cpu-time))
-           #t)))
-
 
   (define linklet-compilation-mode
     (cond

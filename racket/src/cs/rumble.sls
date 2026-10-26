@@ -997,15 +997,6 @@
           (only (chezscheme csv7)
                 record-field-accessor
                 record-field-mutator))
-  ;; TEMP-STAMPS
-  (define boot-stamp-rumble
-    (and (#%getenv "PLT_BOOT_STAMPS")
-         (let ([t (#%current-time 'time-monotonic)])
-           (#%fprintf (#%current-error-port) "STAMP layer-rumble ~a ~a 0\n"
-                      (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
-                      (#%cpu-time))
-           #t)))
-
 
   ;; Internal tokens that are different from all possible user-level values:
   (define none '#{none kwcju864gpycc2h151s9atbmo-1})

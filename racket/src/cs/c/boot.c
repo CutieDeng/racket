@@ -138,20 +138,6 @@ static void init_foreign(void)
 # include "rktrandom.inc"
 }
 
-/* TEMP-STAMPS begin */
-#include <time.h>
-#include <sys/resource.h>
-static void boot_stamp(const char *tag) {
-  static int on = -1;
-  struct timespec ts; struct rusage ru;
-  if (on < 0) on = (getenv("PLT_BOOT_STAMPS") != NULL);
-  if (!on) return;
-  clock_gettime(CLOCK_MONOTONIC, &ts);
-  getrusage(RUSAGE_SELF, &ru);
-  fprintf(stderr, "STAMP c-%s %.3f %ld 0\n", tag, ts.tv_sec*1000.0 + ts.tv_nsec/1e6,
-          (long)((ru.ru_utime.tv_sec + ru.ru_stime.tv_sec)*1000 + (ru.ru_utime.tv_usec + ru.ru_stime.tv_usec)/1000));
-}
-/* TEMP-STAMPS end */
 void racket_boot(racket_boot_arguments_t *ba)
 {
   int cross_server = 0;
@@ -165,9 +151,7 @@ void racket_boot(racket_boot_arguments_t *ba)
 
   Sscheme_register_signal_registerer(rktio_will_modify_os_signal_handler);
 
-  boot_stamp("entry"); /* TEMP-STAMPS */
   Sscheme_init(NULL);
-  boot_stamp("scheme-init"); /* TEMP-STAMPS */
 
 #ifdef PBCHUNK_REGISTER
   register_pbchunks();
@@ -238,9 +222,7 @@ void racket_boot(racket_boot_arguments_t *ba)
 # endif
   }
 
-  boot_stamp("boot-registered"); /* TEMP-STAMPS */
   Sbuild_heap(NULL, init_foreign);
-  boot_stamp("build-heap"); /* TEMP-STAMPS */
 
   if (cross_server) {
     /* Don't run Racket as usual. Instead, load the patch

@@ -33,15 +33,6 @@
                   [correlated-span rumble:correlated-span])
           (regexp)
           (io))
-  ;; TEMP-STAMPS
-  (define boot-stamp-schemify
-    (and (#%getenv "PLT_BOOT_STAMPS")
-         (let ([t (#%current-time 'time-monotonic)])
-           (#%fprintf (#%current-error-port) "STAMP layer-schemify ~a ~a 0\n"
-                      (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
-                      (#%cpu-time))
-           #t)))
-
 
   ;; Bridge for flattened "schemify/wrap.rkt"
   ;; and "schemify/wrap-annotation.rkt"
