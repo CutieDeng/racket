@@ -939,7 +939,11 @@
           (load-cached-recompile-summary (managed-recompile-cache-dir) assume-compiled-sha1 path)])]
       [else code-or-bytes]))
 
-  (when (and code-or-bytes (not (bytes? code-or-bytes)) use-recompile-cache?)
+  ;; A machine-independent compile has no target-machine summary to
+  ;; cache (its linklets are still correlated forms), so skip the cache
+  ;; in that case instead of asking for a summary that cannot exist
+  (when (and code-or-bytes (not (bytes? code-or-bytes)) use-recompile-cache?
+             (current-compile-target-machine))
     (save-cached-recompile (managed-recompile-cache-dir) assume-compiled-sha1 zo-name
                            (compiled-expression-summarize-target-machine code)))
 

@@ -33,6 +33,15 @@
                   [set-custodian-memory-use-proc! rumble:set-custodian-memory-use-proc!]
                   [set-immediate-allocation-check-proc! rumble:set-immediate-allocation-check-proc!]
                   [continuation-current-primitive rumble:continuation-current-primitive]))
+  ;; TEMP-STAMPS
+  (chez:define boot-stamp-thread
+    (and (#%getenv "PLT_BOOT_STAMPS")
+         (let ([t (#%current-time 'time-monotonic)])
+           (#%fprintf (#%current-error-port) "STAMP layer-thread ~a ~a 0\n"
+                      (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
+                      (#%cpu-time))
+           #t)))
+
 
   (include "place-register.ss")
   (define-place-register-define place:define thread-register-start thread-register-count)

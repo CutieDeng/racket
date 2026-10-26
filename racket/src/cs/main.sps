@@ -57,6 +57,17 @@
                primitive-lookup))
 
  (linklet-performance-init!)
+ ;; TEMP-STAMPS begin
+ (define boot-stamps? (getenv "PLT_BOOT_STAMPS"))
+ (define (stamp! tag)
+   (when boot-stamps?
+     (let ([t (#%current-time 'time-monotonic)])
+       (#%fprintf (#%current-error-port) "STAMP ~a ~a ~a ~a\n" tag
+                  (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
+                  (#%cpu-time) (current-gc-milliseconds)))
+     (#%flush-output-port (#%current-error-port))))
+ (stamp! "main-start")
+ ;; TEMP-STAMPS end
  (unless omit-debugging?
    (compile-keep-source-locations! #t))
 
@@ -797,6 +808,7 @@
 
    (define gcs-on-exit? (and (getenv "PLT_GCS_ON_EXIT") #t))
 
+   (define flags-parsed-stamp (stamp! "flags-parsed")) ; TEMP-STAMPS
    (define config
      (let ()
        (when host-collects-dir
@@ -812,8 +824,10 @@
        ;; Beware: using Racket I/O outside of the initial thread, but
        ;; enough is in place on startup to read a configuration file
        (read-installation-configuration-table)))
+   (define config-read-stamp (stamp! "config-read")) ; TEMP-STAMPS
 
    (define (initialize-place!)
+     (stamp! "place-init-start") ; TEMP-STAMPS
      (current-command-line-arguments remaining-command-line-arguments)
      (use-compiled-file-paths compiled-file-paths)
      (use-user-specific-search-paths user-specific-search-paths?)
@@ -850,6 +864,7 @@
 
    ;; Called when Racket is embedded in a larger application:
    (define (register-embedded-entry-info! escape)
+     (stamp! "place-init-collections-done") ; TEMP-STAMPS
      (let ([resume-k #f]) ;; to get back to Racket thread; expects a thunk
        ((call/cc ;; Scheme-level `call/cc` to escape Racket's thread-engine loop
          (lambda (init-resume-k)
@@ -986,6 +1001,7 @@
        (lambda ()
          (initialize-exit-handler!)
          (initialize-place!)
+         (stamp! "place-init-done") ; TEMP-STAMPS
 
          (when (and make? (not (null? compiled-file-paths)))
            (|#%app|
@@ -997,8 +1013,10 @@
          (when startup-gc-window?
            (set-startup-gc-mode! #t))
 
+         (stamp! "pre-init-library") ; TEMP-STAMPS
          (when init-library
            (namespace-require+ init-library))
+         (stamp! "init-library-done") ; TEMP-STAMPS
 
          (install-command-line-interaction-reader! config)
          
@@ -1027,9 +1045,11 @@
                   (lambda () (dynamic-require m 0))
                   (default-continuation-prompt-tag)
                   (lambda args (set! exit-value 1))))))
+           (stamp! "repl-init-file-done") ; TEMP-STAMPS
            ;; End of the startup window: loading is done, the REPL takes over
            (when startup-gc-window?
              (set-startup-gc-mode! #f (startup-gc-finish-mode)))
+           (stamp! "gc-window-closed") ; TEMP-STAMPS
            (|#%app| (if text-repl?
                         (dynamic-require 'racket/base 'read-eval-print-loop)
                         (dynamic-require 'racket/gui/init 'graphical-read-eval-print-loop)))

@@ -26,6 +26,15 @@
                   [immobile-cell->address rumble:immobile-cell->address]
                   [address->immobile-cell rumble:address->immobile-cell])
           (thread))
+  ;; TEMP-STAMPS
+  (chez:define boot-stamp-io
+    (and (#%getenv "PLT_BOOT_STAMPS")
+         (let ([t (#%current-time 'time-monotonic)])
+           (#%fprintf (#%current-error-port) "STAMP layer-io ~a ~a 0\n"
+                      (+ (* 1000.0 (#%time-second t)) (/ (#%time-nanosecond t) 1000000.0))
+                      (#%cpu-time))
+           #t)))
+
 
   (include "place-register.ss")
   (define-place-register-define place:define io-register-start io-register-count)
