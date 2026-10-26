@@ -18,6 +18,7 @@
          "../read/api.rkt"
          "../read/primitive-parameter.rkt"
          "load-handler.rkt"
+         "startup-pack.rkt"
          "../common/performance.rkt")
 
 (provide boot
@@ -53,11 +54,19 @@
             (with-dir* (caddr use-path/src)
               (lambda () ((current-load) (car use-path/src) expect-module))))
           (let-values ([(the-module-declare-source file-type the-path)
-                        (choose-file-to-load path expect-module #t expect-module
-                                             #f
-                                             (current-compiled-file-roots)
-                                             (use-compiled-file-paths)
-                                             (use-compiled-file-check))])
+                        ;; startup pack: a source path that the pack indexes
+                        ;; loads from its compiled form without the
+                        ;; timestamp checks of `choose-file-to-load`
+                        (let ([pack-zo (and (pack-enabled?)
+                                            (eq? (current-load) default-load-handler)
+                                            (pack-zo-for-source path))])
+                          (if pack-zo
+                              (values #f 'zo pack-zo)
+                              (choose-file-to-load path expect-module #t expect-module
+                                                   #f
+                                                   (current-compiled-file-roots)
+                                                   (use-compiled-file-paths)
+                                                   (use-compiled-file-check))))])
             (when the-path
               (define-values (_base orig-file dir?) (split-path path))
               (define base (if (eq? _base 'relative) 'same _base))

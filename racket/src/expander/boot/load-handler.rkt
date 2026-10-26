@@ -11,6 +11,7 @@
          "../namespace/api.rkt"
          "../eval/module-read.rkt"
          "../eval/module-cache.rkt"
+         "startup-pack.rkt"
          "../eval/reflect.rkt"
          "../read/api.rkt"
          "../read/primitive-parameter.rkt")
@@ -191,8 +192,16 @@
       (with-module-reading-parameterization thunk)))
 
 (define (call-with-input-module-file path proc)
-  (define i #f)
-  (dynamic-wind
-   (lambda () (set! i (open-input-file path #:for-module? #t)))
-   (lambda () (proc i))
-   (lambda () (close-input-port i))))
+  ;; startup pack: a compiled file that the pack carries is read from
+  ;; the pack's bytes; the port keeps the file's name so that submodule
+  ;; lookup, the module cache, and error messages see no difference
+  (define pack-bytes (and (pack-enabled?) (pack-member-bytes path)))
+  (cond
+    [pack-bytes
+     (proc (open-input-bytes pack-bytes path))]
+    [else
+     (define i #f)
+     (dynamic-wind
+      (lambda () (set! i (open-input-file path #:for-module? #t)))
+      (lambda () (proc i))
+      (lambda () (close-input-port i)))]))

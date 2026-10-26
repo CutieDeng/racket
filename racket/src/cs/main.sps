@@ -28,6 +28,7 @@
                dynamic-require
                namespace-require
                embedded-load
+               startup-pack-init!
                module-path?
                module-declared?
                module->language-info
@@ -860,7 +861,10 @@
                                         compiled-roots-path-list-string
                                         (version))])
                 (path-list-string->path-list s roots)))
-             (current-compiled-file-roots roots)))))
+             (current-compiled-file-roots roots))))
+     ;; Startup pack (see "startup-pack.rkt" in the expander): decided
+     ;; once the collection and compiled-file configuration is in place
+     (startup-pack-init!))
 
    ;; Called when Racket is embedded in a larger application:
    (define (register-embedded-entry-info! escape)
@@ -939,6 +943,7 @@
       (current-library-collection-paths (list-ref inh 1))
       (current-library-collection-links (list-ref inh 2))
       (current-compiled-file-roots (list-ref inh 3))
+      (startup-pack-init!)
       (let loop ([l (reverse embedded-load-in-places)])
         (unless (null? l)
           (let-values ([(path n m bstr) (apply values (car l))])

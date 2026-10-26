@@ -6,6 +6,7 @@
          ffi/unsafe/atomic
          "parameter.rkt"
          "shadow-directory.rkt"
+         "../boot/startup-pack.rkt"
          ;; Avoid keyword-argument variant:
          (only-in '#%kernel directory-list))
 
@@ -374,6 +375,16 @@
 (define (find-col-file fail collection-in collection-path-in file-name check-compiled?)
   (define-values (collection collection-path)
     (normalize-collection-reference collection-in collection-path-in))
+  ;; startup pack: a collection reference that the pack indexes needs no
+  ;; search of the collection directories
+  (define pack-path (and file-name
+                         (pack-enabled?)
+                         (pack-collection-path collection collection-path file-name)))
+  (if pack-path
+      pack-path
+      (find-col-file/search fail collection collection-path file-name check-compiled?)))
+
+(define (find-col-file/search fail collection collection-path file-name check-compiled?)
   (define all-paths (let ([sym (string->symbol 
                                 (if (path? collection)
                                     (path->string collection)
