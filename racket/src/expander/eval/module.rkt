@@ -233,8 +233,11 @@
                                                              (namespace-set-transformer! ns (sub1 phase-level) name val))])))
 
                                    (define (instantiate-body)
+                                     ;; body time is attributed by phase level, since a REPL
+                                     ;; startup pays for phase-0 bodies and for the phase-1+
+                                     ;; bodies that macros and `for-syntax` chains need
                                      (performance-region
-                                      ['eval 'instantiate 'body]
+                                      ['eval 'instantiate (if (zero-phase? phase-level) 'body0 'body+)]
                                       (instantiate-linklet phase-linklet
                                                            (list* syntax-literals-instance
                                                                   module-body-instance-instance
@@ -444,16 +447,18 @@
   (define data-instance
     (if (compiled-in-memory? c)
         (make-data-instance-from-compiled-in-memory c)
-        (instantiate-linklet (eval-linklet* (hash-ref h 'data))
-                             (list deserialize-instance))))
+        (performance-region ['eval 'module 'data] ; data linklet: mpis, literals
+         (instantiate-linklet (eval-linklet* (hash-ref h 'data))
+                             (list deserialize-instance)))))
 
   (define declaration-instance
     (if (and (compiled-in-memory? c)
              (compiled-in-memory-original-self c))
         (make-declaration-instance-from-compiled-in-memory c)
-        (instantiate-linklet (eval-linklet* (hash-ref h 'decl))
+        (performance-region ['eval 'module 'decl] ; declaration linklet: requires, provides
+         (instantiate-linklet (eval-linklet* (hash-ref h 'decl))
                              (list deserialize-instance
-                                   data-instance))))
+                                   data-instance)))))
   
   (values dh h data-instance declaration-instance))
 

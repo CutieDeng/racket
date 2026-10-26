@@ -48254,7 +48254,11 @@
                                                                                                                                                      (start-performance-region
                                                                                                                                                       'eval
                                                                                                                                                       'instantiate
-                                                                                                                                                      'body)
+                                                                                                                                                      (if (eq?
+                                                                                                                                                           phase-level_0
+                                                                                                                                                           0)
+                                                                                                                                                        'body0
+                                                                                                                                                        'body+))
                                                                                                                                                      (void))
                                                                                                                                                    (begin0
                                                                                                                                                      (let ((app_0
@@ -48675,21 +48679,35 @@
        (let ((data-instance_0
               (if (compiled-in-memory? c_0)
                 (make-data-instance-from-compiled-in-memory c_0)
-                (let ((app_0
-                       (let ((l_0 (hash-ref h_0 'data)))
-                         (eval-linklet (force-compile-linklet l_0)))))
-                  (instantiate-linklet app_0 (list deserialize-instance))))))
+                (begin
+                  (if log-performance?
+                    (start-performance-region 'eval 'module 'data)
+                    (void))
+                  (begin0
+                    (let ((app_0
+                           (let ((l_0 (hash-ref h_0 'data)))
+                             (eval-linklet (force-compile-linklet l_0)))))
+                      (instantiate-linklet app_0 (list deserialize-instance)))
+                    (if log-performance? (end-performance-region) (void)))))))
          (let ((declaration-instance_0
                 (if (if (compiled-in-memory? c_0)
                       (compiled-in-memory-original-self c_0)
                       #f)
                   (make-declaration-instance-from-compiled-in-memory c_0)
-                  (let ((app_0
-                         (let ((l_0 (hash-ref h_0 'decl)))
-                           (eval-linklet (force-compile-linklet l_0)))))
-                    (instantiate-linklet
-                     app_0
-                     (list deserialize-instance data-instance_0))))))
+                  (begin
+                    (if log-performance?
+                      (start-performance-region 'eval 'module 'decl)
+                      (void))
+                    (begin0
+                      (let ((app_0
+                             (let ((l_0 (hash-ref h_0 'decl)))
+                               (eval-linklet (force-compile-linklet l_0)))))
+                        (instantiate-linklet
+                         app_0
+                         (list deserialize-instance data-instance_0)))
+                      (if log-performance?
+                        (end-performance-region)
+                        (void)))))))
            (values dh_0 h_0 data-instance_0 declaration-instance_0)))))))
 (define compiled-module->declaration-instance
   (lambda (c_0)
