@@ -1565,9 +1565,11 @@
     (for ([sym (in-list (get-saved-names))])
       (define id (namespace-symbol->identifier sym))
       (unless (identifier-binding id)
-        (eval-sexpr-for-user
-         `(,#'require (,#'only-in ,#'xrepl/saved-values
-                                  [,#'saved-value-ref ,id])))))))
+        ;; a raw require spec: the import happens directly, with no
+        ;; `require` form to expand and compile (this runs before every
+        ;; prompt whose namespace or directory changed, including the
+        ;; first one, so it is on the REPL's startup path)
+        (namespace-require `(rename xrepl/saved-values ,sym saved-value-ref))))))
 
 (require (for-syntax racket/base))
 (define ((make-xrepl-evaluator orig) expr)
