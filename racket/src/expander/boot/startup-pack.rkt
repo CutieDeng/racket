@@ -26,7 +26,7 @@
          pack-zo-for-source
          call-with-pack-member)
 
-(define MAGIC #"RKTPK3\n")
+(define MAGIC #"RKTPK4\n")
 
 (define-place-local pack-on? #f)
 (define-place-local pack-port #f)
@@ -156,17 +156,9 @@
                        ;; the bundle table is kept as bytes and parsed
                        ;; when the member is first loaded
                        (let* ([kind (read-byte index-port)]
-                              [start (file-position index-port)])
-                         (let tloop ([j (read-u16 index-port)])
-                           (when (> j 0)
-                             (read-bytes (read-u16 index-port) index-port)
-                             (read-bytes 28 index-port)
-                             (tloop (sub1 j))))
-                         (let ([tend (file-position index-port)])
-                           (file-position index-port start)
-                           (let ([tbytes (read-bytes (- tend start) index-port)])
-                             (hash-set! by-src src zo)
-                             (hash-set! by-zo zo (vector off len kind tbytes #f)))))))
+                              [tbytes (read-bytes (read-u16 index-port) index-port)])
+                         (hash-set! by-src src zo)
+                         (hash-set! by-zo zo (vector off len kind tbytes #f)))))
                    (loop (add1 i))))
                (set! pack-by-key by-key)
                (set! pack-by-src by-src)

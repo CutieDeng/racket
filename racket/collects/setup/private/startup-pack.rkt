@@ -7,13 +7,15 @@
 ;; it stale when it rewrites a member).
 ;;
 ;; Format v3:
-;;   #"RKTPK3\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
+;;   #"RKTPK4\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
 ;;   header = (version "..." vm "..." library-subpath "..." modes "..."
 ;;            build-time N members N)
 ;;   index  = <u32 count> then per member:
 ;;            <u16 n><src path bytes> <u16 n><zo path bytes>
 ;;            <u8 k> k * (<u16 n><key bytes>) <u32 offset> <u32 length> <20 bytes sha1>
-;;            <u8 kind> <u16 m> m * (<u16 n><bundle name> <u32 offset in member> <u32 length> <20 bytes sha1>)
+;;            <u8 kind> <u16 table-len> <u16 m> m * (<u16 n><bundle name> <u32 offset in member> <u32 length> <20 bytes sha1>)
+;;   table-len is the byte length of what follows it in the record, so
+;;   that the table can be skipped or kept as one byte string.
 ;;   kind is `B` for a file that is one linklet bundle or `D` for a
 ;;   linklet directory; the bundle table lists the bundles of the file
 ;;   with the names as the directory encodes them (the root module is
@@ -33,7 +35,7 @@
          mark-startup-pack-stale!
          clear-startup-pack-stale!)
 
-(define MAGIC #"RKTPK3\n")
+(define MAGIC #"RKTPK4\n")
 
 (define (startup-pack-path)
   (define share (find-share-dir))
@@ -161,12 +163,16 @@
     (write-bytes (sha1-bytes (open-input-bytes d)) o)
     (define-values (kind table) (bundle-table d (cadr m)))
     (write-bytes (bytes (char->integer kind)) o)
-    (write-bytes (u16 (length table)) o)
-    (for ([e table])
-      (write-bytes (u16 (bytes-length (car e)))  o) (write-bytes (car e) o)
-      (write-bytes (u32 (cadr e)) o)
-      (write-bytes (u32 (caddr e)) o)
-      (write-bytes (cadddr e) o))
+    (define tb (let ([t (open-output-bytes)])
+                 (write-bytes (u16 (length table)) t)
+                 (for ([e table])
+                   (write-bytes (u16 (bytes-length (car e))) t) (write-bytes (car e) t)
+                   (write-bytes (u32 (cadr e)) t)
+                   (write-bytes (u32 (caddr e)) t)
+                   (write-bytes (cadddr e) t))
+                 (get-output-bytes t)))
+    (write-bytes (u16 (bytes-length tb)) o)
+    (write-bytes tb o)
     (+ off (bytes-length d)))
   (get-output-bytes o))
 
@@ -267,8 +273,7 @@
       (define len (read-u32 ip))
       (define sha (read-bytes 20 ip))
       (read-byte ip) ; kind
-      (for ([j (read-u16 ip)])
-        (read-bytes (read-u16 ip) ip) (read-bytes 28 ip))
+      (read-bytes (read-u16 ip) ip) ; bundle table
       (vector src zo keys off len sha)))
   (values header index))
 

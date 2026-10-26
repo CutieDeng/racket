@@ -63173,7 +63173,7 @@
             (let ((ht_0 (shadow-directory-table sd_0)))
               (hash-ref ht_0 (normal-case-path subpath_0) #f))
             (void)))))))
-(define MAGIC #vu8(82 75 84 80 75 51 10))
+(define MAGIC #vu8(82 75 84 80 75 52 10))
 (define cell.1$2 (unsafe-make-place-local #f))
 (define cell.2$2 (unsafe-make-place-local #f))
 (define cell.3$1 (unsafe-make-place-local #f))
@@ -63449,60 +63449,25 @@
                                                                 (let ((kind_0
                                                                        (read-byte
                                                                         index-port_0)))
-                                                                  (let ((start_0
-                                                                         (file-position
+                                                                  (let ((tbytes_0
+                                                                         (read-bytes
+                                                                          (read-u16
+                                                                           index-port_0)
                                                                           index-port_0)))
                                                                     (begin
-                                                                      (letrec*
-                                                                       ((tloop_0
-                                                                         (|#%name|
-                                                                          tloop
-                                                                          (lambda (j_0)
-                                                                            (if (>
-                                                                                 j_0
-                                                                                 0)
-                                                                              (begin
-                                                                                (read-bytes
-                                                                                 (read-u16
-                                                                                  index-port_0)
-                                                                                 index-port_0)
-                                                                                (read-bytes
-                                                                                 28
-                                                                                 index-port_0)
-                                                                                (tloop_0
-                                                                                 (sub1
-                                                                                  j_0)))
-                                                                              (void))))))
-                                                                       (tloop_0
-                                                                        (read-u16
-                                                                         index-port_0)))
-                                                                      (let ((tend_0
-                                                                             (file-position
-                                                                              index-port_0)))
-                                                                        (begin
-                                                                          (file-position
-                                                                           index-port_0
-                                                                           start_0)
-                                                                          (let ((tbytes_0
-                                                                                 (read-bytes
-                                                                                  (-
-                                                                                   tend_0
-                                                                                   start_0)
-                                                                                  index-port_0)))
-                                                                            (begin
-                                                                              (hash-set!
-                                                                               by-src_1
-                                                                               src_0
-                                                                               zo_0)
-                                                                              (hash-set!
-                                                                               by-zo_1
-                                                                               zo_0
-                                                                               (vector
-                                                                                off_0
-                                                                                len_0
-                                                                                kind_0
-                                                                                tbytes_0
-                                                                                #f))))))))))))))))
+                                                                      (hash-set!
+                                                                       by-src_1
+                                                                       src_0
+                                                                       zo_0)
+                                                                      (hash-set!
+                                                                       by-zo_1
+                                                                       zo_0
+                                                                       (vector
+                                                                        off_0
+                                                                        len_0
+                                                                        kind_0
+                                                                        tbytes_0
+                                                                        #f))))))))))))
                                                   (loop_0 (add1 i_0)))
                                                 (void))))))
                                          (loop_0 0))
