@@ -2026,7 +2026,6 @@
   ($fasl-start [flags single-valued])
   ($fasl-table [flags single-valued])
   ($fasl-to-vfasl [flags single-valued])
-  ($vfasl-convert-bytevector [flags single-valued])
   ($fasl-wrf-graph [flags single-valued])
   ($fd-input-port-can-set-position? [flags single-valued])
   ($filter-conv [flags single-valued])

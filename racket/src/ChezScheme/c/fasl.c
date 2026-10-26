@@ -620,21 +620,6 @@ ptr S_bv_fasl_read(ptr bv, int ty, uptr offset, uptr len, ptr path, ptr external
   return bv_fasl_entry(tc, bv, ty, offset, len, &ffo, externals);
 }
 
-/* fasl2 fourth-segment C-level boot loader: reads a vfasl state image from a
-   file and loads it straight into the STATIC generation (boot-mode load), so
-   it never enters gen-0 and never triggers a promotion GC.  Called from
-   boot.c after Sbuild_heap (before the language layer runs).  externals is
-   the empty vector here -- a C-level boot segment carries no externalref;
-   the fasl2 domain layer's externals resolution runs in main.sps. */
-ptr S_load_seg4_to_static(INT fd) {
-  ptr v; int save;
-  save = S_vfasl_boot_mode;
-  S_vfasl_boot_mode = 1;
-  v = S_fasl_read(fd, fasl_type_visit_revisit, Sfalse, S_G.null_vector);
-  S_vfasl_boot_mode = save;
-  return v;
-}
-
 ptr S_boot_read(faslFile f, const char *path) {
   ptr tc = get_thread_context();
 
@@ -790,7 +775,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
           faslin(tc, &x, externals, &strbuf, in_f);
           break;
         case fasl_type_vfasl:
-          x = S_vfasl(bv, in_f, 0, size, externals);
+          x = S_vfasl(bv, in_f, 0, size);
           break;
         default:
           S_error2("", "malformed fasl-object header (got ~s) found in ~a", FIX(ty), f->uf.path);
@@ -819,7 +804,7 @@ static ptr bv_fasl_entry(ptr tc, ptr bv, int ty, uptr offset, uptr len, faslFile
   fasl_gen_begin(tc);
 
   if (ty == fasl_type_vfasl) {
-    x = S_vfasl(bv, f, offset, len, externals);
+    x = S_vfasl(bv, f, offset, len);
   } else if (ty == fasl_type_fasl) {
     f->next += offset;
     faslin(tc, &x, externals, &strbuf, f);
@@ -1409,18 +1394,6 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             if (offset != code_data_disp || !Scodep(cod))
               S_error1("", "malformed fasl closure found in ~a", f->uf.path);
             CLOSENTRY(*x) = (ptr)((uptr)cod + offset);
-            return;
-        }
-        case fasl_type_closure_freevars: {
-            ptr cod; iptr n, i;
-            n = (iptr)uptrin(f);
-            *x = fasl_closure(tc, n);
-            faslin(tc, &cod, t, pstrbuf, f);
-            if (!Scodep(cod))
-              S_error1("", "malformed fasl closure found in ~a", f->uf.path);
-            CLOSENTRY(*x) = (ptr)((uptr)cod + code_data_disp);
-            for (i = 0; i != n; i += 1)
-              faslin(tc, &CLOSIT(*x, i), t, pstrbuf, f);
             return;
         }
         case fasl_type_flonum: {
