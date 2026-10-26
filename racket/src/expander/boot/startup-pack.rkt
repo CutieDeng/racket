@@ -24,17 +24,18 @@
          pack-enabled?
          pack-collection-path
          pack-zo-for-source
-         pack-member-bytes)
+         call-with-pack-member)
 
-(define MAGIC #"RKTPK1\n")
+(define MAGIC #"RKTPK2\n")
 
 (define-place-local pack-on? #f)
 (define-place-local pack-port #f)
 (define-place-local pack-sema #f)
 (define-place-local pack-guard #f)
-(define-place-local pack-by-key #f)  ; "col/sub/file" -> source path
-(define-place-local pack-by-src #f)  ; source path bytes -> compiled path
+(define-place-local pack-by-key #f)  ; key bytes "col/sub/file" -> (mcons source-path-bytes checked?)
+(define-place-local pack-by-src #f)  ; source path bytes -> compiled path bytes
 (define-place-local pack-by-zo #f)   ; compiled path bytes -> (cons offset length)
+(define-place-local pack-candidates #f) ; collection -> candidate directories, for key checks
 
 (define (startup-pack-place-init!)
   (set! pack-on? #f)
@@ -43,7 +44,8 @@
   (set! pack-guard #f)
   (set! pack-by-key #f)
   (set! pack-by-src #f)
-  (set! pack-by-zo #f))
+  (set! pack-by-zo #f)
+  (set! pack-candidates #f))
 
 (define (pack-enabled?)
   (and pack-on?
@@ -68,6 +70,12 @@
   (let ([bstr (read-bytes 4 in)])
     (and (bytes? bstr)
          (= 4 (bytes-length bstr))
+         (integer-bytes->integer bstr #f #f))))
+
+(define (read-u16 in)
+  (let ([bstr (read-bytes 2 in)])
+    (and (bytes? bstr)
+         (= 2 (bytes-length bstr))
          (integer-bytes->integer bstr #f #f))))
 
 (define (read-sexp in len)
@@ -111,8 +119,12 @@
       (let ([in (open-input-file pack-path)])
         (let* ([magic (read-bytes (bytes-length MAGIC) in)]
                [header (and (equal? magic MAGIC) (read-sexp in (read-u32 in)))]
-               [index (and (pair? header) (read-sexp in (read-u32 in)))])
-          (pack-debug "startup-pack: magic ~s header ~s index ~s" (equal? magic MAGIC) (and (pair? header) #t) (and (vector? index) (vector-length index)))
+               [index-port (and (pair? header)
+                                (let* ([len (read-u32 in)]
+                                       [bstr (and len (read-bytes len in))])
+                                  (and (bytes? bstr) (= len (bytes-length bstr))
+                                       (open-input-bytes bstr))))])
+          (pack-debug "startup-pack: magic ~s header ~s index ~s" (equal? magic MAGIC) (and (pair? header) #t) (and index-port #t))
           (when (pair? header)
             (pack-debug "startup-pack: version ~s vm ~s subpath ~s modes ~s"
                    (equal? (header-ref header 'version) (version))
@@ -120,76 +132,39 @@
                    (equal? (header-ref header 'library-subpath) (path->string (system-library-subpath #f)))
                    (equal? (header-ref header 'modes) (modes-string))))
           (cond
-            [(and (vector? index)
+            [(and index-port
                   (equal? (header-ref header 'version) (version))
                   (equal? (header-ref header 'vm) (symbol->string (system-type 'vm)))
                   (equal? (header-ref header 'library-subpath) (path->string (system-library-subpath #f)))
                   (equal? (header-ref header 'modes) (modes-string)))
              (let ([by-key (make-hash)]
                    [by-src (make-hash)]
-                   [by-zo (make-hash)])
+                   [by-zo (make-hash)]
+                   [n (read-u32 index-port)])
                (let loop ([i 0])
-                 (when (< i (vector-length index))
-                   (let* ([e (vector-ref index i)]
-                          [src (string->path (vector-ref e 0))]
-                          [zo (string->path (vector-ref e 1))])
-                     (for-each (lambda (k) (hash-set! by-key k src)) (vector-ref e 2))
-                     (hash-set! by-src (path->bytes src) zo)
-                     (hash-set! by-zo (path->bytes zo) (cons (vector-ref e 3) (vector-ref e 4))))
+                 (when (< i n)
+                   (let* ([src (read-bytes (read-u16 index-port) index-port)]
+                          [zo (read-bytes (read-u16 index-port) index-port)]
+                          [k (read-byte index-port)])
+                     (let kloop ([j 0])
+                       (when (< j k)
+                         (hash-set! by-key (read-bytes (read-u16 index-port) index-port) (mcons src #f))
+                         (kloop (add1 j))))
+                     (let* ([off (read-u32 index-port)]
+                            [len (read-u32 index-port)])
+                       (read-bytes 20 index-port) ; sha1, for `--verify`
+                       (hash-set! by-src src zo)
+                       (hash-set! by-zo zo (cons off len))))
                    (loop (add1 i))))
-               ;; Check every key against the live collection search order,
-               ;; exactly as `find-col-file` would resolve it: the first
-               ;; candidate directory that has the file wins. A key whose
-               ;; winner is not the member's source is dropped, so that
-               ;; module resolves and loads as it does without a pack.
-               ;; Directory existence is cached per (candidate, collection),
-               ;; so this costs about one `directory-exists?` per candidate
-               ;; and collection plus a `file-exists?` per key.
-               (let* ([split (lambda (k)
-                               (let loop ([i 0] [start 0] [acc '()])
-                                 (cond
-                                   [(= i (string-length k)) (reverse (cons (substring k start i) acc))]
-                                   [(char=? (string-ref k i) #\/) (loop (add1 i) (add1 i) (cons (substring k start i) acc))]
-                                   [else (loop (add1 i) start acc)])))]
-                      [dir-cache (make-hash)]
-                      [col-dir (lambda (cand col)
-                                 ;; the collection's directory for a candidate, or #f
-                                 (let ([key (cons (if (box? cand) (unbox cand) cand) col)])
-                                   (let ([v (hash-ref dir-cache key 'none)])
-                                     (if (eq? v 'none)
-                                         (let* ([d (if (box? cand) (unbox cand) (build-path cand col))]
-                                                [r (and (directory-exists? d) d)])
-                                           (hash-set! dir-cache key r)
-                                           r)
-                                         v))))])
-                 (for-each
-                  (lambda (k)
-                    (let* ([parts (split k)]
-                           [col (car parts)]
-                           [rest (cdr parts)]
-                           [member-src (hash-ref by-key k)]
-                           [winner (let loop ([cands (candidate-dirs-for col)])
-                                     (cond
-                                       [(null? cands) #f]
-                                       [else
-                                        (let ([d (col-dir (car cands) col)])
-                                          (if (and d (file-exists? (apply build-path d rest)))
-                                              (apply build-path d rest)
-                                              (loop (cdr cands))))]))])
-                      (unless (and winner
-                                   (equal? (path->bytes (simplify-path winner #f))
-                                           (path->bytes (simplify-path member-src #f))))
-                        (pack-debug "startup-pack: key ~s resolves to ~s, not the member; dropped" k winner)
-                        (hash-remove! by-key k))))
-                  (hash-keys by-key)))
                (set! pack-by-key by-key)
                (set! pack-by-src by-src)
                (set! pack-by-zo by-zo)
+               (set! pack-candidates (cons candidate-dirs-for (make-hash)))
                (set! pack-port in)
                (set! pack-sema (make-semaphore 1))
                (set! pack-guard (current-security-guard))
                (set! pack-on? #t)
-               (pack-debug "startup-pack: enabled, ~a members, ~a keys" (vector-length index) (hash-count by-key)))]
+               (pack-debug "startup-pack: enabled, ~a members, ~a keys" n (hash-count by-key)))]
             [else
              (close-input-port in)]))))))
 
@@ -200,6 +175,45 @@
     [(path? p) (path->string p)]
     [(string? p) p]
     [else #f]))
+
+;; Validate a key against the live collection search order, exactly as
+;; `find-col-file` resolves it: the first candidate directory that has
+;; the file wins; the key stands only if the winner is the member's
+;; source. Directory existence is cached per (candidate, collection).
+;; Done on first use of a key, so a process pays only for the keys it
+;; resolves.
+(define (split-key k)
+  (let loop ([i 0] [start 0] [acc '()])
+    (cond
+      [(= i (bytes-length k)) (reverse (cons (bytes->path (subbytes k start i)) acc))]
+      [(= (bytes-ref k i) 47) (loop (add1 i) (add1 i) (cons (bytes->path (subbytes k start i)) acc))]
+      [else (loop (add1 i) start acc)])))
+
+(define (key-valid? k src)
+  (let* ([parts (split-key k)]
+         [col (car parts)]
+         [rest (cdr parts)]
+         [candidate-dirs-for (car pack-candidates)]
+         [dir-cache (cdr pack-candidates)]
+         [col-dir (lambda (cand)
+                    (let ([key (cons (if (box? cand) (unbox cand) cand) col)])
+                      (let ([v (hash-ref dir-cache key 'none)])
+                        (if (eq? v 'none)
+                            (let* ([d (if (box? cand) (unbox cand) (build-path cand col))]
+                                   [r (and (directory-exists? d) d)])
+                              (hash-set! dir-cache key r)
+                              r)
+                            v))))]
+         [winner (let loop ([cands (candidate-dirs-for col)])
+                   (cond
+                     [(null? cands) #f]
+                     [else
+                      (let ([d (col-dir (car cands))])
+                        (if (and d (file-exists? (apply build-path d rest)))
+                            (apply build-path d rest)
+                            (loop (cdr cands))))]))])
+    (and winner
+         (equal? (path->bytes (simplify-path winner #f)) src))))
 
 ;; collection reference as `find-col-file` receives it -> source path or #f
 (define (pack-collection-path collection collection-path file-name)
@@ -212,7 +226,18 @@
                         [else (let ([s (->string (car l))])
                                 (and s (loop (cdr l) (string-append acc "/" s))))]))])
            (and key
-                (hash-ref pack-by-key key #f))))))
+                (let* ([kb (string->bytes/utf-8 key)]
+                       [e (hash-ref pack-by-key kb #f)])
+                  (and e
+                       (cond
+                         [(mcdr e) (bytes->path (mcar e))]
+                         [(key-valid? kb (mcar e))
+                          (set-mcdr! e #t)
+                          (bytes->path (mcar e))]
+                         [else
+                          (pack-debug "startup-pack: key ~s does not resolve to the member; dropped" key)
+                          (hash-remove! pack-by-key kb)
+                          #f]))))))))
 
 (define (->bytes p)
   (cond
@@ -222,11 +247,18 @@
 
 ;; source path -> compiled path, when the pack carries it
 (define (pack-zo-for-source path)
-  (let ([b (->bytes path)])
-    (and b (hash-ref pack-by-src b #f))))
+  (let* ([b (->bytes path)]
+         [zo (and b (hash-ref pack-by-src b #f))])
+    (and zo (bytes->path zo))))
 
 ;; compiled path -> its bytes from the pack, or #f
-(define (pack-member-bytes path)
+;; Read a member in place: `proc` receives the pack's port positioned at
+;; the member, the member's offset in the pack and its end, and reads the compiled
+;; code straight from the file (one copy, into the bundle's byte string,
+;; exactly as from a .zo file). The port is shared by the place, so the
+;; semaphore is held for the whole span; the span is reading only, the
+;; module's evaluation happens after it returns. -> (box result) or #f
+(define (call-with-pack-member path proc)
   (let* ([b (->bytes path)]
          [e (and b (hash-ref pack-by-zo b #f))])
     (and e
@@ -237,8 +269,5 @@
            void
            (lambda ()
              (file-position pack-port (car e))
-             (let ([bstr (read-bytes (cdr e) pack-port)])
-               (and (bytes? bstr)
-                    (= (bytes-length bstr) (cdr e))
-                    bstr)))
+             (box (proc pack-port (car e) (+ (car e) (cdr e)))))
            (lambda () (semaphore-post pack-sema)))))))

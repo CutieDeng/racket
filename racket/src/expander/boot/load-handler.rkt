@@ -39,7 +39,10 @@
      [expected-mod
       ((call-with-input-module-file
         path
-        (lambda (i)
+        ;; `base` is the file's offset within the port: 0 for a file of
+        ;; its own, the member's offset when read from the startup pack;
+        ;; `end` is the member's end offset, #f for a file of its own
+        (lambda (i base end)
           (maybe-count-lines! i)
           (with-module-reading-parameterization+delay-source
               path
@@ -48,10 +51,10 @@
                  [(linklet-directory-start i)
                   => (lambda (pos)
                        ;; Find and load individual submodule
-                       (define b-pos (search-directory i pos (encode-symbols expected-mod)))
+                       (define b-pos (search-directory i pos base (encode-symbols expected-mod)))
                        (cond
                         [b-pos
-                         (file-position i b-pos)
+                         (file-position i (+ base b-pos))
                          (or (cached-bundle i)
                              (let ([v (read i)])
                                (if (compiled-module-expression? v)
@@ -84,7 +87,9 @@
                                           "  in: ~e")
                            (object-name i)))
                   (define m-s (check-module-form s path))
-                  (define s2 (read-syntax (object-name i) i))
+                  ;; a pack member is followed by the next member, not
+                  ;; by EOF; its content was checked when the pack was built
+                  (define s2 (if end eof (read-syntax (object-name i) i)))
                   (unless (eof-object? s2)
                     (error 'default-load-handler
                            (string-append "expected a `module' declaration;\n"
@@ -142,11 +147,11 @@
                (arithmetic-shift (read-byte/not-eof i) 16)
                (arithmetic-shift (read-byte/not-eof i) 24)))
 
-(define (search-directory i pos bstr)
+(define (search-directory i pos base bstr)
   (cond
    [(zero? pos) #f]
    [else
-    (file-position i pos)
+    (file-position i (+ base pos))
     (define name-len (read-number i))
     (define v (read-bytes name-len i))
     (unless (and (bytes? v) (= (bytes-length v) name-len))
@@ -165,12 +170,12 @@
      [(bytes<? bstr v)
       (read-number i)
       (read-number i)
-      (search-directory i (read-number i) bstr)]
+      (search-directory i (read-number i) base bstr)]
      [else
       (read-number i)
       (read-number i)
       (read-number i)
-      (search-directory i (read-number i) bstr)])]))
+      (search-directory i (read-number i) base bstr)])]))
 
 (define (encode-symbols expected-mod)
   (cond
@@ -192,16 +197,15 @@
       (with-module-reading-parameterization thunk)))
 
 (define (call-with-input-module-file path proc)
-  ;; startup pack: a compiled file that the pack carries is read from
-  ;; the pack's bytes; the port keeps the file's name so that submodule
-  ;; lookup, the module cache, and error messages see no difference
-  (define pack-bytes (and (pack-enabled?) (pack-member-bytes path)))
+  ;; startup pack: a compiled file that the pack carries is read in
+  ;; place from the pack's port; `proc` gets the member's offset so that
+  ;; positions inside the file (the submodule directory) are translated
+  (define pack-result (and (pack-enabled?) (call-with-pack-member path proc)))
   (cond
-    [pack-bytes
-     (proc (open-input-bytes pack-bytes path))]
+    [pack-result (unbox pack-result)]
     [else
      (define i #f)
      (dynamic-wind
       (lambda () (set! i (open-input-file path #:for-module? #t)))
-      (lambda () (proc i))
+      (lambda () (proc i 0 #f))
       (lambda () (close-input-port i)))]))

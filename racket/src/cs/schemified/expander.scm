@@ -63173,7 +63173,7 @@
             (let ((ht_0 (shadow-directory-table sd_0)))
               (hash-ref ht_0 (normal-case-path subpath_0) #f))
             (void)))))))
-(define MAGIC #vu8(82 75 84 80 75 49 10))
+(define MAGIC #vu8(82 75 84 80 75 50 10))
 (define cell.1$2 (unsafe-make-place-local #f))
 (define cell.2$2 (unsafe-make-place-local #f))
 (define cell.3$1 (unsafe-make-place-local #f))
@@ -63181,6 +63181,7 @@
 (define cell.5$1 (unsafe-make-place-local #f))
 (define cell.6 (unsafe-make-place-local #f))
 (define cell.7 (unsafe-make-place-local #f))
+(define cell.8 (unsafe-make-place-local #f))
 (define startup-pack-place-init!
   (lambda ()
     (begin
@@ -63190,7 +63191,8 @@
       (unsafe-place-local-set! cell.4$1 #f)
       (unsafe-place-local-set! cell.5$1 #f)
       (unsafe-place-local-set! cell.6 #f)
-      (unsafe-place-local-set! cell.7 #f))))
+      (unsafe-place-local-set! cell.7 #f)
+      (unsafe-place-local-set! cell.8 #f))))
 (define pack-enabled?
   (lambda ()
     (if (unsafe-place-local-ref cell.1$2)
@@ -63215,6 +63217,14 @@
     (let ((bstr_0 (read-bytes 4 in_0)))
       (if (bytes? bstr_0)
         (if (= 4 (unsafe-bytes-length bstr_0))
+          (integer-bytes->integer bstr_0 #f #f)
+          #f)
+        #f))))
+(define read-u16
+  (lambda (in_0)
+    (let ((bstr_0 (read-bytes 2 in_0)))
+      (if (bytes? bstr_0)
+        (if (= 2 (unsafe-bytes-length bstr_0))
           (integer-bytes->integer bstr_0 #f #f)
           #f)
         #f))))
@@ -63307,19 +63317,23 @@
                            (if (equal? magic_0 MAGIC)
                              (read-sexp in_0 (read-u32 in_0))
                              #f)))
-                      (let ((index_0
+                      (let ((index-port_0
                              (if (pair? header_0)
-                               (read-sexp in_0 (read-u32 in_0))
+                               (let ((len_0 (read-u32 in_0)))
+                                 (let ((bstr_0
+                                        (if len_0 (read-bytes len_0 in_0) #f)))
+                                   (if (bytes? bstr_0)
+                                     (if (= len_0 (unsafe-bytes-length bstr_0))
+                                       (open-input-bytes bstr_0)
+                                       #f)
+                                     #f)))
                                #f)))
                         (begin
-                          (let ((app_0 (equal? magic_0 MAGIC)))
-                            (pack-debug
-                             "startup-pack: magic ~s header ~s index ~s"
-                             app_0
-                             (if (pair? header_0) #t #f)
-                             (if (vector? index_0)
-                               (vector-length index_0)
-                               #f)))
+                          (pack-debug
+                           "startup-pack: magic ~s header ~s index ~s"
+                           (equal? magic_0 MAGIC)
+                           (if (pair? header_0) #t #f)
+                           (if index-port_0 #t #f))
                           (if (pair? header_0)
                             (let ((app_0
                                    (equal?
@@ -63347,7 +63361,7 @@
                                    (let ((app_3 (header-ref header_0 'modes)))
                                      (equal? app_3 (modes-string)))))))
                             (void))
-                          (if (if (vector? index_0)
+                          (if (if index-port_0
                                 (if (equal?
                                      (header-ref header_0 'version)
                                      (version))
@@ -63373,224 +63387,172 @@
                             (let ((by-key_0 (make-hash)))
                               (let ((by-src_0 (make-hash)))
                                 (let ((by-zo_0 (make-hash)))
-                                  (let ((by-src_1 by-src_0)
-                                        (by-key_1 by-key_0))
-                                    (begin
-                                      (letrec*
-                                       ((loop_0
-                                         (|#%name|
-                                          loop
-                                          (lambda (i_0)
-                                            (if (< i_0 (vector-length index_0))
-                                              (begin
-                                                (let ((e_0
-                                                       (vector-ref
-                                                        index_0
-                                                        i_0)))
+                                  (let ((n_0 (read-u32 index-port_0)))
+                                    (let ((by-zo_1 by-zo_0)
+                                          (by-src_1 by-src_0)
+                                          (by-key_1 by-key_0))
+                                      (begin
+                                        (letrec*
+                                         ((loop_0
+                                           (|#%name|
+                                            loop
+                                            (lambda (i_0)
+                                              (if (< i_0 n_0)
+                                                (begin
                                                   (let ((src_0
-                                                         (string->path
-                                                          (vector-ref e_0 0))))
+                                                         (read-bytes
+                                                          (read-u16
+                                                           index-port_0)
+                                                          index-port_0)))
                                                     (let ((zo_0
-                                                           (string->path
-                                                            (vector-ref
-                                                             e_0
-                                                             1))))
-                                                      (begin
-                                                        (for-each_2009
-                                                         (lambda (k_0)
-                                                           (hash-set!
-                                                            by-key_1
-                                                            k_0
-                                                            src_0))
-                                                         (vector-ref e_0 2))
-                                                        (hash-set!
-                                                         by-src_1
-                                                         (path->bytes src_0)
-                                                         zo_0)
-                                                        (let ((app_0
-                                                               (path->bytes
-                                                                zo_0)))
-                                                          (hash-set!
-                                                           by-zo_0
-                                                           app_0
-                                                           (let ((app_1
-                                                                  (vector-ref
-                                                                   e_0
-                                                                   3)))
-                                                             (cons
-                                                              app_1
-                                                              (vector-ref
-                                                               e_0
-                                                               4)))))))))
-                                                (loop_0 (add1 i_0)))
-                                              (void))))))
-                                       (loop_0 0))
-                                      (let ((split_0
-                                             (|#%name|
-                                              split
-                                              (lambda (k_0)
-                                                (letrec*
-                                                 ((loop_0
-                                                   (|#%name|
-                                                    loop
-                                                    (lambda (i_0 start_0 acc_0)
-                                                      (if (=
-                                                           i_0
-                                                           (string-length k_0))
-                                                        (reverse$1
-                                                         (cons
-                                                          (substring
-                                                           k_0
-                                                           start_0
-                                                           i_0)
-                                                          acc_0))
-                                                        (if (char=?
-                                                             (string-ref
-                                                              k_0
-                                                              i_0)
-                                                             '#\x2f)
-                                                          (let ((app_0
-                                                                 (add1 i_0)))
-                                                            (let ((app_1
-                                                                   (add1 i_0)))
-                                                              (loop_0
-                                                               app_0
-                                                               app_1
-                                                               (cons
-                                                                (substring
-                                                                 k_0
-                                                                 start_0
-                                                                 i_0)
-                                                                acc_0))))
-                                                          (loop_0
-                                                           (add1 i_0)
-                                                           start_0
-                                                           acc_0)))))))
-                                                 (loop_0 0 0 '()))))))
-                                        (let ((dir-cache_0 (make-hash)))
-                                          (let ((col-dir_0
-                                                 (|#%name|
-                                                  col-dir
-                                                  (lambda (cand_0 col_0)
-                                                    (let ((key_0
-                                                           (cons
-                                                            (if (box? cand_0)
-                                                              (unbox cand_0)
-                                                              cand_0)
-                                                            col_0)))
-                                                      (let ((v_0
-                                                             (hash-ref
-                                                              dir-cache_0
-                                                              key_0
-                                                              'none)))
-                                                        (if (eq? v_0 'none)
-                                                          (let ((d_0
-                                                                 (if (box?
-                                                                      cand_0)
-                                                                   (unbox
-                                                                    cand_0)
-                                                                   (build-path
-                                                                    cand_0
-                                                                    col_0))))
-                                                            (let ((r_0
-                                                                   (if (directory-exists?
-                                                                        d_0)
-                                                                     d_0
-                                                                     #f)))
+                                                           (read-bytes
+                                                            (read-u16
+                                                             index-port_0)
+                                                            index-port_0)))
+                                                      (let ((k_0
+                                                             (read-byte
+                                                              index-port_0)))
+                                                        (begin
+                                                          (letrec*
+                                                           ((kloop_0
+                                                             (|#%name|
+                                                              kloop
+                                                              (lambda (j_0)
+                                                                (if (< j_0 k_0)
+                                                                  (begin
+                                                                    (let ((app_0
+                                                                           (read-bytes
+                                                                            (read-u16
+                                                                             index-port_0)
+                                                                            index-port_0)))
+                                                                      (hash-set!
+                                                                       by-key_1
+                                                                       app_0
+                                                                       (mcons
+                                                                        src_0
+                                                                        #f)))
+                                                                    (kloop_0
+                                                                     (add1
+                                                                      j_0)))
+                                                                  (void))))))
+                                                           (kloop_0 0))
+                                                          (let ((off_0
+                                                                 (read-u32
+                                                                  index-port_0)))
+                                                            (let ((len_0
+                                                                   (read-u32
+                                                                    index-port_0)))
                                                               (begin
+                                                                (read-bytes
+                                                                 20
+                                                                 index-port_0)
                                                                 (hash-set!
-                                                                 dir-cache_0
-                                                                 key_0
-                                                                 r_0)
-                                                                r_0)))
-                                                          v_0)))))))
-                                            (for-each_2009
-                                             (lambda (k_0)
-                                               (let ((parts_0 (split_0 k_0)))
-                                                 (let ((col_0 (car parts_0)))
-                                                   (let ((rest_0
-                                                          (cdr parts_0)))
-                                                     (let ((member-src_0
-                                                            (hash-ref
-                                                             by-key_1
-                                                             k_0)))
-                                                       (let ((winner_0
-                                                              (letrec*
-                                                               ((loop_0
-                                                                 (|#%name|
-                                                                  loop
-                                                                  (lambda (cands_0)
-                                                                    (if (null?
-                                                                         cands_0)
-                                                                      #f
-                                                                      (let ((d_0
-                                                                             (col-dir_0
-                                                                              (car
-                                                                               cands_0)
-                                                                              col_0)))
-                                                                        (if (if d_0
-                                                                              (file-exists?
-                                                                               (apply
-                                                                                build-path
-                                                                                d_0
-                                                                                rest_0))
-                                                                              #f)
-                                                                          (apply
-                                                                           build-path
-                                                                           d_0
-                                                                           rest_0)
-                                                                          (loop_0
-                                                                           (cdr
-                                                                            cands_0)))))))))
-                                                               (loop_0
-                                                                (|#%app|
-                                                                 candidate-dirs-for_0
-                                                                 col_0)))))
-                                                         (if (if winner_0
-                                                               (let ((app_0
-                                                                      (path->bytes
-                                                                       (simplify-path
-                                                                        winner_0
-                                                                        #f))))
-                                                                 (equal?
-                                                                  app_0
-                                                                  (path->bytes
-                                                                   (simplify-path
-                                                                    member-src_0
-                                                                    #f))))
-                                                               #f)
-                                                           (void)
-                                                           (begin
-                                                             (pack-debug
-                                                              "startup-pack: key ~s resolves to ~s, not the member; dropped"
-                                                              k_0
-                                                              winner_0)
-                                                             (hash-remove!
-                                                              by-key_1
-                                                              k_0)))))))))
-                                             (hash-keys by-key_1)))))
-                                      (unsafe-place-local-set!
-                                       cell.5$1
-                                       by-key_1)
-                                      (unsafe-place-local-set! cell.6 by-src_1)
-                                      (unsafe-place-local-set! cell.7 by-zo_0)
-                                      (unsafe-place-local-set! cell.2$2 in_0)
-                                      (unsafe-place-local-set!
-                                       cell.3$1
-                                       (make-semaphore 1))
-                                      (unsafe-place-local-set!
-                                       cell.4$1
-                                       (current-security-guard))
-                                      (unsafe-place-local-set! cell.1$2 #t)
-                                      (let ((app_0 (vector-length index_0)))
+                                                                 by-src_1
+                                                                 src_0
+                                                                 zo_0)
+                                                                (hash-set!
+                                                                 by-zo_1
+                                                                 zo_0
+                                                                 (cons
+                                                                  off_0
+                                                                  len_0)))))))))
+                                                  (loop_0 (add1 i_0)))
+                                                (void))))))
+                                         (loop_0 0))
+                                        (unsafe-place-local-set!
+                                         cell.5$1
+                                         by-key_1)
+                                        (unsafe-place-local-set!
+                                         cell.6
+                                         by-src_1)
+                                        (unsafe-place-local-set!
+                                         cell.7
+                                         by-zo_1)
+                                        (unsafe-place-local-set!
+                                         cell.8
+                                         (cons
+                                          candidate-dirs-for_0
+                                          (make-hash)))
+                                        (unsafe-place-local-set! cell.2$2 in_0)
+                                        (unsafe-place-local-set!
+                                         cell.3$1
+                                         (make-semaphore 1))
+                                        (unsafe-place-local-set!
+                                         cell.4$1
+                                         (current-security-guard))
+                                        (unsafe-place-local-set! cell.1$2 #t)
                                         (pack-debug
                                          "startup-pack: enabled, ~a members, ~a keys"
-                                         app_0
+                                         n_0
                                          (hash-count by-key_1))))))))
                             (close-input-port in_0)))))))
                 (void)))))))))
 (define ->string
   (lambda (p_0) (if (path? p_0) (path->string p_0) (if (string? p_0) p_0 #f))))
+(define split-key
+  (lambda (k_0)
+    (letrec*
+     ((loop_0
+       (|#%name|
+        loop
+        (lambda (i_0 start_0 acc_0)
+          (if (= i_0 (unsafe-bytes-length k_0))
+            (reverse$1 (cons (bytes->path (subbytes k_0 start_0 i_0)) acc_0))
+            (if (= (unsafe-bytes-ref k_0 i_0) 47)
+              (let ((app_0 (add1 i_0)))
+                (let ((app_1 (add1 i_0)))
+                  (loop_0
+                   app_0
+                   app_1
+                   (cons (bytes->path (subbytes k_0 start_0 i_0)) acc_0))))
+              (loop_0 (add1 i_0) start_0 acc_0)))))))
+     (loop_0 0 0 '()))))
+(define key-valid?
+  (lambda (k_0 src_0)
+    (let ((parts_0 (split-key k_0)))
+      (let ((col_0 (car parts_0)))
+        (let ((rest_0 (cdr parts_0)))
+          (let ((candidate-dirs-for_0 (car (unsafe-place-local-ref cell.8))))
+            (let ((dir-cache_0 (cdr (unsafe-place-local-ref cell.8))))
+              (let ((col-dir_0
+                     (|#%name|
+                      col-dir
+                      (lambda (cand_0)
+                        (let ((key_0
+                               (cons
+                                (if (box? cand_0) (unbox cand_0) cand_0)
+                                col_0)))
+                          (let ((v_0 (hash-ref dir-cache_0 key_0 'none)))
+                            (if (eq? v_0 'none)
+                              (let ((d_0
+                                     (if (box? cand_0)
+                                       (unbox cand_0)
+                                       (build-path cand_0 col_0))))
+                                (let ((r_0
+                                       (if (directory-exists? d_0) d_0 #f)))
+                                  (begin
+                                    (hash-set! dir-cache_0 key_0 r_0)
+                                    r_0)))
+                              v_0)))))))
+                (let ((winner_0
+                       (letrec*
+                        ((loop_0
+                          (|#%name|
+                           loop
+                           (lambda (cands_0)
+                             (if (null? cands_0)
+                               #f
+                               (let ((d_0 (col-dir_0 (car cands_0))))
+                                 (if (if d_0
+                                       (file-exists?
+                                        (apply build-path d_0 rest_0))
+                                       #f)
+                                   (apply build-path d_0 rest_0)
+                                   (loop_0 (cdr cands_0)))))))))
+                        (loop_0 (|#%app| candidate-dirs-for_0 col_0)))))
+                  (if winner_0
+                    (equal? (path->bytes (simplify-path winner_0 #f)) src_0)
+                    #f))))))))))
 (define pack-collection-path
   (lambda (collection_0 collection-path_0 file-name_0)
     (let ((col_0 (->string collection_0)))
@@ -63615,7 +63577,28 @@
                                  #f)))))))
                       (loop_0 collection-path_0 col_1))))
                 (if key_0
-                  (hash-ref (unsafe-place-local-ref cell.5$1) key_0 #f)
+                  (let ((kb_0 (string->bytes/utf-8 key_0)))
+                    (let ((e_0
+                           (hash-ref
+                            (unsafe-place-local-ref cell.5$1)
+                            kb_0
+                            #f)))
+                      (if e_0
+                        (if (unsafe-mcdr e_0)
+                          (bytes->path (unsafe-mcar e_0))
+                          (if (key-valid? kb_0 (unsafe-mcar e_0))
+                            (begin
+                              (unsafe-set-mcdr! e_0 #t)
+                              (bytes->path (unsafe-mcar e_0)))
+                            (begin
+                              (pack-debug
+                               "startup-pack: key ~s does not resolve to the member; dropped"
+                               key_0)
+                              (hash-remove!
+                               (unsafe-place-local-ref cell.5$1)
+                               kb_0)
+                              #f)))
+                        #f)))
                   #f))
               #f)
             #f))))))
@@ -63627,9 +63610,11 @@
 (define pack-zo-for-source
   (lambda (path_0)
     (let ((b_0 (->bytes path_0)))
-      (if b_0 (hash-ref (unsafe-place-local-ref cell.6) b_0 #f) #f))))
-(define pack-member-bytes
-  (lambda (path_0)
+      (let ((zo_0
+             (if b_0 (hash-ref (unsafe-place-local-ref cell.6) b_0 #f) #f)))
+        (if zo_0 (bytes->path zo_0) #f)))))
+(define call-with-pack-member
+  (lambda (path_0 proc_0)
     (let ((b_0 (->bytes path_0)))
       (let ((e_0
              (if b_0 (hash-ref (unsafe-place-local-ref cell.7) b_0 #f) #f)))
@@ -63645,16 +63630,14 @@
                    (begin
                      (let ((app_0 (unsafe-place-local-ref cell.2$2)))
                        (file-position app_0 (car e_0)))
-                     (let ((bstr_0
-                            (let ((app_0 (cdr e_0)))
-                              (read-bytes
-                               app_0
-                               (unsafe-place-local-ref cell.2$2)))))
-                       (if (bytes? bstr_0)
-                         (if (= (unsafe-bytes-length bstr_0) (cdr e_0))
-                           bstr_0
-                           #f)
-                         #f))))
+                     (box
+                      (let ((app_0 (unsafe-place-local-ref cell.2$2)))
+                        (let ((app_1 (car e_0)))
+                          (|#%app|
+                           proc_0
+                           app_0
+                           app_1
+                           (let ((app_2 (car e_0))) (+ app_2 (cdr e_0)))))))))
                  (lambda ()
                    (semaphore-post (unsafe-place-local-ref cell.3$1)))))
               (if log-performance? (end-performance-region) (void))))
@@ -80169,7 +80152,7 @@
             (|#%app|
              (call-with-input-module-file
               path_0
-              (lambda (i_0)
+              (lambda (i_0 base_0 end_0)
                 (begin
                   (maybe-count-lines!_0 i_0)
                   (with-module-reading-parameterization+delay-source
@@ -80181,10 +80164,11 @@
                                 (search-directory
                                  i_0
                                  cond-val_0
+                                 base_0
                                  (encode-symbols expected-mod_0))))
                            (if b-pos_0
                              (begin
-                               (file-position i_0 b-pos_0)
+                               (file-position i_0 (+ base_0 b-pos_0))
                                (let ((or-part_0 (cached-bundle i_0)))
                                  (if or-part_0
                                    or-part_0
@@ -80236,9 +80220,11 @@
                                    (let ((m-s_0
                                           (check-module-form s_0 path_0)))
                                      (let ((s2_0
-                                            (1/read-syntax
-                                             (object-name i_0)
-                                             i_0)))
+                                            (if end_0
+                                              eof
+                                              (1/read-syntax
+                                               (object-name i_0)
+                                               i_0))))
                                        (begin
                                          (if (eof-object? s2_0)
                                            (void)
@@ -80351,11 +80337,11 @@
              app_2
              (arithmetic-shift (read-byte/not-eof_0 i_0) 24))))))))
 (define search-directory
-  (lambda (i_0 pos_0 bstr_0)
+  (lambda (i_0 pos_0 base_0 bstr_0)
     (if (zero? pos_0)
       #f
       (begin
-        (file-position i_0 pos_0)
+        (file-position i_0 (+ base_0 pos_0))
         (let ((name-len_0 (read-number i_0)))
           (let ((v_0 (read-bytes name-len_0 i_0)))
             (begin
@@ -80381,12 +80367,16 @@
                   (begin
                     (read-number i_0)
                     (read-number i_0)
-                    (search-directory i_0 (read-number i_0) bstr_0))
+                    (search-directory i_0 (read-number i_0) base_0 bstr_0))
                   (begin
                     (read-number i_0)
                     (read-number i_0)
                     (read-number i_0)
-                    (search-directory i_0 (read-number i_0) bstr_0)))))))))))
+                    (search-directory
+                     i_0
+                     (read-number i_0)
+                     base_0
+                     bstr_0)))))))))))
 (define encode-symbols
   (lambda (expected-mod_0)
     (if (symbol? expected-mod_0)
@@ -80441,13 +80431,14 @@
       (with-module-reading-parameterization thunk_0))))
 (define call-with-input-module-file
   (lambda (path_0 proc_0)
-    (let ((pack-bytes_0 (if (pack-enabled?) (pack-member-bytes path_0) #f)))
-      (if pack-bytes_0
-        (|#%app| proc_0 (open-input-bytes pack-bytes_0 path_0))
+    (let ((pack-result_0
+           (if (pack-enabled?) (call-with-pack-member path_0 proc_0) #f)))
+      (if pack-result_0
+        (unbox pack-result_0)
         (let ((i_0 #f))
           (dynamic-wind
            (lambda () (set! i_0 (open-input-file.1 #t 'binary path_0)))
-           (lambda () (|#%app| proc_0 i_0))
+           (lambda () (|#%app| proc_0 i_0 0 #f))
            (lambda () (close-input-port i_0))))))))
 (define default-load/use-compiled
   (let ((with-dir*_0

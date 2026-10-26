@@ -6,13 +6,16 @@
 ;; it (`raco setup`) and keeps it honest (the compilation manager marks
 ;; it stale when it rewrites a member).
 ;;
-;; Format v1:
-;;   #"RKTPK1\n" <u32 header-len> <header> <u32 index-len> <index> <members...>
-;;   header = (version "..." vm "..." library-subpath "..." links "..." paths "..."
-;;            modes "..." build-time N members N)
-;;   index  = #( #(src-path zo-path (key ...) offset len zo-sha1) ... )
-;; The header strings are produced exactly as the expander reproduces
-;; them at startup; a mismatch disables the pack.
+;; Format v2:
+;;   #"RKTPK2\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
+;;   header = (version "..." vm "..." library-subpath "..." modes "..."
+;;            build-time N members N)
+;;   index  = <u32 count> then per member:
+;;            <u16 n><src path bytes> <u16 n><zo path bytes>
+;;            <u8 k> k * (<u16 n><key bytes>) <u32 offset> <u32 length> <20 bytes sha1>
+;; The index is binary so that decoding it costs a fraction of a
+;; millisecond at every startup (an s-expression index took 2-3 ms to
+;; read and 7 ms to turn into tables).
 (require racket/list racket/string racket/port file/sha1 setup/dirs)
 
 (provide startup-pack-path
@@ -24,7 +27,7 @@
          mark-startup-pack-stale!
          clear-startup-pack-stale!)
 
-(define MAGIC #"RKTPK1\n")
+(define MAGIC #"RKTPK2\n")
 
 (define (startup-pack-path)
   (define share (find-share-dir))
@@ -126,35 +129,32 @@
 ;; write / verify
 
 (define (u32 n) (integer->integer-bytes n 4 #f #f))
+(define (u16 n) (integer->integer-bytes n 2 #f #f))
 
-(define (normalize-dir p)
-  (path->string (path->directory-path (simplify-path (path->complete-path p) #f))))
-(define (normalize-file p)
-  (path->string (simplify-path (path->complete-path p) #f)))
-
-;; exactly as the expander reproduces them at startup (see
-;; racket/src/expander/boot/startup-pack.rkt)
-(define (user-specific? p)
-  (define addon (find-system-path 'addon-dir))
-  (and (path? p) (complete-path? addon)
-       (let ([a (path->string (path->directory-path (simplify-path addon #f)))]
-             [s (path->string (simplify-path (path->complete-path p) #f))])
-         (and (>= (string-length s) (string-length a))
-              (string=? a (substring s 0 (string-length a)))))))
-
-;; installation entries only, user-specific ones left out
 (define (header-string)
   (list 'version (version)
         'vm (symbol->string (system-type 'vm))
         'library-subpath (path->string (system-library-subpath #f))
-        'links (format "~s" (for/list ([p (current-library-collection-links)]
-                                      #:unless (and p (or (user-specific? p)
-                                                          (not (file-exists? p)))))
-                              (and p (normalize-file p))))
-        'paths (format "~s" (for/list ([p (current-library-collection-paths)]
-                                      #:unless (user-specific? p))
-                              (normalize-dir p)))
         'modes (format "~s" (map path->string (use-compiled-file-paths)))))
+
+;; index bytes for the members, with offsets relative to `base`
+(define (index-bytes members datas base)
+  (define o (open-output-bytes))
+  (write-bytes (u32 (length members)) o)
+  (for/fold ([off base]) ([m members] [d datas])
+    (define src (path->bytes (car m)))
+    (define zo (path->bytes (cadr m)))
+    (write-bytes (u16 (bytes-length src)) o) (write-bytes src o)
+    (write-bytes (u16 (bytes-length zo)) o) (write-bytes zo o)
+    (write-bytes (bytes (length (caddr m))) o)
+    (for ([k (caddr m)])
+      (define kb (string->bytes/utf-8 k))
+      (write-bytes (u16 (bytes-length kb)) o) (write-bytes kb o))
+    (write-bytes (u32 off) o)
+    (write-bytes (u32 (bytes-length d)) o)
+    (write-bytes (sha1-bytes (open-input-bytes d)) o)
+    (+ off (bytes-length d)))
+  (get-output-bytes o))
 
 ;; -> (values member-count skipped-roots)
 (define (build-startup-pack out roots)
@@ -170,23 +170,15 @@
         (error 'build-startup-pack "native extension present: ~a" so))
       (list src zo (reverse (hash-ref keys src null)))))
   (define datas (for/list ([m members]) (call-with-input-file (cadr m) port->bytes)))
-  (define (make-index base)
-    (for/fold ([acc '()] [off base] #:result (list->vector (reverse acc)))
-              ([m members] [d datas])
-      (values (cons (vector (path->string (car m)) (path->string (cadr m)) (caddr m)
-                            off (bytes-length d) (sha1 (open-input-bytes d)))
-                    acc)
-              (+ off (bytes-length d)))))
   (define header
     (append (header-string)
             (list 'build-time (current-seconds) 'members (length members))))
   (define header-bytes (string->bytes/utf-8 (format "~s" header)))
-  (define (index-bytes base) (string->bytes/utf-8 (format "~s" (make-index base))))
-  (define base
-    (let loop ([guess (+ (bytes-length MAGIC) 4 (bytes-length header-bytes) 4 (bytes-length (index-bytes 0)))])
-      (define b (+ (bytes-length MAGIC) 4 (bytes-length header-bytes) 4 (bytes-length (index-bytes guess))))
-      (if (= b guess) b (loop b))))
-  (define ib (index-bytes base))
+  ;; the index length does not depend on the offsets (fixed-width), so
+  ;; the base is known after one measurement
+  (define base (+ (bytes-length MAGIC) 4 (bytes-length header-bytes) 4
+                  (bytes-length (index-bytes members datas 0))))
+  (define ib (index-bytes members datas base))
   (define-values (dir name dir?) (split-path out))
   (define tmp (build-path dir (path-add-extension name #".tmp")))
   (call-with-output-file tmp #:exists 'truncate/replace
@@ -198,12 +190,27 @@
   (rename-file-or-directory tmp out #t)
   (values (length members) skipped-roots))
 
+(define (read-u32 in) (integer-bytes->integer (read-bytes 4 in) #f #f))
+(define (read-u16 in) (integer-bytes->integer (read-bytes 2 in) #f #f))
+
+;; -> (values header (listof (vector src-bytes zo-bytes keys offset length sha1-bytes)))
 (define (read-pack-index in)
   (unless (equal? (read-bytes (bytes-length MAGIC) in) MAGIC) (error 'startup-pack "bad magic"))
-  (define hl (integer-bytes->integer (read-bytes 4 in) #f #f))
+  (define hl (read-u32 in))
   (define header (read (open-input-bytes (read-bytes hl in))))
-  (define il (integer-bytes->integer (read-bytes 4 in) #f #f))
-  (define index (read (open-input-bytes (read-bytes il in))))
+  (define il (read-u32 in))
+  (define ip (open-input-bytes (read-bytes il in)))
+  (define n (read-u32 ip))
+  (define index
+    (for/list ([i n])
+      (define src (read-bytes (read-u16 ip) ip))
+      (define zo (read-bytes (read-u16 ip) ip))
+      (define k (read-byte ip))
+      (define keys (for/list ([j k]) (read-bytes (read-u16 ip) ip)))
+      (define off (read-u32 ip))
+      (define len (read-u32 ip))
+      (define sha (read-bytes 20 ip))
+      (vector src zo keys off len sha)))
   (values header index))
 
 ;; -> number of mismatching members
@@ -211,11 +218,11 @@
   (call-with-input-file pack
     (lambda (in)
       (define-values (header index) (read-pack-index in))
-      (for/sum ([e (in-vector index)])
+      (for/sum ([e (in-list index)])
         (file-position in (vector-ref e 3))
         (define d (read-bytes (vector-ref e 4) in))
-        (if (and (equal? d (call-with-input-file (vector-ref e 1) port->bytes))
-                 (equal? (sha1 (open-input-bytes d)) (vector-ref e 5)))
+        (if (and (equal? d (call-with-input-file (bytes->path (vector-ref e 1)) port->bytes))
+                 (equal? (sha1-bytes (open-input-bytes d)) (vector-ref e 5)))
             0
             1)))))
 
@@ -236,10 +243,10 @@
                    (call-with-input-file pack
                      (lambda (in)
                        (define-values (header index) (read-pack-index in))
-                       (for/hash ([e (in-vector index)]) (values (vector-ref e 1) #t))))
+                       (for/hash ([e (in-list index)]) (values (vector-ref e 1) #t))))
                    'none))))
      (and (hash? member-table)
-          (hash-ref member-table (path->string (path->complete-path zo-path)) #f))]))
+          (hash-ref member-table (path->bytes (path->complete-path zo-path)) #f))]))
 
 (define (mark-startup-pack-stale!)
   (define stale (startup-pack-stale-path))
