@@ -62,7 +62,7 @@
                 (1/read-syntax read-syntax)
                 (1/resolved-module-path? resolved-module-path?)
                 (seal seal)
-                (startup-pack-init! startup-pack-init!)
+                (startup-pack-init!/installation startup-pack-init!)
                 (1/syntax->datum syntax->datum)
                 (1/syntax-debug-info syntax-debug-info)
                 (1/syntax-deserialize syntax-deserialize)
@@ -63201,11 +63201,12 @@
   (lambda (name_0)
     (environment-variables-ref (current-environment-variables) name_0)))
 (define default-pack-path
-  (lambda ()
-    (let ((collects_0 (find-system-path 'collects-dir)))
-      (if (complete-path? collects_0)
-        (build-path collects_0 'up "share" "startup.pack")
-        #f))))
+  (lambda (share-dir_0)
+    (if (path? share-dir_0)
+      (if (complete-path? share-dir_0)
+        (build-path share-dir_0 "startup.pack")
+        #f)
+      #f)))
 (define links-string
   (lambda ()
     (format
@@ -63262,7 +63263,7 @@
         (begin (write-string (apply format fmt_0 args_0) e_0) (newline e_0)))
       (void))))
 (define startup-pack-init!
-  (lambda ()
+  (lambda (share-dir_0)
     (begin
       (startup-pack-place-init!)
       (let ((name_0 #vu8(80 76 84 95 83 84 65 82 84 85 80 95 80 65 67 75)))
@@ -63272,7 +63273,7 @@
                 name_0)))
           (let ((pack-path_0
                  (if (not env_0)
-                   (default-pack-path)
+                   (default-pack-path share-dir_0)
                    (if (equal? env_0 #vu8(111 102 102)) #f (bytes->path env_0)))))
             (begin
               (let ((app_0 (1/current-compiled-file-roots)))
@@ -63606,9 +63607,9 @@
          (let ((or-part_0
                 (if p_0
                   (if (file-exists? p_0)
-                    (let ((with-handlers-handler12_0
+                    (let ((with-handlers-handler13_0
                            (|#%name|
-                            with-handlers-handler12
+                            with-handlers-handler13
                             (lambda (exn_0) hash2725))))
                       (let ((bpz_0
                              (continuation-mark-set-first
@@ -63620,15 +63621,15 @@
                            (select-handler/no-breaks
                             e_0
                             bpz_0
-                            (list (cons exn:fail? with-handlers-handler12_0))))
+                            (list (cons exn:fail? with-handlers-handler13_0))))
                          (lambda ()
-                           (let ((temp14_0
+                           (let ((temp15_0
                                   (lambda ()
                                     (let ((v_0
                                            (call-with-default-reading-parameterization
                                             1/read)))
                                       (if (hash? v_0) v_0 #f)))))
-                             (with-input-from-file.1 'binary p_0 temp14_0))))))
+                             (with-input-from-file.1 'binary p_0 temp15_0))))))
                     #f)
                   #f)))
            (if or-part_0 or-part_0 hash2725)))))))
@@ -63708,21 +63709,39 @@
                     (cons app_0 (loop_0 (cdr l_1))))))))))
          (loop_0 l_0))
         orig-l_0))))
-(define 1/find-library-collection-links
-  (let ((find-library-collection-links_0
+(define find-share-dir
+  (let ((find-share-dir_0
          (|#%name|
-          find-library-collection-links
-          (lambda (config-table2_0 installation-name3_0)
+          find-share-dir
+          (lambda (config-table2_0)
             (let ((config-table_0
                    (if (eq? config-table2_0 unsafe-undefined)
                      (1/read-installation-configuration-table)
                      config-table2_0)))
+              (coerce-to-path
+               (let ((or-part_0
+                      (if (hash? config-table_0)
+                        (hash-ref config-table_0 'share-dir #f)
+                        #f)))
+                 (if or-part_0 or-part_0 (build-path 'up "share")))))))))
+    (case-lambda
+     (() (find-share-dir_0 unsafe-undefined))
+     ((config-table2_0) (find-share-dir_0 config-table2_0)))))
+(define 1/find-library-collection-links
+  (let ((find-library-collection-links_0
+         (|#%name|
+          find-library-collection-links
+          (lambda (config-table3_0 installation-name4_0)
+            (let ((config-table_0
+                   (if (eq? config-table3_0 unsafe-undefined)
+                     (1/read-installation-configuration-table)
+                     config-table3_0)))
               (let ((installation-name_0
-                     (if (eq? installation-name3_0 unsafe-undefined)
+                     (if (eq? installation-name4_0 unsafe-undefined)
                        (if (hash? config-table_0)
                          (get-installation-name config-table_0)
                          #f)
-                       installation-name3_0)))
+                       installation-name4_0)))
                 (begin
                   (if (hash? config-table_0)
                     (void)
@@ -63777,10 +63796,10 @@
      find-library-collection-links
      (case-lambda
       (() (find-library-collection-links_0 unsafe-undefined unsafe-undefined))
-      ((config-table_0 installation-name3_0)
-       (find-library-collection-links_0 config-table_0 installation-name3_0))
-      ((config-table2_0)
-       (find-library-collection-links_0 config-table2_0 unsafe-undefined))))))
+      ((config-table_0 installation-name4_0)
+       (find-library-collection-links_0 config-table_0 installation-name4_0))
+      ((config-table3_0)
+       (find-library-collection-links_0 config-table3_0 unsafe-undefined))))))
 (define cell.1$1 (unsafe-make-place-local (make-weak-hash)))
 (define cell.2$1 (unsafe-make-place-local (unsafe-make-uninterruptible-lock)))
 (define collection-place-init!
@@ -63833,7 +63852,7 @@
       #f)))
 (define file->bytes
   (lambda (path_0)
-    (let ((temp16_0
+    (let ((temp17_0
            (lambda (p_0)
              (let ((bstr_0 (read-bytes 8192 p_0)))
                (if (if (bytes? bstr_0)
@@ -63854,7 +63873,7 @@
                              (cons bstr_1 (loop_0))))))))
                     (loop_0))))
                  bstr_0)))))
-      (call-with-input-file*.1 'binary path_0 temp16_0))))
+      (call-with-input-file*.1 'binary path_0 temp17_0))))
 (define no-file-stamp?
   (lambda (a_0)
     (let ((or-part_0 (not a_0))) (if or-part_0 or-part_0 (not (car a_0))))))
@@ -63924,7 +63943,7 @@
                               (let ((v_0
                                      (if (no-file-stamp? ts_0)
                                        null
-                                       (let ((temp18_0
+                                       (let ((temp19_0
                                               (lambda (p_0)
                                                 (begin0
                                                   (1/read p_0)
@@ -63936,7 +63955,7 @@
                                          (call-with-input-file*.1
                                           'binary
                                           links-path_0
-                                          temp18_0)))))
+                                          temp19_0)))))
                                 (begin
                                   (if (if (list? v_0)
                                         (andmap_2814
@@ -64359,37 +64378,37 @@
   (let ((find-library-collection-paths_0
          (|#%name|
           find-library-collection-paths
-          (lambda (extra-collects-dirs4_0
-                   post-collects-dirs5_0
-                   config-table6_0
-                   installation-name7_0)
+          (lambda (extra-collects-dirs5_0
+                   post-collects-dirs6_0
+                   config-table7_0
+                   installation-name8_0)
             (let ((config-table_0
-                   (if (eq? config-table6_0 unsafe-undefined)
+                   (if (eq? config-table7_0 unsafe-undefined)
                      (1/read-installation-configuration-table)
-                     config-table6_0)))
+                     config-table7_0)))
               (let ((installation-name_0
-                     (if (eq? installation-name7_0 unsafe-undefined)
+                     (if (eq? installation-name8_0 unsafe-undefined)
                        (if (hash? config-table_0)
                          (get-installation-name config-table_0)
                          #f)
-                       installation-name7_0)))
+                       installation-name8_0)))
                 (begin
-                  (if (if (list? extra-collects-dirs4_0)
-                        (andmap_2814 path-string? extra-collects-dirs4_0)
+                  (if (if (list? extra-collects-dirs5_0)
+                        (andmap_2814 path-string? extra-collects-dirs5_0)
                         #f)
                     (void)
                     (raise-argument-error
                      'find-library-collection-paths
                      "(listof path-string?)"
-                     extra-collects-dirs4_0))
-                  (if (if (list? post-collects-dirs5_0)
-                        (andmap_2814 path-string? post-collects-dirs5_0)
+                     extra-collects-dirs5_0))
+                  (if (if (list? post-collects-dirs6_0)
+                        (andmap_2814 path-string? post-collects-dirs6_0)
                         #f)
                     (void)
                     (raise-argument-error
                      'find-library-collection-paths
                      "(listof path-string?)"
-                     post-collects-dirs5_0))
+                     post-collects-dirs6_0))
                   (if (hash? config-table_0)
                     (void)
                     (raise-argument-error
@@ -64453,9 +64472,9 @@
                                              (loop_0 (cdr l_0))))))))))
                                 (loop_0
                                  (append
-                                  extra-collects-dirs4_0
+                                  extra-collects-dirs5_0
                                   (list (find-system-path 'collects-dir))
-                                  post-collects-dirs5_0))))))))))))))))))
+                                  post-collects-dirs6_0))))))))))))))))))
     (|#%name|
      find-library-collection-paths
      (case-lambda
@@ -64468,27 +64487,27 @@
       ((extra-collects-dirs_0
         post-collects-dirs_0
         config-table_0
-        installation-name7_0)
+        installation-name8_0)
        (find-library-collection-paths_0
         extra-collects-dirs_0
         post-collects-dirs_0
         config-table_0
-        installation-name7_0))
-      ((extra-collects-dirs_0 post-collects-dirs_0 config-table6_0)
+        installation-name8_0))
+      ((extra-collects-dirs_0 post-collects-dirs_0 config-table7_0)
        (find-library-collection-paths_0
         extra-collects-dirs_0
         post-collects-dirs_0
-        config-table6_0
+        config-table7_0
         unsafe-undefined))
-      ((extra-collects-dirs_0 post-collects-dirs5_0)
+      ((extra-collects-dirs_0 post-collects-dirs6_0)
        (find-library-collection-paths_0
         extra-collects-dirs_0
-        post-collects-dirs5_0
+        post-collects-dirs6_0
         unsafe-undefined
         unsafe-undefined))
-      ((extra-collects-dirs4_0)
+      ((extra-collects-dirs5_0)
        (find-library-collection-paths_0
-        extra-collects-dirs4_0
+        extra-collects-dirs5_0
         null
         unsafe-undefined
         unsafe-undefined))))))
@@ -64496,11 +64515,11 @@
   (let ((find-compiled-file-roots_0
          (|#%name|
           find-compiled-file-roots
-          (lambda (ht8_0)
+          (lambda (ht9_0)
             (let ((ht_0
-                   (if (eq? ht8_0 unsafe-undefined)
+                   (if (eq? ht9_0 unsafe-undefined)
                      (1/read-installation-configuration-table)
-                     ht8_0)))
+                     ht9_0)))
               (begin
                 (if (hash? ht_0)
                   (void)
@@ -64586,7 +64605,7 @@
      find-compiled-file-roots
      (case-lambda
       (() (find-compiled-file-roots_0 unsafe-undefined))
-      ((ht8_0) (find-compiled-file-roots_0 ht8_0))))))
+      ((ht9_0) (find-compiled-file-roots_0 ht9_0))))))
 (define-values
  (prop:readtable prop:readtable? prop:readtable-ref)
  (make-struct-type-property 'readtable))
@@ -98693,6 +98712,8 @@
      print-values)
     (void)))
 (define datum->kernel-syntax (lambda (s_0) (1/datum->syntax core-stx s_0)))
+(define startup-pack-init!/installation
+  (lambda () (startup-pack-init! (find-share-dir))))
 (define expander-place-init!
   (lambda ()
     (begin

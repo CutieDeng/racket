@@ -54,10 +54,12 @@
 (define (getenv-bytes name)
   (environment-variables-ref (current-environment-variables) name))
 
-(define (default-pack-path)
-  (let ([collects (find-system-path 'collects-dir)])
-    (and (complete-path? collects)
-         (build-path collects 'up "share" "startup.pack"))))
+(define (default-pack-path share-dir)
+  ;; the installation's share directory is supplied by the caller
+  ;; (see `find-share-dir` in "../eval/collection.rkt")
+  (and (path? share-dir)
+       (complete-path? share-dir)
+       (build-path share-dir "startup.pack")))
 
 ;; The configuration strings must be produced exactly as the pack
 ;; builder produces them:
@@ -94,11 +96,11 @@
       (write-string (apply format fmt args) e)
       (newline e))))
 
-(define (startup-pack-init!)
+(define (startup-pack-init! share-dir)
   (startup-pack-place-init!)
   (let* ([env (getenv-bytes #"PLT_STARTUP_PACK")]
          [pack-path (cond
-                      [(not env) (default-pack-path)]
+                      [(not env) (default-pack-path share-dir)]
                       [(equal? env #"off") #f]
                       [else (bytes->path env)])])
     (pack-debug "startup-pack: path ~s roots ~s modes ~s check ~s"

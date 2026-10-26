@@ -123,7 +123,7 @@
          declare-primitive-module! ; to support "extensions"
 
          embedded-load ; for -k
-         startup-pack-init! ; for startup
+         (rename-out [startup-pack-init!/installation startup-pack-init!]) ; for startup
 
          compile-keep-source-locations! ; to enable if the back end wants them
 
@@ -243,6 +243,9 @@
 
 (define (datum->kernel-syntax s)
   (datum->syntax core-stx s))
+
+(define (startup-pack-init!/installation)
+  (startup-pack-init! (find-share-dir)))
 
 (define (expander-place-init!)
   (syntax-place-init!)

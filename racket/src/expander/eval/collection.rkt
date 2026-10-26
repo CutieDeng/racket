@@ -19,6 +19,7 @@
          find-col-file
          read-installation-configuration-table
          get-installation-name
+         find-share-dir
 
          collection-place-init!)
 
@@ -127,6 +128,13 @@
           [(not (car l)) (append orig-l (loop (cdr l)))]
           [else (cons (coerce-to-path (car l)) (loop (cdr l)))]))
       orig-l))
+
+;; The installation's share directory: the configuration's `share-dir`,
+;; else "share" next to the main collection directory
+(define (find-share-dir [config-table (read-installation-configuration-table)])
+  (coerce-to-path
+   (or (and (hash? config-table) (hash-ref config-table 'share-dir #f))
+       (build-path 'up "share"))))
 
 (define (find-library-collection-links [config-table (read-installation-configuration-table)]
                                        [installation-name (and (hash? config-table)
