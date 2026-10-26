@@ -245,7 +245,7 @@
   (datum->syntax core-stx s))
 
 (define (startup-pack-init!/installation)
-  (startup-pack-init! (find-share-dir) (user-scope-collection-dirs)))
+  (startup-pack-init! (find-share-dir) collection-candidate-dirs))
 
 (define (expander-place-init!)
   (syntax-place-init!)

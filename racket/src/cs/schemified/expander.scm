@@ -63207,64 +63207,6 @@
         (build-path share-dir_0 "startup.pack")
         #f)
       #f)))
-(define normalize-dir
-  (lambda (p_0)
-    (path->string
-     (path->directory-path (simplify-path (path->complete-path p_0) #f)))))
-(define normalize-file
-  (lambda (p_0) (path->string (simplify-path (path->complete-path p_0) #f))))
-(define user-specific?
-  (lambda (p_0)
-    (let ((addon_0 (find-system-path 'addon-dir)))
-      (if (path? p_0)
-        (if (complete-path? addon_0)
-          (let ((a_0
-                 (path->string
-                  (path->directory-path (simplify-path addon_0 #f)))))
-            (let ((s_0
-                   (path->string
-                    (simplify-path (path->complete-path p_0) #f))))
-              (let ((a_1 a_0))
-                (if (let ((app_0 (string-length s_0)))
-                      (>= app_0 (string-length a_1)))
-                  (string=? a_1 (substring s_0 0 (string-length a_1)))
-                  #f))))
-          #f)
-        #f))))
-(define links-string
-  (lambda ()
-    (format
-     "~s"
-     (letrec*
-      ((loop_0
-        (|#%name|
-         loop
-         (lambda (l_0)
-           (if (null? l_0)
-             '()
-             (if (not (car l_0))
-               (cons #f (loop_0 (cdr l_0)))
-               (if (user-specific? (car l_0))
-                 (loop_0 (cdr l_0))
-                 (let ((app_0 (normalize-file (car l_0))))
-                   (cons app_0 (loop_0 (cdr l_0)))))))))))
-      (loop_0 (1/current-library-collection-links))))))
-(define paths-string
-  (lambda ()
-    (format
-     "~s"
-     (letrec*
-      ((loop_0
-        (|#%name|
-         loop
-         (lambda (l_0)
-           (if (null? l_0)
-             '()
-             (if (user-specific? (car l_0))
-               (loop_0 (cdr l_0))
-               (let ((app_0 (normalize-dir (car l_0))))
-                 (cons app_0 (loop_0 (cdr l_0))))))))))
-      (loop_0 (1/current-library-collection-paths))))))
 (define modes-string
   (lambda ()
     (format "~s" (map_2353 path->string (1/use-compiled-file-paths)))))
@@ -63309,7 +63251,7 @@
         (begin (write-string (apply format fmt_0 args_0) e_0) (newline e_0)))
       (void))))
 (define startup-pack-init!
-  (lambda (share-dir_0 user-collection-dirs_0)
+  (lambda (share-dir_0 candidate-dirs-for_0)
     (begin
       (startup-pack-place-init!)
       (let ((name_0 #vu8(80 76 84 95 83 84 65 82 84 85 80 95 80 65 67 75)))
@@ -63397,26 +63339,13 @@
                                           app_2
                                           (path->string
                                            (system-library-subpath #f))))))
-                                  (let ((app_3
-                                         (let ((app_3
-                                                (header-ref header_0 'links)))
-                                           (equal? app_3 (links-string)))))
-                                    (let ((app_4
-                                           (let ((app_4
-                                                  (header-ref
-                                                   header_0
-                                                   'paths)))
-                                             (equal? app_4 (paths-string)))))
-                                      (pack-debug
-                                       "startup-pack: version ~s vm ~s subpath ~s links ~s paths ~s modes ~s"
-                                       app_0
-                                       app_1
-                                       app_2
-                                       app_3
-                                       app_4
-                                       (let ((app_5
-                                              (header-ref header_0 'modes)))
-                                         (equal? app_5 (modes-string)))))))))
+                                  (pack-debug
+                                   "startup-pack: version ~s vm ~s subpath ~s modes ~s"
+                                   app_0
+                                   app_1
+                                   app_2
+                                   (let ((app_3 (header-ref header_0 'modes)))
+                                     (equal? app_3 (modes-string)))))))
                             (void))
                           (if (if (vector? index_0)
                                 (if (equal?
@@ -63434,19 +63363,9 @@
                                            app_0
                                            (path->string
                                             (system-library-subpath #f))))
-                                      (if (let ((app_0
-                                                 (header-ref header_0 'links)))
-                                            (equal? app_0 (links-string)))
-                                        (if (let ((app_0
-                                                   (header-ref
-                                                    header_0
-                                                    'paths)))
-                                              (equal? app_0 (paths-string)))
-                                          (let ((app_0
-                                                 (header-ref header_0 'modes)))
-                                            (equal? app_0 (modes-string)))
-                                          #f)
-                                        #f)
+                                      (let ((app_0
+                                             (header-ref header_0 'modes)))
+                                        (equal? app_0 (modes-string)))
                                       #f)
                                     #f)
                                   #f)
@@ -63548,44 +63467,108 @@
                                                            start_0
                                                            acc_0)))))))
                                                  (loop_0 0 0 '()))))))
-                                        (for-each_2009
-                                         (lambda (k_0)
-                                           (let ((parts_0 (split_0 k_0)))
-                                             (let ((col_0 (car parts_0)))
-                                               (for-each_2009
-                                                (lambda (e_0)
-                                                  (if (if (string=?
-                                                           (vector-ref e_0 0)
-                                                           col_0)
-                                                        (if (hash-ref
+                                        (let ((dir-cache_0 (make-hash)))
+                                          (let ((col-dir_0
+                                                 (|#%name|
+                                                  col-dir
+                                                  (lambda (cand_0 col_0)
+                                                    (let ((key_0
+                                                           (cons
+                                                            (if (box? cand_0)
+                                                              (unbox cand_0)
+                                                              cand_0)
+                                                            col_0)))
+                                                      (let ((v_0
+                                                             (hash-ref
+                                                              dir-cache_0
+                                                              key_0
+                                                              'none)))
+                                                        (if (eq? v_0 'none)
+                                                          (let ((d_0
+                                                                 (if (box?
+                                                                      cand_0)
+                                                                   (unbox
+                                                                    cand_0)
+                                                                   (build-path
+                                                                    cand_0
+                                                                    col_0))))
+                                                            (let ((r_0
+                                                                   (if (directory-exists?
+                                                                        d_0)
+                                                                     d_0
+                                                                     #f)))
+                                                              (begin
+                                                                (hash-set!
+                                                                 dir-cache_0
+                                                                 key_0
+                                                                 r_0)
+                                                                r_0)))
+                                                          v_0)))))))
+                                            (for-each_2009
+                                             (lambda (k_0)
+                                               (let ((parts_0 (split_0 k_0)))
+                                                 (let ((col_0 (car parts_0)))
+                                                   (let ((rest_0
+                                                          (cdr parts_0)))
+                                                     (let ((member-src_0
+                                                            (hash-ref
                                                              by-key_1
-                                                             k_0
-                                                             #f)
-                                                          (file-exists?
-                                                           (let ((app_0
-                                                                  (vector-ref
-                                                                   e_0
-                                                                   1)))
-                                                             (apply
-                                                              build-path
-                                                              app_0
-                                                              (if (vector-ref
-                                                                   e_0
-                                                                   2)
-                                                                (cdr parts_0)
-                                                                parts_0))))
-                                                          #f)
-                                                        #f)
-                                                    (begin
-                                                      (pack-debug
-                                                       "startup-pack: key ~s shadowed in user scope; dropped"
-                                                       k_0)
-                                                      (hash-remove!
-                                                       by-key_1
-                                                       k_0))
-                                                    (void)))
-                                                user-collection-dirs_0))))
-                                         (hash-keys by-key_1)))
+                                                             k_0)))
+                                                       (let ((winner_0
+                                                              (letrec*
+                                                               ((loop_0
+                                                                 (|#%name|
+                                                                  loop
+                                                                  (lambda (cands_0)
+                                                                    (if (null?
+                                                                         cands_0)
+                                                                      #f
+                                                                      (let ((d_0
+                                                                             (col-dir_0
+                                                                              (car
+                                                                               cands_0)
+                                                                              col_0)))
+                                                                        (if (if d_0
+                                                                              (file-exists?
+                                                                               (apply
+                                                                                build-path
+                                                                                d_0
+                                                                                rest_0))
+                                                                              #f)
+                                                                          (apply
+                                                                           build-path
+                                                                           d_0
+                                                                           rest_0)
+                                                                          (loop_0
+                                                                           (cdr
+                                                                            cands_0)))))))))
+                                                               (loop_0
+                                                                (|#%app|
+                                                                 candidate-dirs-for_0
+                                                                 col_0)))))
+                                                         (if (if winner_0
+                                                               (let ((app_0
+                                                                      (path->bytes
+                                                                       (simplify-path
+                                                                        winner_0
+                                                                        #f))))
+                                                                 (equal?
+                                                                  app_0
+                                                                  (path->bytes
+                                                                   (simplify-path
+                                                                    member-src_0
+                                                                    #f))))
+                                                               #f)
+                                                           (void)
+                                                           (begin
+                                                             (pack-debug
+                                                              "startup-pack: key ~s resolves to ~s, not the member; dropped"
+                                                              k_0
+                                                              winner_0)
+                                                             (hash-remove!
+                                                              by-key_1
+                                                              k_0)))))))))
+                                             (hash-keys by-key_1)))))
                                       (unsafe-place-local-set!
                                        cell.5$1
                                        by-key_1)
@@ -63837,287 +63820,6 @@
                     (cons app_0 (loop_0 (cdr l_1))))))))))
          (loop_0 l_0))
         orig-l_0))))
-(define user-scope-collection-dirs
-  (lambda ()
-    (if (not (1/use-user-specific-search-paths))
-      '()
-      (let ((addon_0 (find-system-path 'addon-dir)))
-        (let ((under-addon?_0
-               (|#%name|
-                under-addon?
-                (lambda (p_0)
-                  (if (path? p_0)
-                    (if (complete-path? addon_0)
-                      (let ((a_0
-                             (path->bytes
-                              (path->directory-path
-                               (simplify-path addon_0 #f)))))
-                        (let ((s_0
-                               (path->bytes
-                                (simplify-path (path->complete-path p_0) #f))))
-                          (let ((a_1 a_0))
-                            (if (>=
-                                 (unsafe-bytes-length s_0)
-                                 (unsafe-bytes-length a_1))
-                              (bytes=?
-                               a_1
-                               (subbytes s_0 0 (unsafe-bytes-length a_1)))
-                              #f))))
-                      #f)
-                    #f)))))
-          (let ((subdir-entries_0
-                 (|#%name|
-                  subdir-entries
-                  (lambda (dir_0)
-                    (if (directory-exists? dir_0)
-                      (reverse$1
-                       (let ((lst_0 (directory-list dir_0)))
-                         (letrec*
-                          ((for-loop_0
-                            (|#%name|
-                             for-loop
-                             (lambda (fold-var_0 lst_1)
-                               (if (pair? lst_1)
-                                 (let ((p_0 (unsafe-car lst_1)))
-                                   (let ((rest_0 (unsafe-cdr lst_1)))
-                                     (let ((fold-var_1
-                                            (if (directory-exists?
-                                                 (build-path dir_0 p_0))
-                                              (let ((fold-var_1
-                                                     (cons
-                                                      (vector
-                                                       (path->string p_0)
-                                                       dir_0
-                                                       #f)
-                                                      fold-var_0)))
-                                                (values fold-var_1))
-                                              fold-var_0)))
-                                       (for-loop_0 fold-var_1 rest_0))))
-                                 fold-var_0)))))
-                          (for-loop_0 null lst_0))))
-                      '())))))
-            (let ((app_0
-                   (reverse$1
-                    (let ((lst_0 (1/current-library-collection-paths)))
-                      (letrec*
-                       ((for-loop_0
-                         (|#%name|
-                          for-loop
-                          (lambda (fold-var_0 lst_1)
-                            (if (pair? lst_1)
-                              (let ((dir_0 (unsafe-car lst_1)))
-                                (let ((rest_0 (unsafe-cdr lst_1)))
-                                  (let ((fold-var_1
-                                         (if (under-addon?_0 dir_0)
-                                           (let ((lst_2
-                                                  (subdir-entries_0 dir_0)))
-                                             (letrec*
-                                              ((for-loop_1
-                                                (|#%name|
-                                                 for-loop
-                                                 (lambda (fold-var_1 lst_3)
-                                                   (if (pair? lst_3)
-                                                     (let ((e_0
-                                                            (unsafe-car
-                                                             lst_3)))
-                                                       (let ((rest_1
-                                                              (unsafe-cdr
-                                                               lst_3)))
-                                                         (let ((fold-var_2
-                                                                (cons
-                                                                 e_0
-                                                                 fold-var_1)))
-                                                           (let ((fold-var_3
-                                                                  (values
-                                                                   fold-var_2)))
-                                                             (for-loop_1
-                                                              fold-var_3
-                                                              rest_1)))))
-                                                     fold-var_1)))))
-                                              (for-loop_1 fold-var_0 lst_2)))
-                                           fold-var_0)))
-                                    (for-loop_0 fold-var_1 rest_0))))
-                              fold-var_0)))))
-                       (for-loop_0 null lst_0))))))
-              (append
-               app_0
-               (reverse$1
-                (let ((lst_0 (1/current-library-collection-links)))
-                  (letrec*
-                   ((for-loop_0
-                     (|#%name|
-                      for-loop
-                      (lambda (fold-var_0 lst_1)
-                        (if (pair? lst_1)
-                          (let ((links_0 (unsafe-car lst_1)))
-                            (let ((rest_0 (unsafe-cdr lst_1)))
-                              (let ((fold-var_1
-                                     (if (if links_0
-                                           (under-addon?_0 links_0)
-                                           #f)
-                                       (let ((id*_0
-                                              (get-linked-collections
-                                               links_0)))
-                                         (letrec*
-                                          ((for-loop_1
-                                            (|#%name|
-                                             for-loop
-                                             (lambda (fold-var_1)
-                                               (let ((fold-var_2
-                                                      (letrec*
-                                                       ((for-loop_2
-                                                         (|#%name|
-                                                          for-loop
-                                                          (lambda (fold-var_2
-                                                                   i_0)
-                                                            (if i_0
-                                                              (call-with-values
-                                                               (lambda ()
-                                                                 (hash-iterate-key+value
-                                                                  id*_0
-                                                                  i_0))
-                                                               (lambda (k_0
-                                                                        v_0)
-                                                                 (let ((fold-var_3
-                                                                        (let ((lst_2
-                                                                               (if k_0
-                                                                                 (reverse$1
-                                                                                  (letrec*
-                                                                                   ((for-loop_3
-                                                                                     (|#%name|
-                                                                                      for-loop
-                                                                                      (lambda (fold-var_3
-                                                                                               lst_2)
-                                                                                        (if (pair?
-                                                                                             lst_2)
-                                                                                          (let ((d_0
-                                                                                                 (unsafe-car
-                                                                                                  lst_2)))
-                                                                                            (let ((rest_1
-                                                                                                   (unsafe-cdr
-                                                                                                    lst_2)))
-                                                                                              (let ((fold-var_4
-                                                                                                     (if (box?
-                                                                                                          d_0)
-                                                                                                       (let ((fold-var_4
-                                                                                                              (cons
-                                                                                                               (let ((app_1
-                                                                                                                      (symbol->string
-                                                                                                                       k_0)))
-                                                                                                                 (vector
-                                                                                                                  app_1
-                                                                                                                  (unbox
-                                                                                                                   d_0)
-                                                                                                                  #t))
-                                                                                                               fold-var_3)))
-                                                                                                         (values
-                                                                                                          fold-var_4))
-                                                                                                       fold-var_3)))
-                                                                                                (for-loop_3
-                                                                                                 fold-var_4
-                                                                                                 rest_1))))
-                                                                                          fold-var_3)))))
-                                                                                   (for-loop_3
-                                                                                    null
-                                                                                    v_0)))
-                                                                                 (reverse$1
-                                                                                  (letrec*
-                                                                                   ((for-loop_3
-                                                                                     (|#%name|
-                                                                                      for-loop
-                                                                                      (lambda (fold-var_3
-                                                                                               lst_2)
-                                                                                        (if (pair?
-                                                                                             lst_2)
-                                                                                          (let ((d_0
-                                                                                                 (unsafe-car
-                                                                                                  lst_2)))
-                                                                                            (let ((rest_1
-                                                                                                   (unsafe-cdr
-                                                                                                    lst_2)))
-                                                                                              (let ((fold-var_4
-                                                                                                     (let ((lst_3
-                                                                                                            (subdir-entries_0
-                                                                                                             d_0)))
-                                                                                                       (letrec*
-                                                                                                        ((for-loop_4
-                                                                                                          (|#%name|
-                                                                                                           for-loop
-                                                                                                           (lambda (fold-var_4
-                                                                                                                    lst_4)
-                                                                                                             (if (pair?
-                                                                                                                  lst_4)
-                                                                                                               (let ((e_0
-                                                                                                                      (unsafe-car
-                                                                                                                       lst_4)))
-                                                                                                                 (let ((rest_2
-                                                                                                                        (unsafe-cdr
-                                                                                                                         lst_4)))
-                                                                                                                   (let ((fold-var_5
-                                                                                                                          (cons
-                                                                                                                           e_0
-                                                                                                                           fold-var_4)))
-                                                                                                                     (let ((fold-var_6
-                                                                                                                            (values
-                                                                                                                             fold-var_5)))
-                                                                                                                       (for-loop_4
-                                                                                                                        fold-var_6
-                                                                                                                        rest_2)))))
-                                                                                                               fold-var_4)))))
-                                                                                                        (for-loop_4
-                                                                                                         fold-var_3
-                                                                                                         lst_3)))))
-                                                                                                (for-loop_3
-                                                                                                 fold-var_4
-                                                                                                 rest_1))))
-                                                                                          fold-var_3)))))
-                                                                                   (for-loop_3
-                                                                                    null
-                                                                                    v_0))))))
-                                                                          (letrec*
-                                                                           ((for-loop_3
-                                                                             (|#%name|
-                                                                              for-loop
-                                                                              (lambda (fold-var_3
-                                                                                       lst_3)
-                                                                                (if (pair?
-                                                                                     lst_3)
-                                                                                  (let ((e_0
-                                                                                         (unsafe-car
-                                                                                          lst_3)))
-                                                                                    (let ((rest_1
-                                                                                           (unsafe-cdr
-                                                                                            lst_3)))
-                                                                                      (let ((fold-var_4
-                                                                                             (cons
-                                                                                              e_0
-                                                                                              fold-var_3)))
-                                                                                        (let ((fold-var_5
-                                                                                               (values
-                                                                                                fold-var_4)))
-                                                                                          (for-loop_3
-                                                                                           fold-var_5
-                                                                                           rest_1)))))
-                                                                                  fold-var_3)))))
-                                                                           (for-loop_3
-                                                                            fold-var_2
-                                                                            lst_2)))))
-                                                                   (for-loop_2
-                                                                    fold-var_3
-                                                                    (hash-iterate-next
-                                                                     id*_0
-                                                                     i_0)))))
-                                                              fold-var_2)))))
-                                                       (for-loop_2
-                                                        fold-var_1
-                                                        (hash-iterate-first
-                                                         id*_0)))))
-                                                 fold-var_2)))))
-                                          (for-loop_1 fold-var_0)))
-                                       fold-var_0)))
-                                (for-loop_0 fold-var_1 rest_0))))
-                          fold-var_0)))))
-                   (for-loop_0 null lst_0))))))))))))
 (define find-share-dir
   (let ((find-share-dir_0
          (|#%name|
@@ -64552,39 +64254,35 @@
             collection-path_0
             file-name_0
             check-compiled?_0)))))))
+(define collection-candidate-dirs
+  (lambda (collection_0)
+    (let ((sym_0
+           (string->symbol
+            (if (path? collection_0)
+              (path->string collection_0)
+              collection_0))))
+      (letrec*
+       ((loop_0
+         (|#%name|
+          loop
+          (lambda (l_0)
+            (if (null? l_0)
+              null
+              (if (not (car l_0))
+                (let ((app_0 (1/current-library-collection-paths)))
+                  (append app_0 (loop_0 (cdr l_0))))
+                (if (hash? (car l_0))
+                  (let ((app_0 (map_2353 box (hash-ref (car l_0) sym_0 null))))
+                    (let ((app_1 (hash-ref (car l_0) #f null)))
+                      (append app_0 app_1 (loop_0 (cdr l_0)))))
+                  (let ((ht_0 (get-linked-collections (car l_0))))
+                    (let ((app_0 (hash-ref ht_0 sym_0 null)))
+                      (let ((app_1 (hash-ref ht_0 #f null)))
+                        (append app_0 app_1 (loop_0 (cdr l_0)))))))))))))
+       (loop_0 (1/current-library-collection-links))))))
 (define find-col-file/search
   (lambda (fail_0 collection_0 collection-path_0 file-name_0 check-compiled?_0)
-    (let ((all-paths_0
-           (let ((sym_0
-                  (string->symbol
-                   (if (path? collection_0)
-                     (path->string collection_0)
-                     collection_0))))
-             (letrec*
-              ((loop_0
-                (|#%name|
-                 loop
-                 (lambda (l_0)
-                   (if (null? l_0)
-                     null
-                     (if (not (car l_0))
-                       (let ((app_0 (1/current-library-collection-paths)))
-                         (append app_0 (loop_0 (cdr l_0))))
-                       (if (hash? (car l_0))
-                         (let ((app_0
-                                (map_2353
-                                 box
-                                 (hash-ref (car l_0) sym_0 null))))
-                           (let ((app_1 (hash-ref (car l_0) #f null)))
-                             (append app_0 app_1 (loop_0 (cdr l_0)))))
-                         (let ((ht_0 (get-linked-collections (car l_0))))
-                           (let ((app_0 (hash-ref ht_0 sym_0 null)))
-                             (let ((app_1 (hash-ref ht_0 #f null)))
-                               (append
-                                app_0
-                                app_1
-                                (loop_0 (cdr l_0)))))))))))))
-              (loop_0 (1/current-library-collection-links))))))
+    (let ((all-paths_0 (collection-candidate-dirs collection_0)))
       (let ((done_0
              (|#%name|
               done
@@ -99122,9 +98820,7 @@
     (void)))
 (define datum->kernel-syntax (lambda (s_0) (1/datum->syntax core-stx s_0)))
 (define startup-pack-init!/installation
-  (lambda ()
-    (let ((app_0 (find-share-dir)))
-      (startup-pack-init! app_0 (user-scope-collection-dirs)))))
+  (lambda () (startup-pack-init! (find-share-dir) collection-candidate-dirs)))
 (define expander-place-init!
   (lambda ()
     (begin

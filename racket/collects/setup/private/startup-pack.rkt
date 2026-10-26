@@ -148,7 +148,8 @@
         'vm (symbol->string (system-type 'vm))
         'library-subpath (path->string (system-library-subpath #f))
         'links (format "~s" (for/list ([p (current-library-collection-links)]
-                                      #:unless (and p (user-specific? p)))
+                                      #:unless (and p (or (user-specific? p)
+                                                          (not (file-exists? p)))))
                               (and p (normalize-file p))))
         'paths (format "~s" (for/list ([p (current-library-collection-paths)]
                                       #:unless (user-specific? p))

@@ -20,7 +20,7 @@
          read-installation-configuration-table
          get-installation-name
          find-share-dir
-         user-scope-collection-dirs
+         collection-candidate-dirs
 
          collection-place-init!)
 
@@ -129,44 +129,6 @@
           [(not (car l)) (append orig-l (loop (cdr l)))]
           [else (cons (coerce-to-path (car l)) (loop (cdr l)))]))
       orig-l))
-
-;; Where user-specific search entries can supply top-level collections:
-;; a list of (vector name dir single?), where `dir` is the user
-;; collection directory or a `root` directory of the user links file
-;; (`single?` = #f: the collection is `dir/name`), or a single-collection
-;; link (`single?` = #t: the collection directory is `dir` itself). Used
-;; by the startup pack to find keys that a user-scope file shadows.
-(define (user-scope-collection-dirs)
-  (cond
-    [(not (use-user-specific-search-paths)) '()]
-    [else
-     (define addon (find-system-path 'addon-dir))
-     (define (under-addon? p)
-       (and (path? p) (complete-path? addon)
-            (let ([a (path->bytes (path->directory-path (simplify-path addon #f)))]
-                  [s (path->bytes (simplify-path (path->complete-path p) #f))])
-              (and (>= (bytes-length s) (bytes-length a))
-                   (bytes=? a (subbytes s 0 (bytes-length a)))))))
-     (define (subdir-entries dir)
-       (if (directory-exists? dir)
-           (for/list ([p (in-list (directory-list dir))]
-                      #:when (directory-exists? (build-path dir p)))
-             (vector (path->string p) dir #f))
-           '()))
-     (append
-      (for*/list ([dir (in-list (current-library-collection-paths))]
-                  #:when (under-addon? dir)
-                  [e (in-list (subdir-entries dir))])
-        e)
-      (for*/list ([links (in-list (current-library-collection-links))]
-                  #:when (and links (under-addon? links))
-                  [ht (in-value (get-linked-collections links))]
-                  [(k v) (in-hash ht)]
-                  [e (in-list (if k
-                                  (for/list ([d (in-list v)] #:when (box? d))
-                                    (vector (symbol->string k) (unbox d) #t))
-                                  (for*/list ([d (in-list v)] [e (in-list (subdir-entries d))]) e)))])
-        e))]))
 
 ;; The installation's share directory: the configuration's `share-dir`,
 ;; else "share" next to the main collection directory
@@ -431,39 +393,47 @@
       pack-path
       (find-col-file/search fail collection collection-path file-name check-compiled?)))
 
+;; The places where a top-level collection may be found, in search
+;; order: a path is a directory that holds collections, a (box path)
+;; is the collection's own directory (from a single-collection link).
+;; Also used by the startup pack to check its index against the live
+;; search order.
+(define (collection-candidate-dirs collection)
+  (let ([sym (string->symbol
+              (if (path? collection)
+                  (path->string collection)
+                  collection))])
+    (let loop ([l (current-library-collection-links)])
+      (cond
+        [(null? l) null]
+        [(not (car l))
+         ;; #f is the point where we try the old parameter:
+         (append
+          (current-library-collection-paths)
+          (loop (cdr l)))]
+        [(hash? (car l))
+         ;; A hash table maps a collection-name symbol
+         ;; to a list of paths. We need to wrap each path
+         ;; in a box, because that's how the code below
+         ;; knows that it's a single collection's directory.
+         ;; A hash table can also map #f to a list of paths
+         ;; for directories that hold collections.
+         (append
+          (map box (hash-ref (car l) sym null))
+          (hash-ref (car l) #f null)
+          (loop (cdr l)))]
+        [else
+         (let ([ht (get-linked-collections (car l))])
+           (append
+            ;; Table values are lists of paths and (box path)s,
+            ;; where a (box path) is a collection directory
+            ;; (instead of a directory containing collections).
+            (hash-ref ht sym null)
+            (hash-ref ht #f null)
+            (loop (cdr l))))]))))
+
 (define (find-col-file/search fail collection collection-path file-name check-compiled?)
-  (define all-paths (let ([sym (string->symbol 
-                                (if (path? collection)
-                                    (path->string collection)
-                                    collection))])
-                      (let loop ([l (current-library-collection-links)])
-                        (cond
-                          [(null? l) null]
-                          [(not (car l))
-                           ;; #f is the point where we try the old parameter:
-                           (append 
-                            (current-library-collection-paths)
-                            (loop (cdr l)))]
-                          [(hash? (car l))
-                           ;; A hash table maps a collection-name symbol
-                           ;; to a list of paths. We need to wrap each path
-                           ;; in a box, because that's how the code below
-                           ;; knows that it's a single collection's directory.
-                           ;; A hash table can also map #f to a list of paths
-                           ;; for directories that hold collections.
-                           (append
-                            (map box (hash-ref (car l) sym null))
-                            (hash-ref (car l) #f null)
-                            (loop (cdr l)))]
-                          [else
-                           (let ([ht (get-linked-collections (car l))])
-                             (append 
-                              ;; Table values are lists of paths and (box path)s,
-                              ;; where a (box path) is a collection directory
-                              ;; (instead of a directory containing collections).
-                              (hash-ref ht sym null)
-                              (hash-ref ht #f null)
-                              (loop (cdr l))))]))))
+  (define all-paths (collection-candidate-dirs collection))
   (define (done p)
     (if file-name (build-path p file-name) p))
   (define (*build-path-rep p c)
