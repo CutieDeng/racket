@@ -2250,3 +2250,5 @@
              exn:fail?
              #rx"too large"
 ) ; end err/rt-test
+
+(report-errs)
