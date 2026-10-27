@@ -5,6 +5,19 @@
          racket/runtime-path
          racket/system)
 
+;; The system `openssl` on macOS is LibreSSL, whose `s_server` closes the
+;; connection on these handshakes; prefer an OpenSSL 3+ build when one is
+;; installed, as test-openssl-client.rkt does.
+(define openssl-exe
+  (or (for/first ([p '("/opt/homebrew/opt/openssl@3/bin/openssl"
+                       "/opt/homebrew/bin/openssl"
+                       "/usr/local/opt/openssl@3/bin/openssl"
+                       "/usr/local/bin/openssl")]
+                  #:when (file-exists? p))
+        p)
+      "/usr/bin/openssl"))
+
+
 ;; Tests for ALPN client support
 
 (define-runtime-path server-key "server_key.pem")
@@ -21,7 +34,7 @@
   (parameterize ((current-custodian server-cust)
                  (current-subprocess-custodian-mode 'kill))
     (apply values
-           (process* "/usr/bin/openssl" "s_server"
+           (process* openssl-exe "s_server"
                      "-accept" (number->string PORT)
                      "-cert" server-crt "-key" server-key
                      "-alpn" "rkt-proto,other"))))

@@ -4,6 +4,19 @@
          racket/tcp
          racket/runtime-path)
 
+;; The system `openssl` on macOS is LibreSSL, whose `s_server` closes the
+;; connection on these handshakes; prefer an OpenSSL 3+ build when one is
+;; installed, as test-openssl-client.rkt does.
+(define openssl-exe
+  (or (for/first ([p '("/opt/homebrew/opt/openssl@3/bin/openssl"
+                       "/opt/homebrew/bin/openssl"
+                       "/usr/local/opt/openssl@3/bin/openssl"
+                       "/usr/local/bin/openssl")]
+                  #:when (file-exists? p))
+        p)
+      "/usr/bin/openssl"))
+
+
 #|
 "openssl s_server" prints a "Hostname in TLS extension: <hostname>"
 line when the client uses SNI. BUT it only seems to print it when run
@@ -30,7 +43,7 @@ recognizable despite the "pretty" formatting.
   (define srvout (open-output-string))
   (define-values (_srvout _srvin srvpid _srverr srvctl)
     (apply values
-      (process* "/usr/bin/openssl" "s_server"
+      (process* openssl-exe "s_server"
                 "-tlsextdebug"
                 "-accept" (number->string (+ PORT counter))
                 "-cert" server-crt "-key" server-key
