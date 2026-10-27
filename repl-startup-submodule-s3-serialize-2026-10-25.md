@@ -1,6 +1,6 @@
 # S3：声明层序列化数据改字节流编码（2026-10-25，已提交）
 
-树 `racket-feat-native-pvector` / `feat/repl-startup-analysis`，基于 `80bcb9c41a`。工具：`experiments/startup/faslin-census.py`（临时 `PLT_FASLIN_TRACE` 钩子，按 linklet 种类统计启动期 faslin 次数/字节/ms）、`zo-linklets.rkt`（单个 .zo 的逐 linklet 代码字节与 literals 载荷）、`linklet-times.py`。
+树 `racket-feat-native-pvector` / `feat/repl-startup-analysis`，基于 `eae5477bf7`。工具：`experiments/startup/faslin-census.py`（临时 `PLT_FASLIN_TRACE` 钩子，按 linklet 种类统计启动期 faslin 次数/字节/ms）、`zo-linklets.rkt`（单个 .zo 的逐 linklet 代码字节与 literals 载荷）、`linklet-times.py`。
 
 ## 0. 起点：启动期 faslin 普查（默认 REPL，5 次中位，改前）
 
@@ -85,7 +85,7 @@ literals 普查（`lit-census.rkt`，启动模块集 2372 个有 literals 的 li
 
 ## 6. lan-11 整启动 A/B（Zen 5，空载 load 0–1.4，已验证）
 
-两树独立构建（`make CPUS=16 JOBS=16 base`，无 xrepl/expeditor 包，故不含 P1）：A = `f36a1b8dad`（今日之前），B = `b40e78ac24`（C1 两项 + S3 两项 + 一项 Linux 修复）。pty time-to-prompt 交错：
+两树独立构建（`make CPUS=16 JOBS=16 base`，无 xrepl/expeditor 包，故不含 P1）：A = `9d5dfb27f8`（今日之前），B = `6f68417c4d`（C1 两项 + S3 两项 + 一项 Linux 修复）。pty time-to-prompt 交错：
 
 | 场景 | A 中位 / 最小 | B 中位 / 最小 | 逐对差中位 | 正向对数 |
 |---|---|---|---|---|
@@ -94,6 +94,6 @@ literals 普查（`lit-census.rkt`，启动模块集 2372 个有 literals 的 li
 
 linklet 层退出报告 total 63–70 → 58–60 ms（3 次，噪声大）。macOS 同类改动下 racket/init 层本地估算 −5 ~ −8，与 lan-11 的 −6.7 一致。
 
-**连带发现并修复**：C1 第二项把 `SYM_HASH_INIT/MIX` 放进了 types.h 的 `#ifdef PTHREADS` 段，lan-11 的内核编译不取该段 → fasl.c 隐式声明错误，macOS 构建未暴露。提交 `b40e78ac24` 把宏移到无条件区（FIXRANGE 旁），两机构建通过。
+**连带发现并修复**：C1 第二项把 `SYM_HASH_INIT/MIX` 放进了 types.h 的 `#ifdef PTHREADS` 段，lan-11 的内核编译不取该段 → fasl.c 隐式声明错误，macOS 构建未暴露。提交 `6f68417c4d` 把宏移到无条件区（FIXRANGE 旁），两机构建通过。
 
 lan-11 流程：bundle（6 提交仅 86 KB）→ rsync → bare 仓 fetch → 两个 clone 各复制 `boot/pb` 种子（须先 `mkdir boot`）→ nohup make → 远端阻塞等 rc 文件；`~/startup/{ttp.py,ab-two.py,linklet-times.py}`。
