@@ -93,3 +93,9 @@ header 仍是 s-exp（≈300 B，`read` 0.4 ms）；索引改为定宽二进制�
 - 2026-10-27：lan-11 复测 4eafcbfc30（已验证，pack 开/关）：`-l racket -e` −3.5（21/21，上一版 −2.2）、`-l racket/base` −0.4（20/21）、`-n` +0.4（0/15，上一版 +0.3：索引多了 bundle 表 ≈28 KB，解码成本略升）、REPL ttp −6.1（14/15，上一版 −3.7）；alloc 114.3 → 109.9 MB，major 0/0；测试过。
 - 2026-10-27：**同机头对头（已验证）**，A = e956ad95fb 参考构建（worktree racket-ref-v3，仅核心，无 pkgs）、B = 4eafcbfc30，交错 41 对，load 5.5–6.3：`-l racket -e` **−1.4 ms（35/41）**、`-l racket -l racket/contract` −1.6（37/41）、`-l racket/base` −0.2（17/41，略差）、`-n` ±0.2。ttp 不可比（参考构建没装 xrepl/expeditor）。§6 的 −3 推断偏高，实际 ≈ −1.5；racket/base 级进程持平略负的原因 = 索引多了 bundle 表、解码时逐表按条目读。跟进：索引 v4 给每张表加 `u16 table-len` 前缀，解码一次 `read-bytes`（magic RKTPK4），重建中。
 - 2026-10-27：索引 v4（表长前缀）重建通过并提交；正确性全过；头对头 vs e956ad95fb：`-l racket -e` −1.4（34/41）复现，`-n` −0.3（8/41）、`-l racket/base` −0.3（17/41）——小进程差异在 ±0.3 ms 内且两套安装不止包代码不同（主树装了 pkgs），无法再分辨；包开/关的 `-n` 固定成本两版都 ≈0.3 ms，由打开包 + 读 header/索引主导。融合装载路径收尾：**本机 `-l racket -e` −1.4 ms（已验证）、lan-11 REPL 开/关 −3.7 → −6.1**。
+
+## 7. 收口（2026-10-27）
+
+L4（按定义惰性代码）经评估不开工：`PLT_LINKLET_TIMES` 实测 faslin-code 27 ms（+GC 6）/ 1579 linklet / 9 MB，上界 ≈25 ms，但按定义切片会断掉 linklet 内直呼/内联（R10 ≤5% 预算大概率守不住）、断 fasl 图共享、占位过程语义面广、改全部 .zo 格式；用户决定收口。L3、关窗 major、body+ 延后均不做。
+
+本轮累计（默认 tty REPL，本机，pack 开 vs 关，已验证）：启动包 −10 ms、融合装载路径再 −1.4（头对头）；lan-11 REPL −6.0。代码链 670bff1ce1 … c9a3430c7b 全部在 feat/repl-startup-analysis。
