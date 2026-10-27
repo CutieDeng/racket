@@ -9,12 +9,12 @@
 
 | 项 | 提交 | 已验证效果（默认 tty REPL 除非注明） | 备注 |
 |---|---|---|---|
-| G1 启动 GC 窗口（gen0-only + 关窗一次送 static） | fe249bf098 | ttp 229.7/236.3 → 214.0/220.5（static）/ 188.2/193.4（none）；footprint 150→130MB；提示符后不再有 major | 开关 PLT_STARTUP_GC_MODE/FINISH |
-| D1 stx-data 惰性物化 | bb415179fd | `-q` ttp 132/140 → 121/126；声明区域 26.1ms/36.1MB → 16.0/24.1；footprint 143.7→136.3MB；默认 REPL 中位 224→214 | 代理单次 CAS 虚假失败致 ~1% 段错误，70c8880f86 修（300 次 0 失败） |
-| D2 provides 表批量建表 | 495560107a | 声明分配 102→95MB，`-q` 声明区域 24.3→18.1MB，4698 项 2206→236KB；ttp 噪声内 | D3 不可行（nominal-module 每处不同） |
-| R1 code 切片格式 | e56fe43c3e | linklet 层 CPU 65→61ms，racket 层分配 78.4→71.8MB，存活 +0.2MB；ttp 噪声内 | 未压缩代码实测更差，放弃；R3 上限 1.5ms 放弃 |
+| G1 启动 GC 窗口（gen0-only + 关窗一次送 static） | 74f05f2e6c | ttp 229.7/236.3 → 214.0/220.5（static）/ 188.2/193.4（none）；footprint 150→130MB；提示符后不再有 major | 开关 PLT_STARTUP_GC_MODE/FINISH |
+| D1 stx-data 惰性物化 | b263839e93 | `-q` ttp 132/140 → 121/126；声明区域 26.1ms/36.1MB → 16.0/24.1；footprint 143.7→136.3MB；默认 REPL 中位 224→214 | 代理单次 CAS 虚假失败致 ~1% 段错误，557842bdf0 修（300 次 0 失败） |
+| D2 provides 表批量建表 | 532f680ab0 | 声明分配 102→95MB，`-q` 声明区域 24.3→18.1MB，4698 项 2206→236KB；ttp 噪声内 | D3 不可行（nominal-module 每处不同） |
+| R1 code 切片格式 | 078409465e | linklet 层 CPU 65→61ms，racket 层分配 78.4→71.8MB，存活 +0.2MB；ttp 噪声内 | 未压缩代码实测更差，放弃；R3 上限 1.5ms 放弃 |
 | C1 定位 | — | 物化成本 = fasl 解码 45% + LZ4 21% + intern 13% + icache 3%；"8–10× 差距"是对比对象不同 | §11 |
-| C2 fasl 产物出生 gen 1 | e5c1f01046 | GC 23→18 次、56→52ms、CPU 212→206ms、footprint 135–143→131MB；ttp 噪声内 | 关窗 major（~38ms）仍在；出生 static 待做 |
+| C2 fasl 产物出生 gen 1 | 5900d85b70 | GC 23→18 次、56→52ms、CPU 212→206ms、footprint 135–143→131MB；ttp 噪声内 | 关窗 major（~38ms）仍在；出生 static 待做 |
 
 收尾状态（全部提交后、全量重编为压缩 .zo、同机 load 16 下测，r1-measure-final/c2-cpu）：默认 REPL ttp 212.2/219.3（晨间基线 227/235，G1 单项 A/B 已记 230→214）、`-q` 119.8/124.4（基线 124）；提示符处收集 18 次 / GC 50ms（基线 23 / 66–70）、CPU 209ms；footprint 126.8–130.9MB（基线 150）；`-q` 的 racket 层分配 71.8MB（D1 前 91.4）、major 后存活 100.1MB（D1 前 104.3）。单项之和（ttp −20~−30ms、GC −20ms、footprint −20MB、分配 −20MB）与收尾状态一致；跨会话的绝对值受机器负载影响 ±5ms。
 
@@ -189,7 +189,7 @@ Chez 约束（已验证）：`(collect g min max)` 在 g < 最大代时 max 只�
 - 验证：裸 Chez `faslratio` 复测（产物代号 = 目标代）；窗口内把 `collect-trip-bytes` 压到 256KB 做 minor 风暴 + `S_check_heap`（gcwrapper.c:696，调试构建）；六个测试集 REPL 内 load；`PLT_STARTUP_GC_MODE=all` 跑 basic/hash/struct。
 风险：遗漏一个脏卡站点 = 低概率悬垂（seg4 历史的根因类型），因此以白名单式"每个存储点经同一宏"实现，不允许裸写。
 
-## 7. D1 落地：stx-data 惰性物化（2026-10-19，已提交 bb415179fd）
+## 7. D1 落地：stx-data 惰性物化（2026-10-19，已提交 b263839e93）
 
 实现（`expander/eval/module.rkt`）：声明时不再实例化 `stx-data` linklet，而是装一个同接口的代理 instance（`deserialized-syntax-vector` 的 box + `deserialize-syntax` 过程）；首次 `deserialize-syntax` 调用时才 `eval-linklet`+`instantiate-linklet` 真 linklet，把反序列化向量发布进代理的 box，然后像真 linklet 一样把过程置 #f。`PLT_EAGER_STX_DATA=1` 恢复原行为（A/B 开关，保留）。flattener 两条约束：模块级不能读环境变量（改成函数）、定义不能自引用（代理通过 box 引用自身）。
 

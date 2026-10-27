@@ -1,6 +1,6 @@
 # REPL 初始化流程：子模块级性能账本与局部优化规划（2026-10-23）
 
-树：`racket-feat-native-pvector`，分支 `feat/repl-startup-analysis`，HEAD `0ce4367080`（I3）。
+树：`racket-feat-native-pvector`，分支 `feat/repl-startup-analysis`，HEAD `f36a1b8dad`（I3）。
 前序报告：`repl-startup-phases-2026-10-19.md`（阶段分解）、`repl-startup-forward-logic-gc-2026-10-19.md`（分配/GC 账本）、`repl-startup-function-level-2026-10-20.md`（函数级，I1–I3）。
 
 ## 0. 结论先行

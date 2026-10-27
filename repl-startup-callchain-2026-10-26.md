@@ -1,4 +1,4 @@
-# Racket 启动调用链与优化台账（2026-10-26，fasl2/pb 线回退后，HEAD 32ddbf3759）
+# Racket 启动调用链与优化台账（2026-10-26，fasl2/pb 线回退后，HEAD e884ea43cc）
 
 ## 一、回退后失效/移除的优化
 
@@ -7,10 +7,10 @@
 | 9e2619e657 | Chez fasl 闭包序列化（fasl 类型 47） | 无（能力项） | 移除；`(fasl-write 闭包)` 回到上游报错 |
 | a1209a9547 | 运行期 fasl 写活代码对象（`s_fasl_code_info`） | 无 | 移除 |
 | d2220e7fa0 | `RACKET_RETAIN_STATIC_RELOC` 开关 | 无 | 移除 |
-| 2057a67326 | fasl2 externals 表、seg4 装载钩子（`PLT_SEG4_BOOT`/`PLT_SEG4`、main.zuo seg4）、rumble `set-eq-hash-code!` | seg4 实验 11/11 但未进默认路径 | 移除 |
-| 47f88b5a5a / 16dd519195 | externals 的 rtd 支持、边界检查 | 无 | 移除 |
-| 6e1cf1d73a | vfasl 镜像 eq-hashtable（2 个 singleton） | 无 | 移除 |
-| f1ce780e71（B） | `PLT_LINKLET_VFASL` .zo 走 vfasl 镜像 | 10-19 测 faslin-code 22.5→16.5、端到端 −9～−10（默认关） | 移除；10-25 已发现门控缺陷（转换器输出依赖进程状态） |
+| 6167d7bbd4 | fasl2 externals 表、seg4 装载钩子（`PLT_SEG4_BOOT`/`PLT_SEG4`、main.zuo seg4）、rumble `set-eq-hash-code!` | seg4 实验 11/11 但未进默认路径 | 移除 |
+| eebea5ab38 / 4415d5352d | externals 的 rtd 支持、边界检查 | 无 | 移除 |
+| a2edf47acb | vfasl 镜像 eq-hashtable（2 个 singleton） | 无 | 移除 |
+| 99f1ed13d0（B） | `PLT_LINKLET_VFASL` .zo 走 vfasl 镜像 | 10-19 测 faslin-code 22.5→16.5、端到端 −9～−10（默认关） | 移除；10-25 已发现门控缺陷（转换器输出依赖进程状态） |
 | e9482d489d 等 | experiments/seg4 生成器与脚本（65 文件） | — | 移除 |
 | 本地 pb 种子 | 09-08 孤儿提交 + 10-20 未提交重生成 + lan-11 私有 pb.git | — | boot/pb 复位上游 v9.3（d8c788e）；备份在 scratchpad/pb-custom-seed |
 
@@ -21,18 +21,18 @@
 | 层 | 提交 | 内容 | 实测 |
 |---|---|---|---|
 | boot 装载 | a77d3fe584 / 5fd0bd54a5 / 9830507ee4 | boot 文件 mmap 装载、reloc 留在映射、sweep 局部性游标 | vfasl 21→16 ms |
-| boot 装载 | 4d50051ea9…b42c9a51f9 | arm64 字面量池→GOT vspace、死 quad 截断、零拷贝 opt-in（`PLT_VFASL_CODE_ZC`） | relink 2.5→0.9、boot 文件 −2.35 MB、端到端打平 |
-| boot 装载 | 27db46e51d（H1） | 符号表按镜像预扩容 + `S_intern4` 先比哈希 | intern-syms 1.5→1.0，ttp 不可见 |
-| exec | cfb7955caf（H2） | rktio CoreFoundation 延迟 dlopen，去 `-framework` | 空程序链接 CF 多 1.6 ms；`racket -n` 29.3→27.6（load 12） |
-| GC | fe249bf098（G1） | 启动 GC 窗口：窗口内只收 gen0，关窗一次提升 | ttp 230→214 |
-| GC/fasl | e5c1f01046（C2）→ 826e37d386（A） | fasl 产物出生在目标代（1→static），年轻引用根表 | 关窗 20.6→13.3，ttp −6.1 |
-| .zo 读 | 9315bddb7b / 7926a572a5（C1） | varint 单字节快路径、解码时算符号哈希 | 读取器暖缓存 −24%；lan-11 C1+S3 −6.7 |
-| 序列化 | ec21f5d40b / eca5fbe5f2（S3） | expander 字节流编码、srcloc 源共享 | decl 5.5→3.6、stx-data 3.2→1.8、literals 667→191 KB |
-| 声明 | D1 / D2（495560107a） / R1 | stx-data 惰性、provides 批量建表、code 切片格式 | R1 −4 ms/−6.6 MB |
-| resolver | 23b46dfd89 / b9da9e567c（I1/I2） | module-cache 键改 bytes、links 戳改 stat 键 | resolver 31.9→25.2 |
-| 交互层 | 3b9b2fa279（P1）+ 0524015a14 | expeditor 取 `racket-lexer/status` 变量导出，免 phase-1 visit；expeditor-lib 内置 | ttp −14.5 |
-| 交互层 | ca5ba84bfa（G）+ f4f922b18b | xrepl saved-value 名字 `namespace-require` 不 eval；xrepl-lib/parser-tools-lib 内置 | ttp −2.2 |
-| 量具 | 75ce6ff1ff / ef6bf14ea6 / 8bc0e49766 | `PLT_VFASL_TIMES`、`PLT_VFASL_STATS`、expander instantiate 细分区域 | — |
+| boot 装载 | 56d5b3773b…78fec212c4 | arm64 字面量池→GOT vspace、死 quad 截断、零拷贝 opt-in（`PLT_VFASL_CODE_ZC`） | relink 2.5→0.9、boot 文件 −2.35 MB、端到端打平 |
+| boot 装载 | f27be60d84（H1） | 符号表按镜像预扩容 + `S_intern4` 先比哈希 | intern-syms 1.5→1.0，ttp 不可见 |
+| exec | dae691099a（H2） | rktio CoreFoundation 延迟 dlopen，去 `-framework` | 空程序链接 CF 多 1.6 ms；`racket -n` 29.3→27.6（load 12） |
+| GC | 74f05f2e6c（G1） | 启动 GC 窗口：窗口内只收 gen0，关窗一次提升 | ttp 230→214 |
+| GC/fasl | 5900d85b70（C2）→ 1b45d6022d（A） | fasl 产物出生在目标代（1→static），年轻引用根表 | 关窗 20.6→13.3，ttp −6.1 |
+| .zo 读 | bc1340037d / 80bcb9c41a（C1） | varint 单字节快路径、解码时算符号哈希 | 读取器暖缓存 −24%；lan-11 C1+S3 −6.7 |
+| 序列化 | 77a4f2ef07 / cf17ab1162（S3） | expander 字节流编码、srcloc 源共享 | decl 5.5→3.6、stx-data 3.2→1.8、literals 667→191 KB |
+| 声明 | D1 / D2（532f680ab0） / R1 | stx-data 惰性、provides 批量建表、code 切片格式 | R1 −4 ms/−6.6 MB |
+| resolver | 29d7c92019 / 82e734043c（I1/I2） | module-cache 键改 bytes、links 戳改 stat 键 | resolver 31.9→25.2 |
+| 交互层 | eda1da9529（P1）+ 2f9a17c215 | expeditor 取 `racket-lexer/status` 变量导出，免 phase-1 visit；expeditor-lib 内置 | ttp −14.5 |
+| 交互层 | 2a2cbe4d7f（G）+ c3f0e7e1e4 | xrepl saved-value 名字 `namespace-require` 不 eval；xrepl-lib/parser-tools-lib 内置 | ttp −2.2 |
+| 量具 | 75ce6ff1ff / ef6bf14ea6 / 85b040604d | `PLT_VFASL_TIMES`、`PLT_VFASL_STATS`、expander instantiate 细分区域 | — |
 | 量具（分支） | a187463a0c（feat/repl-startup-stamps，未并入） | `PLT_BOOT_STAMPS` 阶段打点 | — |
 
 ## 三、默认 REPL 启动调用链（实现位置 → 当前成本，本机 load 4）

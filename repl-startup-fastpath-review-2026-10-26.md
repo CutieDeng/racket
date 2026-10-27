@@ -2,7 +2,7 @@
 
 ## 0. 前提变化
 
-- 32ddbf3759 回退 fasl2/闭包序列化线（9e2619e657…6e1cf1d73a、B f1ce780e71、experiments/seg4）。P2.x GOT/零拷贝线保留。
+- e884ea43cc 回退 fasl2/闭包序列化线（9e2619e657…a2edf47acb、B 99f1ed13d0、experiments/seg4）。P2.x GOT/零拷贝线保留。
 - boot/pb 复位上游 racket/pb v9.3（d8c788e）。本机（tarm64osx）与 lan-11（ta6le）均从上游种子全量 pb bootstrap 通过：petite.boot fixpoint、核心测试 basic/syntax/stx/macro/read/number/string/fasl/hash/struct 通过（module.rktl 尾部集合路径错误预先存在）、300 次装载 0 失败、`(fasl-write 闭包)` 回到上游报错。
 - **铁律**：任何改动不得制造对非上游 pb 种子的依赖（判据：全部 c/*.c 对上游种子头文件 `cc -fsyntax-only` 零新增报错；boot 镜像格式改动须守卫）。
 

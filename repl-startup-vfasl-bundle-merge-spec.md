@@ -1,6 +1,6 @@
 # .zo 代码 vfasl 的 bundle 级合并 — 实施规格(逐模块分解)
 
-2026-10-07 · 承接 `repl-startup-forward-design.md` §7.5b(M2-步3 per-linklet .zo-vfasl 已落地,f1ce780e71)。
+2026-10-07 · 承接 `repl-startup-forward-design.md` §7.5b(M2-步3 per-linklet .zo-vfasl 已落地,99f1ed13d0)。
 目标:把"每 linklet 一个 vfasl 镜像"改成"每 bundle 的启动期需求集一个镜像",消掉每镜像固定成本。
 
 ## 0. 结论与数字

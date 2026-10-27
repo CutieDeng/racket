@@ -1,6 +1,6 @@
 # P1：交互层 lexer 链（S6c）建账与局部优化（2026-10-24）
 
-树：`racket-feat-native-pvector` / `feat/repl-startup-analysis`，HEAD `0ce4367080`。规划：`repl-startup-submodule-plan-2026-10-23.md`。
+树：`racket-feat-native-pvector` / `feat/repl-startup-analysis`，HEAD `f36a1b8dad`。规划：`repl-startup-submodule-plan-2026-10-23.md`。
 工具（树内 `experiments/startup/`）：`loadtrace.rkt`（declare / phase-0 instantiate / visit 两段分解，按依赖后序）、`tracehook.rkt`+`thgaps.py`（真实默认 REPL 内的装载/求值时间线）、`ttp.py`（pty time-to-prompt）、`ab-swap.py`（同二进制交错 A/B，换单个 .zo 文件）。
 
 ## 0. 结论
@@ -13,7 +13,7 @@
 
 改动：expeditor `expeditor-configure` 不再 `(dynamic-require 'syntax-color/racket-lexer 'racket-lexer)`，改为取 `racket-lexer/status`（文档化的普通变量导出）并丢弃第 6 个返回值。功能验证：默认 REPL 求值、着色正常；xrepl 测试集结果与改前一致（interaction #23 的错误信息文本不匹配为预先存在，改前改后同）。
 
-**交付（2026-10-25）**：`expeditor-lib` 原为外部 catalog 包（github.com/racket/expeditor @65e20a41），用户决定内置。提交 `0524015a14`（BUILD：上游原文拷入 `pkgs/expeditor-lib`，Makefile `PKGS`/`REQUIRED_PKGS` 加入；`main.zuo` 的本地 `pkgs/` catalog 优先于官方 catalog，与 tstring 同机制）、`3b9b2fa279`（FEAT：lexer 改取变量导出）。安装已切为 static-link（`raco pkg update --static-link pkgs/expeditor-lib`，8.6 s）。内置后复测交错 A/B 15 对：中位 192.6 → 179.5 ms，逐对差中位 −13.4 ms，15/15 为正。补丁文件 `experiments/startup/patches/expeditor-lexer-no-visit.patch` 保留作上游 PR 底稿。
+**交付（2026-10-25）**：`expeditor-lib` 原为外部 catalog 包（github.com/racket/expeditor @65e20a41），用户决定内置。提交 `2f9a17c215`（BUILD：上游原文拷入 `pkgs/expeditor-lib`，Makefile `PKGS`/`REQUIRED_PKGS` 加入；`main.zuo` 的本地 `pkgs/` catalog 优先于官方 catalog，与 tstring 同机制）、`eda1da9529`（FEAT：lexer 改取变量导出）。安装已切为 static-link（`raco pkg update --static-link pkgs/expeditor-lib`，8.6 s）。内置后复测交错 A/B 15 对：中位 192.6 → 179.5 ms，逐对差中位 −13.4 ms，15/15 为正。补丁文件 `experiments/startup/patches/expeditor-lexer-no-visit.patch` 保留作上游 PR 底稿。
 
 ## 1. 机制（已验证，expander 源码 + A/B）
 

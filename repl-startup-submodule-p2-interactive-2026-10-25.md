@@ -1,6 +1,6 @@
 # P2：交互层剩余账本（S6a/S6b/S6d）——前提复核（2026-10-25）
 
-树 `racket-feat-native-pvector` / `feat/repl-startup-analysis`，HEAD `3b9b2fa279`（P1 两提交之后）。工具：`experiments/startup/tracehook.rkt`（以 `racket -i -t <hook>` 安装，`-i` 在前保住 `racket/init`；`-t` 在前会触发 `no-init!` 变成 racket/base REPL，ttp 会假降 30 ms）、`thgaps.py`、`loadtrace.rkt`。
+树 `racket-feat-native-pvector` / `feat/repl-startup-analysis`，HEAD `eda1da9529`（P1 两提交之后）。工具：`experiments/startup/tracehook.rkt`（以 `racket -i -t <hook>` 安装，`-i` 在前保住 `racket/init`；`-t` 在前会触发 `no-init!` 变成 racket/base REPL，ttp 会假降 30 ms）、`thgaps.py`、`loadtrace.rkt`。
 
 ## 0. 结论
 

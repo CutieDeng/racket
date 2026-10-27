@@ -1,6 +1,6 @@
 # REPL 启动：子模块实测与收益估算（2026-10-25，新树 M10/D25/racket-repl-startup）
 
-HEAD `8bc0e49766`（分支 feat/repl-startup-analysis）。本树为 10-25 晚重建（主线树 M08/D24 被备份清理删除，拷贝在未挂载的 PSSD 上）；Chez 由同机 python3 树的 10.4 宿主经 `SCHEME_DIR` bootquick 引导；包：racket-lib/tstring/expeditor-lib(静态链接)/compiler-lib + 9.3 catalog 的 xrepl-lib、syntax-color-lib。工具全部在 `experiments/startup/`（本次新增 `boot-stamps.py`，配合临时 `PLT_BOOT_STAMPS` 打点：boot.c 5 处、七个 .sls 各 1 处、main.sps 8 处，未提交）。
+HEAD `85b040604d`（分支 feat/repl-startup-analysis）。本树为 10-25 晚重建（主线树 M08/D24 被备份清理删除，拷贝在未挂载的 PSSD 上）；Chez 由同机 python3 树的 10.4 宿主经 `SCHEME_DIR` bootquick 引导；包：racket-lib/tstring/expeditor-lib(静态链接)/compiler-lib + 9.3 catalog 的 xrepl-lib、syntax-color-lib。工具全部在 `experiments/startup/`（本次新增 `boot-stamps.py`，配合临时 `PLT_BOOT_STAMPS` 打点：boot.c 5 处、七个 .sls 各 1 处、main.sps 8 处，未提交）。
 
 ## 0. 默认 REPL 提示符前的完整时间线（`PLT_BOOT_STAMPS`，CPU=user+sys ms，7 次中位；load 4–6）
 
@@ -92,7 +92,7 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 
 **B 的决定**：收益（faslin-code −8～10 ms）与代价（体积 1.63～2.2×）都成立，但门控在当前树上有正确性缺陷，须先修转换器再谈默认开启。树已重编回非 vfasl .zo。
 
-## 8. A 实测结果：fasl 产物出生在 static（已验证，2026-10-26 凌晨，提交 826e37d386）
+## 8. A 实测结果：fasl 产物出生在 static（已验证，2026-10-26 凌晨，提交 1b45d6022d）
 
 **结论**：默认 REPL 关窗 20.6 → 13.3 ms，窗口内 GC 12 → 14 ms，ttp 配对中位 −6.1 ms（13/15 快）。估算 −10～−15 偏高：关窗少拷的不是 §3 推算的 30 MB，静态化后关窗仍有 13 ms（存活的非 fasl 产物：声明期物化的语法对象/模块实例/命名空间表）。
 
@@ -118,7 +118,7 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 - 核心测试 basic/module/syntax/stx/macro/read/number/string/fasl/hash/struct 在 `GEN=7 MODE=all` 下通过（module.rktl 末尾的集合路径错误在 GEN=1、窗口关闭时同样出现，预先存在）。300 次装载 0 失败。
 - lan-11（Linux x86-64）构建通过；pty/配对 ttp 结果见 §8.4。
 
-### 8.4 lan-11 结果（Linux x86-64 Zen 5，空载，同一二进制 826e37d386）
+### 8.4 lan-11 结果（Linux x86-64 Zen 5，空载，同一二进制 1b45d6022d）
 
 - 构建通过（gc.c 为跨平台 C 改动）。
 - 真实 tty REPL 12 步脚本（Linux 无 expeditor，走普通 REPL 路径）：GEN=1、GEN=7 默认/major/none/MODE=all/MASK=512 六配置全部正确、正常退出。100 次装载（`MODE=all`，该树未装 xrepl 故不含 `-l xrepl`）0 失败。
@@ -143,9 +143,9 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 
 ## 10. F/G 实测结果（2026-10-26 上午）
 
-前置：xrepl-lib、parser-tools-lib 已内置（f4f922b18b，与 expeditor-lib 同法；安装侧改为 static-link，`raco setup parser-tools syntax-color xrepl expeditor racket`）。
+前置：xrepl-lib、parser-tools-lib 已内置（c3f0e7e1e4，与 expeditor-lib 同法；安装侧改为 static-link，`raco setup parser-tools syntax-color xrepl expeditor racket`）。
 
-### G：xrepl `initialize-namespace` 改 `namespace-require`（已提交 ca5ba84bfa）
+### G：xrepl `initialize-namespace` 改 `namespace-require`（已提交 2a2cbe4d7f）
 
 - 11 个 `(require (only-in xrepl/saved-values [saved-value-ref name]))` 的 `eval` 改为原始 require spec `(namespace-require '(rename xrepl/saved-values name saved-value-ref))`；第一个 `eval`（`set-saved-values-param!` 宏，写用户命名空间的 phase-1 变量）保留。
 - microbench：12 次 eval 2.4 ms → 12 次 namespace-require 0.03 ms。
@@ -169,25 +169,25 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 
 | 项 | §3 估算 | 实测 ttp | 状态 |
 |---|---|---|---|
-| A fasl 产物出生 static | −10～−15 | −6.1（本机）/ −4.2（lan-11） | 提交 826e37d386 |
+| A fasl 产物出生 static | −10～−15 | −6.1（本机）/ −4.2（lan-11） | 提交 1b45d6022d |
 | B vfasl .zo | −8～−10 | 门控有缺陷 | 未做 |
 | C 读路径分配 | −2～−3 | 上限 −1 | 不做 |
 | E 集合目录缓存 | −2 | 上限 −1 | 不做 |
 | F lexer 表平铺 | −4 | ≤ −0.5，.zo +0.9 MB | 不做 |
-| G xrepl 不 eval | −3 | −2.2 | 提交 ca5ba84bfa |
+| G xrepl 不 eval | −3 | −2.2 | 提交 2a2cbe4d7f |
 
 ## 11. H 实测结果（2026-10-26 上午）
 
 `racket -n` 的 boot 段（c-boot-registered → rumble 体）≈21 ms CPU，其中 vfasl 相位（`PLT_VFASL_TIMES`，空载本机）≈12 ms：room+copy 5.9、ptr-sweep 2.8、intern-syms 1.5、relink 1.3、其余 <1；余下 ≈3.5 ms 是 petite/scheme 顶层初始化与 racket.so 的 rumble 前顶层。exec→C 入口 5 ms CPU 里 CoreFoundation 的动态链接占 ≈1.5。
 
-### H1 符号表预扩容 + 先比哈希（已提交 27db46e51d）
+### H1 符号表预扩容 + 先比哈希（已提交 f27be60d84）
 
 - 根因：oblist 初始 4096 桶，只在 GC 后扩容；boot 镜像 ≈45k 符号全部驻入 4096 桶（链长 ≈11），每个符号比名串。`S_intern4` 原先无条件解引用名串再逐桶比名。
 - 改法：vfasl 驻留前按镜像符号空间预扩容（`S_resize_oblist_for`）；`S_intern4` 先比 `SYMHASH` 再碰名串。
 - 实测 intern-syms：本机 1.52 → 1.29 → 1.02 ms（三个运行时交错 12 次中位）；lan-11 2.0 → 1.5。vfasl 总 12.3 → 11.9。
 - ttp：lan-11 15 对交错 +0.2 ms（8/15），**不可见**。本机 load 9–16（Spotlight 索引）当日不可测。
 
-### H2 CoreFoundation 延迟装载（已提交 cfb7955caf）
+### H2 CoreFoundation 延迟装载（已提交 dae691099a）
 
 - rktio 只在 `system-language+country`/locale 大小写/locale 排序三处用 CF，均不在启动路径；但 `-framework CoreFoundation` 让每个进程在 `main` 前多做动态链接：空 C 程序 2.5 ms（iconv+ncurses）vs 4.1 ms（+CF），40 次中位。
 - 改法：11 个 CF 函数 `dlopen`/`dlsym` 首次使用时解析；可执行文件、Racket.framework、rktio 三处链接标志去掉（configure.ac + 生成的 configure 同步改）。`otool -L` 不再列 CF；`DYLD_PRINT_LIBRARIES` 显示 CF 在启动路径上为 delayed，首次 `string-locale-upcase` 时真正装载。
@@ -202,7 +202,7 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 
 ## 12. I 实测结果：resolver `string` 形态无杠杆（2026-10-26 午前）
 
-- D2（provides 批量建表）早已提交（495560107a），I 只剩 resolver。
+- D2（provides 批量建表）早已提交（532f680ab0），I 只剩 resolver。
 - 真实单次成本（空载 microbench，`(current-module-name-resolver)` 直接调用，load?=#f）：string 缓存命中 0.16–0.30 µs，未命中 1.0–2.0 µs；symbol 命中 0.12，未命中（集合查找）11 µs。
 - 启动后抽查 `"private/base.rkt"`/`"pre-base.rkt"`/`"stx.rkt"` 等高频键均为命中（0.17–0.30 µs）。resolver-hook 报的 string 形态 0.89 µs/次自身时间主要是钩子本身（两次取时+hash+形态判断 ≈0.5 µs）与冷缓存，不是 resolver 的工作。
 - 量法陷阱：用钩子复刻缓存键去判"命中/未命中"时，钩子装在 `-I racket/base` 之后，核心模块的装载早于钩子，复刻表把它们全判成未命中（2696/3612），结论错误；直接测调用成本才是判据。
@@ -213,14 +213,14 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 
 | 项 | 估算 | 实测 | 提交 |
 |---|---|---|---|
-| A fasl 产物出生 static | −10～−15 | −6.1（lan-11 −4.2） | 826e37d386 |
+| A fasl 产物出生 static | −10～−15 | −6.1（lan-11 −4.2） | 1b45d6022d |
 | B vfasl .zo | −8～−10 | 门控缺陷 | 未做 |
 | C 读路径分配 | −2～−3 | ≤ −1 | 不做 |
 | E 集合目录缓存 | −2 | ≤ −1 | 不做 |
 | F lexer 表平铺 | −4 | ≤ −0.5，.zo +0.9 MB | 不做（回退） |
-| G xrepl 不 eval | −3 | −2.2 | ca5ba84bfa |
-| H1 符号表预扩容 | — | vfasl −0.5，ttp 0 | 27db46e51d |
-| H2 CF 延迟装载 | −2～−3（H 合计） | boot −1.5（推断，待空载） | cfb7955caf |
+| G xrepl 不 eval | −3 | −2.2 | 2a2cbe4d7f |
+| H1 符号表预扩容 | — | vfasl −0.5，ttp 0 | f27be60d84 |
+| H2 CF 延迟装载 | −2～−3（H 合计） | boot −1.5（推断，待空载） | dae691099a |
 | I resolver | ≤ −1.5 | ≈0 | 不做 |
 
 本轮合计 ≈ −10 ms（A+G+H2），默认 ttp 空载 ≈ 150 ms。估算系统性偏高 2–5×，原因：把链路级数字（declare/visit）记到了单组件上（F）、把钩子开销记到了被测项上（I）、把"数量×单价"里的单价取了含负载的值（E）。
@@ -241,7 +241,7 @@ bundle-bench 的 33 MB 是字节端口量法的假象（字节端口 `read-bytes
 - phase≥1 体推迟到首次展开：−11 ms（tty），首次求值相应 +11。
 - 10-19 用 loadtrace 强制 visit 得到的 20+6+7=33 ms 是"全部 visit"的上限，不是提示符前的实际值（11）。
 
-顺带修复：`racket -M` 机器无关编译在本树失效（recompile cache 对 MI 输出求 target-machine 摘要），64ea6ccea7。
+顺带修复：`racket -M` 机器无关编译在本树失效（recompile cache 对 MI 输出求 target-machine 摘要），e30be78604。
 
 补充（同日，tty REPL，临时 'decl/'data 区域）：`module` 区 11.5 ms = **decl linklet 实例化 7.1–7.2**（379 个，provides/requires 表，分配 9.9 MB）+ data linklet 2.8（mpi 向量等）+ 其余 ≈1.5。惰性 provides 表的上限 ≈ −7 ms。
 
@@ -269,7 +269,7 @@ ttp 交错 15 对（expeditor 从安装 root）：安装 .zo med 169.2 vs 超限
 
 ## 15. 启动包实测结果（2026-10-26 夜，已验证）
 
-实现见 repl-startup-pack-dev-2026-10-26.md（定案）与 repl-startup-pack-design-2026-10-26.md（扫描）。提交链 670bff1ce1 → 1555447f3e → 9ea96119cf → e956ad95fb。以下全部为同一二进制、`PLT_STARTUP_PACK=off` 对默认位置包、交错配对；包为 `make base` 自己的 `raco setup` 写出的 310 成员版（构建配置看不到 pkgs，xrepl/expeditor/lexer 根缺席）。本机 load 3–4。
+实现见 repl-startup-pack-dev-2026-10-26.md（定案）与 repl-startup-pack-design-2026-10-26.md（扫描）。提交链 ccfa6a7263 → 58273558bf → a75b7e011b → ad3d5a0a1d。以下全部为同一二进制、`PLT_STARTUP_PACK=off` 对默认位置包、交错配对；包为 `make base` 自己的 `raco setup` 写出的 310 成员版（构建配置看不到 pkgs，xrepl/expeditor/lexer 根缺席）。本机 load 3–4。
 
 | 进程 | 关 (med ms) | 开 (med ms) | 配对差 | 开更快 |
 |---|---|---|---|---|
@@ -287,7 +287,7 @@ ttp 交错 15 对（expeditor 从安装 root）：安装 .zo med 169.2 vs 超限
 
 正确性矩阵（包开）：核心测试 basic/syntax/stx/macro/read/number/string/fasl/hash/struct 全过（module.rktl 尾部 #f 为预先存在）；子模块程序（configure-runtime/main/reader）、place 内 require 成员、`dynamic-require` 子模块、`raco make` 旁路、pty REPL、300 次装载 0 失败、哨兵往返（`raco make` 改成员 → 关闭；`raco setup` 重建 → 恢复）、`--verify` 0 mismatch。
 
-lan-11（Linux x86-64 Zen 5，最小安装，无 xrepl/expeditor，plain REPL；同一提交 e956ad95fb，`make base` 自产 310 成员包，已验证）：
+lan-11（Linux x86-64 Zen 5，最小安装，无 xrepl/expeditor，plain REPL；同一提交 ad3d5a0a1d，`make base` 自产 310 成员包，已验证）：
 
 | 进程 | 关 (med ms) | 开 (med ms) | 配对差 | 开更快 |
 |---|---|---|---|---|
@@ -300,6 +300,6 @@ alloc 114.3 → 111.5 MB，major 0/0；核心测试 basic/syntax/macro/read/fasl
 
 未测：冷缓存（需 `sudo purge`）。
 
-### 15.1 融合装载路径（4eafcbfc30，2026-10-27）
+### 15.1 融合装载路径（5949f50758，2026-10-27）
 
-设计与扫描见 dev 文档 §5–§6。同机头对头（参考构建 e956ad95fb，交错 41 对，已验证）：`-l racket -e` −1.4 ms（35/41）、`-l racket -l racket/contract` −1.6（37/41）、`-l racket/base` −0.2（17/41）。区域：`-l racket -e` 的 pack+read 12.8 → 9.3 ms。lan-11 pack 开/关：`-l racket -e` −2.2 → −3.5（21/21）、REPL −3.7 → −6.1（14/15）。预解析 requires 经扫描否决（上界 ≤1 ms；之前的 2.5 µs/次是基准伪影）。
+设计与扫描见 dev 文档 §5–§6。同机头对头（参考构建 ad3d5a0a1d，交错 41 对，已验证）：`-l racket -e` −1.4 ms（35/41）、`-l racket -l racket/contract` −1.6（37/41）、`-l racket/base` −0.2（17/41）。区域：`-l racket -e` 的 pack+read 12.8 → 9.3 ms。lan-11 pack 开/关：`-l racket -e` −2.2 → −3.5（21/21）、REPL −3.7 → −6.1（14/15）。预解析 requires 经扫描否决（上界 ≤1 ms；之前的 2.5 µs/次是基准伪影）。

@@ -1,6 +1,6 @@
 # REPL 启动：当前调用树、开销、设计与数据流（2026-10-19 收尾状态）
 
-测量对象：分支 feat/repl-startup-analysis 六次提交后的 in-place 构建（G1 fe249bf098 → C2 e5c1f01046），安装已全量重编为压缩 .zo。机器 Apple M5 Max，测量期间负载 4–8（绝对值 ±5ms）。两种配置：`racket -q </dev/null`（语言层：racket/init，无交互模块）与默认 tty REPL（pty，加载 racket/interactive + xrepl，到 `> ` 出现）。数字来源：PLT_EXPANDER_TIMES / PLT_LINKLET_TIMES（CPU，区域互斥、自含）、PLT_LINKLET_TRACE_TIMES（实例化区间）、PLTSTDERR=debug@GC、alloctrace.rkt（分层分配）、tree-probe.py。标注：**已验证**（有实测）、**推断**（有间接证据）、**未知**。
+测量对象：分支 feat/repl-startup-analysis 六次提交后的 in-place 构建（G1 74f05f2e6c → C2 5900d85b70），安装已全量重编为压缩 .zo。机器 Apple M5 Max，测量期间负载 4–8（绝对值 ±5ms）。两种配置：`racket -q </dev/null`（语言层：racket/init，无交互模块）与默认 tty REPL（pty，加载 racket/interactive + xrepl，到 `> ` 出现）。数字来源：PLT_EXPANDER_TIMES / PLT_LINKLET_TIMES（CPU，区域互斥、自含）、PLT_LINKLET_TRACE_TIMES（实例化区间）、PLTSTDERR=debug@GC、alloctrace.rkt（分层分配）、tree-probe.py。标注：**已验证**（有实测）、**推断**（有间接证据）、**未知**。
 
 ## 1. 调用树与开销
 
