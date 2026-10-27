@@ -418,19 +418,27 @@ void S_dirty_set(ptr *loc, ptr x) {
 
 /* Register objects allocated directly into an older generation (see
    "fasl.c"); "gc.c" sweeps the list as roots */
-void S_young_ref_add(ptr *v, iptr n) {
+/* `g` is the generation the objects were allocated in; each entry
+   starts with youngest 0, since a freshly read object may refer to
+   anything (symbols interned during the read, externals, rtds) */
+void S_young_ref_add(ptr *v, iptr n, IGEN g) {
+  iptr i;
   alloc_mutex_acquire();
   if (S_G.young_ref_n + n > S_G.young_ref_cap) {
     iptr cap = (S_G.young_ref_cap == 0) ? 4096 : S_G.young_ref_cap;
-    ptr *nv;
+    young_ref_entry *nv;
     while (S_G.young_ref_n + n > cap) cap *= 2;
-    nv = realloc(S_G.young_ref, cap * sizeof(ptr));
+    nv = realloc(S_G.young_ref, cap * sizeof(young_ref_entry));
     if (nv == NULL) S_error_abort("out of memory for the young-reference list");
     S_G.young_ref = nv;
     S_G.young_ref_cap = cap;
   }
-  memcpy(S_G.young_ref + S_G.young_ref_n, v, n * sizeof(ptr));
+  for (i = 0; i < n; i++) {
+    S_G.young_ref[S_G.young_ref_n + i].obj = v[i];
+    S_G.young_ref[S_G.young_ref_n + i].youngest = 0;
+  }
   S_G.young_ref_n += n;
+  if (g > S_G.young_ref_max_gen) S_G.young_ref_max_gen = g;
   alloc_mutex_release();
 }
 

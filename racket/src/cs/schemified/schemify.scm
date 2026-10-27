@@ -10299,21 +10299,13 @@
                                            q_1
                                            unsafe-undefined)))))))))))))
                 (void)
-                (if (let ((or-part_0 (string? q_1)))
-                      (if or-part_0 or-part_0 (bytes? q_1)))
+                (if (string? q_1)
                   (if datum-intern?_0 (register!_0 q_1) (void))
-                  (if (pair? q_1)
-                    (if (hash-ref seen_0 q_1 #f)
-                      (raise-arguments-error
-                       'compile
-                       "cannot compile cyclic value"
-                       "value"
-                       q_1)
-                      (let ((seen_1 (hash-set seen_0 q_1 #t)))
-                        (begin
-                          (check-register_0 (car q_1) seen_1)
-                          (check-register_0 (cdr q_1) seen_1))))
-                    (if (vector? q_1)
+                  (if (bytes? q_1)
+                    (if (if datum-intern?_0 (immutable? q_1) #f)
+                      (register!_0 q_1)
+                      (void))
+                    (if (pair? q_1)
                       (if (hash-ref seen_0 q_1 #f)
                         (raise-arguments-error
                          'compile
@@ -10322,87 +10314,82 @@
                          q_1)
                         (let ((seen_1 (hash-set seen_0 q_1 #t)))
                           (begin
-                            (call-with-values
-                             (lambda ()
-                               (values q_1 (unsafe-vector-length q_1)))
-                             (lambda (vec_0 len_0)
-                               (letrec*
-                                ((for-loop_0
-                                  (|#%name|
-                                   for-loop
-                                   (lambda (pos_0)
-                                     (if (unsafe-fx< pos_0 len_0)
-                                       (let ((e_0
-                                              (unsafe-vector-ref vec_0 pos_0)))
-                                         (begin
-                                           (check-register_0 e_0 seen_1)
-                                           (for-loop_0 (unsafe-fx+ 1 pos_0))))
-                                       (values))))))
-                                (for-loop_0 0))))
-                            (void))))
-                      (if (hash? q_1)
-                        (begin
-                          (register!_0 q_1)
-                          (if (hash-ref seen_0 q_1 #f)
-                            (raise-arguments-error
-                             'compile
-                             "cannot compile cyclic value"
-                             "value"
-                             q_1)
-                            (let ((seen_1 (hash-set seen_0 q_1 #t)))
-                              (begin
-                                (letrec*
-                                 ((for-loop_0
-                                   (|#%name|
-                                    for-loop
-                                    (lambda (i_0)
-                                      (if i_0
-                                        (call-with-values
-                                         (lambda ()
-                                           (hash-iterate-key+value q_1 i_0))
-                                         (lambda (k_0 v_0)
+                            (check-register_0 (car q_1) seen_1)
+                            (check-register_0 (cdr q_1) seen_1))))
+                      (if (vector? q_1)
+                        (if (hash-ref seen_0 q_1 #f)
+                          (raise-arguments-error
+                           'compile
+                           "cannot compile cyclic value"
+                           "value"
+                           q_1)
+                          (let ((seen_1 (hash-set seen_0 q_1 #t)))
+                            (begin
+                              (call-with-values
+                               (lambda ()
+                                 (values q_1 (unsafe-vector-length q_1)))
+                               (lambda (vec_0 len_0)
+                                 (letrec*
+                                  ((for-loop_0
+                                    (|#%name|
+                                     for-loop
+                                     (lambda (pos_0)
+                                       (if (unsafe-fx< pos_0 len_0)
+                                         (let ((e_0
+                                                (unsafe-vector-ref
+                                                 vec_0
+                                                 pos_0)))
                                            (begin
-                                             (begin
-                                               (check-register_0 k_0 seen_1)
-                                               (check-register_0 v_0 seen_1))
+                                             (check-register_0 e_0 seen_1)
                                              (for-loop_0
-                                              (hash-iterate-next q_1 i_0)))))
-                                        (values))))))
-                                 (for-loop_0 (hash-iterate-first q_1)))
-                                (void)))))
-                        (if (box? q_1)
-                          (if (hash-ref seen_0 q_1 #f)
-                            (raise-arguments-error
-                             'compile
-                             "cannot compile cyclic value"
-                             "value"
-                             q_1)
-                            (let ((seen_1 (hash-set seen_0 q_1 #t)))
-                              (check-register_0 (unbox q_1) seen_1)))
-                          (if (srcloc? q_1)
-                            (begin (register!_0 q_1) (srcloc-source q_1))
-                            (if (prefab-struct-key q_1)
-                              (begin
-                                (register!_0 q_1)
-                                (if (hash-ref seen_0 q_1 #f)
-                                  (raise-arguments-error
-                                   'compile
-                                   "cannot compile cyclic value"
-                                   "value"
-                                   q_1)
-                                  (let ((seen_1 (hash-set seen_0 q_1 #t)))
-                                    (check-register_0
-                                     (struct->vector q_1)
-                                     seen_1)))
-                                (call-with-values
-                                 (lambda () (struct-info q_1))
-                                 (lambda (st_0 skipped?_0)
-                                   (check-register_0 st_0 seen_0))))
-                              (if (core-pvector? q_1)
+                                              (unsafe-fx+ 1 pos_0))))
+                                         (values))))))
+                                  (for-loop_0 0))))
+                              (void))))
+                        (if (hash? q_1)
+                          (begin
+                            (register!_0 q_1)
+                            (if (hash-ref seen_0 q_1 #f)
+                              (raise-arguments-error
+                               'compile
+                               "cannot compile cyclic value"
+                               "value"
+                               q_1)
+                              (let ((seen_1 (hash-set seen_0 q_1 #t)))
                                 (begin
-                                  (if (core-pvector-empty? q_1)
-                                    (register!_0 q_1)
-                                    (void))
+                                  (letrec*
+                                   ((for-loop_0
+                                     (|#%name|
+                                      for-loop
+                                      (lambda (i_0)
+                                        (if i_0
+                                          (call-with-values
+                                           (lambda ()
+                                             (hash-iterate-key+value q_1 i_0))
+                                           (lambda (k_0 v_0)
+                                             (begin
+                                               (begin
+                                                 (check-register_0 k_0 seen_1)
+                                                 (check-register_0 v_0 seen_1))
+                                               (for-loop_0
+                                                (hash-iterate-next q_1 i_0)))))
+                                          (values))))))
+                                   (for-loop_0 (hash-iterate-first q_1)))
+                                  (void)))))
+                          (if (box? q_1)
+                            (if (hash-ref seen_0 q_1 #f)
+                              (raise-arguments-error
+                               'compile
+                               "cannot compile cyclic value"
+                               "value"
+                               q_1)
+                              (let ((seen_1 (hash-set seen_0 q_1 #t)))
+                                (check-register_0 (unbox q_1) seen_1)))
+                            (if (srcloc? q_1)
+                              (begin (register!_0 q_1) (srcloc-source q_1))
+                              (if (prefab-struct-key q_1)
+                                (begin
+                                  (register!_0 q_1)
                                   (if (hash-ref seen_0 q_1 #f)
                                     (raise-arguments-error
                                      'compile
@@ -10410,11 +10397,30 @@
                                      "value"
                                      q_1)
                                     (let ((seen_1 (hash-set seen_0 q_1 #t)))
-                                      (core-pvector-for-each
-                                       q_1
-                                       (lambda (e_0)
-                                         (check-register_0 e_0 seen_1))))))
-                                (register!_0 q_1))))))))))))))))
+                                      (check-register_0
+                                       (struct->vector q_1)
+                                       seen_1)))
+                                  (call-with-values
+                                   (lambda () (struct-info q_1))
+                                   (lambda (st_0 skipped?_0)
+                                     (check-register_0 st_0 seen_0))))
+                                (if (core-pvector? q_1)
+                                  (begin
+                                    (if (core-pvector-empty? q_1)
+                                      (register!_0 q_1)
+                                      (void))
+                                    (if (hash-ref seen_0 q_1 #f)
+                                      (raise-arguments-error
+                                       'compile
+                                       "cannot compile cyclic value"
+                                       "value"
+                                       q_1)
+                                      (let ((seen_1 (hash-set seen_0 q_1 #t)))
+                                        (core-pvector-for-each
+                                         q_1
+                                         (lambda (e_0)
+                                           (check-register_0 e_0 seen_1))))))
+                                  (register!_0 q_1)))))))))))))))))
      (check-register_0 q_0 hash2610))))
 (define try-fold-primitive
   (lambda (orig-prim-sym_0 orig-k_0 exps_0 prim-knowns_0 primitives_0)

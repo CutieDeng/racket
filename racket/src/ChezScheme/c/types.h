@@ -312,6 +312,12 @@ typedef struct _bucket_pointer_list {
 #define FIXRANGE(x) (Sfixnum_value(Sfixnum(x)) == x)
 */
 
+/* Symbol-name hash, shared by the symbol table (intern.c) and the fasl
+   reader, which computes it while decoding a symbol's characters. */
+#define SYM_HASH_INIT(n) ((uptr)(n) + 401887359)
+#define SYM_HASH_MIX(hc) (hc += (hc << 10), hc ^= (hc >> 6))
+
+
 #define DIRTYSET(lhs,rhs) S_dirty_set(lhs, rhs);
 
 typedef struct _dirtycardinfo {
@@ -463,6 +469,14 @@ typedef struct {
 #define END_IMPLICIT_ATOMIC() do {  } while (0)
 #define AS_IMPLICIT_ATOMIC(T, X) X
 #endif
+
+/* an object that "fasl.c" allocated directly into an older generation
+   and that may still refer to younger objects; `youngest` bounds the
+   generation of what it refers to, like a dirty card's youngest byte */
+typedef struct young_ref_entry {
+  ptr obj;
+  IGEN youngest;
+} young_ref_entry;
 
 typedef struct thread_gc {
   ptr tc;

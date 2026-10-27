@@ -332,7 +332,6 @@ case "$host_os" in
     if test "${enable_ios}" != "" ; then
       MACH_OS=ios
     fi
-    LIBS="${LIBS} -framework CoreFoundation"
     LDFLAGS="${LDFLAGS} -Wl,-headerpad_max_install_names"
     SIGNED_EXE="t"
     if test "${enable_xonx}" = "no" ; then
@@ -878,8 +877,7 @@ else
      LIBSFX="dylib"
      AR="${RKTLINKER} --shared -o"
      ARFLAGS=""
-     LIBS="${LIBS} -framework CoreFoundation"
-     ICP_LIB=cp
+      ICP_LIB=cp
   fi
 fi
 

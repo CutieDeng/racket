@@ -624,7 +624,9 @@
              (define data-box (module-instance-data-box mi))
              (define prep (module-prepare-instance m))
              (define go (module-instantiate-phase m))
-             (prep data-box p-ns phase-shift mpi bulk-binding-registry insp)
+             (performance-region
+              ['eval 'instantiate 'prep]
+              (prep data-box p-ns phase-shift mpi bulk-binding-registry insp))
              (go data-box p-ns phase-shift phase-level mpi bulk-binding-registry insp))]
           [(and otherwise-available?
                 (not (negative? run-phase))

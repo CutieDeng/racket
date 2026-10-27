@@ -255,7 +255,7 @@ static void fasl_gen_log(ptr tc, ptr p) {
 static void fasl_gen_finish(ptr tc) {
   thread_gc *tgc = THREAD_GC(tc);
   if (tgc->fasl_log_n > 0)
-    S_young_ref_add(tgc->fasl_log, tgc->fasl_log_n);
+    S_young_ref_add(tgc->fasl_log, tgc->fasl_log_n, tgc->fasl_gen);
   tgc->fasl_log_n = 0;
 }
 
@@ -475,13 +475,14 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals);
 static ptr bv_fasl_entry(ptr tc, ptr bv, IFASLCODE ty, uptr offset, uptr len, faslFile f, ptr externals);
 static void fillFaslFile(faslFile f);
 static void toolarge(ptr path);
-static iptr iptrin(faslFile f);
+static iptr iptrin_slow(faslFile f);
 static int must_bytein(faslFile f);
 static void skipbytes(iptr n, faslFile f);
 static iptr sizein(faslFile f);
 static float singlein(faslFile f);
 static double doublein(faslFile f);
 static iptr stringin(ptr *pstrbuf, iptr start, faslFile f);
+static iptr symbolin(ptr *pstrbuf, iptr start, faslFile f, iptr *phc);
 static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f);
 static void fasl_record(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f, iptr size);
 static IBOOL rtd_equiv(ptr x, ptr y);
@@ -617,21 +618,6 @@ ptr S_bv_fasl_read(ptr bv, int ty, uptr offset, uptr len, ptr path, ptr external
   S_fasl_init_bv(&ffo, path, bv);
 
   return bv_fasl_entry(tc, bv, ty, offset, len, &ffo, externals);
-}
-
-/* fasl2 fourth-segment C-level boot loader: reads a vfasl state image from a
-   file and loads it straight into the STATIC generation (boot-mode load), so
-   it never enters gen-0 and never triggers a promotion GC.  Called from
-   boot.c after Sbuild_heap (before the language layer runs).  externals is
-   the empty vector here -- a C-level boot segment carries no externalref;
-   the fasl2 domain layer's externals resolution runs in main.sps. */
-ptr S_load_seg4_to_static(INT fd) {
-  ptr v; int save;
-  save = S_vfasl_boot_mode;
-  S_vfasl_boot_mode = 1;
-  v = S_fasl_read(fd, fasl_type_visit_revisit, Sfalse, S_G.null_vector);
-  S_vfasl_boot_mode = save;
-  return v;
 }
 
 ptr S_boot_read(faslFile f, const char *path) {
@@ -789,7 +775,7 @@ static ptr fasl_entry(ptr tc, IFASLCODE situation, faslFile f, ptr externals) {
           faslin(tc, &x, externals, &strbuf, in_f);
           break;
         case fasl_type_vfasl:
-          x = S_vfasl(bv, in_f, 0, size, externals);
+          x = S_vfasl(bv, in_f, 0, size);
           break;
         default:
           S_error2("", "malformed fasl-object header (got ~s) found in ~a", FIX(ty), f->uf.path);
@@ -818,7 +804,7 @@ static ptr bv_fasl_entry(ptr tc, ptr bv, int ty, uptr offset, uptr len, faslFile
   fasl_gen_begin(tc);
 
   if (ty == fasl_type_vfasl) {
-    x = S_vfasl(bv, f, offset, len, externals);
+    x = S_vfasl(bv, f, offset, len);
   } else if (ty == fasl_type_fasl) {
     f->next += offset;
     faslin(tc, &x, externals, &strbuf, f);
@@ -972,7 +958,7 @@ static void toolarge(ptr path) {
 
 #define bytein(f) (((f)->next == (f)->end) ? must_bytein(f) : *((f)->next++))
 
-static iptr iptrin(faslFile f) {
+static iptr iptrin_slow(faslFile f) {
   uptr n, m; octet k, k0;
 
   k0 = k = bytein(f);
@@ -1029,10 +1015,35 @@ uptr S_fasl_uptrin(faslFile f, INT *bytes_consumed) {
   return n;
 }
 
-#define uptrin(f) S_fasl_uptrin(f, NULL)
+/* The one-byte case dominates: lengths, small counts, relocation
+   offsets, and every character of a symbol or string are read through
+   these decoders, and almost all of them fit in one byte.  Take that
+   byte straight from the buffer and fall back to the general decoders
+   for a multi-byte value or an empty buffer. */
+FORCEINLINE uptr uptrin_fast(faslFile f) {
+  if (f->next != f->end) {
+    octet k = *(f->next);
+    if (!(k & 0x80)) { f->next++; return (uptr)k; }
+  }
+  return S_fasl_uptrin(f, NULL);
+}
+
+FORCEINLINE iptr iptrin(faslFile f) {
+  if (f->next != f->end) {
+    octet k = *(f->next);
+    if (!(k & 1)) {
+      iptr n = (iptr)((k & 0x7f) >> 1);
+      f->next++;
+      return (k & 0x80) ? -n : n;
+    }
+  }
+  return iptrin_slow(f);
+}
+
+#define uptrin(f) uptrin_fast(f)
 
 static iptr sizein(faslFile f) {
-  iptr n = S_fasl_uptrin(f, NULL);
+  iptr n = (iptr)uptrin_fast(f);
   if ((uptr)n > (uptr)most_positive_fixnum)
     toolarge(f->uf.path);
   return n;
@@ -1072,6 +1083,28 @@ static iptr stringin(ptr *pstrbuf, iptr start, faslFile f) {
   return n;
 }
 
+/* Like `stringin`, but also computes the symbol-name hash of the decoded
+   characters (the same value as `hash_sc` in intern.c), so that interning
+   the symbol does not need a second pass over the name. */
+static iptr symbolin(ptr *pstrbuf, iptr start, faslFile f, iptr *phc) {
+  iptr end, n, i; ptr p = *pstrbuf; uptr h;
+
+  end = start + (n = sizein(f));
+  if (Sstring_length(*pstrbuf) < end) {
+     ptr newp = S_string((char *)0, end);
+     for (i = 0; i != start; i += 1) Sstring_set(newp, i, Sstring_ref(p, i));
+     *pstrbuf = p = newp;
+  }
+  h = SYM_HASH_INIT(n);
+  for (i = start; i != end; i += 1) {
+    uptr c = uptrin(f);
+    Sstring_set(p, i, c);
+    h += c; SYM_HASH_MIX(h);
+  }
+  *phc = (iptr)h & most_positive_fixnum;
+  return n;
+}
+
 static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
     IFASLCODE ty = bytein(f);
     switch (ty) {
@@ -1096,16 +1129,16 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
               BOXTYPE(*x) = type_immutable_box;
             return;
         case fasl_type_symbol: {
-            iptr n;
-            n = stringin(pstrbuf, 0, f);
-            *x = S_intern_sc(&STRIT(*pstrbuf, 0), n, Sfalse);
+            iptr n, hc;
+            n = symbolin(pstrbuf, 0, f, &hc);
+            *x = S_intern_sc_hc(&STRIT(*pstrbuf, 0), n, hc, Sfalse);
             return;
         }
         case fasl_type_gensym: {
-            iptr pn, un;
+            iptr pn, un, hc;
             pn = stringin(pstrbuf, 0, f);
-            un = stringin(pstrbuf, pn, f);
-            *x = S_intern3(&STRIT(*pstrbuf, 0), pn, &STRIT(*pstrbuf, pn), un, Sfalse, Sfalse);
+            un = symbolin(pstrbuf, pn, f, &hc);
+            *x = S_intern3_hc(&STRIT(*pstrbuf, 0), pn, &STRIT(*pstrbuf, pn), un, hc, Sfalse, Sfalse);
             return;
         }
         case fasl_type_uninterned_symbol: {
@@ -1363,18 +1396,6 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             CLOSENTRY(*x) = (ptr)((uptr)cod + offset);
             return;
         }
-        case fasl_type_closure_freevars: {
-            ptr cod; iptr n, i;
-            n = (iptr)uptrin(f);
-            *x = fasl_closure(tc, n);
-            faslin(tc, &cod, t, pstrbuf, f);
-            if (!Scodep(cod))
-              S_error1("", "malformed fasl closure found in ~a", f->uf.path);
-            CLOSENTRY(*x) = (ptr)((uptr)cod + code_data_disp);
-            for (i = 0; i != n; i += 1)
-              faslin(tc, &CLOSIT(*x, i), t, pstrbuf, f);
-            return;
-        }
         case fasl_type_flonum: {
             *x = fasl_flonum(tc, doublein(f));
             return;
@@ -1403,9 +1424,11 @@ static void faslin(ptr tc, ptr *x, ptr t, ptr *pstrbuf, faslFile f) {
             *x = str;
             return;
         }
-        case fasl_type_small_integer:
-            *x = Sinteger(iptrin(f));
+        case fasl_type_small_integer: {
+            iptr n = iptrin(f);
+            *x = FIXRANGE(n) ? FIX(n) : Sinteger(n);
             return;
+        }
         case fasl_type_large_integer: {
             IBOOL sign; iptr n; ptr t; bigit *p;
             sign = bytein(f);

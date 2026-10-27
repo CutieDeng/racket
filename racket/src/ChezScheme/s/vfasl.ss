@@ -44,11 +44,6 @@
           (mutable rtds)       ; intern rtds (same reason)
           (mutable strings)    ; intern certain strings (for code names)
 
-          got-enabled?         ; arm64 PIC: relocate pool quads into the GOT vspace?  Only
-                               ; sound for boot-mode static loads (the loader aborts otherwise),
-                               ; so the boot converter turns it on and everyone else -- e.g.
-                               ; vfasl .zo code loaded into generation 0, whose GC replays
-                               ; reloc tables against in-object quads -- keeps it off.
           (mutable got-dedup)  ; arm64 PIC: per-image (elem . addend) -> GOT offset, reset per pass
           (mutable got-spare)  ; arm64 PIC: second half of the last 16-byte GOT find-room, or #f
           (mutable dirty-pages) ; arm64 PIC: eq table of data-relative 4K page indexes relink will write
@@ -56,7 +51,7 @@
           (mutable installs-library-entry?)) ; to determine whether vfasls can be combined
   (nongenerative))
 
-(define (new-vfasl-info got-enabled?)
+(define (new-vfasl-info)
   (make-vfasl-info #f
 
                    0
@@ -85,7 +80,6 @@
                    (make-eq-hashtable)
                    (make-hashtable string-hash string=?)
 
-                   got-enabled?
                    #f ; got-dedup
                    #f ; got-spare
                    #f ; dirty-pages
@@ -93,15 +87,13 @@
                    #f)) ; installs-library-entry?
 
 ;; Creates a vfasl image for the fasl content `v` (as read by "strip.ss").
-;; The target endianness must be statically known.  `got?` opts into the
-;; arm64 PIC GOT relocation, which is only loadable boot-mode-static;
-;; images for ordinary (generation-0) loads must leave it off.
-(define (to-vfasl v got?)
+;; The target endianness must be statically known.
+(define (to-vfasl v)
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
   (let ([v (ensure-reference v)]
-        [vfi (new-vfasl-info got?)])
+        [vfi (new-vfasl-info)])
     ;; First pass: determine sizes
     (copy v vfi)
 
@@ -233,7 +225,7 @@
   (constant-case native-endianness
     [(unknown) ($oops 'vfasl "cannot vfasl with unknown endianness")]
     [else (void)])
-  (let ([vfi (new-vfasl-info #f)])
+  (let ([vfi (new-vfasl-info)])
     ;; Run a "first pass"
     (copy v vfi)
     (not (vfasl-info-installs-library-entry? vfi))))
@@ -544,12 +536,9 @@
 (define (unpack-symbol v)
   (or (fasl-case* v
         [(string ty string)
-         ;; A `fasl-type-symbol` string is a symbol uid.  fasl2: any other
-         ;; string type is a plain-string uid -- some runtime rtds carry a
-         ;; non-symbol uid -- so intern it too.  unpack-symbol only produces
-         ;; the key for the rtd-dedup table (the rtd itself is copied), and an
-         ;; interned symbol is a stable eq? key for either spelling.
-         (string->symbol string)]
+         (if (eq? ty (constant fasl-type-symbol))
+             (string->symbol string)
+             #f)]
         [(gensym pname uname) (gensym pname uname)]
         [else #f])
       (error 'vfasl "expected a symbol: ~s" v)))
@@ -569,20 +558,6 @@
 (define (copy v vfi)
   (or (eq-hashtable-ref (vfasl-info-graph vfi) v #f)
       (do-copy v vfi)))
-
-;; fasl2 externalref: encode external index j as the fixnum marker
-;; #x40000000+j (must match VFASL_EXTERNAL_BASE in "vfasl.c"), which rides the
-;; singletonref table.  The base only fits a fixnum on a >= 32-bit-fixnum
-;; target (61-bit on 64-bit builds); on a smaller target it is a bignum and the
-;; feature is unavailable.  meta-cond selects the encoding at compile time, so
-;; a 64-bit build expands to exactly the fx+ and is byte-identical, while a
-;; 32-bit build compiles (no bignum in fx+) and fails with a clear message only
-;; if an external is actually emitted -- the normal boot path emits none.
-(define-syntax vfasl-external-marker
-  (syntax-rules ()
-    [(_ j) (meta-cond
-            [(<= #x40000000 (constant most-positive-fixnum)) (fx+ #x40000000 j)]
-            [else (begin j ($oops 'vfasl "fasl2 externalref requires a 64-bit target"))])]))
 
 (define (do-copy v vfi)
   (fasl-case* v
@@ -826,21 +801,12 @@
                                     (let ([parent (vector-ref vec (fx- (vector-length vec)
                                                                        (constant ancestry-parent-offset)))])
                                       (copy parent vfi))]
-                                   ;; externalref (fasl2): a negative index is an
-                                   ;; external (boot) parent rtd -- resolved at load,
-                                   ;; not copied, so no ordering to enforce here.
-                                   [(indirect g i) (unless (fx< i 0) (loop (vector-ref g i)))]
+                                   [(indirect g i) (loop (vector-ref g i))]
                                    [else ($oops 'vfasl "parent type not recognized ~s" elem)]))]
                           [else (safe-assert (not 'ptr)) (void)])))
           (let* ([vspc (cond
                          [maybe-uid
                           (constant vspace-rtd)]
-                         ;; externalref (fasl2): an external (boot) rtd copies to a
-                         ;; vsingleton, not a vptr -- its mpm cannot be read here.
-                         ;; Default to the impure record space (correct for any
-                         ;; record; the rtd is resolved from externals at load).
-                         [(vsingleton? rtd-p)
-                          (constant vspace-impure-record)]
                          [(eqv? 0 (let-values ([(bv offset) (vptr->bytevector+offset rtd-p vfi)])
                                     (ref-uptr bv (fx+ offset (constant record-type-mpm-disp)))))
                           (constant vspace-pure-typed)]
@@ -882,42 +848,8 @@
        (graph! v new-p vfi)
        (set-ptr!/no-record new-p (constant closure-code-disp) (vptr+ c-v offset) vfi)
        new-p)]
-    [(closure-freevars n c fv*)
-     ;; fasl2: a runtime closure with n free vars.  Mirrors the C reader's
-     ;; fasl_type_closure_freevars: allocate n free-var slots, point the code
-     ;; entry at code + code-data-disp, and fill the free-var slots.
-     ;; externalref extension: when the code `c` is an external (a
-     ;; negative-index indirect -- the language-layer case where a runtime
-     ;; closure's code is a boot-world code object), store a raw marker
-     ;; (>= #x40000000) in the entry slot instead of a code-vspace offset; the
-     ;; closure phase in "vfasl.c" resolves it to externals[j] via SETCLOSCODE
-     ;; (which adds code-data-disp).  Copying the code here would fail: `copy`
-     ;; turns the external into a vsingleton, and `vptr+` of a vsingleton is
-     ;; not a pointer.
-     (let* ([ext-idx (fasl-case* c
-                       [(indirect g i) (and (fx< i 0) (fx- -1 i))]
-                       [else #f])]
-            [c-v (and (not ext-idx) (copy c vfi))]
-            [new-p (find-room 'closure vfi
-                              (constant vspace-closure)
-                              (fx+ (constant header-size-closure)
-                                   (fx* n (constant ptr-bytes)))
-                              (constant type-closure))])
-       (graph! v new-p vfi)
-       (set-ptr!/no-record new-p (constant closure-code-disp)
-                           (if ext-idx
-                               (vfasl-external-marker ext-idx)
-                               (vptr+ c-v (constant code-data-disp)))
-                           vfi)
-       (let loop ([i 0])
-         (unless (fx= i n)
-           (set-ptr! new-p (fx+ (constant closure-data-disp)
-                                (fx* i (constant ptr-bytes)))
-                     (copy (vector-ref fv* i) vfi) vfi)
-           (loop (fx+ i 1))))
-       new-p)]
     [(code flags free name arity-mask info pinfo* bytes m vreloc)
-     (let* ([got-info (got-code-info m vreloc flags bytes vfi)]
+     (let* ([got-info (got-code-info m vreloc flags bytes)]
             ;; arm64 PIC (P2.2c): the pool quads are relocated into the
             ;; GOT vspace, so the copied code object drops the trailing
             ;; quads entirely
@@ -1012,77 +944,7 @@
                        vfi)
              (loop (fx+ i 1)))))
        new-p)]
-    [(eq-hashtable mutable? subtype minlen veclen vpfasl)
-     ;; fasl2 eq-hashtable imaging.  eq-hash is address-based (segment.h), so
-     ;; buckets computed here (build addresses) are stale at load; we image
-     ;; every entry's TLC into ONE bucket (index 0) and rely on a post-load
-     ;; rehash (driven by the loader over the loaded state) to re-bucket by
-     ;; load-time eq-hash before the table is used.
-     ;;
-     ;; A weak/ephemeron table's entries ride weak/ephemeron pairs, which vfasl
-     ;; cannot image.  We image it as a `normal` table instead: the live
-     ;; entries captured at build time become strong TLCs, so the imaged table
-     ;; keeps exactly the snapshot's contents (correctness-safe).  It loses the
-     ;; weak/ephemeron collectability -- acceptable for a startup snapshot, and
-     ;; the alternative (externalize + rebuild empty) would lose the entries.
-     (let* ([flds (rtd-flds $eq-ht-rtd)]
-            [len (fx* (length flds) (constant ptr-bytes))]
-            [new-p (find-room 'eq-ht vfi
-                              (constant vspace-impure)
-                              (fx+ (constant header-size-record) len)
-                              (constant type-typed-object))]
-            [vec-p (find-room 'eq-ht-vector vfi
-                              (constant vspace-impure)
-                              (fx+ (constant header-size-vector) (fx* veclen (constant ptr-bytes)))
-                              (constant type-typed-object))])
-       (define (field-offset name)
-         (let loop ([flds flds] [addr (constant record-data-disp)])
-           (cond
-             [(null? flds) ($oops 'vfasl "could not find eq hash table field ~s" name)]
-             [(eq? (fld-name (car flds)) name) addr]
-             [else (loop (cdr flds) (fx+ addr (constant ptr-bytes)))])))
-       (graph! v new-p vfi)
-       (set-ptr! new-p (constant record-type-disp) (make-vsingleton (constant singleton-eq-ht-rtd)) vfi)
-       (set-ptr! new-p (field-offset 'type) (make-vsingleton (constant singleton-eq-symbol)) vfi)
-       (set-ptr! new-p (field-offset 'mutable?) (if mutable? (constant strue) (constant sfalse)) vfi)
-       ;; always image as a normal (strong) table -- see the weak/ephemeron note above
-       (set-ptr! new-p (field-offset 'subtype) (fix (constant eq-hashtable-subtype-normal)) vfi)
-       (set-ptr! new-p (field-offset 'minlen) (fix minlen) vfi)
-       (set-ptr! new-p (field-offset 'vec) vec-p vfi)
-       (set-ptr! new-p (field-offset 'size) (fix (vector-length vpfasl)) vfi)
-       (set-uptr! vec-p (constant vector-type-disp)
-                  (bitwise-ior (bitwise-arithmetic-shift-left veclen (constant vector-length-offset))
-                               (constant type-vector))
-                  vfi)
-       ;; every bucket empty (terminal sentinel FIX(i)); then thread all TLCs
-       ;; into bucket 0's chain, terminated by FIX(0).
-       (let loop ([i 0])
-         (unless (fx= i veclen)
-           (set-ptr! vec-p (fx+ (constant vector-data-disp) (fx* i (constant ptr-bytes))) (fix i) vfi)
-           (loop (fx+ i 1))))
-       (let loop ([i 0] [next (fix 0)])
-         (if (fx= i (vector-length vpfasl))
-             (set-ptr! vec-p (constant vector-data-disp) next vfi)
-             (let* ([p (vector-ref vpfasl i)]
-                    [kv (pair-copy (copy (car p) vfi) (copy (cdr p) vfi) vfi)]
-                    [tlc-p (find-room 'tlc vfi (constant vspace-impure)
-                                      (constant size-tlc) (constant type-typed-object))])
-               (set-uptr! tlc-p (constant tlc-type-disp) (constant type-tlc) vfi)
-               (set-ptr! tlc-p (constant tlc-keyval-disp) kv vfi)
-               (set-ptr! tlc-p (constant tlc-ht-disp) new-p vfi)
-               (set-ptr! tlc-p (constant tlc-next-disp) next vfi)
-               (loop (fx+ i 1) tlc-p))))
-       new-p)]
-    [(indirect g i)
-     ;; externalref extension (fasl2): a negative index (-1-j) marks an
-     ;; external literal in a DATA position.  Encode it as a marked
-     ;; "singleton" (index >= VFASL_EXTERNAL_BASE = #x40000000, matching
-     ;; "vfasl.c"): it rides the singletonref table and is resolved at load
-     ;; from the externals vector.  Code-reloc externals become an
-     ;; externalref reloc (see copy-reloc).
-     (if (fx< i 0)
-         (make-vsingleton (vfasl-external-marker (fx- -1 i)))
-         (copy (vector-ref g i) vfi))]
+    [(indirect g i) (copy (vector-ref g i) vfi)]
     [else
      ($oops 'vfasl "unsupported ~s" v)]))
 
@@ -1198,9 +1060,7 @@
 (define (refers-back-to-self? v rtd)
   (or (eq? v rtd)
       (fasl-case* rtd
-        ;; externalref (fasl2): a negative index is an external (boot) rtd --
-        ;; it is not this record, so it never refers back to self.
-        [(indirect g i) (and (fx>= i 0) (refers-back-to-self? v (vector-ref g i)))]
+        [(indirect g i) (refers-back-to-self? v (vector-ref g i))]
         [else #f])))
 
 (define (reloc-addr n)
@@ -1254,11 +1114,10 @@
 ;; here, and both load-bearing: the writer truncates the quads away and
 ;; re-targets the surviving entries at the GOT without disturbing the
 ;; preceding entries' code-offset chain.
-(define (got-code-info m vreloc flags bytes vfi)
+(define (got-code-info m vreloc flags bytes)
   (constant-case architecture
     [(arm64)
-     (and (vfasl-info-got-enabled? vfi)
-          (not (fxlogtest flags (constant code-flag-template)))
+     (and (not (fxlogtest flags (constant code-flag-template)))
           (let scan ([n 0] [a 0] [i 0] [ra* '()] [rw* '()])
             (if (fx= n m)
                 (and (pair? ra*)
@@ -1499,8 +1358,7 @@
          [dirty-base (constant-case architecture
                        [(arm64)
                         (let ([vc (vector-ref (vfasl-info-spaces vfi) (constant vspace-code))])
-                          (and (vfasl-info-got-enabled? vfi) ; bitmap only serves the boot mapping
-                               (vfasl-chunk-limit vc)
+                          (and (vfasl-chunk-limit vc)
                                (fx- (vfasl-chunk-offset vc) (vfasl-info-base-addr vfi))))]
                        [else #f])])
     (set-ptr!/no-record new-p (constant reloc-table-code-disp) code-p vfi)
@@ -1547,15 +1405,6 @@
                                       [(fasl-type-library-code)
                                        (build-vfasl-reloc (constant vfasl-reloc-library-entry-code-tag) uptr)]
                                       [else #f])]
-                                   ;; externalref extension (fasl2): a
-                                   ;; negative-index indirect is an external
-                                   ;; literal referenced from CODE -> emit an
-                                   ;; externalref reloc, resolved at load from
-                                   ;; externals[j] (j = -1-i).
-                                   [(indirect g i)
-                                    (and (fx< i 0)
-                                         (build-vfasl-reloc (constant vfasl-reloc-external-tag)
-                                                            (fx- -1 i)))]
                                    [else #f])])
                      (if marker
                          (cons marker marker)
@@ -1658,8 +1507,5 @@
       (set-uptr! new-p (constant reloc-table-size-disp) end-nout vfi))
     new-p))
 
-(set! $fasl-to-vfasl
-  (case-lambda
-   [(v) (to-vfasl v #f)]
-   [(v got?) (to-vfasl v got?)]))
+(set! $fasl-to-vfasl to-vfasl)
 (set! $fasl-can-combine? fasl-can-combine?))

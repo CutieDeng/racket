@@ -11,6 +11,8 @@
          "../namespace/api.rkt"
          "../eval/module-read.rkt"
          "../eval/module-cache.rkt"
+         "../compile/read-linklet.rkt"
+         "startup-pack.rkt"
          "../eval/reflect.rkt"
          "../read/api.rkt"
          "../read/primitive-parameter.rkt")
@@ -38,6 +40,7 @@
      [expected-mod
       ((call-with-input-module-file
         path
+        expected-mod
         (lambda (i)
           (maybe-count-lines! i)
           (with-module-reading-parameterization+delay-source
@@ -190,9 +193,69 @@
         (with-module-reading-parameterization thunk))
       (with-module-reading-parameterization thunk)))
 
-(define (call-with-input-module-file path proc)
-  (define i #f)
-  (dynamic-wind
-   (lambda () (set! i (open-input-file path #:for-module? #t)))
-   (lambda () (proc i))
-   (lambda () (close-input-port i))))
+(define (call-with-input-module-file path expected-mod proc)
+  ;; startup pack: a compiled file that the pack carries is loaded by
+  ;; `load-pack-member`, which has the file's bundle table from the
+  ;; index and so does without the header scans, the submodule search
+  ;; and the reader dispatch that `proc` performs on a file
+  (define pack-result (and (pack-enabled?)
+                           (call-with-pack-member path (lambda (i base directory? table)
+                                                         (load-pack-member i base directory? table path expected-mod)))))
+  (cond
+    [pack-result (unbox pack-result)]
+    [else
+     (define i #f)
+     (dynamic-wind
+      (lambda () (set! i (open-input-file path #:for-module? #t)))
+      (lambda () (proc i))
+      (lambda () (close-input-port i)))]))
+
+;; The pack counterpart of the compiled-module branches of
+;; `default-load-handler`'s `proc`: same decisions, same results, same
+;; parameters in effect, but with the bundle's position and hash code
+;; taken from the pack's table. `i` is the pack's port, positioned at
+;; `base` (the member's start). Returns the thunk that declares the module.
+(define (load-pack-member i base directory? table path expected-mod)
+  (define name (encode-symbols expected-mod))
+  (define e (let loop ([table table])
+              (cond
+                [(null? table) #f]
+                [(bytes=? (vector-ref (car table) 0) name) (car table)]
+                [else (loop (cdr table))])))
+  (cond
+    [(and (not e) directory?)
+     (cond
+       [(pair? expected-mod)
+        ;; Cannot load submodule, so do nothing
+        void]
+       [else
+        (error 'default-load-handler
+               (string-append "could not find main module\n"
+                              "  in: ~e")
+               path)])]
+    [(and (not e) (pair? expected-mod) (not (car expected-mod)))
+     ;; a bundle has no submodules; cannot load one independently
+     void]
+    [else
+     ;; a bundle asked for `(sym sub ...)` loads the root, as from a file
+     (define bundle (or e (car table)))
+     (define cache-key (make-module-cache-key (vector-ref bundle 3)))
+     (define declare-module (and cache-key (module-cache-ref cache-key)))
+     (cond
+       [declare-module
+        (lambda () (declare-module (current-namespace)))]
+       [else
+        ;; position after the bundle's `#~`, as the reader expects
+        (file-position i (+ base (vector-ref bundle 1) 2))
+        (define v
+          (with-module-reading-parameterization+delay-source
+           path
+           (lambda () (read-linklet-bundle-or-directory i))))
+        (if (compiled-module-expression? v)
+            (lambda () ((current-eval) v))
+            (error 'default-load-handler
+                   (string-append "expected a compiled module\n"
+                                  "  in: ~e\n"
+                                  "  found: ~e")
+                   path
+                   v))])]))

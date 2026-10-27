@@ -43,23 +43,75 @@
   (for/vector #:length (vector-length order-vec) ([p (in-vector order-vec)])
     (vector-ref gen p)))
 
+;; The expander's serializer (expander/compile/serialize.rkt) encodes
+;; each stream as a byte string: an opcode byte (index into this table,
+;; which must stay in the expander's order), a small integer 0..119
+;; (#x40..#xB7), #f/#t/'() (#xB8/#xB9/#xBA), a zigzag LEB128 integer
+;; (#xBB), or an index into the literals vector (#xBC + LEB128, or
+;; #xBD..#xFF for 0..66). Older compiled code and the demodularizer's
+;; own output use a vector of elements instead; both are turned into
+;; the element list that `decode` consumes.
+(define opcode-keywords
+  '#(#:ref #:inspector #:bulk-binding-registry #:syntax #:datum->syntax
+     #:syntax+props #:srcloc #:quote #:mpi #:box #:cons #:list #:vector
+     #:pvector #:hash #:hasheq #:hasheqv #:hasheqv/phase+space #:set
+     #:seteq #:seteqv #:prefab #:scope #:scope+kind #:interned-scope
+     #:multi-scope #:shifted-multi-scope #:table-with-bulk-bindings
+     #:bulk-binding-at #:representative-scope #:module-binding
+     #:simple-module-binding #:local-binding #:bulk-binding
+     #:like-ambiguous-binding #:bulk-binding+provides #:provided
+     #:set-box! #:set-vector! #:set-hash! #:scope-fill!
+     #:representative-scope-fill! #:srcloc/source))
+
+(define (stream->elements v lits)
+  (cond
+    [(vector? v) (vector->list v)]
+    [else
+     (define len (bytes-length v))
+     (define (read-uint pos)
+       (let loop ([pos pos] [shift 0] [n 0])
+         (define b (bytes-ref v pos))
+         (define n2 (bitwise-ior n (arithmetic-shift (bitwise-and b #x7F) shift)))
+         (if (< b #x80)
+             (values n2 (add1 pos))
+             (loop (add1 pos) (+ shift 7) n2))))
+     (let loop ([pos 0] [acc null])
+       (cond
+         [(= pos len) (reverse acc)]
+         [else
+          (define b (bytes-ref v pos))
+          (cond
+            [(< b #x40) (loop (add1 pos) (cons (vector-ref opcode-keywords b) acc))]
+            [(< b #xB8) (loop (add1 pos) (cons (- b #x40) acc))]
+            [(= b #xB8) (loop (add1 pos) (cons #f acc))]
+            [(= b #xB9) (loop (add1 pos) (cons #t acc))]
+            [(= b #xBA) (loop (add1 pos) (cons null acc))]
+            [(= b #xBB)
+             (define-values (n next) (read-uint (add1 pos)))
+             (loop next (cons (if (odd? n) (- -1 (arithmetic-shift n -1)) (arithmetic-shift n -1)) acc))]
+            [(= b #xBC)
+             (define-values (i next) (read-uint (add1 pos)))
+             (loop next (cons (vector-ref lits i) acc))]
+            [else (loop (add1 pos) (cons (vector-ref lits (- b #xBD)) acc))])]))]))
+
 (define (deserialize mpis inspector bulk-binding-registry
                      num-mutables mutable-vec 
                      num-shared shared-vec
                      mutable-fill-vec
-                     result-vec)
+                     result-vec
+                     [lits #f])
   (unless (zero? num-mutables) (error 'deserialize "mutables not supported"))
 
   (define shared-vs (make-vector num-shared #f))
   (define shared-rest
-    (for/fold ([r (vector->list shared-vec)]) ([i (in-range num-shared)])
+    (for/fold ([r (stream->elements shared-vec lits)]) ([i (in-range num-shared)])
       (define-values (v rest) (decode r mpis shared-vs))
       (vector-set! shared-vs i v)
       rest))
   (unless (null? shared-rest)
     (error 'deserialize "unexpected leftover serialized form for shared: ~s" shared-rest))
 
-  (define-values (v v-rest) (decode (vector->list result-vec) mpis shared-vs))
+  (define-values (v v-rest) (decode (stream->elements result-vec lits) mpis shared-vs))
   (unless (null? v-rest)
     (error 'deserialize "unexpected leftover serialized form: ~s" v-rest))
   

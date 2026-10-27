@@ -18,6 +18,50 @@
 #ifdef MACOS_UNICODE_SUPPORT
 # include <CoreFoundation/CFString.h>
 # include <CoreFoundation/CFLocale.h>
+# include <dlfcn.h>
+
+/* CoreFoundation is used only by the three locale functions below,
+   none of them on the startup path, while linking the framework costs
+   every process about 1 ms of dynamic-linker work before `main`. So
+   the executable is not linked against it; the functions are resolved
+   on first use. */
+static struct {
+  int tried;
+  CFLocaleRef (*CFLocaleCopyCurrent)(void);
+  CFStringRef (*CFLocaleGetIdentifier)(CFLocaleRef);
+  CFIndex (*CFStringGetLength)(CFStringRef);
+  Boolean (*CFStringGetCString)(CFStringRef, char *, CFIndex, CFStringEncoding);
+  void (*CFRelease)(CFTypeRef);
+  CFStringRef (*CFStringCreateWithBytes)(CFAllocatorRef, const UInt8 *, CFIndex, CFStringEncoding, Boolean);
+  CFMutableStringRef (*CFStringCreateMutableCopy)(CFAllocatorRef, CFIndex, CFStringRef);
+  void (*CFStringUppercase)(CFMutableStringRef, CFLocaleRef);
+  void (*CFStringLowercase)(CFMutableStringRef, CFLocaleRef);
+  void (*CFStringGetCharacters)(CFStringRef, CFRange, UniChar *);
+  CFComparisonResult (*CFStringCompare)(CFStringRef, CFStringRef, CFStringCompareFlags);
+} cf;
+
+static int cf_load(void)
+{
+  void *h;
+  if (cf.tried) return (cf.CFRelease != NULL);
+  cf.tried = 1;
+  h = dlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", RTLD_LAZY | RTLD_GLOBAL);
+  if (h == NULL) return 0;
+# define CF_SYM(name) do { if ((cf.name = dlsym(h, #name)) == NULL) return 0; } while (0)
+  CF_SYM(CFLocaleCopyCurrent);
+  CF_SYM(CFLocaleGetIdentifier);
+  CF_SYM(CFStringGetLength);
+  CF_SYM(CFStringGetCString);
+  CF_SYM(CFStringCreateWithBytes);
+  CF_SYM(CFStringCreateMutableCopy);
+  CF_SYM(CFStringUppercase);
+  CF_SYM(CFStringLowercase);
+  CF_SYM(CFStringGetCharacters);
+  CF_SYM(CFStringCompare);
+  CF_SYM(CFRelease); /* last: its presence means all were found */
+# undef CF_SYM
+  return 1;
+}
 #endif
 
 void rktio_convert_init(rktio_t *rktio) {
@@ -405,14 +449,19 @@ char *rktio_system_language_country(rktio_t *rktio)
   int len;
   char *r;
 
-  l = CFLocaleCopyCurrent();
-  s = CFLocaleGetIdentifier(l);
+  if (!cf_load()) {
+    set_racket_error(RKTIO_ERROR_UNSUPPORTED);
+    return NULL;
+  }
 
-  len = CFStringGetLength(s);
+  l = cf.CFLocaleCopyCurrent();
+  s = cf.CFLocaleGetIdentifier(l);
+
+  len = cf.CFStringGetLength(s);
   r = malloc(len * 6 + 1);
-  CFStringGetCString(s, r, len * 6 + 1, kCFStringEncodingUTF8);
+  cf.CFStringGetCString(s, r, len * 6 + 1, kCFStringEncodingUTF8);
 
-  CFRelease(l);
+  cf.CFRelease(l);
 
   r[5] = 0;
 
@@ -703,22 +752,27 @@ rktio_char16_t *rktio_recase_utf16(rktio_t *rktio, rktio_bool_t to_up, rktio_cha
   rktio_char16_t *result;
   intptr_t len;
 
-  str = CFStringCreateWithBytes(NULL, (unsigned char *)s1, (l1 * sizeof(rktio_char16_t)), kCFStringEncodingUnicode, FALSE);
-  mstr = CFStringCreateMutableCopy(NULL, 0, str);
-  CFRelease(str);
+  if (!cf_load()) {
+    set_racket_error(RKTIO_ERROR_UNSUPPORTED);
+    return NULL;
+  }
+
+  str = cf.CFStringCreateWithBytes(NULL, (unsigned char *)s1, (l1 * sizeof(rktio_char16_t)), kCFStringEncodingUnicode, FALSE);
+  mstr = cf.CFStringCreateMutableCopy(NULL, 0, str);
+  cf.CFRelease(str);
 
   if (to_up)
-    CFStringUppercase(mstr, NULL);
+    cf.CFStringUppercase(mstr, NULL);
   else
-    CFStringLowercase(mstr, NULL);
+    cf.CFStringLowercase(mstr, NULL);
 
-  len = CFStringGetLength(mstr);
+  len = cf.CFStringGetLength(mstr);
 
   result = malloc((len + 1) * sizeof(rktio_char16_t));
 
   rng = CFRangeMake(0, len);
-  CFStringGetCharacters(mstr, rng, (UniChar *)result);
-  CFRelease(mstr);
+  cf.CFStringGetCharacters(mstr, rng, (UniChar *)result);
+  cf.CFRelease(mstr);
 
   result[len] = 0;
 
@@ -769,16 +823,25 @@ int rktio_strcoll_utf16(rktio_t *rktio,
   CFStringRef str1, str2;
   CFComparisonResult r;
 
-  str1 = CFStringCreateWithBytes(NULL, (unsigned char *)s1, (l1 * sizeof(rktio_char16_t)), 
+  if (!cf_load()) {
+    /* no locale-aware comparison available: fall back to code-point order */
+    intptr_t i, n = ((l1 < l2) ? l1 : l2);
+    for (i = 0; i < n; i++) {
+      if (s1[i] != s2[i]) return ((s1[i] < s2[i]) ? -1 : 1);
+    }
+    return ((l1 == l2) ? 0 : ((l1 < l2) ? -1 : 1));
+  }
+
+  str1 = cf.CFStringCreateWithBytes(NULL, (unsigned char *)s1, (l1 * sizeof(rktio_char16_t)), 
 				 kCFStringEncodingUnicode, FALSE);
-  str2 = CFStringCreateWithBytes(NULL, (unsigned char *)s2, (l2 * sizeof(rktio_char16_t)), 
+  str2 = cf.CFStringCreateWithBytes(NULL, (unsigned char *)s2, (l2 * sizeof(rktio_char16_t)), 
 				 kCFStringEncodingUnicode, FALSE);
 
-  r = CFStringCompare(str1, str2, (kCFCompareLocalized
+  r = cf.CFStringCompare(str1, str2, (kCFCompareLocalized
 				   | (cvt_case ? kCFCompareCaseInsensitive : 0)));
 
-  CFRelease(str1);
-  CFRelease(str2);
+  cf.CFRelease(str1);
+  cf.CFRelease(str2);
 
   return (int)r;
 #elif defined(RKTIO_SYSTEM_WINDOWS)

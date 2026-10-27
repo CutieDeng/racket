@@ -29,6 +29,7 @@
          "boot/linklet-primitive.rkt"
          "boot/runtime-primitive.rkt"
          "boot/handler.rkt"
+         "boot/startup-pack.rkt"
          "syntax/api.rkt"
          (only-in "compile/recompile.rkt"
                   compiled-expression-recompile)
@@ -122,6 +123,7 @@
          declare-primitive-module! ; to support "extensions"
 
          embedded-load ; for -k
+         (rename-out [startup-pack-init!/installation startup-pack-init!]) ; for startup
 
          compile-keep-source-locations! ; to enable if the back end wants them
 
@@ -242,6 +244,9 @@
 (define (datum->kernel-syntax s)
   (datum->syntax core-stx s))
 
+(define (startup-pack-init!/installation)
+  (startup-pack-init! (find-share-dir) collection-candidate-dirs))
+
 (define (expander-place-init!)
   (syntax-place-init!)
   (scope-place-init!)
@@ -252,6 +257,7 @@
   (module-cache-place-init!)
   (shadow-directory-place-init!)
   (collection-place-init!)
+  (startup-pack-place-init!)
   (performance-place-init!)
   (namespace-init!)
   (install-error-syntax->string-handler!))

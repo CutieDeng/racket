@@ -52,7 +52,7 @@
 ## 六、逆向装置的处置
 
 - 实验装置调试插桩（内核 4 文件 guard + experiments 两文件 valhunt/backref/reloc-coverage/VALPROBE）**已回退**（2026-09-17），产品树干净可 build。
-- 装置本身（experiments/seg4，HEAD 24f4c5587b 归档态）保留为逆向排查记录 + 定位工具库；清场缓解在其中默认开，codes 线 5/6 满分 + 崩率哨兵护线。
+- 装置本身（experiments/seg4，HEAD 2282d745e8 归档态）保留为逆向排查记录 + 定位工具库；清场缓解在其中默认开，codes 线 5/6 满分 + 崩率哨兵护线。
 - 若日后仍需精确写点：路径=GC 内核把 sweep 当前对象基址+type 穿进 empty-seg guard（重管线），或 valhunt 扩真 VM 根集。非当前主线。
 
 ## 四、启动开销测量分解（2026-09-17，clean binary，正向重测）

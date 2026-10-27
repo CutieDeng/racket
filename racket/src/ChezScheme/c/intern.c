@@ -63,18 +63,40 @@ static void oblist_insert(ptr sym, iptr idx, IGEN g) {
   S_G.oblist_count += 1;
 }
 
-void S_resize_oblist(void) {
-  bucket **new_oblist, *b, *oldb, **pb, *bnext;
-  iptr new_oblist_length, i, idx;
-  ptr sym;
-  IGEN g;
-
-  new_oblist_length = MIN_OBLIST_LENGTH;
-  while ((new_oblist_length >> 1) < S_G.oblist_count)
+static iptr oblist_length_for(iptr count) {
+  iptr new_oblist_length = MIN_OBLIST_LENGTH;
+  while ((new_oblist_length >> 1) < count)
     new_oblist_length <<= 1;
+  return new_oblist_length;
+}
+
+static void resize_oblist_to(iptr new_oblist_length);
+
+void S_resize_oblist(void) {
+  iptr new_oblist_length = oblist_length_for(S_G.oblist_count);
 
   if (new_oblist_length == S_G.oblist_length)
     return;
+
+  resize_oblist_to(new_oblist_length);
+}
+
+/* Grow the table ahead of interning `count` more symbols. The table
+   otherwise grows only after a collection, so the tens of thousands of
+   symbols of a boot image would all go through the initial 4096
+   buckets. */
+void S_resize_oblist_for(iptr count) {
+  iptr new_oblist_length = oblist_length_for(S_G.oblist_count + count);
+
+  if (new_oblist_length > S_G.oblist_length)
+    resize_oblist_to(new_oblist_length);
+}
+
+static void resize_oblist_to(iptr new_oblist_length) {
+  bucket **new_oblist, *b, *oldb, **pb, *bnext;
+  iptr i, idx;
+  ptr sym;
+  IGEN g;
 
   new_oblist = S_getmem(new_oblist_length * sizeof(bucket *), 1, 0);
 
@@ -100,10 +122,10 @@ void S_resize_oblist(void) {
   S_G.oblist = new_oblist;
 }
 
-#define MIX_HASH(hc) (hc += (hc << 10), hc ^= (hc >> 6))
+#define MIX_HASH(hc) SYM_HASH_MIX(hc)
 
 #define SYM_HASH_LOOP(uptr, iptr, extract, mask)  {     \
-    uptr h = (uptr)n + 401887359;                       \
+    uptr h = SYM_HASH_INIT(n);                          \
     while (n--) { h += extract(*s++); MIX_HASH(h); }    \
     return (iptr)h & mask;                              \
   }
@@ -193,7 +215,11 @@ ptr S_intern(const unsigned char *s) {
 
 /* handles string_chars, explicit length */
 ptr S_intern_sc(const string_char *name, iptr n, ptr name_str) {
-  iptr hc = hash_sc(name, n);
+  return S_intern_sc_hc(name, n, hash_sc(name, n), name_str);
+}
+
+/* `hc` is the symbol-name hash of `name`, as `hash_sc` computes it */
+ptr S_intern_sc_hc(const string_char *name, iptr n, iptr hc, ptr name_str) {
   iptr idx = OBINDEX(hc, S_G.oblist_length);
   ptr sym;
   bucket *b;
@@ -230,7 +256,11 @@ ptr S_intern_sc(const string_char *name, iptr n, ptr name_str) {
 }
 
 ptr S_intern3(const string_char *pname, iptr plen, const string_char *uname, iptr ulen, ptr pname_str, ptr uname_str) {
-  iptr hc = hash_uname(uname, ulen);
+  return S_intern3_hc(pname, plen, uname, ulen, hash_uname(uname, ulen), pname_str, uname_str);
+}
+
+/* `hc` is the symbol-name hash of `uname`, as `hash_uname` computes it */
+ptr S_intern3_hc(const string_char *pname, iptr plen, const string_char *uname, iptr ulen, iptr hc, ptr pname_str, ptr uname_str) {
   iptr idx = OBINDEX(hc, S_G.oblist_length);
   ptr sym;
   bucket *b;
@@ -307,26 +337,35 @@ void S_intern_gensym(ptr sym, ptr sym_name) {
 /* must hold mutex */
 ptr S_intern4(ptr sym) {
   ptr name = SYMNAME(sym);
-  ptr uname_str = (Sstringp(name) ? name : Scar(name));
-  const string_char *uname = &STRIT(uname_str, 0);
-  iptr ulen = Sstring_length(uname_str);
-  iptr hc = UNFIX(SYMHASH(sym));
+  ptr hash = SYMHASH(sym);
+  iptr hc = UNFIX(hash);
   iptr idx = OBINDEX(hc, S_G.oblist_length);
   bucket *b;
 
+  /* Compare hashes before names: the name strings live elsewhere in
+     memory, and most of the symbols a boot image interns have no
+     bucket to compare with at all, so do not touch the names unless a
+     bucket's hash matches (a symbol whose hash is not a fixnum is
+     compared by name regardless). */
   b = S_G.oblist[idx];
   while (b != NULL) {
     ptr x = b->sym;
-    ptr x_name = SYMNAME(x);
-    if (Sstringp(name) == Sstringp(x_name)) {
-      ptr str = (Sstringp(x_name) ? x_name : Scar(x_name));
-      if (Sstring_length(str) == ulen) {
-        iptr i;
-        for (i = 0; ; i += 1) {
-          if (i == ulen) {
-            return x;
+    ptr x_hash = SYMHASH(x);
+    if ((x_hash == hash) || !Sfixnump(x_hash)) {
+      ptr x_name = SYMNAME(x);
+      if (Sstringp(name) == Sstringp(x_name)) {
+        ptr uname_str = (Sstringp(name) ? name : Scar(name));
+        ptr str = (Sstringp(x_name) ? x_name : Scar(x_name));
+        iptr ulen = Sstring_length(uname_str);
+        if (Sstring_length(str) == ulen) {
+          const string_char *uname = &STRIT(uname_str, 0);
+          iptr i;
+          for (i = 0; ; i += 1) {
+            if (i == ulen) {
+              return x;
+            }
+            if (STRIT(str, i) != uname[i]) break;
           }
-          if (STRIT(str, i) != uname[i]) break;
         }
       }
     }

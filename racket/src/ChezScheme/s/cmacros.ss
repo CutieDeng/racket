@@ -546,7 +546,6 @@
 (define-constant fasl-type-uncompressed 44)
 (define-constant fasl-type-gzip 45)
 (define-constant fasl-type-lz4 46)
-(define-constant fasl-type-closure-freevars 47)
 ;; arm64 PIC boot alignment: a converter-inserted top-level gap entry
 ;; (type byte, uptr length, that many ignored bytes) so the following
 ;; entry's vfasl image data starts on a 4096-aligned file offset,
@@ -2328,13 +2327,7 @@
   singleton-equal
   singleton-symbol=?
   singleton-symbol-symbol
-  singleton-symbol-ht-rtd
-  ;; fasl2 eq-hashtable imaging: the `eq` type symbol and $eq-ht-rtd, so an
-  ;; eq-hashtable can be imaged as a record whose type/rtd are named singletons
-  ;; (resolved at load) rather than copied.  Must stay LAST so the existing
-  ;; singleton indices are unchanged.
-  singleton-eq-symbol
-  singleton-eq-ht-rtd)
+  singleton-symbol-ht-rtd)
 
 (define-constant vfasl-reloc-tag-bits 3)
 
@@ -2344,10 +2337,7 @@
   vfasl-reloc-library-entry-tag
   vfasl-reloc-library-entry-code-tag
   vfasl-reloc-symbol-tag
-  vfasl-reloc-singleton-tag
-  ;; externalref extension (fasl2): a code reloc that references
-  ;; externals[pos], the per-load externals vector.  7th of 8 (3-bit).
-  vfasl-reloc-external-tag)
+  vfasl-reloc-singleton-tag)
 
 ;; ---------------------------------------------------------------------
 ;; General helpers for the compiler and runtime implementation:

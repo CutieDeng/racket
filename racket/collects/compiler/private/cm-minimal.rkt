@@ -1,5 +1,6 @@
 #lang racket/base
-(require syntax/private/modcode-noctc
+(require setup/private/startup-pack
+         syntax/private/modcode-noctc
          syntax/modread
          setup/private/dirs
          racket/file
@@ -914,7 +915,11 @@
        (write-deps code-or-bytes zo-name path->mode dest-roots path src-sha1
                    external-deps external-module-deps reader-deps
                    up-to-date collection-cache read-src-syntax)])
-    (trace-printf "wrote zo file: ~a" zo-name))
+    (trace-printf "wrote zo file: ~a" zo-name)
+    ;; a rewritten member of the startup pack makes the pack stale
+    ;; until the next `raco setup` rebuilds it
+    (when (startup-pack-member? zo-name)
+      (mark-startup-pack-stale!)))
 
   (unless code-or-bytes
     ;; If we didn't get any code back, then we could be in a situation where
@@ -939,7 +944,11 @@
           (load-cached-recompile-summary (managed-recompile-cache-dir) assume-compiled-sha1 path)])]
       [else code-or-bytes]))
 
-  (when (and code-or-bytes (not (bytes? code-or-bytes)) use-recompile-cache?)
+  ;; A machine-independent compile has no target-machine summary to
+  ;; cache (its linklets are still correlated forms), so skip the cache
+  ;; in that case instead of asking for a summary that cannot exist
+  (when (and code-or-bytes (not (bytes? code-or-bytes)) use-recompile-cache?
+             (current-compile-target-machine))
     (save-cached-recompile (managed-recompile-cache-dir) assume-compiled-sha1 zo-name
                            (compiled-expression-summarize-target-machine code)))
 
