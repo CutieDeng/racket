@@ -1,0 +1,39 @@
+--- a/expeditor-lib/main.rkt
++++ b/expeditor-lib/main.rkt
+@@ -1491,7 +1491,7 @@
+    (lambda (in) ((current-read-interaction) (object-name in) in)))
+   (let ([lexer (or (info 'color-lexer #f)
+                    (and (collection-file? "racket-lexer.rkt" "syntax-color")
+-                        (dynamic-require 'syntax-color/racket-lexer 'racket-lexer)))])
++                        (default-racket-lexer)))])
+     (current-expeditor-lexer lexer))
+   (let ([pred (info 'drracket:submit-predicate #f)])
+     (when pred
+@@ -1532,6 +1532,18 @@
+   (define init-file (expeditor-init-file-path))
+   (when (file-exists? init-file)
+     (dynamic-require init-file #f)))
++
++;; `racket-lexer` is exported through `contract-out`, so a `dynamic-require`
++;; of that name has to visit `syntax-color/racket-lexer` at phase 1 --
++;; instantiating the lexer generator's compile-time dependencies -- and
++;; then expand the identifier in a fresh namespace. `racket-lexer/status`
++;; is a plain variable export of the same lexer with one extra result, so
++;; request that one and drop the status.
++(define (default-racket-lexer)
++  (define lex/status (dynamic-require 'syntax-color/racket-lexer 'racket-lexer/status))
++  (lambda (in)
++    (let-values ([(lexeme type paren start end status) (lex/status in)])
++      (values lexeme type paren start end))))
+ 
+ (define (expeditor-init-file-path)
+   (define init-dir (find-system-path 'init-dir))
+@@ -1552,7 +1564,7 @@
+   (port-count-lines! (current-input-port))
+   (port-count-lines! (current-output-port))
+   (current-namespace (make-base-namespace))
+-  (current-expeditor-lexer (dynamic-require 'syntax-color/racket-lexer 'racket-lexer))
++  (current-expeditor-lexer (default-racket-lexer))
+   (current-expeditor-reader (lambda (in) (read-syntax (object-name in) in)))
+   (define ee (expeditor-open (map bytes->string/utf-8
+                                   (get-preference 'readline-input-history (lambda () null)))))
