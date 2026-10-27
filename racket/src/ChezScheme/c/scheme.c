@@ -919,6 +919,9 @@ static void boot_element(ptr tc, ptr x, struct boot_desc *boot) {
 
 static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
   ptr x; iptr i;
+  /* the descriptor to close afterwards, taken before `S_fasl_init_bytes`
+     repurposes the `uf` union on the mapped path */
+  int close_fd = boot->is_fd ? boot->ffo.f.uf.fd : -1;
 #ifndef WIN32
   void *boot_map = MAP_FAILED;
   size_t boot_map_len = 0;
@@ -1013,8 +1016,8 @@ static void load(ptr tc, struct boot_desc *boot, IBOOL base) {
   S_vfasl_mapping_fd = -1;
   S_vfasl_mapping_base = 0;
 #endif
-  if (boot->close_after)
-    CLOSE(boot->ffo.f.uf.fd);
+  if (boot->close_after && (close_fd >= 0))
+    CLOSE(close_fd);
 }
 
 /***************************************************************************/
