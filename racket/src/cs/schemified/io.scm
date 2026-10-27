@@ -29,7 +29,7 @@
                 (1/close-output-port close-output-port)
                 (1/complete-path? complete-path?)
                 (1/copy-file copy-file)
-                (crypto-aead-expand-key crypto-aead-expand-key)
+                (1/crypto-aead-expand-key crypto-aead-expand-key)
                 (1/crypto-aead-key-size crypto-aead-key-size)
                 (1/crypto-aead-nonce-size crypto-aead-nonce-size)
                 (1/crypto-aead-open! crypto-aead-open!)
@@ -36218,42 +36218,44 @@
                      (void)
                      (fail-digest 'crypto-aead-seal!))
                    (void)))))))))))
-(define crypto-aead-expand-key
-  (lambda (alg_0 key_0)
-    (let ((id_0 (aead-alg->id 'crypto-aead-expand-key alg_0)))
-      (begin
-        (if (bytes? key_0)
-          (void)
-          (raise-argument-error 'crypto-aead-expand-key "bytes?" key_0))
-        (begin
-          (if (eqv?
-               (unsafe-bytes-length key_0)
-               (|#%app| rktcrypto_aead_key_size id_0))
-            (void)
-            (raise-arguments-error
-             'crypto-aead-expand-key
-             "wrong key size"
-             "given"
-             (unsafe-bytes-length key_0)
-             "required"
-             (|#%app| rktcrypto_aead_key_size id_0)))
-          (let ((n_0 (|#%app| rktcrypto_aead_expanded_key_size id_0)))
-            (if (eqv? n_0 0)
-              (bytes-copy key_0)
-              (let ((out_0 (make-bytes n_0)))
-                (begin
-                  (if (eqv?
-                       1
-                       (|#%app|
-                        rktcrypto_aead_expand_key
-                        id_0
-                        key_0
-                        (unsafe-bytes-length key_0)
-                        out_0
-                        n_0))
-                    (void)
-                    (fail-digest 'crypto-aead-expand-key))
-                  out_0)))))))))
+(define 1/crypto-aead-expand-key
+  (|#%name|
+   crypto-aead-expand-key
+   (lambda (alg_0 key_0)
+     (let ((id_0 (aead-alg->id 'crypto-aead-expand-key alg_0)))
+       (begin
+         (if (bytes? key_0)
+           (void)
+           (raise-argument-error 'crypto-aead-expand-key "bytes?" key_0))
+         (begin
+           (if (eqv?
+                (unsafe-bytes-length key_0)
+                (|#%app| rktcrypto_aead_key_size id_0))
+             (void)
+             (raise-arguments-error
+              'crypto-aead-expand-key
+              "wrong key size"
+              "given"
+              (unsafe-bytes-length key_0)
+              "required"
+              (|#%app| rktcrypto_aead_key_size id_0)))
+           (let ((n_0 (|#%app| rktcrypto_aead_expanded_key_size id_0)))
+             (if (eqv? n_0 0)
+               (bytes-copy key_0)
+               (let ((out_0 (make-bytes n_0)))
+                 (begin
+                   (if (eqv?
+                        1
+                        (|#%app|
+                         rktcrypto_aead_expand_key
+                         id_0
+                         key_0
+                         (unsafe-bytes-length key_0)
+                         out_0
+                         n_0))
+                     (void)
+                     (fail-digest 'crypto-aead-expand-key))
+                   out_0))))))))))
 (define 1/crypto-aead-open!
   (|#%name|
    crypto-aead-open!
