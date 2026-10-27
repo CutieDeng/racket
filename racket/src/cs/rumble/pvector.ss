@@ -3517,10 +3517,12 @@
 
 (define core-unsafe-pvector-length core-pvector-length/unchecked)
 (define core-unsafe-pvector-ref core-pvector-ref/unchecked)
-(define core-unsafe-pvector-view-left core-pvector-view-left)
-(define core-unsafe-pvector-view-right core-pvector-view-right)
-(define core-unsafe-pvector-first core-pvector-view-left)
-(define core-unsafe-pvector-last core-pvector-view-right)
+;; Each primitive is its own procedure so that its `object-name` is the
+;; name it is bound to (the namespace test checks every primitive).
+(define (core-unsafe-pvector-view-left pv) (core-pvector-view-left pv))
+(define (core-unsafe-pvector-view-right pv) (core-pvector-view-right pv))
+(define (core-unsafe-pvector-first pv) (core-pvector-view-left pv))
+(define (core-unsafe-pvector-last pv) (core-pvector-view-right pv))
 
 (define (core-pvector-node-arity node)
   (if (core-pvector-node2? node) 2 3))
