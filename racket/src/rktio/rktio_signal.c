@@ -146,13 +146,20 @@ void rktio_will_modify_os_signal_handler(int sig_id) {
 }
 
 #ifdef RKTIO_SYSTEM_UNIX
-/* called in a child thread after `fork */
-void rktio_restore_modified_signal_handlers() {
+/* called in a child process after `fork`: original dispositions only,
+   the signal mask is left as it is */
+void rktio_restore_modified_signal_dispositions() {
   signal_handler_saved_disposition *saved;
-  sigset_t set;
 
   for (saved = saved_dispositions; saved; saved = saved->next)
     sigaction(saved->sig_id, &saved->sa, NULL);
+}
+
+/* called in a child process after `fork` */
+void rktio_restore_modified_signal_handlers() {
+  sigset_t set;
+
+  rktio_restore_modified_signal_dispositions();
 
   sigemptyset(&set);
   sigprocmask(SIG_SETMASK, &set, NULL);

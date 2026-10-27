@@ -1567,6 +1567,7 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
   /*--------------------------------------*/
 
   {
+    sigset_t fork_saved_sigs;
 #if defined(CENTRALIZED_SIGCHILD)
     centralized_starting_child();
 #else
@@ -1602,6 +1603,19 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
     /* avoid race in configuring file descriptors to have O_CLOEXEC */
     rktio_cloexec_lock();
 
+    /* Block signals across `fork`, so that a signal sent to the child
+       between `fork` and `exec` stays pending instead of running one
+       of this process's handlers in the child (which would consume
+       it: a SIGTERM or SIGINT sent right after `subprocess` returns
+       was lost that way). The child restores the dispositions and
+       then clears the mask, so a pending signal is delivered with
+       its real disposition before `exec`. */
+    {
+      sigset_t all_sigs;
+      sigfillset(&all_sigs);
+      sigprocmask(SIG_BLOCK, &all_sigs, &fork_saved_sigs);
+    }
+
 #if defined(__QNX__)
     pid = vfork();
 #elif defined(SUBPROCESS_USE_FORK1)
@@ -1613,6 +1627,8 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
     if (pid > 0) {
       /* This is the original process, which needs to manage the 
          newly created child process. */
+
+      sigprocmask(SIG_SETMASK, &fork_saved_sigs, NULL);
 
       rktio_cloexec_unlock();
 
@@ -1645,6 +1661,25 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
 #endif
     } else if (!pid) {
       /* This is the new child process */
+
+      /* First thing: the dispositions the child will `exec` with, then
+         an empty mask, so a signal that arrived while blocked acts as
+         it will after `exec` (see the comment before `fork`): the
+         original dispositions, then the SIG_DFL resets that were asked
+         for, which must win over an inherited SIG_IGN */
+      {
+        sigset_t empty_sigs;
+        rktio_restore_modified_signal_dispositions();
+        if (flags & RKTIO_PROCESS_RESET_SIGINT)
+          signal(SIGINT, SIG_DFL);
+        if (flags & RKTIO_PROCESS_RESET_SIGQUIT)
+          signal(SIGQUIT, SIG_DFL);
+        if (flags & RKTIO_PROCESS_RESET_SIGHUP)
+          signal(SIGHUP, SIG_DFL);
+        sigemptyset(&empty_sigs);
+        sigprocmask(SIG_SETMASK, &empty_sigs, NULL);
+      }
+
       if (new_process_group || group_proc) {
         /* see also setpgid above */
         int actual_pid = getpid();
@@ -1654,6 +1689,7 @@ rktio_process_result_t *rktio_process(rktio_t *rktio,
         setpgid(actual_pid, pgid); /* note: silent failure */
       }
     } else {
+      sigprocmask(SIG_SETMASK, &fork_saved_sigs, NULL);
       get_posix_error();
       rktio_cloexec_unlock();
     }
