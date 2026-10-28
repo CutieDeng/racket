@@ -1,0 +1,27 @@
+# GENERATED RELEASE WORKFLOW - DO NOT EDIT; regenerate with package-racket --target release-ci.
+# Source of truth: https://github.com/CutieDeng/package-racket
+
+name: notify packaging
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    name: dispatch to package-racket
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Send the tag to package-racket
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PACKAGING_DISPATCH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh api "repos/CutieDeng/package-racket/dispatches" -f event_type=racket-tag -F "client_payload[tag]=$TAG"
+          echo "dispatched racket-tag for $TAG to CutieDeng/package-racket"
