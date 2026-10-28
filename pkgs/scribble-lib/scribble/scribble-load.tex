@@ -1,0 +1,37 @@
+
+\newcommand{\packageGraphicx}{\usepackage{graphicx}}
+\newcommand{\packageHyperref}{\usepackage{hyperref}}
+\newcommand{\renewrmdefault}{\renewcommand{\rmdefault}{ptm}}
+\newcommand{\packageRelsize}{\usepackage{relsize}}
+% amsmath is required for the combination of {mathabx,
+% wasysym, newtxmath} to work. Otherwise, newtxmath
+% would load amsmath *after* mathabx and wasysym,
+% causing command redefinition issues.
+\newcommand{\packageAmsmath}{\usepackage{amsmath}}
+\newcommand{\packageMathabx}{\usepackage{mathabx}}
+% Avoid conflicts between "mathabx" and "wasysym",
+% and between "wasysym" integrals and "amsmath" integrals (iint).
+\newcommand{\packageWasysym}{
+  \let\leftmoon\relax \let\rightmoon\relax \let\fullmoon\relax \let\newmoon\relax \let\diameter\relax
+  \usepackage[nointegrals]{wasysym}}
+% Both newtxmath and mathabx define the \widering command.
+% The only reason we choose the newtxmath version is that
+% acmart.cls is also using the one from newtxmath.
+\newcommand{\packageTxfonts}{
+  \let\widering\relax
+  \let\oldwidebar\widebar
+  \let\widebar\relax
+  \usepackage{newtxmath}
+  % if newtxmath is before version 1.7.0,
+  % then we are still going to use widebar from mathabx
+  \ifx\widebar\relax
+    \let\widebar\oldwidebar
+  \fi
+}
+\newcommand{\packageTextcomp}{\usepackage{textcomp}}
+\newcommand{\packageFramed}{\usepackage{framed}}
+\newcommand{\packageHyphenat}{\usepackage[htt]{hyphenat}}
+\newcommand{\packageColor}{\usepackage[usenames,dvipsnames]{color}}
+\newcommand{\doHypersetup}{\hypersetup{bookmarks=true,bookmarksopen=true,bookmarksnumbered=true}}
+\newcommand{\packageTocstyle}{}
+\newcommand{\packageCJK}{\IfFileExists{CJK.sty}{\usepackage{CJK}}{}}

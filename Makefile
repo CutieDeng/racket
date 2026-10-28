@@ -129,17 +129,18 @@ EXTRA_REPOS_BASE =
 # to include in a distribution; if "{}" appears at the start,
 # then the content of "build/PKGS" can override when that file
 # exists:
-PKGS = {} main-distribution main-distribution-test racket-tstring tstring expeditor-lib xrepl-lib parser-tools-lib
+PKGS = {} main-distribution main-distribution-test racket-tstring tstring expeditor-lib xrepl-lib parser-tools-lib readline-lib scribble-text-lib syntax-color-lib option-contract-lib scheme-lib rackunit-lib testing-util-lib errortrace-lib source-syntax scribble-lib scribble-html-lib srfi-lite-lib compatibility-lib planet-lib draw-lib
 
 # Needed for any distribution (not meant to be configured); the
 # tstring packages are required because the development and
 # distribution `config.rktd` points `interactive-file` at
 # `racket/interactive/tstring`, so every build that installs packages
 # (including a minimal `make in-place PKGS=""`) must provide them;
-# `expeditor-lib`, `xrepl-lib`, and `parser-tools-lib` are carried in-tree
+# `expeditor-lib`, `xrepl-lib`, `parser-tools-lib` and the packages of the
+# Homebrew source profile (readline-lib ... draw-lib) are carried in-tree
 # (see their `pkgs/*/info.rkt`)
 # and must be linked from here rather than fetched from the catalog:
-REQUIRED_PKGS = racket-lib racket-tstring tstring expeditor-lib xrepl-lib parser-tools-lib
+REQUIRED_PKGS = racket-lib racket-tstring tstring expeditor-lib xrepl-lib parser-tools-lib readline-lib scribble-text-lib syntax-color-lib option-contract-lib scheme-lib rackunit-lib testing-util-lib errortrace-lib source-syntax scribble-lib scribble-html-lib srfi-lite-lib compatibility-lib planet-lib draw-lib
 
 # Needed for distro-build (not meant to be configured):
 DISTRO_BUILD_PKGS = distro-build-lib
