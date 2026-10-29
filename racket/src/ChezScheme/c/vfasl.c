@@ -246,11 +246,25 @@ static const char *vfasl_phase_names[] = {
 };
 static uint64_t vfasl_phase_ns[vfasl_phase_count];
 static int vfasl_times_on = -1;
+#ifdef WIN32
+/* system.h already brought in <windows.h> */
+static uint64_t vfasl_now(void) {
+  LARGE_INTEGER freq, count;
+  QueryPerformanceFrequency(&freq);
+  QueryPerformanceCounter(&count);
+  return (uint64_t)((double)count.QuadPart * 1e9 / (double)freq.QuadPart);
+}
+#else
 static uint64_t vfasl_now(void) {
   struct timespec ts;
+# ifdef CLOCK_MONOTONIC_RAW
   clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+# else
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+# endif
   return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
 }
+#endif
 static void vfasl_report_times(void) {
   int i;
   for (i = 0; i < vfasl_phase_count; i++)
