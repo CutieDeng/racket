@@ -26,7 +26,7 @@
          pack-zo-for-source
          call-with-pack-member)
 
-(define MAGIC #"RKTPK4\n")
+(define MAGIC #"RKTPK5\n")
 
 (define-place-local pack-on? #f)
 (define-place-local pack-port #f)
@@ -98,7 +98,15 @@
       (write-string (apply format fmt args) e)
       (newline e))))
 
-(define (startup-pack-init! share-dir candidate-dirs-for)
+;; `roots` is a vector of the installation directories that member
+;; paths are stored relative to (format v5): index 0 the main collection
+;; directory, index 1 the installation's package directory, each as the
+;; resolver sees it; a member's root tag 255 means an absolute path (the
+;; builder's fallback for files outside both, as in an in-place build).
+;; Relative storage keeps a build-time prefix out of the pack, which
+;; rpm's check-buildroot rejected, and lets a relocated installation
+;; still use it.
+(define (startup-pack-init! share-dir roots candidate-dirs-for)
   (startup-pack-place-init!)
   (let* ([env (getenv-bytes #"PLT_STARTUP_PACK")]
          [pack-path (cond
@@ -108,6 +116,7 @@
     (pack-debug "startup-pack: path ~s roots ~s modes ~s check ~s"
            pack-path (current-compiled-file-roots) (use-compiled-file-paths) (use-compiled-file-check))
     (when (and pack-path
+               (vector? roots)
                (equal? (current-compiled-file-roots) '(same))
                (let ([modes (use-compiled-file-paths)])
                  (and (pair? modes)
@@ -140,15 +149,31 @@
              (let ([by-key (make-hash)]
                    [by-src (make-hash)]
                    [by-zo (make-hash)]
-                   [n (read-u32 index-port)])
+                   [n (read-u32 index-port)]
+                   ;; directory form, so that root + relative bytes is
+                   ;; exactly the path the resolver builds for the member
+                   [root-bytes (let ([v (make-vector (vector-length roots) #f)])
+                                 (let rloop ([j 0])
+                                   (when (< j (vector-length roots))
+                                     (let ([r (vector-ref roots j)])
+                                       (when (and (path? r) (complete-path? r))
+                                         (vector-set! v j (path->bytes (path->directory-path (simplify-path r #f))))))
+                                     (rloop (add1 j))))
+                                 v)])
                (let loop ([i 0])
                  (when (< i n)
-                   (let* ([src (read-bytes (read-u16 index-port) index-port)]
-                          [zo (read-bytes (read-u16 index-port) index-port)]
+                   (let* ([tag (read-byte index-port)]
+                          [root (cond
+                                  [(= tag 255) #""]
+                                  [(< tag (vector-length root-bytes)) (vector-ref root-bytes tag)]
+                                  [else #f])]
+                          [src (let ([b (read-bytes (read-u16 index-port) index-port)]) (and root (bytes-append root b)))]
+                          [zo (let ([b (read-bytes (read-u16 index-port) index-port)]) (and root (bytes-append root b)))]
                           [k (read-byte index-port)])
                      (let kloop ([j 0])
                        (when (< j k)
-                         (hash-set! by-key (read-bytes (read-u16 index-port) index-port) (mcons src #f))
+                         (let ([kb (read-bytes (read-u16 index-port) index-port)])
+                           (when src (hash-set! by-key kb (mcons src #f))))
                          (kloop (add1 j))))
                      (let* ([off (read-u32 index-port)]
                             [len (read-u32 index-port)])
@@ -157,8 +182,10 @@
                        ;; when the member is first loaded
                        (let* ([kind (read-byte index-port)]
                               [tbytes (read-bytes (read-u16 index-port) index-port)])
-                         (hash-set! by-src src zo)
-                         (hash-set! by-zo zo (vector off len kind tbytes #f)))))
+                         ;; a member under an unknown root is skipped
+                         (when src
+                           (hash-set! by-src src zo)
+                           (hash-set! by-zo zo (vector off len kind tbytes #f))))))
                    (loop (add1 i))))
                (set! pack-by-key by-key)
                (set! pack-by-src by-src)

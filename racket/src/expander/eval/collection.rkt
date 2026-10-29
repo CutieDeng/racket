@@ -20,6 +20,8 @@
          read-installation-configuration-table
          get-installation-name
          find-share-dir
+         find-pkgs-dir
+         startup-pack-roots
          collection-candidate-dirs
 
          collection-place-init!)
@@ -136,6 +138,20 @@
   (coerce-to-path
    (or (and (hash? config-table) (hash-ref config-table 'share-dir #f))
        (build-path 'up "share"))))
+
+;; The installation's package directory, as `find-pkgs-dir` in
+;; setup/dirs computes it: the configuration's `pkgs-dir`, else "pkgs"
+;; in the share directory
+(define (find-pkgs-dir [config-table (read-installation-configuration-table)])
+  (coerce-to-path
+   (or (and (hash? config-table) (hash-ref config-table 'pkgs-dir #f))
+       (build-path (find-share-dir config-table) "pkgs"))))
+
+;; The directories that startup-pack member paths are stored relative
+;; to, by root tag: 0 the main collection directory, 1 the package
+;; directory (see boot/startup-pack.rkt and setup/private/startup-pack.rkt)
+(define (startup-pack-roots [config-table (read-installation-configuration-table)])
+  (vector (find-main-collects) (find-pkgs-dir config-table)))
 
 (define (find-library-collection-links [config-table (read-installation-configuration-table)]
                                        [installation-name (and (hash? config-table)

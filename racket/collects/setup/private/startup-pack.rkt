@@ -6,12 +6,18 @@
 ;; it (`raco setup`) and keeps it honest (the compilation manager marks
 ;; it stale when it rewrites a member).
 ;;
-;; Format v3:
-;;   #"RKTPK4\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
+;; Format v5:
+;;   #"RKTPK5\n" <u32 header-len> <header s-exp> <u32 index-len> <index> <members...>
 ;;   header = (version "..." vm "..." library-subpath "..." modes "..."
-;;            build-time N members N)
+;;            root "collects" build-time N members N)
 ;;   index  = <u32 count> then per member:
-;;            <u16 n><src path bytes> <u16 n><zo path bytes>
+;;            <u8 root> <u16 n><src path bytes> <u16 n><zo path bytes>
+;;            -- v5: both paths relative to root 0 (the main collection
+;;            -- directory) or root 1 (the installation's package
+;;            -- directory), so that the pack carries no build-time
+;;            -- prefix and survives relocation; root 255 is an absolute
+;;            -- path, the fallback for a file under neither (in-place
+;;            -- builds link packages from the source tree)
 ;;            <u8 k> k * (<u16 n><key bytes>) <u32 offset> <u32 length> <20 bytes sha1>
 ;;            <u8 kind> <u16 table-len> <u16 m> m * (<u16 n><bundle name> <u32 offset in member> <u32 length> <20 bytes sha1>)
 ;;   table-len is the byte length of what follows it in the record, so
@@ -35,7 +41,7 @@
          mark-startup-pack-stale!
          clear-startup-pack-stale!)
 
-(define MAGIC #"RKTPK4\n")
+(define MAGIC #"RKTPK5\n")
 
 (define (startup-pack-path)
   (define share (find-share-dir))
@@ -145,13 +151,42 @@
         'library-subpath (path->string (system-library-subpath #f))
         'modes (format "~s" (map path->string (use-compiled-file-paths)))))
 
+;; The roots that member paths are stored relative to, in directory
+;; form as bytes, indexed by the tag the index records: 0 the main
+;; collection directory, 1 the installation's package directory. The
+;; expander prepends its own view of the same directories when it reads
+;; the index (see startup-pack-init!).
+(define (pack-root-bytes)
+  (for/vector ([dir (list (find-collects-dir) (find-pkgs-dir))])
+    (path->bytes (path->directory-path (simplify-path (path->complete-path dir))))))
+
+(define ABSOLUTE-TAG 255)
+
+;; -> (values tag relative-or-absolute-bytes)
+(define (pack-encode-path roots p)
+  (define b (path->bytes p))
+  (or (for/first ([root (in-vector roots)]
+                  [tag (in-naturals)]
+                  #:when (and (> (bytes-length b) (bytes-length root))
+                              (equal? (subbytes b 0 (bytes-length root)) root)))
+        (cons tag (subbytes b (bytes-length root))))
+      (cons ABSOLUTE-TAG b)))
+
+(define (pack-decode-path roots tag b)
+  (bytes->path (if (= tag ABSOLUTE-TAG) b (bytes-append (vector-ref roots tag) b))))
+
 ;; index bytes for the members, with offsets relative to `base`
-(define (index-bytes members datas base)
+(define (index-bytes members datas base roots)
   (define o (open-output-bytes))
   (write-bytes (u32 (length members)) o)
   (for/fold ([off base]) ([m members] [d datas])
-    (define src (path->bytes (car m)))
-    (define zo (path->bytes (cadr m)))
+    (define src+tag (pack-encode-path roots (car m)))
+    (define zo+tag (pack-encode-path roots (cadr m)))
+    (unless (= (car src+tag) (car zo+tag))
+      (error 'build-startup-pack "source and compiled file under different roots: ~a" (car m)))
+    (define src (cdr src+tag))
+    (define zo (cdr zo+tag))
+    (write-byte (car src+tag) o)
     (write-bytes (u16 (bytes-length src)) o) (write-bytes src o)
     (write-bytes (u16 (bytes-length zo)) o) (write-bytes zo o)
     (write-bytes (bytes (length (caddr m))) o)
@@ -223,6 +258,7 @@
   (define-values (order keys skipped-roots)
     (parameterize ([current-namespace (make-base-empty-namespace)])
       (compute-closure roots)))
+  (define path-roots (pack-root-bytes))
   (define members
     (for/list ([src (in-list order)]
                #:when (file-exists? (zo-path-of src)))
@@ -232,15 +268,18 @@
         (error 'build-startup-pack "native extension present: ~a" so))
       (list src zo (reverse (hash-ref keys src null)))))
   (define datas (for/list ([m members]) (call-with-input-file (cadr m) port->bytes)))
+  (define absolute-count
+    (for/sum ([m members]) (if (= (car (pack-encode-path path-roots (car m))) ABSOLUTE-TAG) 1 0)))
   (define header
     (append (header-string)
-            (list 'build-time (current-seconds) 'members (length members))))
+            (list 'roots "(collects pkgs)" 'absolute absolute-count
+                  'build-time (current-seconds) 'members (length members))))
   (define header-bytes (string->bytes/utf-8 (format "~s" header)))
   ;; the index length does not depend on the offsets (fixed-width), so
   ;; the base is known after one measurement
   (define base (+ (bytes-length MAGIC) 4 (bytes-length header-bytes) 4
-                  (bytes-length (index-bytes members datas 0))))
-  (define ib (index-bytes members datas base))
+                  (bytes-length (index-bytes members datas 0 path-roots))))
+  (define ib (index-bytes members datas base path-roots))
   (define-values (dir name dir?) (split-path out))
   (define tmp (build-path dir (path-add-extension name #".tmp")))
   (call-with-output-file tmp #:exists 'truncate/replace
@@ -255,7 +294,7 @@
 (define (read-u32 in) (integer-bytes->integer (read-bytes 4 in) #f #f))
 (define (read-u16 in) (integer-bytes->integer (read-bytes 2 in) #f #f))
 
-;; -> (values header (listof (vector src-bytes zo-bytes keys offset length sha1-bytes)))
+;; -> (values header (listof (vector src-bytes zo-bytes keys offset length sha1-bytes root-tag)))
 (define (read-pack-index in)
   (unless (equal? (read-bytes (bytes-length MAGIC) in) MAGIC) (error 'startup-pack "bad magic"))
   (define hl (read-u32 in))
@@ -265,6 +304,7 @@
   (define n (read-u32 ip))
   (define index
     (for/list ([i n])
+      (define tag (read-byte ip))
       (define src (read-bytes (read-u16 ip) ip))
       (define zo (read-bytes (read-u16 ip) ip))
       (define k (read-byte ip))
@@ -274,7 +314,7 @@
       (define sha (read-bytes 20 ip))
       (read-byte ip) ; kind
       (read-bytes (read-u16 ip) ip) ; bundle table
-      (vector src zo keys off len sha)))
+      (vector src zo keys off len sha tag)))
   (values header index))
 
 ;; -> number of mismatching members
@@ -282,10 +322,11 @@
   (call-with-input-file pack
     (lambda (in)
       (define-values (header index) (read-pack-index in))
+      (define roots (pack-root-bytes))
       (for/sum ([e (in-list index)])
         (file-position in (vector-ref e 3))
         (define d (read-bytes (vector-ref e 4) in))
-        (if (and (equal? d (call-with-input-file (bytes->path (vector-ref e 1)) port->bytes))
+        (if (and (equal? d (call-with-input-file (pack-decode-path roots (vector-ref e 6) (vector-ref e 1)) port->bytes))
                  (equal? (sha1-bytes (open-input-bytes d)) (vector-ref e 5)))
             0
             1)))))
@@ -307,7 +348,9 @@
                    (call-with-input-file pack
                      (lambda (in)
                        (define-values (header index) (read-pack-index in))
-                       (for/hash ([e (in-list index)]) (values (vector-ref e 1) #t))))
+                       (define roots (pack-root-bytes))
+                       (for/hash ([e (in-list index)])
+                         (values (path->bytes (pack-decode-path roots (vector-ref e 6) (vector-ref e 1))) #t))))
                    'none))))
      (and (hash? member-table)
           (hash-ref member-table (path->bytes (path->complete-path zo-path)) #f))]))

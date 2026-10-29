@@ -99,3 +99,13 @@ header 仍是 s-exp（≈300 B，`read` 0.4 ms）；索引改为定宽二进制�
 L4（按定义惰性代码）经评估不开工：`PLT_LINKLET_TIMES` 实测 faslin-code 27 ms（+GC 6）/ 1579 linklet / 9 MB，上界 ≈25 ms，但按定义切片会断掉 linklet 内直呼/内联（R10 ≤5% 预算大概率守不住）、断 fasl 图共享、占位过程语义面广、改全部 .zo 格式；用户决定收口。L3、关窗 major、body+ 延后均不做。
 
 本轮累计（默认 tty REPL，本机，pack 开 vs 关，已验证）：启动包 −10 ms、融合装载路径再 −1.4（头对头）；lan-11 REPL −6.0。代码链 c16f17a139 … 07ae4f2904 全部在 feat/repl-startup-analysis。
+
+## 8. 格式 v5：成员路径相对化（2026-10-29）
+
+起因：`release-9.3.13` 的 rpm 构建在 fedora/el9 的 postinstall 变体全败，`/usr/lib/rpm/check-buildroot` 在 `/usr/share/racket/startup.pack` 里找到 BUILDROOT 绝对路径。v4 索引逐成员记录构建时的绝对 src/zo 路径（本机 in-place 包 310 成员 ×2 条），任何重定位（rpm/deb/Windows portable、换前缀的 bottle）之后键校验都对不上，包静默失效。
+
+v5（magic `RKTPK5`）：
+- 索引每成员前加 `<u8 root>`：0 = 主 collects 目录，1 = 安装级 pkgs 目录（`find-pkgs-dir`：config `pkgs-dir` 否则 `share/pkgs`），255 = 绝对路径（两个根之外的兜底，in-place 构建里 `pkgs/*-lib` 走这档）。
+- 写端（setup/private/startup-pack.rkt）按根编码；header 加 `roots "(collects pkgs)" absolute N`，`raco setup` 日志可见绝对成员数。
+- 读端（expander boot/startup-pack.rkt）`startup-pack-init!` 多收一个 roots 向量（`(vector (find-main-collects) (find-pkgs-dir config))`，expander/eval/collection.rkt 新增 `find-pkgs-dir` 与 setup/dirs 同义），解析索引时 `bytes-append` 目录形式的根 + 相对字节，得到与解析器一致的绝对字节；键校验、by-src、by-zo 逻辑不变。未知根的成员跳过。
+- 本机（已验证）：工具生成 333 成员、11 绝对（全是 `pkgs/` 内 parser-tools 等）、`--verify` 0 mismatch、`strings` 无构建树前缀（绝对兜底除外）；安装布局下 pkgs 在 pkgs-dir 之下，预期 0 绝对。

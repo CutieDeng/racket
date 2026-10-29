@@ -245,7 +245,10 @@
   (datum->syntax core-stx s))
 
 (define (startup-pack-init!/installation)
-  (startup-pack-init! (find-share-dir) collection-candidate-dirs))
+  (let ([config-table (read-installation-configuration-table)])
+    (startup-pack-init! (find-share-dir config-table)
+                        (startup-pack-roots config-table)
+                        collection-candidate-dirs)))
 
 (define (expander-place-init!)
   (syntax-place-init!)
