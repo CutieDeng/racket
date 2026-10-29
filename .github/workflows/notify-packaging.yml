@@ -6,7 +6,7 @@ name: notify packaging
 on:
   push:
     tags:
-      - 'v*'
+      - 'release-*'
 
 permissions:
   contents: read
